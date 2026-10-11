@@ -23,7 +23,7 @@ run("python3", ["scripts/build-wayland-module.py"]);
 const waylandModule = path.join(root, ".cache/wayland-module-build/linux-pipewire.so");
 const waylandProvenance: unknown = JSON.parse(await readFile(path.join(root, ".cache/wayland-module-build/provenance.json"), "utf8"));
 run("cmake", ["-S", path.join(root, "native"), "-B", output, "-DCMAKE_BUILD_TYPE=Release"]);
-run("cmake", ["--build", output, "-j2"]);
+run("cmake", ["--build", output, "--clean-first", "-j2"]);
 await rm(runtime, { recursive: true, force: true });
 await mkdir(path.join(runtime, "lib"), { recursive: true });
 await mkdir(path.join(runtime, "obs-plugins"), { recursive: true });
@@ -73,6 +73,8 @@ const sourceFiles = [
    "native/x11-compat.hpp",
    "native/linux-app-audio.cpp",
    "native/linux-app-audio.hpp",
+   "native/linux-device-audio.cpp",
+   "native/linux-device-audio.hpp",
    "native/linux-process.cpp",
    "native/linux-process.hpp",
    "native/wayland/platform.cpp",

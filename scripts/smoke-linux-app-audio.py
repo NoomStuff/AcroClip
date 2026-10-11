@@ -70,10 +70,18 @@ try:
     while not (private / "audio.sock").exists():
         assert time.monotonic() < deadline, "Private PulseAudio did not start"
         time.sleep(0.1)
-    if os.environ.get("ATTACLIP_TEST_X11_APP"):
-        launch(["openbox", "--sm-disable"], "window-manager")
-        time.sleep(1)
-    launch(["openbox", "--sm-disable"], "window-manager")
+    manager=launch(["openbox", "--sm-disable"], "window-manager")
+    deadline=time.monotonic()+10
+    while True:
+        assert manager.poll() is None, "Private window manager exited"
+        check=subprocess.run(["xprop", "-root", "_NET_SUPPORTING_WM_CHECK"],env=env,capture_output=True,text=True)
+        import re
+        identity=re.search(r"window id # (0x[0-9a-fA-F]+)",check.stdout)
+        if identity:
+            child=subprocess.run(["xprop","-id",identity[1],"_NET_SUPPORTING_WM_CHECK"],env=env,capture_output=True,text=True)
+            if identity[1] in child.stdout:break
+        assert time.monotonic()<deadline, "Private window manager did not publish its EWMH identity"
+        time.sleep(.02)
     helper = launch([str(runtime / "attaclip-recorder"), str(runtime)], "native", True)
     import threading, math, array
     def read():

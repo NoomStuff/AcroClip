@@ -141,9 +141,11 @@ def start_capture(identity, kind):
 def motion_evidence(request, identity, reduced, leaving=False):
     # A delayed timer can report its final shown/hidden state outside the short
     # animation-sampling interval. That real native endpoint still counts.
-    endpoint = "hidden" if leaving else "shown"
+    # Exit also starts at the actual stable shown state. Its first timer sample
+    # can arrive halfway through the fade, so it is not the phase's endpoint.
+    endpoints = ("shown", "hidden") if leaving and not reduced else ("hidden",) if leaving else ("shown",)
     samples = [event for event in events["notifier"] if event.get("id") == request and
-               (event["event"] == endpoint or event["event"] == "animation" and
+               (event["event"] in endpoints or event["event"] == "animation" and
                 (event["elapsed"] >= 2.4 if leaving else event["elapsed"] <= 0.25))]
     assert len(samples) >= 3, samples
     assert all(not event["active"] and not event["key"] and not event["main"] and
@@ -155,6 +157,7 @@ def motion_evidence(request, identity, reduced, leaving=False):
         assert all(event["alpha"] == (0 if leaving else 1) for event in samples), samples
     else:
         assert alpha_range > 0.4 and y_range > 3, samples
+        assert any(event["event"] == "animation" and 0 < event["alpha"] < 1 for event in samples), "No actual intermediate motion sample"
     return dict(samples=len(samples), alphaRange=alpha_range, verticalTravel=y_range, reducedMotion=reduced)
 
 

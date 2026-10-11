@@ -100,6 +100,19 @@ jobs:
            env:
               CSC_IDENTITY_AUTO_DISCOVERY: "false"
          - uses: actions/upload-artifact@v7
+           if: success()
+           with:
+              name: macOS-verified-release-candidate
+              path: |
+                 release/AttaClip-*-mac-arm64.zip
+                 release/AttaClip-*-mac-arm64.zip.blockmap
+                 release/AttaClip-*-mac-arm64.zip.release.json
+                 release/latest-mac.yml
+                 work/AttaClip-*-darwin-arm64-sources-*.zip
+                 work/AttaClip-*-darwin-arm64-sources-*.zip.json
+              if-no-files-found: error
+              retention-days: 14
+         - uses: actions/upload-artifact@v7
            if: always()
            with:
               name: macOS-native-capture-proof

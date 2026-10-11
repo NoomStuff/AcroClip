@@ -21,7 +21,7 @@ jobs:
            run: |
               sudo add-apt-repository -y ppa:obsproject/obs-studio
               sudo apt-get update
-              sudo apt-get install -y obs-studio=32.2.0-0obsproject1~noble cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev xvfb openbox x11-apps x11-xserver-utils ffmpeg pulseaudio pulseaudio-utils gcc-mingw-w64-x86-64 wine64 sway xwayland pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-wlr meson ninja-build libsystemd-dev libinih-dev wayland-protocols
+              sudo apt-get install -y obs-studio=32.2.0-0obsproject1~noble cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev xvfb openbox x11-apps x11-utils x11-xserver-utils ffmpeg pulseaudio pulseaudio-utils gcc-mingw-w64-x86-64 wine64 sway xwayland pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-wlr meson ninja-build libsystemd-dev libinih-dev wayland-protocols
          - name: Build native X11 recorder
            run: bun scripts/build-native-linux.ts
          - name: Verify source exception rejects tampered module evidence
@@ -32,6 +32,8 @@ jobs:
            run: |
               cmake -S native/tests -B .cache/native-tests-linux -DCMAKE_BUILD_TYPE=Release
               cmake --build .cache/native-tests-linux -j2
+         - name: Verify device audio health, recovery, gain and synchronization
+           run: python3 scripts/smoke-linux-device-audio.py resources/recorder
          - name: Verify selected application audio isolation and recovery
            run: python3 scripts/smoke-linux-app-audio.py resources/recorder
          - name: Verify real Wine image identity and application capture
@@ -67,7 +69,7 @@ jobs:
               python3 - <<'PY'
               from pathlib import Path
               from shutil import copyfile
-              names = {"measurements.json", "events.json", "wine-proof.json", "interruption-proof.json", "wayland-proof.json", "xwayland-proof.json", "report.json"}
+              names = {"measurements.json", "events.json", "wine-proof.json", "interruption-proof.json", "wayland-proof.json", "xwayland-proof.json", "report.json", "device-audio-proof.json"}
               destination = Path(".cache/linux-capture-evidence")
               for area in ("linux-smoke", "linux-packaged"):
                   root = Path(".cache") / area

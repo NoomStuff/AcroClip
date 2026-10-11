@@ -28,6 +28,7 @@
 #endif
 #ifdef __linux__
 #include "linux-app-audio.hpp"
+#include "linux-device-audio.hpp"
 #include "linux-process.hpp"
 #include "wayland/platform.hpp"
 #include "x11-compat.hpp"
@@ -333,12 +334,14 @@ const char *microphoneType() {
 #elif defined(__APPLE__)
   return "coreaudio_input_capture";
 #else
-  return "pulse_input_capture";
+  return linuxInputAudioType();
 #endif
 }
 const char *desktopType() {
 #ifdef _WIN32
   return "wasapi_output_capture";
+#elif defined(__linux__)
+  return linuxOutputAudioType();
 #else
   return "pulse_output_capture";
 #endif
@@ -779,6 +782,18 @@ public:
   }
   std::string additionalAudioError() {
     std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+#ifdef __linux__
+    if (mic) {
+      auto error = linuxDeviceAudioError(mic);
+      if (!error.empty())
+        return "Microphone: " + error;
+    }
+    if (desktop && screenCapture && captureAudioEnabled) {
+      auto error = linuxDeviceAudioError(desktop);
+      if (!error.empty())
+        return "Capture audio: " + error;
+    }
+#endif
 #ifdef _WIN32
     if (mic) {
       auto error = audioHealth.error(mic);
@@ -797,6 +812,11 @@ public:
     }
 #endif
     for (auto &extra : additionalAudio) {
+#ifdef __linux__
+      auto physicalError = linuxDeviceAudioError(extra.source);
+      if (!physicalError.empty())
+        return extra.name + ": " + physicalError;
+#endif
 #ifdef _WIN32
       auto physicalError = audioHealth.error(extra.source);
       if (!physicalError.empty()) return extra.name + ": " + physicalError;
@@ -2122,6 +2142,7 @@ int main(int argc, char **argv) {
 #ifdef __linux__
     registerX11CompatibilitySource();
     registerLinuxApplicationAudio();
+    registerLinuxDeviceAudio();
 #endif
     obs_audio_info ai{};
     ai.samples_per_sec = 48000;
