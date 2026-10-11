@@ -19,6 +19,9 @@
 #include <util/pipe.h>
 #include <util/platform.h>
 #include <vector>
+#ifdef _WIN32
+#include "windows/audio-health.hpp"
+#endif
 #ifdef __APPLE__
 #include "macos/platform.hpp"
 #include <mach/mach_time.h>
@@ -438,6 +441,9 @@ public:
   };
   std::vector<AdditionalAudio> additionalAudio;
   std::mutex audioSourcesMutex;
+#ifdef _WIN32
+  attaclip::windows::AudioHealth audioHealth;
+#endif
   std::vector<std::string> audioNames;
   obs_sceneitem_t *item = nullptr;
   std::mutex mutex;
@@ -558,6 +564,9 @@ public:
 #ifdef __APPLE__
           attaclip::macos::forgetInput(extra.source);
 #endif
+#ifdef _WIN32
+          audioHealth.forget(extra.source);
+#endif
           obs_source_release(extra.source);
         }
       }
@@ -581,12 +590,18 @@ public:
                       std::shared_ptr<attaclip::wayland::Capture>{});
 #endif
     if (desktop) {
+#ifdef _WIN32
+      audioHealth.forget(desktop);
+#endif
       obs_source_release(desktop);
       desktop = nullptr;
     }
     if (mic) {
 #ifdef __APPLE__
       attaclip::macos::forgetInput(mic);
+#endif
+#ifdef _WIN32
+      audioHealth.forget(mic);
 #endif
       obs_source_release(mic);
       mic = nullptr;
@@ -764,6 +779,16 @@ public:
   }
   std::string additionalAudioError() {
     std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+#ifdef _WIN32
+    if (mic) {
+      auto error = audioHealth.error(mic);
+      if (!error.empty()) return "Microphone: " + error;
+    }
+    if (desktop && screenCapture && captureAudioEnabled) {
+      auto error = audioHealth.error(desktop);
+      if (!error.empty()) return "Capture audio: " + error;
+    }
+#endif
 #ifdef __APPLE__
     if (mic) {
       auto error = attaclip::macos::audioError(mic, 0, 0);
@@ -773,6 +798,8 @@ public:
 #endif
     for (auto &extra : additionalAudio) {
 #ifdef _WIN32
+      auto physicalError = audioHealth.error(extra.source);
+      if (!physicalError.empty()) return extra.name + ": " + physicalError;
       if (extra.window) {
         DWORD pid = 0;
         GetWindowThreadProcessId(reinterpret_cast<HWND>(extra.window), &pid);
@@ -966,6 +993,9 @@ public:
         obs_source_set_audio_mixers(extra.source, mask);
         attaclip::macos::watchInput(extra.source);
       }
+#endif
+#ifdef _WIN32
+      audioHealth.watch(extra.source);
 #endif
       additionalAudio.push_back(std::move(extra));
 #ifdef __linux__
@@ -1834,6 +1864,7 @@ public:
     desktop = obs_source_create_private(desktopType(), "Capture audio", d);
     obs_data_release(d);
     if (desktop) {
+      audioHealth.watch(desktop);
       obs_source_set_audio_mixers(desktop, 3);
       obs_set_output_source(1, desktop);
     }
@@ -1869,6 +1900,9 @@ public:
         throw std::runtime_error("The microphone could not be opened");
 #ifdef __APPLE__
       attaclip::macos::watchInput(mic);
+#endif
+#ifdef _WIN32
+      audioHealth.watch(mic);
 #endif
       obs_source_set_audio_mixers(mic, 5);
       obs_set_output_source(2, mic);

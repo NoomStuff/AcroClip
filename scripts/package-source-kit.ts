@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, writeFile, copyFile, lstat, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { hashFile, validateKit, type SourceKit } from "./release-sources";
+import { wasapiPacketFiles } from "./windows-wasapi-source";
 
 type FileRecord = NonNullable<SourceKit["evidence"]>["components"][number]["sourceArchives"][number];
 
@@ -15,6 +16,7 @@ export function selectSourceKitFiles(kit: SourceKit): { kit: SourceKit; files: F
       ...references,
       ...kit.sources.flatMap((source) => [source, ...source.licenses]),
       ...dependencySources.flatMap((source) => [source, ...source.licenses]),
+      ...(kit.controlledWasapi ? wasapiPacketFiles(kit.controlledWasapi) : []),
    ]) {
       const previous = files.get(file.path);
       if (previous && (previous.sha256 !== file.sha256 || previous.size !== file.size)) throw new Error(`Conflicting source-kit file records: ${file.path}`);

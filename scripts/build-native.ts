@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { buildWindowsWasapi } from "./windows-wasapi-source";
 
 const version = "32.2.2";
 const root = process.cwd();
@@ -128,6 +129,7 @@ run("cmake", [
    `-DOBS_IMPORT_LIBRARY=${path.join(generated, "obs.lib")}`,
 ]);
 run("cmake", ["--build", output, "--config", "Release"]);
+const controlledWasapi = await buildWindowsWasapi({ project: root, upstream: source, generated, tools, generator, obsDll: path.join(bin, "obs.dll") });
 // Only replace the generated runtime directory inside this workspace.
 if (path.resolve(runtime) !== path.join(path.resolve(root), "resources", "recorder")) throw new Error("Unexpected staging directory");
 await rm(runtime, { recursive: true, force: true });
@@ -160,7 +162,10 @@ for (const name of binaries) await copyFile(path.join(bin, name), path.join(runt
 const modules = ["win-capture", "win-wasapi", "obs-ffmpeg", "obs-nvenc", "obs-qsv11", "obs-x264"];
 await mkdir(path.join(runtime, "obs-plugins", "64bit"), { recursive: true });
 for (const name of modules) {
-   await copyFile(path.join(obs, "obs-plugins", "64bit", `${name}.dll`), path.join(runtime, "obs-plugins", "64bit", `${name}.dll`));
+   await copyFile(
+      name === "win-wasapi" ? controlledWasapi.binary : path.join(obs, "obs-plugins", "64bit", `${name}.dll`),
+      path.join(runtime, "obs-plugins", "64bit", `${name}.dll`)
+   );
    const data = path.join(obs, "data", "obs-plugins", name);
    if (existsSync(data)) await cp(data, path.join(runtime, "data", "obs-plugins", name), { recursive: true, filter: (file) => !file.endsWith(".pdb") });
 }
@@ -174,6 +179,7 @@ await writeFile(
          source: `https://github.com/obsproject/obs-studio/tree/${version}`,
          build: "scripts/build-native.ts",
          modules,
+         controlledWasapi: controlledWasapi.record,
          encoder: "Device-probed NVENC, AMD AMF or Intel QSV H.264; explicit x264 software fallback",
          format: "Matroska",
          platform: "Windows x64",
@@ -190,6 +196,12 @@ await writeFile(
                   "native/CMakeLists.txt",
                   "native/notifications/windows.cpp",
                   "native/notifications/CMakeLists.txt",
+                  "native/windows/audio-health.hpp",
+                  "native/windows/audio-health-policy.hpp",
+                  "native/windows/audio-health-test.cpp",
+                  "native/windows/wasapi/CMakeLists.txt",
+                  "native/windows/wasapi/obs-wasapi-health.patch",
+                  "scripts/windows-wasapi-source.ts",
                   "scripts/build-native.ts",
                ].map(async (file) => [
                   file,
@@ -201,7 +213,7 @@ await writeFile(
          ),
          binaryHashes: Object.fromEntries(
             await Promise.all(
-               ["attaclip-recorder.exe", "attaclip-notifier.exe", ...binaries].map(async (file) => [
+               ["attaclip-recorder.exe", "attaclip-notifier.exe", "obs-plugins/64bit/win-wasapi.dll", ...binaries].map(async (file) => [
                   file,
                   createHash("sha256")
                      .update(await readFile(path.join(runtime, file)))

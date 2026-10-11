@@ -17,6 +17,37 @@ import {
 } from "./release-sources.ts";
 
 describe("release source evidence", () => {
+   it("requires current Windows health and module recipe fingerprints even when optional provenance fields are stripped", async () => {
+      const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-health-provenance-"));
+      try {
+         const inputs = [
+            "native/recorder.cpp",
+            "native/CMakeLists.txt",
+            "scripts/build-native.ts",
+            "native/windows/audio-health.hpp",
+            "native/windows/audio-health-policy.hpp",
+            "native/windows/audio-health-test.cpp",
+            "native/windows/wasapi/CMakeLists.txt",
+            "native/windows/wasapi/obs-wasapi-health.patch",
+            "scripts/windows-wasapi-source.ts",
+         ];
+         const sourceHashes: Record<string, string> = {};
+         for (const input of inputs) {
+            await mkdir(path.dirname(path.join(folder, input)), { recursive: true });
+            await writeFile(path.join(folder, input), input);
+            sourceHashes[input] = await hashFile(path.join(folder, input));
+         }
+         const staged = [{ path: "recorder/attaclip-recorder.exe", sha256: "actual-helper", size: 1 }];
+         const provenance = { sourceHashes, binaryHashes: { "attaclip-recorder.exe": "actual-helper" } };
+         expect(await validateRecorderBuild(provenance, staged, folder)).toEqual([]);
+         for (const input of inputs.filter((item) => item.includes("windows/"))) delete sourceHashes[input];
+         const blockers = await validateRecorderBuild(provenance, staged, folder);
+         expect(blockers).toContain("Recorder build-input hash absent or stale: native/windows/audio-health.hpp");
+         expect(blockers).toContain("Recorder build-input hash absent or stale: native/windows/wasapi/obs-wasapi-health.patch");
+      } finally {
+         await rm(folder, { recursive: true, force: true });
+      }
+   });
    it("requires matching native notifier source and binary before accepting an owned OBS runtime helper", async () => {
       const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-native-provenance-"));
       try {

@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createGunzip } from "node:zlib";
 import type { ControlledMediaBuild } from "./controlled-media";
+import { collectWasapiPacket, exactWasapiException, validateWasapiPacket, wasapiRecordSchema, type WasapiRecord } from "./windows-wasapi-source";
 
 interface SourcePin {
    name: string;
@@ -71,6 +72,7 @@ export interface SourceKit {
    dependencyRecipeRefs?: DependencyRecipeRef[];
    dependencySources?: DependencySource[];
    dependencyFailures?: { recipe: string; origin: string; reason: string }[];
+   controlledWasapi?: WasapiRecord;
 }
 
 // Immutable commits, resolved from upstream release tags. These collect known
@@ -91,6 +93,7 @@ export const sourcePins: SourcePin[] = [
 interface RecorderBuildProvenance {
    sourceHashes?: Record<string, string>;
    binaryHashes?: Record<string, string>;
+   controlledWasapi?: unknown;
 }
 
 export async function validateRecorderBuild(parsed: RecorderBuildProvenance, staged: HashedFile[], project: string): Promise<string[]> {
@@ -101,6 +104,14 @@ export async function validateRecorderBuild(parsed: RecorderBuildProvenance, sta
       ownBinaries.push("attaclip-notifier.exe");
       inputs.push("native/notifications/windows.cpp", "native/notifications/CMakeLists.txt");
    }
+   if (existsSync(path.join(project, "native/windows/audio-health.hpp")) || parsed.controlledWasapi || parsed.sourceHashes?.["native/windows/audio-health.hpp"])
+      inputs.push("native/windows/audio-health.hpp", "native/windows/audio-health-policy.hpp", "native/windows/audio-health-test.cpp");
+   if (
+      existsSync(path.join(project, "native/windows/wasapi/CMakeLists.txt")) ||
+      parsed.controlledWasapi ||
+      parsed.sourceHashes?.["native/windows/wasapi/obs-wasapi-health.patch"]
+   )
+      inputs.push("native/windows/wasapi/CMakeLists.txt", "native/windows/wasapi/obs-wasapi-health.patch", "scripts/windows-wasapi-source.ts");
    for (const file of inputs) {
       if (!existsSync(path.join(project, file)) || parsed.sourceHashes?.[file] !== (await hashFile(path.join(project, file))))
          blockers.push(`Recorder build-input hash absent or stale: ${file}`);
@@ -554,6 +565,21 @@ export async function validateKit(kit: SourceKit, kitDirectory: string, project:
    const blockers = [...(kit.collectionBlockers ?? kit.blockers)];
    const current = await releaseInventory(project);
    if (JSON.stringify(current) !== JSON.stringify(kit.staged)) blockers.push("Staged files changed after collecting this source kit. Collect a new manifest.");
+   try {
+      const provenanceFile = path.join(project, "resources/recorder/provenance.json");
+      const runtimeRecord = existsSync(provenanceFile)
+         ? (JSON.parse(await readFile(provenanceFile, "utf8")) as { controlledWasapi?: unknown }).controlledWasapi
+         : undefined;
+      if (existsSync(path.join(project, "native/windows/wasapi/CMakeLists.txt")) || runtimeRecord || kit.controlledWasapi) {
+         if (!runtimeRecord || !kit.controlledWasapi || JSON.stringify(runtimeRecord) !== JSON.stringify(kit.controlledWasapi))
+            throw new Error("Controlled WASAPI kit record differs from actual native build provenance");
+         const upstream = kit.sources.find((item) => item.repository === "obsproject/obs-studio" && item.commit === kit.controlledWasapi!.upstreamCommit);
+         if (!upstream) throw new Error("Controlled WASAPI pinned OBS archive is absent");
+         await validateWasapiPacket(kit.controlledWasapi, kitDirectory, project, upstream, current);
+      }
+   } catch (error) {
+      blockers.push(`Controlled WASAPI source validation failed: ${error instanceof Error ? error.message : String(error)}`);
+   }
    for (const source of kit.sources) {
       for (const file of [source, ...source.licenses]) {
          const absolute = path.resolve(kitDirectory, file.path);
@@ -671,15 +697,30 @@ export async function collectKit(project: string, destination: string, downloadS
       blockers.push("The hash-verified official OBS runtime archive is absent. Installed OBS version strings are insufficient provenance.");
    const obsProvenancePath = path.join(project, "resources", "recorder", "provenance.json");
    const obsProvenance = existsSync(obsProvenancePath) ? await readFile(obsProvenancePath, "utf8") : "";
+   let verifiedWasapi: WasapiRecord | undefined;
    try {
       const parsed = JSON.parse(obsProvenance) as {
          runtimeArchive?: { sha256?: string };
          sourceHashes?: Record<string, string>;
          binaryHashes?: Record<string, string>;
+         controlledWasapi?: unknown;
       };
       if (parsed.runtimeArchive?.sha256 !== "4d6e40e3ab155f56b30de517380566a206d74b63cdf5ad49aa596924768f97e1")
          blockers.push("Recorder provenance does not identify the hash-verified official runtime archive.");
       blockers.push(...(await validateRecorderBuild(parsed, staged, project)));
+      if (existsSync(path.join(project, "native/windows/wasapi/CMakeLists.txt")) && !parsed.controlledWasapi)
+         blockers.push("Controlled WASAPI build provenance is required by the current native recipe");
+      if (parsed.controlledWasapi) {
+         try {
+            const record = wasapiRecordSchema.parse(parsed.controlledWasapi);
+            await collectWasapiPacket(project, destination, record);
+            const upstream = sources.find((item) => item.repository === "obsproject/obs-studio" && item.commit === record.upstreamCommit);
+            if (!upstream) throw new Error("Controlled WASAPI pinned OBS archive is absent");
+            verifiedWasapi = await validateWasapiPacket(record, destination, project, upstream, staged);
+         } catch (error) {
+            blockers.push(`Controlled WASAPI source validation failed: ${error instanceof Error ? error.message : String(error)}`);
+         }
+      }
    } catch {
       blockers.push("Recorder provenance is missing or invalid.");
    }
@@ -689,6 +730,7 @@ export async function collectKit(project: string, destination: string, downloadS
       run("tar", ["-xf", obsArchive, "-C", verifiedRuntime]);
       for (const file of staged.filter((file) => file.path.startsWith("recorder/"))) {
          const relative = file.path.substring("recorder/".length);
+         if (exactWasapiException(file, verifiedWasapi)) continue;
          if (relative === "attaclip-recorder.exe" || relative === "attaclip-notifier.exe" || relative === "provenance.json" || relative.startsWith("LICENSE-"))
             continue;
          const official = path.join(verifiedRuntime, relative.includes("/") ? relative : path.posix.join("bin/64bit", relative));
@@ -744,6 +786,7 @@ export async function collectKit(project: string, destination: string, downloadS
       sources,
       blockers,
       collectionBlockers: [...blockers],
+      ...(verifiedWasapi ? { controlledWasapi: verifiedWasapi } : {}),
       requiredEvidence,
       ...(evidence ? { evidence } : {}),
       dependencyRecipeRefs: sources

@@ -1,0 +1,197 @@
+diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.cpp
+--- a/plugins/win-wasapi/win-wasapi.cpp
++++ b/plugins/win-wasapi/win-wasapi.cpp
+@@ -170,6 +170,20 @@
+ 	std::atomic<bool> isDefaultDevice = false;
+ 	std::atomic<bool> sawBadTimestamp = false;
+ 	bool hooked = false;
++	// State/HRESULT are one atomic snapshot. Silence says nothing about whether
++	// a loopback client exists; these transitions follow actual client ownership.
++	enum class CaptureState : uint8_t { Starting, Ready, Reconnecting, Stopped };
++	std::atomic<uint64_t> captureHealth{0};
++	std::atomic<uint64_t> capturedFrames{0}, clientGeneration{0};
++	void SetCaptureHealth(CaptureState state, HRESULT result = S_OK)
++	{
++		captureHealth.store((uint64_t(uint32_t(result)) << 32) | uint8_t(state), std::memory_order_release);
++	}
++	bool CaptureFailed(HRESULT result)
++	{
++		SetCaptureHealth(CaptureState::Reconnecting, result);
++		return false;
++	}
+ 
+ 	bool previouslyFailed = false;
+ 	WinHandle reconnectThread = NULL;
+@@ -282,6 +296,17 @@
+ 	void OnSampleReady();
+ 	void OnRestart();
+ 
++	void GetCaptureHealth(calldata_t *data)
++	{
++		const uint64_t value = captureHealth.load(std::memory_order_acquire);
++		calldata_set_int(data, "version", 1);
++		calldata_set_int(data, "state", uint8_t(value));
++		calldata_set_int(data, "hresult", uint32_t(value >> 32));
++		calldata_set_bool(data, "ready", uint8_t(value) == uint8_t(CaptureState::Ready));
++		calldata_set_int(data, "frames", capturedFrames.load(std::memory_order_acquire));
++		calldata_set_int(data, "generation", clientGeneration.load(std::memory_order_acquire));
++		calldata_set_bool(data, "rtwq", rtwq_supported);
++	}
+ 	bool GetHooked();
+ 	HWND GetHwnd();
+ 
+@@ -440,6 +465,7 @@
+ 
+ void WASAPISource::Stop()
+ {
++	SetCaptureHealth(CaptureState::Stopped);
+ 	SetEvent(stopSignal);
+ 
+ 	blog(LOG_INFO, "WASAPI: Device '%s' Terminated", device_name.c_str());
+@@ -567,6 +593,7 @@
+ 	LogSettings();
+ 
+ 	if (restart) {
++		SetCaptureHealth(CaptureState::Reconnecting);
+ 		SetEvent(restartSignal);
+ 	}
+ }
+@@ -583,6 +610,7 @@
+ 	UpdateSettings(std::move(params));
+ 
+ 	if (restart) {
++		SetCaptureHealth(CaptureState::Reconnecting);
+ 		SetEvent(restartSignal);
+ 	}
+ }
+@@ -887,6 +915,10 @@
+ 
+ 	client = std::move(temp_client);
+ 	capture = std::move(temp_capture);
++	clientGeneration.fetch_add(1, std::memory_order_release);
++	// The client has started. Publish before registering callbacks so a failure
++	// in a concurrent callback cannot be overwritten by a later Ready store.
++	SetCaptureHealth(CaptureState::Ready);
+ 
+ 	if (rtwq_supported) {
+ 		HRESULT hr = rtwq_put_waiting_work_item(receiveSignal, 0, sampleReadyAsyncResult, nullptr);
+@@ -941,11 +973,13 @@
+ 		success = true;
+ 
+ 	} catch (HRError &error) {
++		SetCaptureHealth(CaptureState::Reconnecting, error.hr);
+ 		if (!previouslyFailed) {
+ 			blog(LOG_WARNING, "[WASAPISource::TryInitialize]:[%s] %s: %lX",
+ 			     device_name.empty() ? device_id.c_str() : device_name.c_str(), error.str, error.hr);
+ 		}
+ 	} catch (const char *error) {
++		SetCaptureHealth(CaptureState::Reconnecting, E_FAIL);
+ 		if (!previouslyFailed) {
+ 			blog(LOG_WARNING, "[WASAPISource::TryInitialize]:[%s] %s",
+ 			     device_name.empty() ? device_id.c_str() : device_name.c_str(), error);
+@@ -1004,7 +1038,7 @@
+ 	while (true) {
+ 		if ((sourceType == SourceType::ProcessOutput) && !IsWindow(hwnd)) {
+ 			blog(LOG_WARNING, "[WASAPISource::ProcessCaptureData] window disappeared");
+-			return false;
++			return CaptureFailed(E_HANDLE);
+ 		}
+ 
+ 		res = capture->GetNextPacketSize(&captureSize);
+@@ -1016,7 +1050,7 @@
+ 				     " failed: %lX",
+ 				     res);
+ 			}
+-			return false;
++			return CaptureFailed(res);
+ 		}
+ 
+ 		if (!captureSize) {
+@@ -1032,7 +1066,7 @@
+ 				     " failed: %lX",
+ 				     res);
+ 			}
+-			return false;
++			return CaptureFailed(res);
+ 		}
+ 
+ 		if (!sawBadTimestamp && flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR) {
+@@ -1053,6 +1087,7 @@
+ 			buffer = silence.data();
+ 		}
+ 
++		capturedFrames.fetch_add(frames, std::memory_order_release);
+ 		obs_source_audio data = {};
+ 		data.data[0] = buffer;
+ 		data.frames = frames;
+@@ -1080,7 +1115,8 @@
+ 			obs_source_output_audio(source, &data);
+ 		}
+ 
+-		capture->ReleaseBuffer(frames);
++		res = capture->ReleaseBuffer(frames);
++		if (FAILED(res)) return CaptureFailed(res);
+ 	}
+ 
+ 	return true;
+@@ -1199,6 +1235,9 @@
+ 		sig_count = _countof(inactive_sigs);
+ 		sigs = inactive_sigs;
+ 
++		if (idle) source->SetCaptureHealth(CaptureState::Stopped);
++		else if (reconnect && uint8_t(source->captureHealth.load(std::memory_order_acquire)) != uint8_t(CaptureState::Reconnecting))
++			source->SetCaptureHealth(CaptureState::Reconnecting);
+ 		if (source->client) {
+ 			source->client->Stop();
+ 
+@@ -1259,6 +1298,7 @@
+ 		default_id.clear();
+ 	}
+ 
++	SetCaptureHealth(CaptureState::Reconnecting);
+ 	blog(LOG_INFO, "WASAPI: Default %s device changed", input ? "input" : "output");
+ 
+ 	SetEvent(restartSignal);
+@@ -1313,6 +1353,7 @@
+ 
+ 	if (!stop) {
+ 		if (FAILED(rtwq_put_waiting_work_item(receiveSignal, 0, sampleReadyAsyncResult, nullptr))) {
++			SetCaptureHealth(CaptureState::Reconnecting, E_FAIL);
+ 			blog(LOG_ERROR, "Could not requeue sample receive work");
+ 			stop = true;
+ 			reconnect = true;
+@@ -1321,6 +1362,9 @@
+ 	}
+ 
+ 	if (stop) {
++		if (!reconnect) SetCaptureHealth(CaptureState::Stopped);
++		else if (uint8_t(captureHealth.load(std::memory_order_acquire)) != uint8_t(CaptureState::Reconnecting))
++			SetCaptureHealth(CaptureState::Reconnecting);
+ 		client->Stop();
+ 
+ 		capture.Clear();
+@@ -1435,13 +1479,22 @@
+ 	wasapi_source->SetRerouteTarget(target);
+ }
+ 
++static void wasapi_get_capture_health(void *data, calldata_t *cd)
++{
++	if (data) static_cast<WASAPISource *>(data)->GetCaptureHealth(cd);
++}
+ static void *CreateWASAPISource(obs_data_t *settings, obs_source_t *source, SourceType type)
+ {
+ 	try {
++		WASAPISource *wasapi_source = new WASAPISource(settings, source, type);
++		if (wasapi_source) {
++			proc_handler_add(obs_source_get_proc_handler(source),
++				"void get_capture_health(out int version, out int state, out int hresult, out bool ready, out int frames, out int generation, out bool rtwq)",
++				wasapi_get_capture_health, wasapi_source);
++		}
+ 		if (type != SourceType::ProcessOutput) {
+-			return new WASAPISource(settings, source, type);
++			return wasapi_source;
+ 		} else {
+-			WASAPISource *wasapi_source = new WASAPISource(settings, source, type);
+ 
+ 			if (wasapi_source) {
+ 				signal_handler_t *sh = obs_source_get_signal_handler(source);
