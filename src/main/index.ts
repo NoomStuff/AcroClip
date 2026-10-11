@@ -33,6 +33,7 @@ import { Feedback } from "./feedback";
 import { portalScreenId, portalSources } from "../shared/capture-policy";
 import { findAttaCut, rememberAttaCut } from "./attacut";
 import { needsMicrophonePermission } from "../shared/audio-policy";
+import { StorageMonitor } from "./storage";
 
 protocol.registerSchemesAsPrivileged([{ scheme: "attaclip-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -70,6 +71,7 @@ const feedback = new Feedback(
       : resolve(here, "../../resources/recorder", process.platform === "win32" ? "attaclip-notifier.exe" : "attaclip-notifier"),
    (message) => void log(message)
 );
+const storage = new StorageMonitor({ onChange: () => emitState(), onWarning: (message) => notice(message, true) });
 const recorder = new Recorder({
    gameCatalogPath: join(app.getPath("userData"), "game-catalog.json"),
    onAudioLevels: (levels) => {
@@ -106,6 +108,7 @@ function errorMessage(error: unknown): string {
 function state(): AppState {
    return {
       windowVisible: !!mainWindow?.isVisible() && !mainWindow.isMinimized(),
+      storageWarning: storage.warning,
       preferences,
       clips: collections.clips,
       categories: collections.categories,
@@ -123,7 +126,13 @@ function send(event: AppEvent) {
    mainWindow.webContents.send("app-event", event);
 }
 function emitState() {
-   if (preferences) send({ type: "state", state: state() });
+   if (preferences) {
+      storage.setActivity(
+         collections.root,
+         ["starting", "recording", "waiting"].includes(recorder.status.state) || recorder.status.pendingSaves > 0 || pendingJobs().length > 0
+      );
+      send({ type: "state", state: state() });
+   }
 }
 function mediaUrl(path: string): string {
    const full = resolve(path);
@@ -238,7 +247,15 @@ function trayIcon() {
 function updateTray() {
    if (!tray) return;
    const active = recorder.status.state === "recording" || recorder.status.state === "waiting";
-   tray.setToolTip(`AttaClip${recorder.status.state === "waiting" ? " · Waiting for application" : active ? " · Recording" : ""}`);
+   const detail =
+      recorder.status.state === "waiting"
+         ? recorder.status.message || "Waiting for capture"
+         : recorder.status.state === "error"
+           ? recorder.status.message || "Recording stopped"
+           : active
+             ? "Recording"
+             : "";
+   tray.setToolTip(detail ? `AttaClip · ${detail}` : "AttaClip");
    tray.setContextMenu(
       Menu.buildFromTemplate([
          {
@@ -296,6 +313,7 @@ async function saveClip() {
    mkdirSync(dirname(destination), { recursive: true });
    if (!withinRoot(collections.root, realpathSync(dirname(destination))))
       throw new Error("The recording folder points outside this collection. Choose another folder.");
+   void storage.check(collections.root);
    await recorder.save(destination, requestedAt);
    notice("Saving clip…", false, "saving");
 }
@@ -381,6 +399,7 @@ async function requestExit() {
    try {
       if (await prepareExit()) {
          quitting = true;
+         storage.close();
          feedback.close();
          globalShortcut.unregisterAll();
          app.quit();

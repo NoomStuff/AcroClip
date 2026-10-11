@@ -302,9 +302,11 @@ export function Recording({ state, visible, run, pulse }: { state: AppState; vis
                                  {state.preferences.captureAudio
                                     ? state.preferences.captureMuted
                                        ? "Muted in all recorded tracks"
-                                       : active
-                                         ? "Recording audio"
-                                         : "Meter available while recording"
+                                       : state.recorder.state === "waiting"
+                                         ? state.recorder.message || "Waiting for capture"
+                                         : state.recorder.state === "recording"
+                                           ? "Recording audio"
+                                           : "Meter available while recording"
                                     : "Not recorded"}
                               </span>
                            </div>
@@ -342,6 +344,10 @@ export function Recording({ state, visible, run, pulse }: { state: AppState; vis
                                     onChange={(event) => preferences({ microphoneDevice: event.target.value })}
                                  >
                                     <option value="default">System default microphone</option>
+                                    {state.preferences.microphoneDevice !== "default" &&
+                                       !audioDevices.some((item) => item.id === state.preferences.microphoneDevice) && (
+                                          <option value={state.preferences.microphoneDevice}>Selected device unavailable</option>
+                                       )}
                                     {audioDevices
                                        .filter((item) => item.id !== "default")
                                        .map((item) => (

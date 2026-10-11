@@ -146,6 +146,7 @@ export interface UpdateState {
    message: string;
 }
 export interface AppState {
+   storageWarning?: string;
    windowVisible: boolean;
    preferences: Preferences;
    clips: Clip[];

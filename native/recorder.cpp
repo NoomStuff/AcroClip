@@ -21,6 +21,7 @@
 #include <vector>
 #ifdef __APPLE__
 #include "macos/platform.hpp"
+#include <mach/mach_time.h>
 #endif
 #ifdef __linux__
 #include "linux-app-audio.hpp"
@@ -31,6 +32,7 @@
 #include <obs-nix-platform.h>
 #include <pthread.h>
 #include <signal.h>
+#include <time.h>
 #include <xcb/xcb.h>
 #endif
 // Separate XCB connections avoid process-wide Xlib error handler changes when a
@@ -447,8 +449,7 @@ public:
   bool quitting = false;
   bool captureInterrupted = false;
   bool deliveryInterrupted = false;
-  uint64_t lastVideoDelivery = 0;
-  int64_t lastVideoWallTime = 0;
+  uint64_t lastVideoClock = 0;
   int64_t recoveryBoundary = 0;
   std::atomic<bool> active{false};
   std::atomic<int> pending{0};
@@ -618,8 +619,7 @@ public:
       bytes = 0;
       captureInterrupted = false;
       deliveryInterrupted = false;
-      lastVideoDelivery = 0;
-      lastVideoWallTime = 0;
+      lastVideoClock = 0;
       recoveryBoundary = 0;
     }
     release();
@@ -1043,8 +1043,7 @@ public:
     std::lock_guard<std::mutex> lock(mutex);
     checkDeliveryGap();
     if (p->type == OBS_ENCODER_VIDEO) {
-      lastVideoDelivery = os_gettime_ns();
-      lastVideoWallTime = wallTime();
+      lastVideoClock = deliveryClock();
     }
     if (captureInterrupted) {
       // Keep earlier footage available until recovery produces a decodable
@@ -1091,21 +1090,40 @@ public:
       requests.pop_front();
     }
   }
-  static int64_t wallTime() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::system_clock::now().time_since_epoch())
-        .count();
+  // These monotonic clocks include computer sleep. Wall-clock corrections
+  // must not discard healthy footage, while suspend still breaks continuity.
+  static uint64_t deliveryClock() {
+#ifdef _WIN32
+    return GetTickCount64() * uint64_t(1000000);
+#elif defined(__APPLE__)
+    static const mach_timebase_info_data_t scale = [] {
+      mach_timebase_info_data_t result{};
+      if (mach_timebase_info(&result) != KERN_SUCCESS || !result.denom)
+        throw std::runtime_error("The capture elapsed clock is unavailable");
+      return result;
+    }();
+    return uint64_t(static_cast<long double>(mach_continuous_time()) *
+                    scale.numer / scale.denom);
+#elif defined(__linux__)
+    timespec value{};
+    if (clock_gettime(CLOCK_BOOTTIME, &value) != 0)
+      throw std::runtime_error("The capture elapsed clock is unavailable");
+    return uint64_t(value.tv_sec) * uint64_t(1000000000) +
+           uint64_t(value.tv_nsec);
+#endif
+  }
+  static bool deliveryGap(uint64_t last, uint64_t now, uint64_t threshold) {
+    return last && now >= last && now - last > threshold;
   }
   // Caller holds mutex. A frozen process or suspended computer can retain a
   // valid texture while its encoded timestamps jump. Preserve accepted saves
   // before waiting for a fresh keyframe instead of joining that gap.
   void checkDeliveryGap() {
-    if (!active || !lastVideoDelivery || captureInterrupted)
+    if (!active || !lastVideoClock || captureInterrupted)
       return;
     uint64_t threshold =
         std::max(uint64_t(2000000000), uint64_t(3000000000) / uint64_t(fps));
-    if (os_gettime_ns() - lastVideoDelivery <= threshold &&
-        wallTime() - lastVideoWallTime <= int64_t(threshold / 1000000))
+    if (!deliveryGap(lastVideoClock, deliveryClock(), threshold))
       return;
     captureInterrupted = true;
     deliveryInterrupted = true;

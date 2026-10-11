@@ -49,6 +49,7 @@ interface NativeMessage {
 export class Recorder {
    private readonly options: RecorderOptions;
    private process: ChildProcessWithoutNullStreams | null = null;
+   private expectedExit = false;
    private timer: ReturnType<typeof setInterval> | null = null;
    private current: RecorderState = { ...stoppedRecorder };
    private windows: Array<{ name: string; value: string }> = [];
@@ -272,6 +273,7 @@ export class Recorder {
          this.readyReject = reject;
       });
       const root = path.dirname(executable);
+      this.expectedExit = false;
       this.process = spawn(executable, [root], {
          cwd: root,
          windowsHide: true,
@@ -314,14 +316,20 @@ export class Recorder {
          this.autoGeneration++;
          this.candidatesResolve?.([]);
          this.candidatesResolve = null;
-         if (this.current.state !== "stopped" || this.requests.size) this.error(`Recording stopped unexpectedly${code ? ` with exit code ${code}` : ""}`);
+         const unexpected = !this.expectedExit && (this.current.state !== "stopped" || this.requests.size > 0);
+         const message = unexpected
+            ? this.current.state === "error" && this.current.message
+               ? this.current.message
+               : `Recording stopped unexpectedly${code ? ` with exit code ${code}` : ""}`
+            : "";
+         if (unexpected && this.current.state !== "error") this.error(message);
          this.requests.clear();
          for (const command of this.commands.values()) {
             clearTimeout(command.timeout);
             command.reject(new Error("The recording helper exited during this action"));
          }
          this.commands.clear();
-         this.update({ state: "stopped", availableSeconds: 0, startedAt: null, pendingSaves: 0 });
+         this.update({ state: unexpected ? "error" : "stopped", message, availableSeconds: 0, startedAt: null, pendingSaves: 0 });
       });
       const timeout = setTimeout(() => {
          this.readyReject?.(new Error("The recording helper took too long to start"));
@@ -547,14 +555,17 @@ export class Recorder {
       const child = this.process;
       const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
       if (options.cancel) {
-         this.current.state = "stopped";
+         this.expectedExit = true;
          child.kill();
          await exited;
          return;
       }
       this.send({ action: "stop" });
       while (this.requests.size && this.process) await new Promise<void>((resolve) => setTimeout(resolve, 100));
-      if (this.process) this.send({ action: "exit" });
+      if (this.process) {
+         this.expectedExit = true;
+         this.send({ action: "exit" });
+      }
       await exited;
    }
 }
