@@ -17,11 +17,37 @@ import {
 } from "./release-sources.ts";
 
 describe("release source evidence", () => {
+   it.each(["native/clip-writer.cpp", "native/clip-writer.hpp"])("rejects omitted or altered consumed clip-writer source %s", async (consumed) => {
+      const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-clip-writer-provenance-"));
+      try {
+         const inputs = ["native/recorder.cpp", "native/clip-writer.cpp", "native/clip-writer.hpp", "native/CMakeLists.txt", "scripts/build-native.ts"];
+         const sourceHashes: Record<string, string> = {};
+         for (const input of inputs) {
+            const file = path.join(folder, input);
+            await mkdir(path.dirname(file), { recursive: true });
+            await writeFile(file, input);
+            sourceHashes[input] = await hashFile(file);
+         }
+         const provenance = { sourceHashes, binaryHashes: { "attaclip-recorder.exe": "actual-helper" } };
+         const staged = [{ path: "recorder/attaclip-recorder.exe", sha256: "actual-helper", size: 1 }];
+         expect(await validateRecorderBuild(provenance, staged, folder)).toEqual([]);
+         const recorded = sourceHashes[consumed]!;
+         delete sourceHashes[consumed];
+         expect(await validateRecorderBuild(provenance, staged, folder)).toContain(`Recorder build-input hash absent or stale: ${consumed}`);
+         sourceHashes[consumed] = recorded;
+         await writeFile(path.join(folder, consumed), "changed worker implementation");
+         expect(await validateRecorderBuild(provenance, staged, folder)).toContain(`Recorder build-input hash absent or stale: ${consumed}`);
+      } finally {
+         await rm(folder, { recursive: true, force: true });
+      }
+   });
    it("requires current Windows health and module recipe fingerprints even when optional provenance fields are stripped", async () => {
       const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-health-provenance-"));
       try {
          const inputs = [
             "native/recorder.cpp",
+            "native/clip-writer.cpp",
+            "native/clip-writer.hpp",
             "native/CMakeLists.txt",
             "scripts/build-native.ts",
             "native/windows/audio-health.hpp",
@@ -53,6 +79,8 @@ describe("release source evidence", () => {
       try {
          const inputs = [
             "native/recorder.cpp",
+            "native/clip-writer.cpp",
+            "native/clip-writer.hpp",
             "native/CMakeLists.txt",
             "scripts/build-native.ts",
             "native/notifications/windows.cpp",

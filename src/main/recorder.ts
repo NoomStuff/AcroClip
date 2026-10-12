@@ -268,13 +268,9 @@ export class Recorder {
       if (!existsSync(executable) && !this.options.nativePath) executable = this.developmentExecutable;
       if ((process.platform !== "win32" && process.platform !== "linux" && process.platform !== "darwin") || !existsSync(executable))
          throw new Error("Native recording is not available on this platform yet");
-      this.ready = new Promise<void>((resolve, reject) => {
-         this.readyResolve = resolve;
-         this.readyReject = reject;
-      });
       const root = path.dirname(executable);
       this.expectedExit = false;
-      this.process = spawn(executable, [root], {
+      const child = spawn(executable, [root], {
          cwd: root,
          windowsHide: true,
          stdio: "pipe",
@@ -283,7 +279,13 @@ export class Recorder {
             ...(process.platform === "linux" ? { LD_LIBRARY_PATH: [path.join(root, "lib"), process.env["LD_LIBRARY_PATH"]].filter(Boolean).join(":") } : {}),
          },
       });
-      this.process.stdin.on("error", (error: Error) => {
+      this.process = child;
+      this.ready = new Promise<void>((resolve, reject) => {
+         this.readyResolve = resolve;
+         this.readyReject = reject;
+      });
+      const ready = this.ready;
+      child.stdin.on("error", (error: Error) => {
          this.readyReject?.(error);
          for (const command of this.commands.values()) {
             clearTimeout(command.timeout);
@@ -292,7 +294,7 @@ export class Recorder {
          this.commands.clear();
          this.error("The recording helper connection closed");
       });
-      createInterface({ input: this.process.stdout }).on("line", (line: string) => {
+      createInterface({ input: child.stdout }).on("line", (line: string) => {
          try {
             const value: unknown = JSON.parse(line);
             if (value && typeof value === "object" && "event" in value && typeof value.event === "string") this.message(value as NativeMessage);
@@ -301,42 +303,54 @@ export class Recorder {
          }
       });
       // Diagnostic text remains local and is never forwarded as user-facing errors.
-      this.process.stderr.on("data", () => undefined);
-      this.process.on("error", (error) => {
+      child.stderr.on("data", () => undefined);
+      child.on("error", (error) => {
          this.readyReject?.(error);
+         this.update({ state: "error", message: error.message });
          this.error(error.message);
       });
-      this.process.on("exit", (code) => {
-         this.readyReject?.(new Error("The recording helper exited before becoming ready"));
-         this.process = null;
-         this.ready = null;
-         if (this.timer) clearInterval(this.timer);
-         this.timer = null;
-         this.autoPreferences = null;
-         this.autoGeneration++;
-         this.candidatesResolve?.([]);
-         this.candidatesResolve = null;
-         const unexpected = !this.expectedExit && (this.current.state !== "stopped" || this.requests.size > 0);
-         const message = unexpected
-            ? this.current.state === "error" && this.current.message
-               ? this.current.message
-               : `Recording stopped unexpectedly${code ? ` with exit code ${code}` : ""}`
-            : "";
-         if (unexpected && this.current.state !== "error") this.error(message);
-         this.requests.clear();
-         for (const command of this.commands.values()) {
-            clearTimeout(command.timeout);
-            command.reject(new Error("The recording helper exited during this action"));
-         }
-         this.commands.clear();
-         this.update({ state: unexpected ? "error" : "stopped", message, availableSeconds: 0, startedAt: null, pendingSaves: 0 });
-      });
+      // Failed launches emit close without exit. Close also follows drained stdout,
+      // so buffered save responses are handled before termination clears requests.
+      const closed = new Promise<void>((resolve) =>
+         child.once("close", (code) => {
+            this.readyReject?.(new Error("The recording helper exited before becoming ready"));
+            this.readyResolve = null;
+            this.readyReject = null;
+            this.process = null;
+            this.ready = null;
+            if (this.timer) clearInterval(this.timer);
+            this.timer = null;
+            this.autoPreferences = null;
+            this.autoGeneration++;
+            this.candidatesResolve?.([]);
+            this.candidatesResolve = null;
+            const unexpected = !this.expectedExit && (this.current.state !== "stopped" || this.requests.size > 0);
+            const message = unexpected
+               ? this.current.state === "error" && this.current.message
+                  ? this.current.message
+                  : `Recording stopped unexpectedly${code ? ` with exit code ${code}` : ""}`
+               : "";
+            if (unexpected && this.current.state !== "error") this.error(message);
+            this.requests.clear();
+            for (const command of this.commands.values()) {
+               clearTimeout(command.timeout);
+               command.reject(new Error("The recording helper exited during this action"));
+            }
+            this.commands.clear();
+            this.update({ state: unexpected ? "error" : "stopped", message, availableSeconds: 0, startedAt: null, pendingSaves: 0 });
+            resolve();
+         })
+      );
       const timeout = setTimeout(() => {
          this.readyReject?.(new Error("The recording helper took too long to start"));
-         this.process?.kill();
+         child.kill();
       }, 20_000);
       try {
-         await this.ready;
+         await ready;
+      } catch (error) {
+         child.kill();
+         await closed;
+         throw error;
       } finally {
          clearTimeout(timeout);
       }
@@ -553,10 +567,14 @@ export class Recorder {
       this.autoGeneration++;
       if (!this.process) return;
       const child = this.process;
-      const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+      const exited = new Promise<void>((resolve) => child.once("close", () => resolve()));
       if (options.cancel) {
          this.expectedExit = true;
          child.kill();
+         await exited;
+         return;
+      }
+      if (!child.pid || child.exitCode !== null || child.signalCode !== null || !child.stdin.writable) {
          await exited;
          return;
       }

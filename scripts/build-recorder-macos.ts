@@ -140,6 +140,8 @@ try {
    for (const file of await files(runtime)) providerFiles.push({ path: path.relative(runtime, file), sha256: await hashFile(file) });
    const sourceFiles = [
       "native/recorder.cpp",
+      "native/clip-writer.cpp",
+      "native/clip-writer.hpp",
       "native/vendor/json.hpp",
       "native/CMakeLists.txt",
       "native/macos/platform.hpp",

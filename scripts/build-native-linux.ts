@@ -69,6 +69,8 @@ for (const input of initialFiles) {
 }
 const sourceFiles = [
    "native/recorder.cpp",
+   "native/clip-writer.cpp",
+   "native/clip-writer.hpp",
    "native/x11-compat.cpp",
    "native/x11-compat.hpp",
    "native/linux-app-audio.cpp",

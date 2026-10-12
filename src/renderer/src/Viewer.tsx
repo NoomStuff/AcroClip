@@ -35,7 +35,8 @@ export function Viewer({
    run: Run;
    openLibrary: () => void;
 }) {
-   const [version, setVersion] = useState<"original" | "shareable">("original");
+   const [selectedVersion, setVersion] = useState<"original" | "shareable">("original");
+   const version = clip?.originalMissing ? "shareable" : selectedVersion;
    const [shareId, setShareId] = useState("");
    const [url, setUrl] = useState("");
    const [loading, setLoading] = useState(false);
@@ -63,13 +64,16 @@ export function Viewer({
          seek.current = 0;
          resume.current = false;
          setTime(0);
-         setVersion("original");
+         setVersion(clip?.originalMissing ? "shareable" : "original");
          setTrack(-1);
          setShareId("");
          setOverride(false);
          setTarget(state.preferences.shareSizeMB);
       }
-   }, [clip?.id, state.preferences.shareSizeMB]);
+   }, [clip?.id, clip?.originalMissing, state.preferences.shareSizeMB]);
+   useEffect(() => {
+      if (clip?.originalMissing) setVersion("shareable");
+   }, [clip?.originalMissing]);
    useEffect(() => {
       if (!visible) {
          video.current?.pause();
@@ -173,10 +177,15 @@ export function Viewer({
                value={version}
                onChange={changeVersion}
                values={[
-                  { value: "original", label: "Original" },
+                  { value: "original", label: "Original", disabled: !!clip.originalMissing },
                   { value: "shareable", label: "Shareable" },
                ]}
             />
+            {clip.originalMissing && (
+               <p className="permission-note" role="status">
+                  Original missing or changed. Your shareables are still available.
+               </p>
+            )}
             <div className="version-info">
                {version === "original" ? (
                   <>
@@ -287,7 +296,7 @@ export function Viewer({
                            </div>
                         )}
                      </div>
-                     <Button className="primary wide" onClick={create}>
+                     <Button className="primary wide" onClick={create} disabled={!!clip.originalMissing}>
                         <Share2 size={17} />
                         {clip.shareables.length ? "Create another shareable" : "Create shareable"}
                      </Button>
@@ -309,7 +318,7 @@ export function Viewer({
                      )}
                   </div>
                )}
-               <Button className="quiet wide" onClick={() => void run(() => api.openInAttaCut(clip.id))}>
+               <Button className="quiet wide" disabled={!!clip.originalMissing} onClick={() => void run(() => api.openInAttaCut(clip.id))}>
                   <Clapperboard size={17} />
                   Open in AttaCut
                   <ExternalLink size={13} />

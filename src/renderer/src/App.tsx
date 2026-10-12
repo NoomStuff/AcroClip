@@ -64,6 +64,11 @@ export function App() {
       return () => window.clearInterval(timer);
    }, [state?.recorder.startedAt]);
    const clip = state?.clips.find((item) => item.id === selected) ?? (selected === null ? state?.clips[0] : undefined);
+   useEffect(() => {
+      // An empty viewer may receive its first clip after opening. Retain that
+      // clip once it exists, just as when choosing an existing clip from the rail.
+      if (page === "viewer" && selected === null && clip) setSelected(clip.id);
+   }, [page, selected, clip]);
    const openClip = (value: Clip) => {
       setSelected(value.id);
       setPage("viewer");
@@ -108,7 +113,10 @@ export function App() {
                      aria-label={item.title}
                      aria-current={page === item.id ? "page" : undefined}
                      className={`rail-button ${page === item.id ? "selected" : ""}`}
-                     onClick={() => setPage(item.id)}
+                     onClick={() => {
+                        if (item.id === "viewer" && selected === null && clip) setSelected(clip.id);
+                        setPage(item.id);
+                     }}
                   >
                      <item.icon size={23} strokeWidth={1.65} />
                      <span>{item.title}</span>

@@ -5,6 +5,7 @@ on:
       paths:
          - native/macos/**
          - native/recorder.cpp
+         - native/clip-writer.*
          - native/CMakeLists.txt
          - scripts/build-recorder-macos.ts
          - scripts/smoke-macos.py

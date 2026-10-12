@@ -99,6 +99,7 @@ export interface Shareable {
 }
 export interface Clip {
    id: string;
+   originalMissing?: boolean;
    path: string;
    relativePath: string;
    name: string;

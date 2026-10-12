@@ -66,6 +66,8 @@ export async function assembleMacSourceKit(project: string, directory = path.joi
       throw new Error("Recorder provenance identifies another OBS release.");
    const required = [
       "native/recorder.cpp",
+      "native/clip-writer.cpp",
+      "native/clip-writer.hpp",
       "native/CMakeLists.txt",
       "native/macos/platform.hpp",
       "native/macos/platform.mm",

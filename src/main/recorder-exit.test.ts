@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, link, copyFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, link, copyFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Recorder } from "./recorder";
@@ -12,11 +12,12 @@ afterEach(async () => {
    for (const child of children.splice(0)) await child.close({ cancel: true });
    for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
-async function fixture(mode: "crash" | "pending" | "normal" | "fatal") {
+async function fixture(mode: "crash" | "pending" | "normal" | "fatal", invalidExecutable = false) {
    const root = await mkdtemp(join(tmpdir(), "attaclip-protocol-exit-"));
    roots.push(root);
    const executable = join(root, process.platform === "win32" ? "node.exe" : "node");
-   await link(process.execPath, executable).catch(() => copyFile(process.execPath, executable));
+   if (invalidExecutable) await mkdir(executable);
+   else await link(process.execPath, executable).catch(() => copyFile(process.execPath, executable));
    await writeFile(
       join(root, "index.js"),
       `
@@ -52,13 +53,29 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
    });
    // The fixture speaks only the helper protocol. It never simulates a valid media file.
    children.push(child);
-   await child.start({ ...defaultPreferences, collection: root, captureAudio: false }, [
-      { id: "screen:0:0", kind: "screen", name: "Isolated fixture", thumbnail: "" },
-   ]);
-   return { child, states, errors, root };
+   const start = () =>
+      child.start({ ...defaultPreferences, collection: root, captureAudio: false }, [
+         { id: "screen:0:0", kind: "screen", name: "Isolated fixture", thumbnail: "" },
+      ]);
+   if (!invalidExecutable) await start();
+   return { child, states, errors, root, executable, start };
 }
 
 describe("recorder helper termination", () => {
+   it.each([false, true])("releases an actual failed launch, allows close with cancel=%s, and retries after repair", async (cancel) => {
+      const { child, errors, executable, start } = await fixture("normal", true);
+      await expect(start()).rejects.toThrow(/spawn/);
+      expect(child.status).toMatchObject({ state: "error", pendingSaves: 0 });
+      expect(errors).toHaveLength(1);
+      await child.close({ cancel });
+      await rm(executable, { recursive: true });
+      await link(process.execPath, executable).catch(() => copyFile(process.execPath, executable));
+      await start();
+      expect(child.status.state).toBe("recording");
+      await child.close();
+      expect(child.status.state).toBe("stopped");
+      expect(errors).toHaveLength(1);
+   });
    it("keeps unexpected termination visible after its notification", async () => {
       const { child, errors } = await fixture("crash");
       await expect.poll(() => child.status.state).toBe("error");

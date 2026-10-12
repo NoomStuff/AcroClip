@@ -193,6 +193,8 @@ await writeFile(
             await Promise.all(
                [
                   "native/recorder.cpp",
+                  "native/clip-writer.cpp",
+                  "native/clip-writer.hpp",
                   "native/CMakeLists.txt",
                   "native/notifications/windows.cpp",
                   "native/notifications/CMakeLists.txt",

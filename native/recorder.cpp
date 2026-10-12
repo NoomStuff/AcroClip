@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Mux protocol follows OBS Studio's ffmpeg-mux/ffmpeg-mux.h, Copyright Lain
 // Bailey.
+#include "clip-writer.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
-#include <condition_variable>
 #include <cstring>
 #include <deque>
 #include <filesystem>
@@ -16,7 +16,6 @@
 #include <obs.h>
 #include <set>
 #include <thread>
-#include <util/pipe.h>
 #include <util/platform.h>
 #include <vector>
 #ifdef _WIN32
@@ -373,45 +372,11 @@ void logger(int level, const char *format, va_list args, void *) {
     fputs("\n", stderr);
   }
 }
-struct Packet {
-  encoder_packet p{};
-  Packet(const encoder_packet &v) {
-    auto copy = v;
-    obs_encoder_packet_ref(&p, &copy);
-  }
-  Packet(Packet &&v) noexcept : p(v.p) { v.p = {}; }
-  Packet(const Packet &v) {
-    auto copy = v.p;
-    obs_encoder_packet_ref(&p, &copy);
-  }
-  ~Packet() {
-    if (p.data)
-      obs_encoder_packet_release(&p);
-  }
-};
-struct Request {
-  std::string id, path, source;
-  int64_t end;
-};
-struct Job {
-  Request request;
-  int64_t end = 0;
-  bool reduceOverlap = false;
-  int width = 0, height = 0, fps = 0;
-  double secondsSinceCapture = 0;
-  std::string source;
-  std::vector<Packet> packets;
-  std::vector<std::vector<uint8_t>> headers;
-  std::vector<std::string> audioNames;
-};
-struct PacketInfo {
-  int64_t pts, dts;
-  uint32_t size, index;
-  int type;
-  bool keyframe;
-};
+using Packet = attaclip::Packet;
+using Request = attaclip::ClipRequest;
+using Job = attaclip::ClipJob;
 class Recorder {
-public:
+private:
   obs_output_t *output = nullptr;
   obs_encoder_t *video = nullptr;
   std::vector<obs_encoder_t *> audio;
@@ -450,18 +415,16 @@ public:
   std::vector<std::string> audioNames;
   obs_sceneitem_t *item = nullptr;
   std::mutex mutex;
-  std::condition_variable wake;
   std::deque<Packet> ring;
   std::deque<Request> requests;
-  std::deque<Job> jobs;
-  std::thread writer;
-  bool quitting = false;
+  std::vector<std::vector<uint8_t>> streamHeaders;
+  std::unique_ptr<attaclip::ClipWriter> clipWriter;
   bool captureInterrupted = false;
   bool deliveryInterrupted = false;
   uint64_t lastVideoClock = 0;
   int64_t recoveryBoundary = 0;
   std::atomic<bool> active{false};
-  std::atomic<int> pending{0};
+  std::atomic<bool> encoderFailed{false};
   std::atomic<uintptr_t> targetWindow{0};
   std::atomic<uint32_t> targetProcess{0};
   std::atomic<bool> captureEnabled{false};
@@ -477,8 +440,8 @@ public:
   std::atomic<float> captureLevel{0}, microphoneLevel{0};
   std::atomic<uint64_t> lastMeterEvent{0};
   float captureVolume = 1, microphoneVolume = 1;
-  bool captureMuted = false, microphoneMuted = false,
-       captureAudioEnabled = true;
+  bool captureMuted = false, microphoneMuted = false;
+  std::atomic<bool> captureAudioEnabled{true};
   std::atomic<bool> screenCapture{true};
   std::mutex displayIdentityMutex;
   std::string selectedDisplayIdentity;
@@ -486,12 +449,12 @@ public:
   bool displayIdentityAvailable = true;
   size_t bytes = 0;
   int seconds = 60, width = 1920, height = 1080, fps = 60;
-  int64_t previousEnd = 0;
   bool avoidOverlap = false;
   std::string encoder, sourceName, selectedSourceId;
 #ifdef __linux__
   std::shared_ptr<attaclip::wayland::Capture> portalCapture;
 #endif
+public:
   Recorder() {
     captureMeter = obs_volmeter_create(OBS_FADER_LOG);
     microphoneMeter = obs_volmeter_create(OBS_FADER_LOG);
@@ -515,20 +478,30 @@ public:
     };
     obs_volmeter_add_callback(captureMeter, callback, &captureContext);
     obs_volmeter_add_callback(microphoneMeter, callback, &microphoneContext);
-    writer = std::thread([this] { writeLoop(); });
+    clipWriter = std::make_unique<attaclip::ClipWriter>(
+        muxExecutable, [](const attaclip::ClipResult &result) {
+          if (result.saved)
+            emit({{"event", "saved"},
+                  {"requestId", result.request.id},
+                  {"path", result.request.path},
+                  {"previousFootage", result.secondsSinceCapture > 0.25},
+                  {"secondsSinceCapture", result.secondsSinceCapture},
+                  {"source", result.request.source},
+                  {"overlapSeconds", result.overlapSeconds}});
+          else
+            emit({{"event", "error"},
+                  {"requestId", result.request.id},
+                  {"message", result.error}});
+        });
   }
   ~Recorder() {
     stop();
-    {
-      std::lock_guard<std::mutex> lock(mutex);
-      quitting = true;
-    }
-    wake.notify_all();
-    writer.join();
+    clipWriter->finish();
     release();
     obs_volmeter_destroy(captureMeter);
     obs_volmeter_destroy(microphoneMeter);
   }
+private:
   void release() {
     captureEnabled = false;
     gameCapture = false;
@@ -579,6 +552,23 @@ public:
       destroyApplicationAudio(applicationAudio);
       applicationAudio = nullptr;
 #endif
+      if (desktop) {
+#ifdef _WIN32
+        audioHealth.forget(desktop);
+#endif
+        obs_source_release(desktop);
+        desktop = nullptr;
+      }
+      if (mic) {
+#ifdef __APPLE__
+        attaclip::macos::forgetInput(mic);
+#endif
+#ifdef _WIN32
+        audioHealth.forget(mic);
+#endif
+        obs_source_release(mic);
+        mic = nullptr;
+      }
     }
     if (scene) {
       obs_scene_release(scene);
@@ -592,26 +582,10 @@ public:
     std::atomic_store(&portalCapture,
                       std::shared_ptr<attaclip::wayland::Capture>{});
 #endif
-    if (desktop) {
-#ifdef _WIN32
-      audioHealth.forget(desktop);
-#endif
-      obs_source_release(desktop);
-      desktop = nullptr;
-    }
-    if (mic) {
-#ifdef __APPLE__
-      attaclip::macos::forgetInput(mic);
-#endif
-#ifdef _WIN32
-      audioHealth.forget(mic);
-#endif
-      obs_source_release(mic);
-      mic = nullptr;
-    }
     item = nullptr;
     obs_wait_for_destroy_queue();
   }
+public:
   void stop() {
     // Drain accepted requests to their original timestamps before stopping.
     for (int i = 0; i < 100 && active; i++) {
@@ -635,6 +609,8 @@ public:
       std::lock_guard<std::mutex> lock(mutex);
       ring.clear();
       bytes = 0;
+      streamHeaders.clear();
+      encoderFailed = false;
       captureInterrupted = false;
       deliveryInterrupted = false;
       lastVideoClock = 0;
@@ -643,6 +619,7 @@ public:
     release();
     idleVideo();
   }
+private:
   bool targetAvailable() {
     if (!additionalAudioError().empty())
       return false;
@@ -739,6 +716,7 @@ public:
     }
 #endif
   }
+public:
   void setAudio(const json &c) {
     std::string source = c.at("source");
     float volume = c.at("volume");
@@ -746,6 +724,7 @@ public:
     if (!std::isfinite(volume) || volume < 0 || volume > 2)
       throw std::runtime_error(
           "Audio volume must be between 0 and 200 percent");
+    std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
     if (source == "capture") {
       captureVolume = volume;
       captureMuted = muted;
@@ -780,6 +759,7 @@ public:
       }
     }
   }
+private:
   std::string additionalAudioError() {
     std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
 #ifdef __linux__
@@ -871,6 +851,24 @@ public:
       audioNames.emplace_back("Microphone");
     for (const auto &settings : sources) {
       AdditionalAudio extra;
+      auto discard = [this](AdditionalAudio *value) {
+#ifdef __linux__
+        if (value->application) {
+          destroyApplicationAudio(value->application);
+          return;
+        }
+#endif
+        if (value->source) {
+#ifdef __APPLE__
+          attaclip::macos::forgetInput(value->source);
+#endif
+#ifdef _WIN32
+          audioHealth.forget(value->source);
+#endif
+          obs_source_release(value->source);
+        }
+      };
+      std::unique_ptr<AdditionalAudio, decltype(discard)> extraOwner(&extra, discard);
       extra.id = settings.at("id").get<std::string>();
       extra.name = settings.at("name").get<std::string>();
       if (extra.id.empty() || extra.id == "capture" ||
@@ -884,15 +882,17 @@ public:
           (settings.value("includeInMaster", true) ? 1u : 0u) | (1u << mixer);
       if (!settings.value("enabled", true)) {
         additionalAudio.push_back(std::move(extra));
+        extraOwner.release();
         continue;
       }
       std::string kind = settings.at("kind");
-      auto *data = obs_data_create();
+      std::unique_ptr<obs_data_t, decltype(&obs_data_release)> data(
+          obs_data_create(), &obs_data_release);
       const char *type = nullptr;
       if (kind == "application") {
         std::string identity = settings.value("sourceId", "");
         if (identity.rfind("window:", 0) != 0) {
-          obs_data_release(data);
+          data.reset();
           throw std::runtime_error(
               "Choose an available application audio source");
         }
@@ -903,7 +903,7 @@ public:
         DWORD actual = 0;
         GetWindowThreadProcessId(window, &actual);
         if (!IsWindow(window) || actual != extra.pid) {
-          obs_data_release(data);
+          data.reset();
           throw std::runtime_error("The application audio target changed");
         }
         dstr title{}, klass{}, exe{};
@@ -924,27 +924,25 @@ public:
         dstr_free(&klass);
         dstr_free(&exe);
         if (!identified) {
-          obs_data_release(data);
+          data.reset();
           throw std::runtime_error(
               "The application audio target cannot be distinguished safely");
         }
-        obs_data_set_string(data, "window", match.c_str());
-        obs_data_set_int(data, "priority", 0);
+        obs_data_set_string(data.get(), "window", match.c_str());
+        obs_data_set_int(data.get(), "priority", 0);
         type = "wasapi_process_output_capture";
 #elif defined(__linux__)
-        obs_data_release(data);
-        data = nullptr;
+        data.reset();
         if (!x11Available(extra.window, extra.pid, false))
           throw std::runtime_error("The application audio target changed");
         extra.application = createApplicationAudio(extra.pid, mask);
         extra.source = applicationAudioSource(extra.application);
 #elif defined(__APPLE__)
-        obs_data_release(data);
-        data = nullptr;
+        data.reset();
         extra.source = attaclip::macos::createApplicationAudio(
             extra.window, extra.pid, extra.name);
 #else
-        obs_data_release(data);
+        data.reset();
         throw std::runtime_error("Additional application audio is not "
                                  "available on this platform yet");
 #endif
@@ -953,8 +951,7 @@ public:
         std::string device = settings.value("deviceId", "default");
 #ifdef __APPLE__
         if (kind == "output") {
-          obs_data_release(data);
-          data = nullptr;
+          data.reset();
           type = nullptr;
           if (device != "system")
             throw std::runtime_error(
@@ -977,16 +974,16 @@ public:
                 found = true;
           obs_properties_destroy(properties);
           if (!found) {
-            obs_data_release(data);
+            data.reset();
             throw std::runtime_error(
                 "The additional audio device is unavailable");
           }
-          obs_data_set_string(data, "device_id", device.c_str());
+          obs_data_set_string(data.get(), "device_id", device.c_str());
 #ifdef __APPLE__
         }
 #endif
       } else {
-        obs_data_release(data);
+        data.reset();
         throw std::runtime_error("The additional audio source kind is invalid");
       }
       if (type) {
@@ -996,13 +993,13 @@ public:
           if (std::string(candidate) == type)
             registered = true;
         if (!registered) {
-          obs_data_release(data);
+          data.reset();
           throw std::runtime_error(
               "This additional audio source is unavailable on this platform");
         }
         extra.source =
-            obs_source_create_private(type, extra.name.c_str(), data);
-        obs_data_release(data);
+            obs_source_create_private(type, extra.name.c_str(), data.get());
+        data.reset();
         if (!extra.source)
           throw std::runtime_error(
               "The additional audio source could not be opened");
@@ -1018,6 +1015,7 @@ public:
       audioHealth.watch(extra.source);
 #endif
       additionalAudio.push_back(std::move(extra));
+      extraOwner.release();
 #ifdef __linux__
       if (additionalAudio.back().application) {
         std::string identity = additionalAudio.back().id;
@@ -1063,17 +1061,16 @@ public:
                 {"muted", settings.value("muted", false)}});
     }
   }
+public:
   void packets(encoder_packet *p) {
     if (!p) {
       active = false;
+      encoderFailed = true;
       {
         std::lock_guard<std::mutex> lock(mutex);
-        for (auto &r : requests) {
-          emit({{"event", "error"},
-                {"requestId", r.id},
-                {"message", "The encoder failed before this clip was ready"}});
-          pending--;
-        }
+        // Accepted requests retain their valid history and copied codec headers.
+        for (auto &r : requests)
+          snapshot(r);
         requests.clear();
       }
       emit({{"event", "fatal"},
@@ -1084,6 +1081,8 @@ public:
       return;
     if (!targetAvailable()) {
       std::lock_guard<std::mutex> lock(mutex);
+      if (!active)
+        return;
       captureInterrupted = true;
       for (auto &r : requests)
         snapshot(r);
@@ -1091,7 +1090,11 @@ public:
       return;
     }
     std::lock_guard<std::mutex> lock(mutex);
+    if (!active)
+      return;
     checkDeliveryGap();
+    if (streamHeaders.empty())
+      readStreamHeaders();
     if (p->type == OBS_ENCODER_VIDEO) {
       lastVideoClock = deliveryClock();
     }
@@ -1142,6 +1145,7 @@ public:
   }
   // These monotonic clocks include computer sleep. Wall-clock corrections
   // must not discard healthy footage, while suspend still breaks continuity.
+private:
   static uint64_t deliveryClock() {
 #ifdef _WIN32
     return GetTickCount64() * uint64_t(1000000);
@@ -1182,6 +1186,19 @@ public:
       snapshot(request);
     requests.clear();
   }
+  void readStreamHeaders() {
+    std::vector<std::vector<uint8_t>> headers;
+    std::vector<obs_encoder_t *> encoders{video};
+    encoders.insert(encoders.end(), audio.begin(), audio.end());
+    for (auto *encoder : encoders) {
+      uint8_t *data = nullptr;
+      size_t size = 0;
+      if (!obs_encoder_get_extra_data(encoder, &data, &size) || !data || !size)
+        return;
+      headers.emplace_back(data, data + size);
+    }
+    streamHeaders = std::move(headers);
+  }
   void snapshot(const Request &r) {
     int64_t end = r.end;
     for (auto i = ring.rbegin(); i != ring.rend(); ++i)
@@ -1211,38 +1228,31 @@ public:
     j.height = height;
     j.fps = fps;
     j.secondsSinceCapture = std::max(0., double(r.end - end) / 1000000.);
-    j.source = r.source;
     for (size_t i = start; i < ring.size(); i++)
       if (ring[i].p.sys_dts_usec <= end)
         j.packets.emplace_back(ring[i]);
     if (j.packets.empty()) {
-      pending--;
-      emit({{"event", "error"},
-            {"requestId", r.id},
-            {"message", "No recorded footage is available yet"}});
+      clipWriter->reject(r, "No recorded footage is available yet");
       return;
     }
-    uint8_t *data;
-    size_t size;
-    obs_encoder_get_extra_data(video, &data, &size);
-    j.headers.emplace_back(data, data + size);
-    for (auto *a : audio) {
-      obs_encoder_get_extra_data(a, &data, &size);
-      j.headers.emplace_back(data, data + size);
+    if (streamHeaders.empty()) {
+      clipWriter->reject(r, "The encoder did not provide the clip's playback headers");
+      return;
     }
+    j.headers = streamHeaders;
     j.audioNames = audioNames;
-    jobs.emplace_back(std::move(j));
-    wake.notify_all();
+    clipWriter->submit(std::move(j));
   }
+public:
   void save(const json &c) {
     std::lock_guard<std::mutex> lock(mutex);
     if (!active)
       throw std::runtime_error("Start recording before saving a clip");
     checkDeliveryGap();
-    if (pending >= 3)
+    if (clipWriter->pending() >= 3)
       throw std::runtime_error(
           "Three clips are already saving. Wait for a save to finish");
-    if (bytes * size_t(pending + 2) > 768ULL * 1024 * 1024)
+    if (bytes * size_t(clipWriter->pending() + 2) > 768ULL * 1024 * 1024)
       throw std::runtime_error("The clip save queue has reached its memory "
                                "limit. Wait for a save to finish");
     auto wallMs = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1255,156 +1265,12 @@ public:
             : c.value("requestAgeMs", int64_t(0));
     Request r{c.at("requestId"), c.at("path"), sourceName,
               int64_t(os_gettime_ns() / 1000) - age * 1000};
-    pending++;
+    clipWriter->accept();
     requests.push_back(r);
     emit({{"event", "saving"}, {"requestId", r.id}});
     if (!targetAvailable() || captureInterrupted) {
       snapshot(requests.back());
       requests.pop_back();
-    }
-  }
-  bool writePacket(os_process_pipe_t *pipe, encoder_packet &p, int64_t origin) {
-    PacketInfo i{};
-    i.pts = p.pts;
-    i.dts = p.dts;
-    i.size = uint32_t(p.size);
-    i.index = uint32_t(p.track_idx);
-    i.type = p.type == OBS_ENCODER_VIDEO ? 0 : 1;
-    i.keyframe = p.keyframe;
-    if (p.timebase_den > 1) {
-      int64_t offset = origin * p.timebase_den / 1000000;
-      i.pts -= offset;
-      i.dts -= offset;
-    }
-    return os_process_pipe_write(pipe, reinterpret_cast<uint8_t *>(&i),
-                                 sizeof(i)) == sizeof(i) &&
-           os_process_pipe_write(pipe, p.data, p.size) == p.size;
-  }
-  void writeLoop() {
-    for (;;) {
-      Job j;
-      {
-        std::unique_lock<std::mutex> lock(mutex);
-        wake.wait(lock, [this] { return quitting || !jobs.empty(); });
-        if (jobs.empty() && quitting)
-          return;
-        j = std::move(jobs.front());
-        jobs.pop_front();
-      }
-      if (auto *gate = std::getenv("ATTACLIP_NATIVE_TEST_WRITER_GATE")) {
-        // A bounded test gate reproduces profile changes while an accepted
-        // original is still queued. Normal recording never waits here.
-        for (int i = 0; i < 1000 && !std::filesystem::exists(gate); i++)
-          std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      }
-      bool okay = false;
-      size_t start = 0;
-      int64_t cutoff = 0;
-      if (j.reduceOverlap) {
-        std::lock_guard<std::mutex> lock(mutex);
-        cutoff = previousEnd;
-        // The writer is serial. Only a successfully published predecessor can
-        // shorten this job, including jobs snapshotted before it finished.
-        for (size_t i = 0; i < j.packets.size(); i++)
-          if (j.packets[i].p.type == OBS_ENCODER_VIDEO &&
-              j.packets[i].p.keyframe && j.packets[i].p.sys_dts_usec <= cutoff)
-            start = i;
-      }
-      const double overlapSeconds =
-          cutoff > 0 ? std::max(0., double(std::min(cutoff, j.end) -
-                                           j.packets[start].p.sys_dts_usec) /
-                                        1000000.)
-                     : 0.;
-      std::string temp = j.request.path + ".saving.mkv";
-      auto *args = os_process_args_create(muxExecutable.c_str());
-      auto add = [&](std::string v) {
-        os_process_args_add_arg(args, v.c_str());
-      };
-      add(temp);
-      add("1");
-      add(std::to_string(j.headers.size() - 1));
-      add("h264");
-      add("10000");
-      add(std::to_string(j.width));
-      add(std::to_string(j.height));
-      for (auto v : {1, 1, 1, 1, 1, 0})
-        add(std::to_string(v));
-      add(std::to_string(j.fps));
-      add("1");
-      add("0");
-      if (j.headers.size() > 1) {
-        add("aac");
-        for (size_t i = 1; i < j.headers.size(); i++) {
-          add(j.audioNames.at(i - 1));
-          add("160");
-          add("48000");
-          add("1024");
-          add("0");
-          add("2");
-        }
-      }
-      add("");
-      add("");
-      auto *pipe = os_process_pipe_create2(args, "w");
-      os_process_args_destroy(args);
-      if (pipe) {
-        okay = true;
-        for (size_t i = 0; i < j.headers.size(); i++) {
-          encoder_packet p{};
-          p.data = j.headers[i].data();
-          p.size = j.headers[i].size();
-          p.type = i ? OBS_ENCODER_AUDIO : OBS_ENCODER_VIDEO;
-          p.track_idx = i ? i - 1 : 0;
-          p.timebase_den = 1;
-          if (!writePacket(pipe, p, 0))
-            okay = false;
-        }
-        int64_t origin = j.packets[start].p.dts_usec;
-        for (size_t i = start; i < j.packets.size(); i++) {
-          auto &p = j.packets[i];
-          if (!writePacket(pipe, p.p, origin)) {
-            okay = false;
-            break;
-          }
-        }
-        int code = os_process_pipe_destroy(pipe);
-        okay = okay && code == 0;
-      }
-      try {
-        if (okay && std::filesystem::file_size(temp) > 1000) {
-          if (std::filesystem::exists(j.request.path))
-            throw std::runtime_error(
-                "A file already exists at the clip destination. The existing "
-                "file was preserved");
-#ifdef _WIN32
-          std::filesystem::rename(temp, j.request.path);
-#else
-          // POSIX rename replaces an existing destination. Publishing a hard
-          // link fails atomically if another writer won the filename race.
-          std::filesystem::create_hard_link(temp, j.request.path);
-          std::filesystem::remove(temp);
-#endif
-          std::lock_guard<std::mutex> lock(mutex);
-          previousEnd = std::max(previousEnd, j.end);
-          emit({{"event", "saved"},
-                {"requestId", j.request.id},
-                {"path", j.request.path},
-                {"previousFootage", j.secondsSinceCapture > 0.25},
-                {"secondsSinceCapture", j.secondsSinceCapture},
-                {"source", j.source},
-                {"overlapSeconds", overlapSeconds}});
-        } else {
-          emit({{"event", "error"},
-                {"requestId", j.request.id},
-                {"message", "The clip could not be finalized. Check free "
-                            "storage and folder permissions"}});
-        }
-      } catch (const std::exception &e) {
-        emit({{"event", "error"},
-              {"requestId", j.request.id},
-              {"message", e.what()}});
-      }
-      pending--;
     }
   }
   void source(const json &c) {
@@ -1436,21 +1302,21 @@ public:
       if (capture)
         obs_source_release(capture);
       capture = nullptr;
-#ifdef __linux__
-      obs_set_output_source(1, nullptr);
       {
         std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+#ifdef __linux__
+        obs_set_output_source(1, nullptr);
         destroyApplicationAudio(applicationAudio);
         applicationAudio = nullptr;
-      }
 #endif
-      if (desktop)
-        obs_source_set_muted(desktop, true);
+        if (desktop)
+          obs_source_set_muted(desktop, true);
 #ifdef __linux__
-      if (desktop)
-        obs_source_release(desktop);
-      desktop = nullptr;
+        if (desktop)
+          obs_source_release(desktop);
+        desktop = nullptr;
 #endif
+      }
       screenCapture = false;
       std::lock_guard<std::mutex> lock(mutex);
       sourceName = c.value("sourceName", "Waiting for game");
@@ -1727,37 +1593,47 @@ public:
     }
 #endif
 #ifdef __linux__
-    ApplicationAudio *nextAudio = nullptr;
+    std::unique_ptr<ApplicationAudio, decltype(&destroyApplicationAudio)> nextAudio(
+        nullptr, &destroyApplicationAudio);
+    std::unique_ptr<obs_source_t, decltype(&obs_source_release)> nextDesktop(
+        nullptr, &obs_source_release);
     try {
       if (target && c.value("captureAudio", true))
-        nextAudio = createApplicationAudio(targetPid);
-      if (kind == "screen" && !desktop) {
-        auto *settings = obs_data_create();
-        obs_data_set_string(settings, "device_id", "default");
-        desktop =
-            obs_source_create_private(desktopType(), "Capture audio", settings);
-        obs_data_release(settings);
-        if (!desktop)
+        nextAudio.reset(createApplicationAudio(targetPid));
+      bool needsDesktop = false;
+      {
+        std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+        needsDesktop = kind == "screen" && !desktop;
+      }
+      if (needsDesktop) {
+        std::unique_ptr<obs_data_t, decltype(&obs_data_release)> settings(
+            obs_data_create(), &obs_data_release);
+        obs_data_set_string(settings.get(), "device_id", "default");
+        nextDesktop.reset(obs_source_create_private(
+            desktopType(), "Capture audio", settings.get()));
+        if (!nextDesktop)
           throw std::runtime_error("Desktop audio could not be opened");
-        obs_source_set_audio_mixers(desktop, 3);
+        obs_source_set_audio_mixers(nextDesktop.get(), 3);
       }
     } catch (...) {
       obs_source_release(next);
       throw;
     }
     obs_volmeter_detach_source(captureMeter);
-    obs_set_output_source(1, nullptr);
     {
       std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+      obs_set_output_source(1, nullptr);
       destroyApplicationAudio(applicationAudio);
-      applicationAudio = nextAudio;
-    }
-    obs_set_output_source(1, kind == "screen"
-                                 ? desktop
-                                 : applicationAudioSource(applicationAudio));
-    if (kind != "screen" && desktop) {
-      obs_source_release(desktop);
-      desktop = nullptr;
+      applicationAudio = nextAudio.release();
+      if (nextDesktop)
+        desktop = nextDesktop.release();
+      if (kind != "screen" && desktop) {
+        obs_source_release(desktop);
+        desktop = nullptr;
+      }
+      obs_set_output_source(1, kind == "screen"
+                                   ? desktop
+                                   : applicationAudioSource(applicationAudio));
     }
 #endif
     targetWindow = target;
@@ -1805,6 +1681,7 @@ public:
 #endif
     }
     captureEnabled = true;
+    std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
     if (desktop)
       obs_source_set_muted(desktop, kind != "screen" ||
                                         !c.value("captureAudio", true) ||
@@ -1836,13 +1713,24 @@ public:
   void start(const json &c) {
     if (active)
       throw std::runtime_error("Recording is already running");
-    if (pending > 0)
+    if (clipWriter->pending() > 0)
       throw std::runtime_error(
           "Wait for clip saves to finish before restarting");
+    try {
+      initializeSession(c);
+    } catch (...) {
+      // A failed start owns no accepted saves. Close every partly initialized
+      // source and return the video loop to idle before reporting the failure.
+      stop();
+      throw;
+    }
+  }
+private:
+  void initializeSession(const json &c) {
     release();
     seconds = c.value("clipSeconds", 60);
     avoidOverlap = c.value("avoidOverlap", false);
-    previousEnd = 0;
+    clipWriter->resetOverlap();
     std::string quality = c.value("quality", "standard");
     width = quality == "low" ? 1280 : quality == "high" ? 2560 : 1920;
     height = quality == "low" ? 720 : quality == "high" ? 1440 : 1080;
@@ -1874,48 +1762,56 @@ public:
       throw std::runtime_error(
           "The graphics driver could not initialize recording");
     scene = obs_scene_create_private("Recording");
+    if (!scene)
+      throw std::runtime_error("The recording scene could not be created");
     obs_set_output_source(0, obs_scene_get_source(scene));
-    auto *d = obs_data_create();
+    std::unique_ptr<obs_data_t, decltype(&obs_data_release)> d(
+        obs_data_create(), &obs_data_release);
 #ifndef __APPLE__
 #ifdef __linux__
-    obs_data_release(d);
+    d.reset();
 #else
-    obs_data_set_string(d, "device_id", "default");
-    desktop = obs_source_create_private(desktopType(), "Capture audio", d);
-    obs_data_release(d);
-    if (desktop) {
-      audioHealth.watch(desktop);
-      obs_source_set_audio_mixers(desktop, 3);
-      obs_set_output_source(1, desktop);
+    obs_data_set_string(d.get(), "device_id", "default");
+    {
+      std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+      desktop = obs_source_create_private(desktopType(), "Capture audio", d.get());
+      d.reset();
+      if (desktop) {
+        audioHealth.watch(desktop);
+        obs_source_set_audio_mixers(desktop, 3);
+        obs_set_output_source(1, desktop);
+      }
     }
 #endif
 #else
-    obs_data_release(d);
+    d.reset();
 #endif
     if (c.value("microphone", false)) {
 #ifdef __APPLE__
       attaclip::macos::requireMicrophonePermission();
 #endif
-      d = obs_data_create();
-      auto *props = obs_get_source_properties(microphoneType());
-      auto *devices = obs_properties_get(props, "device_id");
+      d.reset(obs_data_create());
+      std::unique_ptr<obs_properties_t, decltype(&obs_properties_destroy)> props(
+          obs_get_source_properties(microphoneType()), &obs_properties_destroy);
+      auto *devices = props ? obs_properties_get(props.get(), "device_id") : nullptr;
       bool found = false;
       std::string requested =
           c.value("microphoneDevice", std::string("default"));
       for (size_t i = 0; i < obs_property_list_item_count(devices); i++)
         if (requested == obs_property_list_item_string(devices, i))
           found = true;
-      obs_properties_destroy(props);
+      props.reset();
       if (!found) {
-        obs_data_release(d);
+        d.reset();
         throw std::runtime_error("The selected microphone is unavailable. "
                                  "Choose an available microphone in Settings");
       }
       obs_data_set_string(
-          d, "device_id",
+          d.get(), "device_id",
           c.value("microphoneDevice", std::string("default")).c_str());
-      mic = obs_source_create_private(microphoneType(), "Microphone", d);
-      obs_data_release(d);
+      std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+      mic = obs_source_create_private(microphoneType(), "Microphone", d.get());
+      d.reset();
       if (!mic)
         throw std::runtime_error("The microphone could not be opened");
 #ifdef __APPLE__
@@ -1942,28 +1838,28 @@ public:
     setAudio({{"source", "microphone"},
               {"volume", microphoneVolume},
               {"muted", microphoneMuted}});
-    d = obs_data_create();
-    obs_data_set_string(d, "rate_control", "CQP");
-    obs_data_set_int(d, "cqp", cq);
-    obs_data_set_string(d, "preset", "p4");
-    obs_data_set_int(d, "keyint_sec", 1);
-    obs_data_set_int(d, "bf", 0);
+    d.reset(obs_data_create());
+    obs_data_set_string(d.get(), "rate_control", "CQP");
+    obs_data_set_int(d.get(), "cqp", cq);
+    obs_data_set_string(d.get(), "preset", "p4");
+    obs_data_set_int(d.get(), "keyint_sec", 1);
+    obs_data_set_int(d.get(), "bf", 0);
     const char *id = nullptr;
     encoder.clear();
 #ifdef __APPLE__
-    encoder = attaclip::macos::hardwareEncoder(d, cq, width, height, fps);
+    encoder = attaclip::macos::hardwareEncoder(d.get(), cq, width, height, fps);
 #else
     auto hardware = hardwareEncoders();
     if (!hardware.empty())
       encoder = hardware.front();
     if (encoder.find("amf") != std::string::npos)
-      obs_data_set_string(d, "preset", "balanced");
+      obs_data_set_string(d.get(), "preset", "balanced");
     if (encoder.find("qsv") != std::string::npos) {
-      obs_data_set_string(d, "target_usage", "TU4");
-      obs_data_set_int(d, "qpi", cq);
-      obs_data_set_int(d, "qpp", cq);
-      obs_data_set_int(d, "qpb", cq);
-      obs_data_set_int(d, "bframes", 0);
+      obs_data_set_string(d.get(), "target_usage", "TU4");
+      obs_data_set_int(d.get(), "qpi", cq);
+      obs_data_set_int(d.get(), "qpp", cq);
+      obs_data_set_int(d.get(), "qpb", cq);
+      obs_data_set_int(d.get(), "bframes", 0);
     }
 #endif
     if (std::getenv("ATTACLIP_NATIVE_TEST_SOFTWARE"))
@@ -1973,40 +1869,168 @@ public:
         if (std::string(id) == "obs_x264")
           encoder = id;
       if (!encoder.empty()) {
-        obs_data_set_string(d, "rate_control", "CRF");
-        obs_data_set_int(d, "crf", cq);
-        obs_data_set_string(d, "preset", "veryfast");
-        obs_data_set_string(d, "x264opts", "bframes=0");
+        obs_data_set_string(d.get(), "rate_control", "CRF");
+        obs_data_set_int(d.get(), "crf", cq);
+        obs_data_set_string(d.get(), "preset", "veryfast");
+        obs_data_set_string(d.get(), "x264opts", "bframes=0");
       }
     }
     if (encoder.empty())
       throw std::runtime_error(
           "No supported hardware H.264 encoder is available. Software "
           "recording is not silently enabled");
-    video = obs_video_encoder_create(encoder.c_str(), "Video", d, nullptr);
-    obs_data_release(d);
+    video = obs_video_encoder_create(encoder.c_str(), "Video", d.get(), nullptr);
+    d.reset();
     if (!video)
       throw std::runtime_error("The hardware encoder could not be created");
     obs_encoder_set_video(video, obs_get_video());
     output = obs_output_create("attaclip_replay", "Replay", nullptr, nullptr);
+    if (!output)
+      throw std::runtime_error("The recording output could not be created");
     obs_output_set_video_encoder(output, video);
+    audio.reserve(audioNames.size());
     for (size_t i = 0; i < audioNames.size(); i++) {
-      d = obs_data_create();
-      obs_data_set_int(d, "bitrate", 160);
-      auto *a = obs_audio_encoder_create("ffmpeg_aac", audioNames[i].c_str(), d,
+      d.reset(obs_data_create());
+      obs_data_set_int(d.get(), "bitrate", 160);
+      auto *a = obs_audio_encoder_create("ffmpeg_aac", audioNames[i].c_str(), d.get(),
                                          i, nullptr);
-      obs_data_release(d);
+      d.reset();
       if (!a)
         throw std::runtime_error("The audio encoder could not be created");
       obs_encoder_set_audio(a, obs_get_audio());
       audio.push_back(a);
       obs_output_set_audio_encoder(output, a, i);
     }
+    active = true;
     if (!obs_output_start(output))
       throw std::runtime_error(obs_output_get_last_error(output));
-    active = true;
+    if (std::getenv("ATTACLIP_NATIVE_TEST_LIFECYCLE") &&
+        c.value("testEncoderFailure", false))
+      packets(nullptr);
+    if (!active || encoderFailed)
+      throw std::runtime_error("The recording encoder stopped during startup");
     emit({{"event", "recording"}, {"encoder", encoder}});
   }
+public:
+  // The command channel reads a state snapshot, not the recorder's mutexes,
+  // encoder handles or replay storage.
+  json status() {
+    // Destruction belongs to the command thread, never an encoder callback.
+    if (encoderFailed.exchange(false))
+      stop();
+    refreshCapture();
+    std::lock_guard<std::mutex> lock(mutex);
+    checkDeliveryGap();
+    double available = ring.empty()
+                           ? 0
+                           : (ring.back().p.sys_dts_usec -
+                              ring.front().p.sys_dts_usec) /
+                                 1000000.;
+    bool fullscreen = false;
+    std::string captureError;
+#ifdef _WIN32
+    HWND foreground = GetForegroundWindow();
+    RECT rect{};
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    if (foreground && GetWindowRect(foreground, &rect) &&
+        GetMonitorInfo(
+            MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST),
+            &monitor))
+      fullscreen = rect.left <= monitor.rcMonitor.left &&
+                   rect.top <= monitor.rcMonitor.top &&
+                   rect.right >= monitor.rcMonitor.right &&
+                   rect.bottom >= monitor.rcMonitor.bottom &&
+                   foreground != GetDesktopWindow() &&
+                   foreground != GetShellWindow();
+#endif
+#ifdef __APPLE__
+    fullscreen = attaclip::macos::foregroundFullscreen();
+    captureError = attaclip::macos::captureError();
+#endif
+#ifdef __linux__
+    captureError = captureAudioError();
+    if (attaclip::wayland::enabled() && screenCapture) {
+      auto portal = std::atomic_load(&portalCapture);
+      if (portal)
+        captureError = portal->health().message();
+    }
+#endif
+    if (captureError.empty())
+      captureError = additionalAudioError();
+    if (captureError.empty() && deliveryInterrupted)
+      captureError = "Waiting for recording to resume";
+    if (captureError.empty() && active && screenCapture &&
+        !targetAvailable())
+      captureError = "The selected screen is unavailable";
+    return {{"event", "status"},
+          {"fullscreen", fullscreen},
+          {"active", active.load()},
+          {"source", sourceName},
+          {"message", captureError},
+          {"sourceId", selectedSourceId},
+          {"sourceKind", captureEnabled
+                             ? (screenCapture ? "screen" : "app")
+                             : "waiting"},
+          {"captureMethod", windowCompatibility ? "compatibility"
+                            : gameCapture       ? "game"
+                                                  : "window"},
+          {"waiting",
+           active && (!targetAvailable() || captureInterrupted)},
+          {"availableSeconds", std::min(double(seconds), available)},
+          {"pendingSaves", clipWriter->pending()}};
+  }
+  bool beginEncodedOutput() {
+    if (!obs_output_can_begin_data_capture(output, 0) ||
+        !obs_output_initialize_encoders(output, 0))
+      return false;
+    obs_output_begin_data_capture(output, 0);
+    return true;
+  }
+  void endEncodedOutput() { obs_output_end_data_capture(output); }
+  json lifecycle(const std::string &id) {
+    size_t sources = 0, attached = 0;
+    obs_enum_all_sources([](void *count, obs_source_t *) {
+      ++*static_cast<size_t *>(count);
+      return true;
+    }, &sources);
+    for (uint32_t channel = 0; channel < 6; ++channel) {
+      auto *source = obs_get_output_source(channel);
+      if (source) {
+        ++attached;
+        obs_source_release(source);
+      }
+    }
+    obs_video_info video{};
+    obs_get_video_info(&video);
+    return {{"event", "lifecycle"},
+          {"id", id},
+          {"sources", sources}, {"attached", attached},
+          {"active", active.load()},
+          {"width", video.output_width},
+          {"height", video.output_height},
+          {"fps", video.fps_num}};
+  }
+  json encoderFailure(const std::string &id) {
+    size_t accepted = 0;
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      accepted = requests.size();
+    }
+    packets(nullptr);
+    return {{"event", "encoder-failure"},
+            {"id", id},
+            {"acceptedBeforeFailure", accepted}};
+  }
+#ifdef __linux__
+  void closePortalSession() {
+    auto portal = std::atomic_load(&portalCapture);
+    if (!portal)
+      throw std::runtime_error("No portal session is active");
+    portal->closeSession();
+  }
+#endif
+
 };
 Recorder *recorder = nullptr;
 int main(int argc, char **argv) {
@@ -2160,14 +2184,10 @@ int main(int argc, char **argv) {
     info.destroy = [](void *) {};
     info.start = [](void *data) {
       auto *r = static_cast<Recorder *>(data);
-      if (!obs_output_can_begin_data_capture(r->output, 0) ||
-          !obs_output_initialize_encoders(r->output, 0))
-        return false;
-      obs_output_begin_data_capture(r->output, 0);
-      return true;
+      return r->beginEncodedOutput();
     };
     info.stop = [](void *data, uint64_t) {
-      obs_output_end_data_capture(static_cast<Recorder *>(data)->output);
+      static_cast<Recorder *>(data)->endEncodedOutput();
     };
     info.encoded_packet = [](void *data, encoder_packet *p) {
       static_cast<Recorder *>(data)->packets(p);
@@ -2213,10 +2233,7 @@ int main(int argc, char **argv) {
 #ifdef __linux__
           else if (action == "test-close-portal" &&
                    std::getenv("ATTACLIP_NATIVE_TEST_PORTAL")) {
-            auto portal = std::atomic_load(&r.portalCapture);
-            if (!portal)
-              throw std::runtime_error("No portal session is active");
-            portal->closeSession();
+            r.closePortalSession();
           }
 #endif
           else if (action == "exit")
@@ -2268,68 +2285,14 @@ int main(int argc, char **argv) {
 #ifdef __APPLE__
             }
 #endif
+          } else if (action == "test-lifecycle" &&
+                     std::getenv("ATTACLIP_NATIVE_TEST_LIFECYCLE")) {
+            emit(r.lifecycle(c.value("id", "")));
+          } else if (action == "test-encoder-failure" &&
+                     std::getenv("ATTACLIP_NATIVE_TEST_LIFECYCLE")) {
+            emit(r.encoderFailure(c.value("id", "")));
           } else if (action == "status") {
-            r.refreshCapture();
-            std::lock_guard<std::mutex> lock(r.mutex);
-            r.checkDeliveryGap();
-            double available = r.ring.empty()
-                                   ? 0
-                                   : (r.ring.back().p.sys_dts_usec -
-                                      r.ring.front().p.sys_dts_usec) /
-                                         1000000.;
-            bool fullscreen = false;
-            std::string captureError;
-#ifdef _WIN32
-            HWND foreground = GetForegroundWindow();
-            RECT rect{};
-            MONITORINFO monitor{};
-            monitor.cbSize = sizeof(monitor);
-            if (foreground && GetWindowRect(foreground, &rect) &&
-                GetMonitorInfo(
-                    MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST),
-                    &monitor))
-              fullscreen = rect.left <= monitor.rcMonitor.left &&
-                           rect.top <= monitor.rcMonitor.top &&
-                           rect.right >= monitor.rcMonitor.right &&
-                           rect.bottom >= monitor.rcMonitor.bottom &&
-                           foreground != GetDesktopWindow() &&
-                           foreground != GetShellWindow();
-#endif
-#ifdef __APPLE__
-            fullscreen = attaclip::macos::foregroundFullscreen();
-            captureError = attaclip::macos::captureError();
-#endif
-#ifdef __linux__
-            captureError = r.captureAudioError();
-            if (attaclip::wayland::enabled() && r.screenCapture) {
-              auto portal = std::atomic_load(&r.portalCapture);
-              if (portal)
-                captureError = portal->health().message();
-            }
-#endif
-            if (captureError.empty())
-              captureError = r.additionalAudioError();
-            if (captureError.empty() && r.deliveryInterrupted)
-              captureError = "Waiting for recording to resume";
-            if (captureError.empty() && r.active && r.screenCapture &&
-                !r.targetAvailable())
-              captureError = "The selected screen is unavailable";
-            emit({{"event", "status"},
-                  {"fullscreen", fullscreen},
-                  {"active", r.active.load()},
-                  {"source", r.sourceName},
-                  {"message", captureError},
-                  {"sourceId", r.selectedSourceId},
-                  {"sourceKind", r.captureEnabled
-                                     ? (r.screenCapture ? "screen" : "app")
-                                     : "waiting"},
-                  {"captureMethod", r.windowCompatibility ? "compatibility"
-                                    : r.gameCapture       ? "game"
-                                                          : "window"},
-                  {"waiting",
-                   r.active && (!r.targetAvailable() || r.captureInterrupted)},
-                  {"availableSeconds", std::min(double(r.seconds), available)},
-                  {"pendingSaves", r.pending.load()}});
+            emit(r.status());
           }
           emit({{"event", "response"}, {"id", c.value("id", "")}});
         } catch (const std::exception &e) {

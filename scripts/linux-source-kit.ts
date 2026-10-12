@@ -289,6 +289,8 @@ export async function assembleLinuxSourceKit(
    }
    const provenance = JSON.parse(await readFile(path.join(stage, "resources/recorder/provenance.json"), "utf8")) as { sourceHashes: Record<string, string> };
    if (!provenance.sourceHashes || !Object.keys(provenance.sourceHashes).length) throw new Error("Native helper source fingerprint missing");
+   for (const required of ["native/clip-writer.cpp", "native/clip-writer.hpp"])
+      if (!provenance.sourceHashes[required]) throw new Error(`Native helper source fingerprint omits ${required}`);
    for (const [relative, expected] of Object.entries(provenance.sourceHashes)) {
       const committed = execFileSync("git", ["show", `${appCommit}:${relative}`], { cwd: project, windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
       if (createHash("sha256").update(committed).digest("hex") !== expected) throw new Error(`Staged native helper came from different source: ${relative}`);
@@ -383,7 +385,7 @@ export async function validateLinuxSourceKit(project: string, directory: string)
    const helper = kit.staged.find((file) => file.path === "resources/recorder/attaclip-recorder");
    if (!helper || helper.sha256 !== provenance.recorder.sha256 || helper.size !== provenance.recorder.size)
       throw new Error("Native helper differs from the compiled source fingerprint record");
-   for (const required of ["native/recorder.cpp", "native/CMakeLists.txt", "scripts/build-native-linux.ts"])
+   for (const required of ["native/recorder.cpp", "native/clip-writer.cpp", "native/clip-writer.hpp", "native/CMakeLists.txt", "scripts/build-native-linux.ts"])
       if (!provenance.sourceHashes[required]) throw new Error(`Native helper source fingerprint omits ${required}`);
    for (const [relative, expected] of Object.entries(provenance.sourceHashes)) {
       packetPath(directory, relative);

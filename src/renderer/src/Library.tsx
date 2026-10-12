@@ -270,7 +270,7 @@ export function Library({
                                  <div className="clip-card-info">
                                     <h3 title={clip.name}>{clip.name}</h3>
                                     <p>
-                                       <span>{clip.source || "Video"}</span>
+                                       <span>{clip.originalMissing ? "Original unavailable" : clip.source || "Video"}</span>
                                        <span>·</span>
                                        <span>{age(clip.createdAt)}</span>
                                     </p>
@@ -282,7 +282,7 @@ export function Library({
                                        <Clapperboard size={15} />
                                        Open clip
                                     </MenuItem>
-                                    <MenuItem disabled={!!job} onClick={() => void run(() => api.createShareable(clip.id))}>
+                                    <MenuItem disabled={!!job || !!clip.originalMissing} onClick={() => void run(() => api.createShareable(clip.id))}>
                                        <Share2 size={15} />
                                        {job ? "Creating shareable…" : "Create shareable"}
                                     </MenuItem>
@@ -296,11 +296,11 @@ export function Library({
                                        <Tag size={15} />
                                        Categories
                                     </MenuItem>
-                                    <MenuItem onClick={() => void rename(clip)}>
+                                    <MenuItem disabled={!!clip.originalMissing} onClick={() => void rename(clip)}>
                                        <Pencil size={15} />
                                        Rename
                                     </MenuItem>
-                                    <MenuItem onClick={() => void run(() => api.reveal(clip.path))}>
+                                    <MenuItem disabled={!!clip.originalMissing} onClick={() => void run(() => api.reveal(clip.path))}>
                                        <Folder size={15} />
                                        Reveal original
                                     </MenuItem>

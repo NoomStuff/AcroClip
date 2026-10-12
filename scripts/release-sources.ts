@@ -99,7 +99,7 @@ interface RecorderBuildProvenance {
 export async function validateRecorderBuild(parsed: RecorderBuildProvenance, staged: HashedFile[], project: string): Promise<string[]> {
    const blockers: string[] = [];
    const ownBinaries = ["attaclip-recorder.exe"];
-   const inputs = ["native/recorder.cpp", "native/CMakeLists.txt", "scripts/build-native.ts"];
+   const inputs = ["native/recorder.cpp", "native/clip-writer.cpp", "native/clip-writer.hpp", "native/CMakeLists.txt", "scripts/build-native.ts"];
    if (staged.some((file) => file.path === "recorder/attaclip-notifier.exe") || parsed.sourceHashes?.["native/notifications/windows.cpp"]) {
       ownBinaries.push("attaclip-notifier.exe");
       inputs.push("native/notifications/windows.cpp", "native/notifications/CMakeLists.txt");

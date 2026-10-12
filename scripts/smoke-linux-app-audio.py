@@ -164,6 +164,34 @@ try:
         endpoints[index]=max(endpoints.get(index,0),float(packet.get("pts_time",0))+float(packet.get("duration_time",0)))
     assert all(abs(endpoints[index]-endpoints[0])<.15 for index in endpoints if index),endpoints
     measured["switchedEndpoints"]=endpoints
+    # Exercise physical output publication and removal while encoded callbacks
+    # and their health readers are active, not only app-to-app replacement.
+    queued=folder/"accepted-before-switches.mkv"
+    command(dict(action="save",path=str(queued),requestId="accepted-before-switches",requestedAt=int(time.time()*1000)))
+    for cycle in range(12):
+        command(dict(config,action="source",sourceKind="screen",screenIndex=0,sourceId="",sourceName="Private screen",bounds=dict(x=0,y=0,width=640,height=360),captureAudio=bool(cycle%2)))
+        command(dict(action="status"))
+        command(dict(config,action="source",sourceKind="auto",resolvedKind="waiting",sourceName="Waiting for fixture"))
+        command(dict(action="status"))
+        command(dict(config,action="source",sourceId=other["id"],pid=other["pid"],sourceName=second_title,captureAudio=True))
+        command(dict(action="audio",source="capture",volume=1,muted=False))
+        time.sleep(.05)
+    completed=wait(lambda event:event["event"]=="saved" and event.get("requestId")=="accepted-before-switches")
+    assert completed["source"]==second_title,completed
+    subprocess.run(["ffmpeg","-v","error","-i",str(queued),"-f","null","-"],check=True)
+    time.sleep(4)
+    switched_after_stress=folder/"after-source-switch-stress.mkv"
+    command(dict(action="save",path=str(switched_after_stress),requestId="after-source-switch-stress",requestedAt=int(time.time()*1000)))
+    wait(lambda event:event["event"]=="saved" and event.get("requestId")=="after-source-switch-stress")
+    subprocess.run(["ffmpeg","-v","error","-i",str(switched_after_stress),"-f","null","-"],check=True)
+    isolation=[]
+    for track in range(2):
+        raw=subprocess.check_output(["ffmpeg","-v","error","-i",str(switched_after_stress),"-map",f"0:a:{track}","-ac","1","-ar","48000","-f","f32le","-"])
+        pcm=array.array("f",raw)[24000:72000]
+        values=dict(selected=amplitude(577),previous=amplitude(997),unrelated=amplitude(1234))
+        assert values["selected"]>-40 and values["previous"]<-50 and values["unrelated"]<-50,values
+        isolation.append(values)
+    measured["sourceSwitchStress"]=dict(cycles=12,acceptedSavePreserved=True,postSwitchIsolation=isolation)
     command(dict(action="stop"))
     extras=[dict(id="fixture-a",name="Selected A",includeInMaster=False,kind="application",sourceId=candidate["id"],pid=candidate["pid"],volume=1,muted=False,enabled=True),dict(id="fixture-b",name="Selected B",kind="application",sourceId=other["id"],pid=other["pid"],volume=1,muted=False,enabled=True)]
     command(dict(config,action="start",captureAudio=False,audioSources=extras))

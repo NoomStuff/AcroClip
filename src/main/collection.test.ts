@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { resolve, join } from "node:path";
-import { mkdtemp, rm, writeFile, stat, utimes, realpath } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, stat, utimes, realpath } from "node:fs/promises";
 import os from "node:os";
 import { CollectionService, withinRoot } from "./collection";
+import { previewFilename } from "../shared/filename";
+import { defaultPreferences } from "../shared/defaults";
 import type * as fileOperations from "node:fs/promises";
 import type * as mediaOperations from "./media";
 
-const io = vi.hoisted(() => ({ identities: 0, writes: 0, beforeProbe: undefined as (() => Promise<void>) | undefined }));
+const io = vi.hoisted(() => ({ identities: 0, writes: 0, exported: [] as string[], beforeProbe: undefined as (() => Promise<void>) | undefined }));
 vi.mock("node:fs/promises", async (original) => {
    const fs = await original<typeof fileOperations>();
    return {
@@ -30,7 +32,120 @@ vi.mock("./media", async (original) => {
          await writeFile(args.at(-1)!, "fixture thumbnail");
          return "";
       },
+      encodeShareable: async (source: string, output: string) => {
+         io.exported.push(source);
+         await writeFile(output, `shareable of ${source}`);
+      },
    };
+});
+
+describe("damaged metadata action identity", () => {
+   it("keeps verified shareables and categories accessible when their original disappears, then restores the same clip", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "attaclip-missing-original-"));
+      try {
+         const original = join(root, "Moment.mp4");
+         await writeFile(original, "original moment");
+         const collection = new CollectionService();
+         await collection.open(root);
+         const id = collection.clips[0]!.id;
+         await collection.createCategory("Best moments");
+         await collection.assignCategories(id, [collection.categories[0]!.id]);
+         await collection.createShareable(id, 1);
+         const share = collection.clips[0]!.shareables[0]!;
+         const shareBytes = await readFile(share.path);
+         await rm(original);
+         await collection.scan();
+         expect(collection.clips).toHaveLength(1);
+         const missing = collection.clips[0]!;
+         expect(missing.id).toBe(id);
+         expect(missing.originalMissing).toBe(true);
+         expect(missing.categories).toEqual([collection.categories[0]!.id]);
+         expect(missing.shareables).toEqual([share]);
+         expect(await collection.playback(share.path)).toMatch(/^file:/);
+         expect(await collection.filesForDeletion(id)).toEqual([share.path]);
+         await expect(collection.createShareable(id, 1)).rejects.toThrow("original is missing");
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.clips[0]?.id).toBe(id);
+         expect(reopened.clips[0]?.originalMissing).toBe(true);
+         await writeFile(original, "original moment");
+         await reopened.scan();
+         expect(reopened.clips[0]?.id).toBe(id);
+         expect(reopened.clips[0]?.originalMissing).toBeUndefined();
+         expect(reopened.clips[0]?.categories).toEqual(missing.categories);
+         expect(reopened.clips[0]?.shareables).toEqual([share]);
+         expect(await readFile(share.path)).toEqual(shareBytes);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("recovers duplicate IDs before displayed A can rename, delete or export B", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "attaclip-duplicate-ids-"));
+      try {
+         const a = join(root, "A.mp4");
+         const b = join(root, "B.mp4");
+         await writeFile(a, "original A");
+         await writeFile(b, "original B");
+         const collection = new CollectionService();
+         await collection.open(root);
+         const metadata = join(root, ".attaclip", "collection.json");
+         const valid = await readFile(metadata, "utf8");
+         const damaged = JSON.parse(valid) as { clips: { id: string; relativePath: string }[] };
+         const recordA = damaged.clips.find((clip) => clip.relativePath === "A.mp4")!;
+         const recordB = damaged.clips.find((clip) => clip.relativePath === "B.mp4")!;
+         recordA.id = recordB.id;
+         damaged.clips = [recordB, recordA];
+         await writeFile(`${metadata}.bak`, valid);
+         await writeFile(metadata, JSON.stringify(damaged));
+         const recovered = new CollectionService();
+         await recovered.open(root);
+         const displayedA = recovered.clips.find((clip) => clip.relativePath === "A.mp4")!;
+         expect(await recovered.filesForDeletion(displayedA.id)).toEqual([await realpath(a)]);
+         expect(recovered.warnings).toContain("Collection metadata was recovered from its backup.");
+         io.exported = [];
+         await recovered.createShareable(displayedA.id, 1);
+         expect(io.exported).toEqual([await realpath(a)]);
+         expect(recovered.jobs.at(-1)?.state).toBe("complete");
+         await recovered.rename(displayedA.id, "Renamed A");
+         expect(await readFile(join(root, "Renamed A.mp4"), "utf8")).toBe("original A");
+         expect(await readFile(b, "utf8")).toBe("original B");
+         expect(await recovered.filesForDeletion(displayedA.id)).toEqual([
+            await realpath(join(root, "Renamed A.mp4")),
+            recovered.clips.find((clip) => clip.id === displayedA.id)!.shareables[0]!.path,
+         ]);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("keeps duplicate metadata untouched when no recovery copy is valid", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "attaclip-duplicate-unrecoverable-"));
+      try {
+         await writeFile(join(root, "A.mp4"), "original A");
+         await writeFile(join(root, "B.mp4"), "original B");
+         const collection = new CollectionService();
+         await collection.open(root);
+         const metadata = join(root, ".attaclip", "collection.json");
+         const damaged = JSON.parse(await readFile(metadata, "utf8")) as { clips: { id: string }[] };
+         damaged.clips[1]!.id = damaged.clips[0]!.id;
+         const bytes = JSON.stringify(damaged);
+         await writeFile(metadata, bytes);
+         await writeFile(`${metadata}.bak`, bytes);
+         const recovered = new CollectionService();
+         await recovered.open(root);
+         expect(new Set(recovered.clips.map((clip) => clip.id)).size).toBe(2);
+         expect(recovered.warnings).toContain(
+            "Collection metadata is damaged. Videos remain available, but categories and shareable changes are disabled to preserve recovery information."
+         );
+         await expect(recovered.rename(recovered.clips[0]!.id, "Changed")).rejects.toThrow("metadata");
+         await expect(recovered.createShareable(recovered.clips[0]!.id, 1)).rejects.toThrow("metadata");
+         expect(await readFile(metadata, "utf8")).toBe(bytes);
+         expect(await readFile(`${metadata}.bak`, "utf8")).toBe(bytes);
+         expect(await readFile(join(root, "A.mp4"), "utf8")).toBe("original A");
+         expect(await readFile(join(root, "B.mp4"), "utf8")).toBe("original B");
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
 });
 
 describe("collection ownership boundaries", () => {
@@ -46,6 +161,36 @@ describe("collection ownership boundaries", () => {
 });
 
 describe("collection scan cost and fresh action checks", () => {
+   it("shows completed custom saving names, hides native in-progress files, and honors verified completed metadata", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "attaclip-saving-names-"));
+      try {
+         const completed = join(
+            root,
+            previewFilename(
+               { ...defaultPreferences, filenamePreset: "custom", filenameTemplate: "{source}.saving.{date}" },
+               "Desktop",
+               new Date("2026-10-12T12:00:00Z"),
+               "completed"
+            )
+         );
+         await writeFile(completed, "complete recording");
+         await writeFile(`${completed}.saving.mkv`, "in-progress bytes");
+         const collection = new CollectionService();
+         await collection.open(root);
+         expect(collection.clips.map((clip) => clip.path)).toEqual([await realpath(completed)]);
+         const id = collection.clips[0]!.id;
+         await collection.rename(id, "Completed.mkv.saving");
+         expect(collection.clips).toHaveLength(1);
+         expect(collection.clips[0]?.id).toBe(id);
+         expect(collection.clips[0]?.path).toBe(await realpath(join(root, "Completed.mkv.saving.mkv")));
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.clips).toHaveLength(1);
+         expect(reopened.clips[0]?.id).toBe(id);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
    it("registers consecutive recordings after a watcher scan took an older directory snapshot", async () => {
       const root = await mkdtemp(join(os.tmpdir(), "attaclip-registration-"));
       let release: (() => void) | undefined;
