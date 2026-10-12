@@ -2,7 +2,19 @@
 
 Updated 12 October 2026. This file records verified checkpoints and unfinished work, not extra agent instructions.
 
-## Current checkpoint
+## Released checkpoint
+
+[AttaClip 0.2.0](https://github.com/NoomStuff/AttaClip/releases/tag/v0.2.0) is public at immutable commit cfd0ff62af22e48319e081d00776000201db37c3. All 21 uploaded assets matched their verified sizes and SHA-256 digests. The ordinary public latest feed resolves to 0.2.0, and downloaded Windows, Linux and Mac updater metadata plus the checksum file match the staged bytes. Public 0.1.0 asset IDs, sizes and hashes are unchanged.
+
+Checks38220000250, Linux38219999846 and Mac38219999821 passed. Tagged desktop builds38222502075 and the tagged Linux and Mac capture jobs also passed. The closeout passed 123 unit tests, strict types, lint, formatting, application builds and actual Electron/media regressions. Windows unpacked, portable and installed capture, separate audio, queued saves, Stop, decoding, playback, shareables, normal quit and clean uninstall passed. Its unchanged 84e9332 installers match the final cfd source through independent rebuild and payload verification; the published runtime evidence keeps that attribution explicit.
+
+Linux passed current source extraction, independent rebuild, complete AppImage payload/ELF/updater checks, actual capture/audio/sharing and the corrected normal-close fixture. Its application bytes retain the verified 84e9332 attribution and the native helper retains 5e467009 attribution. Mac passed actual screen/application capture, added application/System audio, native feedback, packaged media, source closure and independent application ZIP/updater checks. Normal Mac shutdown completed in under six seconds with recording stopped and no pending saves or jobs. These proofs do not establish physical microphone or fresh permission-prompt behavior.
+
+Matching complete source archives, source companions, platform payload reports, runtime evidence and checksums accompany the release. Final local receipts are .cache/public-release-cfd0ff62/published-release.json and live-feed-verification.json. Failed earlier harness reports remain separate from successful normal-quit evidence.
+
+Functional closeout is finished for this release. Dave's UI pass is the next product work. Platform and hardware limits remain explicit below; they are not promises of tested support. No background feature or hardware-testing campaign is scheduled.
+
+## Earlier checkpoints
 
 The final native/code-quality checkpoint is 5e467009e3d1becd00fb4c0c5997455ce6d28e22. Its Windows unpacked, portable and installed media tests, full source archives, independent rebuilds, package payloads and updater gates passed. Linux full source/AppImage gates passed at .cache/linux-5e467009-source-release-pipeline.json. Mac38195543895 passed, and all six candidate assets passed local hash verification at .cache/macos-ci-5e467009/candidate/download-verification.json. Linux38195543898 passed. Preserve these exact packages.
 
@@ -74,8 +86,8 @@ Mac source collection verified 17 exact dependency inputs, 116 full notices, act
 
 ## Next work
 
-Freeze the verified closeout once, inspect actual new Mac/Linux CI, and assemble matching final platform source and package evidence. Native build fingerprints now require both clip-writer files on every platform. Preserve the parent candidates rather than overwriting them. Publish 0.2 only after the new exact source, packaged media, payload and updater gates pass. Do not reopen completed functional checks without a new change or failure. Dave's UI pass is ready and should be the next product work.
+The next product work is Dave's UI review. Preserve the public release tag and assets. Future recording or export changes need actual media and relevant failure checks; documentation and visual changes do not require repeating every native test or source build.
 
 Actual S3 recovery still needs a test. AC wake timers work, but the quiet-user safeguard must pass and all local test/build work must finish before suspending. Hardware HDR is unsupported here. Physical device removal, Mac permission-prompt UX, literal hardware-exclusive notification visibility and authenticated Linux Steam/Proton remain unverified. Native Wayland-only App/Auto remains unavailable because exact target identity cannot be guaranteed. Keep those limits explicit. The capped whole-app gameplay proof is complete, so repeat it only for a new resource-related change.
 
-Private recordings, process arguments and game files stay ignored under .cache, work and isolated profiles. Publish only curated synthetic evidence. Dave authorized implementation, GitHub publishing, builds, machine testing and delegation. Keep continue-attaclip-after-reset active until the authorized work is complete. Never consume manual reset credits. Read .cache/functional-continuation-handoff.md and the recorder, Mac and source handoffs before continuing.
+Private recordings, process arguments and game files stay ignored under .cache, work and isolated profiles. Publish only curated synthetic evidence. Dave authorized implementation, GitHub publishing, builds, machine testing and delegation. The functional closeout continuation is no longer needed after this published handoff. Never consume manual reset credits. Read .cache/functional-continuation-handoff.md and the recorder, Mac and source handoffs before continuing.

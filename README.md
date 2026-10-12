@@ -12,11 +12,19 @@ The library is an ordinary folder. Existing supported videos appear automaticall
 
 AttaClip is for clips. Use OBS for full-session recording and AttaCut for cutting.
 
-## Try the Windows preview
+## Download
 
-[Download AttaClip 0.1.0](https://github.com/NoomStuff/AttaClip/releases/tag/v0.1.0). Choose the installer or portable executable. The release includes matching source archives, full dependency notices and checksums. Windows builds are unsigned.
+[Download AttaClip 0.2.0](https://github.com/NoomStuff/AttaClip/releases/tag/v0.2.0).
 
-Windows recording, audio, playback and sharing have passed actual installed and portable tests. Later development builds add automatic game selection, graphics-hook capture, additional isolated audio sources and native save feedback. Linux X11 screen/application capture and isolated application audio passed actual media tests. Wayland screen capture passed real portal, audio, permission-cancellation and stream-loss tests in an isolated Sway session. Exact XWayland application and Wine capture passed moving pixels, isolated audio and Auto adapter tests. Native Wayland applications remain unavailable. Mac screen/application capture, added audio, packaged playback/sharing, native feedback and the complete source/container release gate passed actual runner tests. These later changes are not in the published 0.1.0 preview.
+- Windows x64 has an installer and portable executable.
+- Linux x64 has an AppImage, verified on Ubuntu 24.04. Make it executable before opening it.
+- Apple Silicon macOS has an application ZIP. Intel Mac support is not established by this release.
+
+The release includes matching source archives, dependency notices, verification reports and SHA-256 checksums. These builds are unsigned. macOS requires screen recording permission and microphone permission when enabled.
+
+Actual packaged capture, audio, playback, sharing and shutdown passed. Auto uses a cached game catalog and games you add locally; Discord does not need to be installed. Linux X11 and XWayland application capture work, including tested Wine targets. Wayland screen capture uses the system picker. Native Wayland-only App and Auto capture remain unavailable.
+
+Physical sleep and device hotplug, hardware HDR, fresh Mac permission prompts and revocation, hardware-exclusive fullscreen notification visibility, and authenticated Steam-launched Linux Proton remain unverified. See the release notes and [development status](docs/development-status.md) for the tested scope. The earlier [Windows 0.1.0 preview](https://github.com/NoomStuff/AttaClip/releases/tag/v0.1.0) remains unchanged.
 
 ## Development
 
@@ -71,7 +79,7 @@ Low, Standard, High, and Custom profiles expose the actual resolution and frame 
 
 Originals currently use MKV for recoverable saving. Compatible MP4 playback copies are made on demand, without replacing the original. Shareables use H.264 video and the master audio mix in MP4. Their completed size and duration are checked before publication. A too-small budget produces an error rather than a truncated clip.
 
-Shareable encoding uses two decoder/encoder threads, one-worker filter pools and below-normal priority. It still consumes resources while recording. Windows NVENC and Linux software recording passed actual media checks. Physical microphone gain/mute and selected-application audio passed real tone checks on the development machine. On an RTX 3070, the full development app maintained about 142 fps in Portal2 capped at 144 fps during capture and a three-second concurrent compression sample. Both saved clips fully decoded and the shareable met its size target. An earlier uncapped test lost frame rate during compression. These results cover one game and do not establish low impact across hardware. Mac feedback passed fullscreen Space tests with Reduce Motion enabled; that does not prove exclusive fullscreen visibility or animation. HDR, physical device recovery and other hardware combinations still need verification. A successful installer build alone does not validate capture.
+Shareable encoding uses two decoder/encoder threads, one-worker filter pools and below-normal priority. It still consumes resources while recording. Windows NVENC and Linux software recording passed actual media checks. Physical microphone gain/mute and selected-application audio passed real tone checks on the development machine. On an RTX 3070, the full development app maintained about 142 fps in Portal2 capped at 144 fps during capture and a three-second concurrent compression sample. Both saved clips fully decoded and the shareable met its size target. An earlier uncapped test lost frame rate during compression. These results cover one game and do not establish low impact across hardware. Mac native feedback passed normal and reduced-motion animation checks and fullscreen Space tests. Hardware-exclusive fullscreen visibility remains unverified. HDR, physical device recovery and other hardware combinations still need verification. A successful installer build alone does not validate capture.
 
 ## Builds and releases
 
