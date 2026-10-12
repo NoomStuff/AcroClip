@@ -49,8 +49,20 @@ test("the viewer rail retains its first clip, version and position when a newer 
       await expect(page.getByRole("button", { name: "Open in AttaCut", exact: true })).toBeDisabled();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(2);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
+      // A stale playback request must not leave a global error over the player.
+      await page.evaluate(async (path) => {
+         await window.attaClip.playback(path).catch(() => undefined);
+      }, source);
+      await expect(page.locator(".toast.error")).toHaveCount(0);
+      // Persistent action errors remain dismissible without blocking playback.
+      await page.evaluate(async () => {
+         await window.attaClip.renameClip("missing-clip", "Changed").catch(() => undefined);
+      });
+      await expect(page.locator(".toast.error")).toBeVisible();
       await page.getByRole("button", { name: "Play", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThan(2.1);
+      await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+      await expect(page.locator(".toast.error")).toHaveCount(0);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
       await page.getByRole("button", { name: "Library", exact: true }).first().click();
       await page.getByRole("button", { name: "Clip viewer", exact: true }).click();

@@ -426,7 +426,9 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown) {
             throw new Error("AttaClip is preparing to exit. Keep the app open to make changes.");
          return await fn(...args);
       } catch (e) {
-         notice(errorMessage(e), true);
+         // The viewer owns playback errors and discards obsolete requests when
+         // switching files. A global notice would outlive that failed request.
+         if (channel !== "playback") notice(errorMessage(e), true);
          throw e;
       }
    });

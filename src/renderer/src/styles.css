@@ -1974,6 +1974,7 @@ progress::-webkit-progress-value {
    font-size: 11px;
 }
 .toast {
+   pointer-events: none;
    position: fixed;
    z-index: 120;
    bottom: 50px;
@@ -2005,6 +2006,7 @@ progress::-webkit-progress-value {
    color: var(--red);
 }
 .toast .icon-button {
+   pointer-events: auto;
    width: 25px;
    height: 25px;
    margin-left: 5px;
