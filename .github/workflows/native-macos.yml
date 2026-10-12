@@ -22,6 +22,7 @@ on:
          - scripts/package-macos-sources.py
          - scripts/extract-macos-package.py
          - scripts/test-macos-packaged.ts
+         - scripts/close-test-application.ts
          - .github/workflows/native-macos.yml
 permissions:
    contents: read
@@ -84,6 +85,7 @@ jobs:
            env:
               CSC_IDENTITY_AUTO_DISCOVERY: "false"
          - name: Verify packaged application capture and sharing
+           timeout-minutes: 8
            run: bun scripts/test-macos-packaged.ts
          - name: Capture matching Electron LGPL source evidence
            run: bun scripts/collect-macos-electron.ts

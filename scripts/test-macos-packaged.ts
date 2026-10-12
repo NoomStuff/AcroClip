@@ -1,4 +1,5 @@
 import { _electron as electron, expect } from "@playwright/test";
+import { closeTestApplication } from "./close-test-application";
 import { spawn, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
@@ -272,6 +273,9 @@ try {
       )
    );
    console.log("Actual packaged macOS application capture, hidden saves, full decoding, and 1 MB sharing passed.");
+} catch (error) {
+   console.error("Packaged Mac verification failed before cleanup:", error);
+   throw error;
 } finally {
    await writeFile(`${fixtureOutput}.stop`, "");
    await writeFile(`${decoyOutput}.stop`, "");
@@ -286,7 +290,10 @@ try {
    }
    await writeFile(path.join(evidence, "fixture.log"), fixtureErrors.join(""));
    await writeFile(path.join(evidence, "fixture-health.json"), JSON.stringify(fixtureHealth, null, 2));
-   if (desktop) await desktop.close();
-   fixture.kill();
-   decoy.kill();
+   try {
+      if (desktop) await closeTestApplication(desktop);
+   } finally {
+      fixture.kill();
+      decoy.kill();
+   }
 }

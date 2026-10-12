@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { createServer } from "node:net";
 import sharp from "sharp";
 import { defaultPreferences } from "../src/shared/defaults";
+import { closeTestApplication } from "../scripts/close-test-application";
 
 // This captures the selected screen. Windows uses the real desktop. The Linux
 // runner supplies a private X11/PulseAudio fixture and explicit software opt-in.
@@ -81,8 +82,7 @@ try {
          env: { ...process.env, ATTACLIP_TEST: "1", ATTACLIP_PROFILE: profile, ATTACLIP_COLLECTION: collection },
       });
       closeApplication = async () => {
-         await application.evaluate(({ app }) => app.exit(0)).catch(() => undefined);
-         await application.close().catch(() => undefined);
+         await closeTestApplication(application);
       };
       page = await application.firstWindow();
    }
@@ -180,6 +180,9 @@ try {
    console.log(
       `Packaged capture, repeated saves followed by stop, separate audio, full decoding, playback, and size-limited sharing passed. Isolated files: ${profile}`
    );
+} catch (error) {
+   console.error("Packaged application verification failed before cleanup:", error);
+   throw error;
 } finally {
    await closeApplication?.();
 }
