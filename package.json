@@ -24,6 +24,7 @@
       "test:native": "bun scripts/smoke-recorder.ts",
       "test:native:lifecycle": "bun scripts/smoke-start-lifecycle.ts resources/recorder/attaclip-recorder.exe",
       "test:capture-loss": "bun scripts/smoke-capture-loss.ts",
+      "test:fullscreen": "bun scripts/smoke-fullscreen.ts",
       "build:icons": "bun scripts/build-icons.ts",
       "build:notices": "bun scripts/generate-notices.ts",
       "bundle:media": "bun scripts/bundle-media.ts",

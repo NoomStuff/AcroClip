@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Isolated, animated Direct3D surface for verifying real OBS game hooks.
 #include <cmath>
+#include <cstring>
 #include <d3d11.h>
 #include <iostream>
 #include <mmsystem.h>
@@ -14,6 +15,14 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
   return DefWindowProcW(window, message, w, l);
 }
 int main(int argc, char **argv) {
+  SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+  HWND originalForeground = GetForegroundWindow();
+  bool fullscreenRequested = false;
+  bool delayedFullscreen = false;
+  for (int i = 1; i < argc; ++i) {
+    fullscreenRequested |= std::strcmp(argv[i], "--fullscreen") == 0;
+    delayedFullscreen |= std::strcmp(argv[i], "--fullscreen-after") == 0;
+  }
   WNDCLASSW klass{};
   klass.lpfnWndProc = procedure;
   klass.hInstance = GetModuleHandleW(nullptr);
@@ -73,10 +82,57 @@ int main(int argc, char **argv) {
     return 2;
   buffer->Release();
   ShowWindow(window, SW_SHOW);
+  auto enterFullscreen = [&]() {
+    HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    if (!GetMonitorInfo(monitor, &info))
+      return false;
+    SetWindowLongPtr(window, GWL_STYLE, WS_POPUP);
+    SetWindowPos(window, HWND_TOP, info.rcMonitor.left, info.rcMonitor.top,
+                 info.rcMonitor.right - info.rcMonitor.left,
+                 info.rcMonitor.bottom - info.rcMonitor.top,
+                 SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    DWORD foregroundThread =
+        GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
+    AttachThreadInput(GetCurrentThreadId(), foregroundThread, TRUE);
+    SetForegroundWindow(window);
+    AttachThreadInput(GetCurrentThreadId(), foregroundThread, FALSE);
+    if (GetForegroundWindow() != window ||
+        FAILED(swap->SetFullscreenState(TRUE, nullptr)))
+      return false;
+    BOOL fullscreen = FALSE;
+    if (FAILED(swap->GetFullscreenState(&fullscreen, nullptr)) || !fullscreen)
+      return false;
+    std::cerr << "fullscreen:" << info.rcMonitor.left << ":"
+              << info.rcMonitor.top << ":"
+              << info.rcMonitor.right - info.rcMonitor.left << ":"
+              << info.rcMonitor.bottom - info.rcMonitor.top << std::endl;
+    return true;
+  };
+  if (fullscreenRequested && !enterFullscreen())
+    return 8;
   std::cout << reinterpret_cast<uintptr_t>(window) << std::endl;
   MSG message{};
   uint64_t frame = 0;
-  while (message.message != WM_QUIT) {
+  const ULONGLONG started = GetTickCount64();
+  while (message.message != WM_QUIT &&
+         (!(fullscreenRequested || delayedFullscreen) ||
+          GetTickCount64() - started < 45000)) {
+    if (delayedFullscreen && !fullscreenRequested) {
+      DWORD available = 0;
+      HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+      if (PeekNamedPipe(input, nullptr, 0, nullptr, &available, nullptr) &&
+          available) {
+        char command[64];
+        DWORD read = 0;
+        if (ReadFile(input, command, sizeof(command), &read, nullptr) && read) {
+          fullscreenRequested = true;
+          if (!enterFullscreen())
+            break;
+        }
+      }
+    }
     while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
       TranslateMessage(&message);
       DispatchMessageW(&message);
@@ -85,6 +141,10 @@ int main(int argc, char **argv) {
                      0.8f, 1.f};
     context->ClearRenderTargetView(view, color);
     swap->Present(1, 0);
+  }
+  if (fullscreenRequested) {
+    swap->SetFullscreenState(FALSE, nullptr);
+    SetForegroundWindow(originalForeground);
   }
   view->Release();
   context->Release();

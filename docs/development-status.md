@@ -1,6 +1,14 @@
 # Development status
 
-Updated 12 October 2026. This file records verified checkpoints and unfinished work, not extra agent instructions.
+Updated 13 October 2026. This file records verified checkpoints and unfinished work, not extra agent instructions.
+
+## Fullscreen capture correction
+
+Dave reported black recordings after the release. Actual Windows DXGI fullscreen tests reproduced fully black saved footage in both App and Screen modes, while the helper reported healthy recording. The existing fullscreen proof covered Auto's game hook and missed these other paths.
+
+App now tries the exact selected application's game hook when it enters fullscreen. Screen retries missing DXGI images through Windows Graphics Capture on the same selected monitor. Windows capture checks actual source dimensions before accepting encoded packets, and reports missing images instead of filling history with black video. It does not classify legitimately dark scenes as capture failure or substitute desktop capture for an application.
+
+Actual fullscreen App, Screen, Auto and windowed-to-fullscreen tests passed with moving pixels and full decoding. Ordinary desktop capture, queued saves, Stop, application minimize/loss/recovery and startup lifecycle regressions passed. The local packaged build passed actual recording, audio, playback and size-limited sharing. All 123 unit tests, strict types and lint passed. The regression command is `bun run test:fullscreen`, with `screen`, `auto` or `transition` as its optional argument. Build `native/tests` into `.cache/native-tests` first. The local test build is under `work/fullscreen-fix-preview`; public 0.2.0 assets remain unchanged and still contain this bug. No new public binary or corresponding-source packet has been published for this correction.
 
 ## Released checkpoint
 

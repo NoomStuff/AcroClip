@@ -142,7 +142,17 @@ try {
    assert(Number(running.sources) > Number(initial.sources));
    assert.equal((await command(config)).event, "error");
    assert.equal((await state()).active, true, "Rejecting a duplicate start must preserve recording");
-   await delay(3500);
+   const retryDeadline = Date.now() + 30_000;
+   let retryAvailable = 0;
+   while (retryAvailable < 1.5 && Date.now() < retryDeadline) {
+      const offset = events.length;
+      const id = randomUUID();
+      send({ action: "status", id });
+      await wait((event) => event.event === "response" && event.id === id);
+      retryAvailable = events.slice(offset).find((event) => event.event === "status")?.availableSeconds ?? 0;
+      if (retryAvailable < 1.5) await delay(100);
+   }
+   assert(retryAvailable >= 1.5, "The retried source must deliver footage before saving");
    const file = path.join(folder, "retry.mkv");
    const requestId = randomUUID();
    assert.equal((await command({ action: "save", path: file, requestId })).event, "response");

@@ -429,6 +429,9 @@ private:
   std::atomic<uint32_t> targetProcess{0};
   std::atomic<bool> captureEnabled{false};
   std::atomic<bool> gameCapture{false}, gameReady{false};
+  std::atomic<bool> captureImageReady{false};
+  std::atomic<uint64_t> captureImageSince{0};
+  std::mutex captureSourceMutex;
   std::atomic<bool> windowCompatibility{false};
   uint64_t gameStarted = 0;
   json gameConfig;
@@ -628,6 +631,9 @@ private:
     if (gameCapture && !gameReady)
       return false;
 #ifdef _WIN32
+    refreshImageState();
+    if (!captureImageReady)
+      return false;
     if (screenCapture) {
       std::lock_guard<std::mutex> lock(displayIdentityMutex);
       if (!selectedDisplayIdentity.empty()) {
@@ -697,8 +703,36 @@ private:
   }
   void refreshCapture() {
 #ifdef _WIN32
-    if (!gameCapture || !capture)
+    if (!capture)
       return;
+    refreshImageState();
+    if (screenCapture) {
+      if (!captureImageSince && os_gettime_ns() - gameStarted > 3000000000ULL &&
+          !gameConfig.contains("screenCaptureMethod")) {
+        json fallback = gameConfig;
+        fallback["screenCaptureMethod"] = 2;
+        source(fallback);
+        emit({{"event", "capture-method"},
+              {"method", "screen"},
+              {"reason",
+               "Trying another capture method for the selected screen"}});
+      }
+      return;
+    }
+    if (!gameCapture) {
+      if (!gameConfig.contains("captureMethod") &&
+          selectedWindowFullscreen(
+              reinterpret_cast<HWND>(targetWindow.load()))) {
+        json fullscreen = gameConfig;
+        fullscreen["captureMethod"] = "game";
+        source(fullscreen);
+        emit({{"event", "capture-method"},
+              {"method", "game"},
+              {"reason",
+               "Using game capture for the selected fullscreen application"}});
+      }
+      return;
+    }
     calldata_t data{};
     calldata_init(&data);
     bool called = proc_handler_call(obs_source_get_proc_handler(capture),
@@ -716,6 +750,37 @@ private:
     }
 #endif
   }
+#ifdef _WIN32
+  void refreshImageState() {
+    std::lock_guard<std::mutex> sourceLock(captureSourceMutex);
+    const uint64_t now = os_gettime_ns();
+    if (!capture || !obs_source_get_width(capture) ||
+        !obs_source_get_height(capture)) {
+      captureImageSince = 0;
+      captureImageReady = false;
+      return;
+    }
+    if (!captureImageSince)
+      captureImageSince = now;
+    // OBS can publish dimensions before the first usable texture. Also exclude
+    // encoded packets queued before this source finished warming up.
+    captureImageReady = now - captureImageSince >= 500000000ULL;
+  }
+  static bool selectedWindowFullscreen(HWND window) {
+    RECT rect{};
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    return window && window != GetDesktopWindow() &&
+           window != GetShellWindow() && !IsIconic(window) &&
+           GetWindowRect(window, &rect) &&
+           GetMonitorInfo(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST),
+                          &monitor) &&
+           rect.left <= monitor.rcMonitor.left &&
+           rect.top <= monitor.rcMonitor.top &&
+           rect.right >= monitor.rcMonitor.right &&
+           rect.bottom >= monitor.rcMonitor.bottom;
+  }
+#endif
 public:
   void setAudio(const json &c) {
     std::string source = c.at("source");
@@ -1089,6 +1154,10 @@ public:
       requests.clear();
       return;
     }
+#ifdef _WIN32
+    if (p->sys_dts_usec < int64_t(captureImageSince / 1000 + 500000))
+      return;
+#endif
     std::lock_guard<std::mutex> lock(mutex);
     if (!active)
       return;
@@ -1299,9 +1368,12 @@ public:
       if (item)
         obs_sceneitem_remove(item);
       item = nullptr;
-      if (capture)
-        obs_source_release(capture);
-      capture = nullptr;
+      {
+        std::lock_guard<std::mutex> sourceLock(captureSourceMutex);
+        if (capture)
+          obs_source_release(capture);
+        capture = nullptr;
+      }
       {
         std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
 #ifdef __linux__
@@ -1386,6 +1458,7 @@ public:
       if (monitor.empty())
         throw std::runtime_error("The selected screen is unavailable");
       obs_data_set_string(s, "monitor_id", monitor.c_str());
+      obs_data_set_int(s, "method", c.value("screenCaptureMethod", 0));
       nextDisplayIdentity = monitor;
       obs_data_set_bool(s, "capture_cursor", true);
       obs_data_set_bool(s, "force_sdr", true);
@@ -1454,6 +1527,10 @@ public:
           c.value("captureMethod",
                   c.value("sourceKind", "") == "auto" ? "game" : "window") ==
           "game";
+      if (!c.contains("captureMethod") && sourceId.rfind("window:", 0) == 0)
+        preferGame =
+            preferGame || selectedWindowFullscreen(reinterpret_cast<HWND>(
+                              std::stoull(sourceId.substr(7))));
       if (preferGame) {
         obs_data_set_string(s, "capture_mode", "window");
         obs_data_set_bool(s, "capture_cursor", true);
@@ -1650,6 +1727,8 @@ public:
     gameCapture = false;
 #endif
     gameReady = false;
+    captureImageReady = false;
+    captureImageSince = 0;
     gameStarted = os_gettime_ns();
     gameConfig = c;
     screenCapture = kind == "screen";
@@ -1657,9 +1736,12 @@ public:
     obs_source_set_audio_mixers(next, 3);
     if (item)
       obs_sceneitem_remove(item);
-    if (capture)
-      obs_source_release(capture);
-    capture = next;
+    {
+      std::lock_guard<std::mutex> sourceLock(captureSourceMutex);
+      if (capture)
+        obs_source_release(capture);
+      capture = next;
+    }
 #ifdef __linux__
     std::atomic_store(&portalCapture, std::move(nextPortal));
 #endif
@@ -1960,6 +2042,10 @@ public:
       captureError = additionalAudioError();
     if (captureError.empty() && deliveryInterrupted)
       captureError = "Waiting for recording to resume";
+#ifdef _WIN32
+    if (captureError.empty() && active && captureEnabled && !captureImageReady)
+      captureError = "Waiting for an image from the selected source";
+#endif
     if (captureError.empty() && active && screenCapture &&
         !targetAvailable())
       captureError = "The selected screen is unavailable";
