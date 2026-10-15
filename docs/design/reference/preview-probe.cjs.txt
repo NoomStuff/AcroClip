@@ -1,0 +1,35 @@
+const { _electron } = require('D:/Coding/AttaClip/node_modules/playwright');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+(async () => {
+ const profile = await fs.mkdtemp(path.join(os.tmpdir(),'attaclip-preview-probe-'));
+ const app = await _electron.launch({args:['D:/Coding/AttaClip','--disable-gpu-sandbox'],env:{...process.env,ATTACLIP_TEST:'1',ATTACLIP_PROFILE:profile}});
+ try {
+  const page = await app.firstWindow();
+  await app.evaluate(async ({BrowserWindow,session,desktopCapturer}) => {
+   const source = new BrowserWindow({title:'AttaClip synthetic preview probe',width:640,height:360,webPreferences:{sandbox:true}});
+   await source.loadURL('data:text/html,<body style="background:blue;color:white"><h1>Synthetic preview</h1><div id="counter"></div><script>let count=0;setInterval(()=>{document.getElementById("counter").textContent=++count;document.body.style.background=count%2?"blue":"red"},100)</script>');
+   source.show();
+   globalThis.previewCalls=[];
+   session.defaultSession.setPermissionCheckHandler((wc,p,origin,details)=>{globalThis.previewCalls.push(['check',p,details]);return p==='display-capture'});
+   session.defaultSession.setPermissionRequestHandler((wc,p,cb,details)=>{globalThis.previewCalls.push(['request',p,details]);cb(['display-capture','media'].includes(p))});
+   session.defaultSession.setDisplayMediaRequestHandler(async(req,cb)=>{
+     const choices=await desktopCapturer.getSources({types:['window'],thumbnailSize:{width:0,height:0}});
+     const choice=choices.find(item=>item.name==='AttaClip synthetic preview probe');
+     globalThis.previewCalls.push(['display',req.userGesture,choice?.id,choices.map(item=>item.name)]);
+     cb(choice?{video:choice}:null);
+   });
+  });
+  console.log(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='AttaClip').webContents.executeJavaScript(`(${(async()=>{
+   try {
+    const stream=await navigator.mediaDevices.getDisplayMedia({audio:false,video:{width:960,height:540,frameRate:15}});
+    const video=document.createElement('video');video.muted=true;video.srcObject=stream;document.body.append(video);await video.play();
+    await new Promise(r=>setTimeout(r,1000));
+    const result={tracks:stream.getTracks().map(t=>({kind:t.kind,ready:t.readyState,settings:t.getSettings()})),frames:video.getVideoPlaybackQuality().totalVideoFrames};
+    stream.getTracks().forEach(t=>t.stop());video.remove();return result;
+   }catch(error){return {error:error.name,message:error.message}};
+  }).toString()})()`,false)));
+  console.log(await app.evaluate(()=>globalThis.previewCalls));
+ }finally{await app.close();}
+})();

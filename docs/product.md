@@ -2,6 +2,8 @@
 
 This records the working design from the product discussions and mock review. It is a specification reference, not a list of instructions every code change needs to repeat. Prototype findings can change the mechanics while preserving the product's intent.
 
+The [design references](design/index.md) preserve the original editable mock, four view images, initial proposal and related review reports.
+
 ## Layout and interaction
 
 Recording, Library, the persistent clip viewer, and Settings share a narrow navigation rail. Page navigation preserves view state. Returning to the viewer restores the last deliberately opened clip, version, and playback position. Leaving pauses playback. Newly saved clips do not replace a deliberate selection.

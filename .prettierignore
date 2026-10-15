@@ -15,3 +15,8 @@ playwright-report
 64bit
 build-report
 
+# Imported historical documents retain their original bytes.
+docs/design/reference/friends-plan.md
+docs/reviews/2026-10-14-fresh-user-subagent.md
+docs/reviews/2026-10-14-fresh-user-thread.md
+

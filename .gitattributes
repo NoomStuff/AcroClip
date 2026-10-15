@@ -4,3 +4,10 @@
 *.png binary
 *.ico binary
 *.icns binary
+
+# Keep imported reference documents byte-for-byte, including line endings.
+docs/design/mockups/AttaClip.excalidraw -text whitespace=cr-at-eol
+docs/design/reference/friends-plan.md -text whitespace=cr-at-eol
+docs/design/reference/preview-probe.cjs.txt -text whitespace=cr-at-eol
+docs/reviews/2026-10-14-fresh-user-subagent.md -text whitespace=cr-at-eol
+docs/reviews/2026-10-14-fresh-user-thread.md -text whitespace=cr-at-eol
