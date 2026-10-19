@@ -60,16 +60,33 @@ jobs:
          - run: bun install --frozen-lockfile
          - name: Stage pinned standalone media for the private package test
            run: bun scripts/provision-media.ts
+         - name: Restore controlled media build
+           if: inputs.release_candidate == true
+           id: controlled_media_cache
+           uses: actions/cache/restore@v6.1.0
+           with:
+              path: work/controlled-media/linux-x64
+              key: controlled-linux-x64-${{ hashFiles('scripts/build-media-linux.sh', 'scripts/controlled-media-linux.ts', 'scripts/controlled-media.ts') }}
          - name: Build controlled release media
            if: inputs.release_candidate == true
            run: |
               sudo apt-get install -y nasm meson ninja-build pkg-config unzip
               bun scripts/release-sources.ts --controlled-inputs --collect-only
-              bash scripts/build-media-linux.sh
+              if [ "${{ steps.controlled_media_cache.outputs.cache-hit }}" = "true" ]; then
+                 bun -e 'import {readControlledLinuxBuild} from "./scripts/controlled-media-linux.ts"; await readControlledLinuxBuild("work/controlled-media/linux-x64");'
+              else
+                 bash scripts/build-media-linux.sh
+              fi
               ACROCLIP_REFERENCE_FFMPEG="$FFMPEG_PATH" python3 scripts/smoke-controlled-media-linux.py
               bun scripts/controlled-media-linux.ts
               echo "FFMPEG_PATH=$PWD/work/controlled-media/linux-x64/ffmpeg" >> "$GITHUB_ENV"
               echo "FFPROBE_PATH=$PWD/work/controlled-media/linux-x64/ffprobe" >> "$GITHUB_ENV"
+         - name: Cache verified controlled media build
+           if: inputs.release_candidate == true && steps.controlled_media_cache.outputs.cache-hit != 'true'
+           uses: actions/cache/save@v6.1.0
+           with:
+              path: work/controlled-media/linux-x64
+              key: controlled-linux-x64-${{ hashFiles('scripts/build-media-linux.sh', 'scripts/controlled-media-linux.ts', 'scripts/controlled-media.ts') }}
          - run: bun run bundle:media
          - run: bun run build:icons
          - run: bun run build:notices

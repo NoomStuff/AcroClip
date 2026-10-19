@@ -36,10 +36,17 @@ jobs:
            with:
               bun-version: "1.4.2"
          - run: bun install --frozen-lockfile
-         - name: Provision independent pinned fixture generator
-           run: bun scripts/provision-media.ts
-         - name: Install media build tools
-           run: brew install meson ninja pkg-config
+         - name: Install build tools and independent fixture generator
+           run: |
+              brew install ffmpeg meson ninja pkg-config
+              taskReference="$(brew --prefix ffmpeg)/bin"
+              echo "FFMPEG_PATH=$taskReference/ffmpeg" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$taskReference/ffprobe" >> "$GITHUB_ENV"
+              mkdir -p work/reference-media
+              brew info --json=v2 ffmpeg > work/reference-media/homebrew.json
+              "$taskReference/ffmpeg" -version > work/reference-media/ffmpeg-version.txt
+              "$taskReference/ffprobe" -version > work/reference-media/ffprobe-version.txt
+              shasum -a 256 "$taskReference/ffmpeg" "$taskReference/ffprobe" > work/reference-media/SHA256SUMS.txt
          - name: Collect immutable media source inputs
            run: bun scripts/release-sources.ts --controlled-inputs --collect-only
          - name: Compile controlled Apple Silicon media
@@ -156,6 +163,7 @@ jobs:
                  work/controlled-media/macos-arm64/LICENSE*
                  work/controlled-media/macos-arm64/COPYING*
                  work/controlled-media/macos-arm64/verification/
+                 work/reference-media/
                  work/release-sources/manifest.json
                  work/release-sources/*.tar.gz
                  work/release-sources/dependencies/*.tar.gz
