@@ -55,7 +55,16 @@ jobs:
               shasum -a 256 "$taskReference/ffmpeg" "$taskReference/ffprobe" > work/reference-media/SHA256SUMS.txt
          - name: Collect immutable media source inputs
            run: bun scripts/release-sources.ts --controlled-inputs --collect-only
+         - name: Restore verified media for this architecture
+           id: media_cache
+           uses: actions/cache/restore@v6.1.0
+           with:
+              path: work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}
+              key: controlled-macos-${{ inputs.architecture || 'arm64' }}-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts', 'scripts/smoke-controlled-media-macos.py') }}
          - name: Compile controlled macOS media
+           if: steps.media_cache.outputs.cache-hit != 'true'
+           env:
+              ACROCLIP_MEDIA_BUILD_JOBS: "3"
            run: bash scripts/build-media-macos.sh
          - name: Verify independent codec fixtures and record actual build
            run: |
@@ -63,6 +72,12 @@ jobs:
               bun scripts/controlled-media-macos.ts
               echo "FFMPEG_PATH=$PWD/work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/ffmpeg" >> "$GITHUB_ENV"
               echo "FFPROBE_PATH=$PWD/work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/ffprobe" >> "$GITHUB_ENV"
+         - name: Cache verified media for this architecture
+           if: steps.media_cache.outputs.cache-hit != 'true'
+           uses: actions/cache/save@v6.1.0
+           with:
+              path: work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}
+              key: controlled-macos-${{ inputs.architecture || 'arm64' }}-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts', 'scripts/smoke-controlled-media-macos.py') }}
          - name: Stage verified media tools
            run: bun run bundle:media
          - name: Build and stage matching macOS recorder
