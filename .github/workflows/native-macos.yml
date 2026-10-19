@@ -61,6 +61,9 @@ jobs:
            with:
               path: work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}
               key: controlled-macos-${{ inputs.architecture || 'arm64' }}-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts', 'scripts/smoke-controlled-media-macos.py') }}
+         - name: Verify the recorded media cache before executing it
+           if: steps.media_cache.outputs.cache-hit == 'true'
+           run: bun -e 'import {readControlledMacBuild} from "./scripts/controlled-media-macos"; await readControlledMacBuild("work/controlled-media/macos-" + process.arch);'
          - name: Compile controlled macOS media
            if: steps.media_cache.outputs.cache-hit != 'true'
            env:
