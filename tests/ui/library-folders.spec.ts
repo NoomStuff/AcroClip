@@ -83,11 +83,11 @@ test("folder browsing keeps the real hierarchy and selected categories blend the
          rose = page.getByRole("button", { name: /^Rose/ }).first();
       await blue.click();
       await page.waitForTimeout(220);
-      const initial = await page.locator(".library-sidebar > .selection-indicator").evaluate((node) => getComputedStyle(node).backgroundColor);
+      const initial = await page.locator(".library-sidebar .sidebar-scroll > .selection-indicator").evaluate((node) => getComputedStyle(node).backgroundColor);
       await rose.click();
-      const blend = await page.locator(".library-sidebar > .selection-indicator").evaluate((node) => getComputedStyle(node).backgroundColor);
+      const blend = await page.locator(".library-sidebar .sidebar-scroll > .selection-indicator").evaluate((node) => getComputedStyle(node).backgroundColor);
       await page.waitForTimeout(220);
-      const final = await page.locator(".library-sidebar > .selection-indicator").evaluate((node) => getComputedStyle(node).backgroundColor);
+      const final = await page.locator(".library-sidebar .sidebar-scroll > .selection-indicator").evaluate((node) => getComputedStyle(node).backgroundColor);
       expect(initial).not.toBe(final);
       expect(blend).not.toBe(final);
       for (const name of ["Blue", "Rose", "Dark", "White"]) {

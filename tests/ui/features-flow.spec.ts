@@ -125,6 +125,22 @@ test("category appearance, local shortcuts, conflicts and global capture binding
                };
             })
          );
+      await app.evaluate(({ ipcMain }) => {
+         // An unavailable saved source is intentionally unlistenable. Exercise
+         // audio error feedback with an explicitly available fixture instead.
+         ipcMain.removeHandler("sources");
+         ipcMain.handle("sources", () => [{ id: "window:0:0", kind: "app", name: "Fixture application", thumbnail: "" }]);
+         ipcMain.removeHandler("preview-source");
+         ipcMain.handle("preview-source", (_event, id) => {
+            if (id) throw new Error("Fixture preview boundary");
+         });
+         ipcMain.removeHandler("listen-audio");
+         ipcMain.handle("listen-audio", () => {
+            throw new Error("The selected audio device is unavailable.");
+         });
+      });
+      await page.reload();
+      await expect(page.getByRole("button", { name: "Fixture application", exact: true })).toBeVisible();
       const beforeAudio = await mixerPositions();
       await page.evaluate(async () => {
          const state = await window.acroClip.state();
