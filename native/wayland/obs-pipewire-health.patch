@@ -17,6 +17,33 @@
  		pw_thread_loop_stop(obs_pw->thread_loop);
  	}
  
+@@ -568,7 +569,7 @@
+ 
+ static void return_unused_pw_buffer(struct pw_stream *stream, struct pw_buffer *b)
+ {
+-#if PW_CHECK_VERSION(1, 2, 0)
++#if PW_CHECK_VERSION(1, 2, 0) && LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(32, 2, 0)
+ 	struct spa_buffer *buffer = b->buffer;
+ 	struct spa_data *last_data = &buffer->datas[buffer->n_datas - 1];
+ 	struct spa_meta_sync_timeline *synctimeline =
+@@ -751,7 +752,7 @@
+ 		int *fds = alloca(sizeof(int) * planes);
+ 		bool use_modifiers;
+ 		bool corrupt = false;
+-#if PW_CHECK_VERSION(1, 2, 0)
++#if PW_CHECK_VERSION(1, 2, 0) && LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(32, 2, 0)
+ 		struct spa_meta_sync_timeline *synctimeline =
+ 			spa_buffer_find_meta_data(buffer, SPA_META_SyncTimeline, sizeof(struct spa_meta_sync_timeline));
+ #endif
+@@ -777,7 +778,7 @@
+ 			corrupt |= (buffer->datas[plane].chunk->flags & SPA_CHUNK_FLAG_CORRUPTED) > 0;
+ 		}
+ 
+-#if PW_CHECK_VERSION(1, 2, 0)
++#if PW_CHECK_VERSION(1, 2, 0) && LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(32, 2, 0)
+ 		if (obs_pw_stream->sync.release_syncobj_fd != -1) {
+ 			if (!obs_pw_stream->sync.release_point_will_signal) {
+ 				gs_sync_signal_syncobj_timeline_point(obs_pw_stream->sync.release_syncobj_fd,
 @@ -824,6 +825,7 @@
  								       use_modifiers ? modifiers : NULL);
  
@@ -41,6 +68,42 @@
  
  	/* Video Crop */
  	region = spa_buffer_find_meta_data(buffer, SPA_META_VideoCrop, sizeof(*region));
+@@ -953,7 +962,7 @@
+ 	uint32_t output_flags;
+ 	uint8_t params_buffer[1024];
+ 	int result;
+-#if PW_CHECK_VERSION(1, 2, 0)
++#if PW_CHECK_VERSION(1, 2, 0) && LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(32, 2, 0)
+ 	bool supports_explicit_sync = false;
+ #endif
+ 
+@@ -977,7 +986,7 @@
+ 	if ((has_modifier || check_pw_version(&obs_pw->server_version, 0, 3, 24)) &&
+ 	    (output_flags & OBS_SOURCE_ASYNC_VIDEO) != OBS_SOURCE_ASYNC_VIDEO) {
+ 		buffer_types |= 1 << SPA_DATA_DmaBuf;
+-#if PW_CHECK_VERSION(1, 2, 0)
++#if PW_CHECK_VERSION(1, 2, 0) && LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(32, 2, 0)
+ 		obs_enter_graphics();
+ 		supports_explicit_sync = gs_query_sync_capabilities();
+ 		obs_leave_graphics();
+@@ -1015,7 +1024,7 @@
+ 								    CURSOR_META_SIZE(1024, 1024)));
+ 
+ 	/* Buffer options */
+-#if PW_CHECK_VERSION(1, 2, 0)
++#if PW_CHECK_VERSION(1, 2, 0) && LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(32, 2, 0)
+ 	if (supports_explicit_sync) {
+ 		struct spa_pod_frame dmabuf_explicit_sync_frame;
+ 
+@@ -1033,7 +1042,7 @@
+ 							SPA_PARAM_BUFFERS_dataType, SPA_POD_Int(buffer_types));
+ 
+ 	/* Sync timeline */
+-#if PW_CHECK_VERSION(1, 2, 0)
++#if PW_CHECK_VERSION(1, 2, 0) && LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(32, 2, 0)
+ 	if (supports_explicit_sync) {
+ 		params[n_params++] = spa_pod_builder_add_object(&pod_builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+ 								SPA_PARAM_META_type, SPA_POD_Id(SPA_META_SyncTimeline),
 @@ -1068,6 +1077,11 @@
  	UNUSED_PARAMETER(old);
  
@@ -61,6 +124,37 @@
  	obs_pw_stream->cursor.visible = connect_info->screencast.cursor_visible;
  	obs_pw_stream->framerate.set = connect_info->video.framerate != NULL;
  	obs_pw_stream->resolution.set = connect_info->video.resolution != NULL;
+@@ -1331,12 +1346,14 @@
+ 	if (!obs_pw_stream->texture)
+ 		return;
+ 
++#if PW_CHECK_VERSION(1, 2, 0) && LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(32, 2, 0)
+ 	if (obs_pw_stream->sync.set) {
+ 		gs_sync_t *acquire_sync = gs_sync_create_from_syncobj_timeline_point(
+ 			obs_pw_stream->sync.acquire_syncobj_fd, obs_pw_stream->sync.acquire_point);
+ 		gs_sync_wait(acquire_sync);
+ 		gs_sync_destroy(acquire_sync);
+ 	}
++#endif
+ 
+ 	/* FIXME: Use obs_pw_stream->format.info.raw colorimetry info to handle
+ 	 * textures in their corresponding color space */
+@@ -1383,6 +1400,7 @@
+ 
+ 	gs_blend_state_pop();
+ 
++#if PW_CHECK_VERSION(1, 2, 0) && LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(32, 2, 0)
+ 	if (obs_pw_stream->sync.set) {
+ 		gs_sync_t *release_sync = gs_sync_create();
+ 		gs_sync_export_syncobj_timeline_point(release_sync, obs_pw_stream->sync.release_syncobj_fd,
+@@ -1390,6 +1408,7 @@
+ 		gs_sync_destroy(release_sync);
+ 		obs_pw_stream->sync.release_point_will_signal = true;
+ 	}
++#endif
+ }
+ 
+ void obs_pipewire_stream_set_cursor_visible(obs_pipewire_stream *obs_pw_stream, bool cursor_visible)
 --- a/plugins/linux-pipewire/pipewire.h
 +++ b/plugins/linux-pipewire/pipewire.h
 @@ -23,11 +23,19 @@
