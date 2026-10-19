@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
-const version = process.arch === "arm64" ? "30.2.3" : "32.2.0";
+const version = process.arch === "arm64" ? "30.2.3.1" : "32.2.0";
 const packageVersion = process.arch === "arm64" ? "30.2.3+dfsg-3~bpo24.04.1" : "32.2.0-0obsproject1~noble";
 const root = process.cwd();
 const runtime = path.resolve(process.env["ACROCLIP_RECORDER_STAGE"] ?? "resources/recorder");
@@ -17,7 +17,7 @@ const run = (command: string, args: string[]): string => {
 };
 if (process.platform !== "linux" || (process.arch !== "x64" && process.arch !== "arm64")) throw new Error("This backend supports Linux x64 and arm64");
 if (run("pkg-config", ["--modversion", "libobs"]).trim() !== version || run("dpkg-query", ["-W", "-f=${Version}", "obs-studio"]).trim() !== packageVersion)
-   throw new Error(`Install the official OBS PPA package obs-studio=${packageVersion}. Headers and runtime must match ${version}`);
+   throw new Error(`Install obs-studio=${packageVersion}. Headers and runtime must match ${version}`);
 const output = path.join(root, ".cache", "native-linux-build");
 run("python3", ["scripts/build-wayland-module.py"]);
 const waylandModule = path.join(root, ".cache/wayland-module-build/linux-pipewire.so");
@@ -98,7 +98,7 @@ await writeFile(
          obsVersion: version,
          packageVersion,
          sourceCommit: process.arch === "arm64" ? "144599fbff18e348652ccadfc3ca08794a03d970" : "7546be7266dde276d82d4681fe1ab4fd8e32cf2b",
-         source: `https://github.com/obsproject/obs-studio/tree/${version}`,
+         source: `https://github.com/obsproject/obs-studio/tree/${process.arch === "arm64" ? "144599fbff18e348652ccadfc3ca08794a03d970" : "7546be7266dde276d82d4681fe1ab4fd8e32cf2b"}`,
          repository: process.arch === "arm64" ? "https://ports.ubuntu.com/ubuntu-ports/" : "https://ppa.launchpadcontent.net/obsproject/obs-studio/ubuntu/",
          platform: `Ubuntu 24.04 ${process.arch}, X11, Wayland screen portal and exact XWayland application capture`,
          waylandModule: waylandProvenance,

@@ -55,7 +55,7 @@ jobs:
               shasum -a 256 "$taskReference/ffmpeg" "$taskReference/ffprobe" > work/reference-media/SHA256SUMS.txt
          - name: Collect immutable media source inputs
            run: bun scripts/release-sources.ts --controlled-inputs --collect-only
-         - name: Compile controlled Apple Silicon media
+         - name: Compile controlled macOS media
            run: bash scripts/build-media-macos.sh
          - name: Verify independent codec fixtures and record actual build
            run: |

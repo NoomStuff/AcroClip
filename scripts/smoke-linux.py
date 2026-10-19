@@ -85,7 +85,7 @@ try:
             events.append(json.loads(line))
     threading.Thread(target=read, daemon=True).start()
     ready = wait(lambda event: event["event"] == "ready")
-    assert ready["version"] == ("30.2.3" if platform.machine() == "aarch64" else "32.2.0"), ready
+    assert ready["version"] == ("30.2.3.1" if platform.machine() == "aarch64" else "32.2.0"), ready
     denied = command(dict(action="start",sourceKind="screen",screenIndex=0,quality="low",clipSeconds=2,captureAudio=False,microphone=False,allowSoftwareEncoder=False), "error")
     assert "software" in denied["message"].lower(), denied
     command(dict(action="stop"))
