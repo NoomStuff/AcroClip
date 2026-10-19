@@ -109,6 +109,7 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       await expect(page.locator(".settings-save-feedback")).toContainText("same shortcut");
       expect((await page.evaluate(() => window.acroClip.state())).preferences.shortcuts.recording).toBeUndefined();
       await navigation.click();
+      await expect(navigation).toHaveText(/Press a shortcut/);
       await navigation.press("Control+1");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.shortcuts.recording).toBe("Control+1");
       await page.keyboard.press("Control+1");

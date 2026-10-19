@@ -489,6 +489,8 @@ def collect(args):
     manifest["collectionComplete"] = not manifest["blockers"]
     (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Captured {len(manifest['packages'])} exact binary/source package records. {len(manifest['blockers'])} blockers. Static dependency review remains pending.")
+    for blocker in manifest["blockers"]:
+        print("Blocked: " + blocker, flush=True)
     return 1 if manifest["blockers"] else 0
 
 

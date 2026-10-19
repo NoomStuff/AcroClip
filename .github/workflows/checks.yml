@@ -32,6 +32,8 @@ jobs:
          - run: bun run bundle:media
          - run: bun run build:icons
          - run: bun run build:notices
+         - name: Stage the native helper used by real preview tests
+           run: bun run build:native
          - run: bun run verify
          - run: bun run test:media
          - run: bun run test:ui

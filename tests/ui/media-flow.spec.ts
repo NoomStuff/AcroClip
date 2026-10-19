@@ -2,7 +2,7 @@ import { selectOption } from "./select-option";
 import { test, expect, _electron as electron } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -10,7 +10,7 @@ import { defaultPreferences } from "../../src/shared/defaults";
 
 test("real media plays, creates a verified shareable, and supports overlapping categories", async () => {
    test.setTimeout(120000);
-   const profile = await mkdtemp(join(tmpdir(), "acroclip-media-ui-"));
+   const profile = await realpath(await mkdtemp(join(tmpdir(), "acroclip-media-ui-")));
    const collection = join(profile, "clips");
    await mkdir(collection, { recursive: true });
    const source = join(collection, "Desktop moment.mp4");

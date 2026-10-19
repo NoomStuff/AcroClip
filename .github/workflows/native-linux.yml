@@ -141,3 +141,13 @@ jobs:
               name: linux-capture-evidence
               path: .cache/linux-capture-evidence/
               if-no-files-found: ignore
+         - name: Retain source verification diagnostics
+           if: always()
+           uses: actions/upload-artifact@v7
+           with:
+              name: linux-source-diagnostics
+              path: |
+                 work/linux-release-sources/manifest.json
+                 work/linux-release-sources/apt/update.log
+                 work/linux-release-sources/controlled-modules/**/*.json
+              if-no-files-found: ignore

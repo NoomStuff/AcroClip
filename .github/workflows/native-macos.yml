@@ -162,6 +162,7 @@ jobs:
                  work/release-sources/licenses/
                  work/macos-release-sources/electron-component.json
                  work/macos-release-sources/macos-kit.json
+                 work/macos-release-sources/obs-inputs.json
                  work/macos-release-sources/obs-source-validation.json
                  work/AcroClip-*-darwin-arm64-sources-*.zip
                  work/AcroClip-*-darwin-arm64-sources-*.zip.json

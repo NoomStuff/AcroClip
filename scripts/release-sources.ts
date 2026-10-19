@@ -409,22 +409,28 @@ export async function collectDependency(
    if (repositoryExport) exportedRevision = await exportRepository(ref, file, directory, archiveOptions);
    else if (!existsSync(file)) {
       const temporary = `${file}.download`;
-      await runAsync(process.platform === "win32" ? "curl.exe" : "curl", [
-         "--fail",
-         "--location",
-         "--silent",
-         "--show-error",
-         "--retry",
-         "1",
-         "--connect-timeout",
-         "15",
-         "--max-time",
-         "90",
-         "--output",
-         temporary,
-         url,
-      ]);
-      await rename(temporary, file);
+      try {
+         await runAsync(process.platform === "win32" ? "curl.exe" : "curl", [
+            "--fail",
+            "--location",
+            "--silent",
+            "--show-error",
+            "--retry",
+            "1",
+            "--connect-timeout",
+            "15",
+            "--max-time",
+            "90",
+            "--output",
+            temporary,
+            url,
+         ]);
+         await rename(temporary, file);
+      } catch (error) {
+         if (expectedDigest || !uri.hostname.endsWith("googlesource.com") || !/^[a-f\d]{40}$/i.test(revision)) throw error;
+         console.warn(`Archive download failed for ${ref.uri}. Exporting the same pinned Git commit.`);
+         exportedRevision = await exportRepository(ref, file, directory);
+      }
    }
    const digest = await hashFile(file);
    if (expectedDigest && expectedDigest !== digest) throw new Error(`Source archive checksum mismatch: ${ref.uri}`);

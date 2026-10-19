@@ -113,6 +113,7 @@ export async function collectMacObsSources(project: string): Promise<void> {
          console.log(`Captured Mac OBS source: ${path.posix.basename(ref.recipe)}`);
       } catch (error) {
          failures.push({ recipe: ref.recipe, origin: ref.uri, reason: error instanceof Error ? error.message : String(error) });
+         console.error(`Mac source missing: ${ref.uri}: ${error instanceof Error ? error.message : String(error)}`);
       }
       kit.dependencySources = collected;
       kit.dependencyFailures = failures;

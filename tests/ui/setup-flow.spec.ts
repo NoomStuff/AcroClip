@@ -37,6 +37,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await page.getByRole("button", { name: "Continue", exact: true }).click();
       await page.getByRole("spinbutton", { name: "Setup clip length in seconds" }).fill("45");
       await page.getByRole("button", { name: "Clip shortcut", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Clip shortcut", exact: true })).toHaveText(/Press a shortcut/);
       await page.getByRole("button", { name: "Clip shortcut", exact: true }).press("Control+Alt+Shift+F9");
       await page.getByRole("button", { name: "Continue", exact: true }).click();
       await page.getByRole("button", { name: "Custom", exact: true }).click();
