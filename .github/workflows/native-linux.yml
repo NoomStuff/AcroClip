@@ -58,6 +58,11 @@ jobs:
            env:
               ACROCLIP_XWAYLAND_ADAPTER_TEST: "1"
          - run: bun install --frozen-lockfile
+         - name: Install the locked Electron runtime for source inventory
+           if: inputs.release_candidate == true
+           run: |
+              node node_modules/electron/install.js
+              test -f node_modules/electron/dist/libffmpeg.so
          - name: Stage pinned standalone media for the private package test
            run: bun scripts/provision-media.ts
          - name: Restore controlled media build

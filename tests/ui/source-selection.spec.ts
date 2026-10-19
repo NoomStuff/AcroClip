@@ -50,7 +50,10 @@ test("mismatched and stale sources stay unselected without preview or capture fa
          fixture.previewIds = [];
          fixture.fixtureSources = [{ id: "screen:selection-fixture", kind: "screen", name: "Fixture screen", thumbnail: "" }];
          ipcMain.removeHandler("sources");
-         ipcMain.handle("sources", () => fixture.fixtureSources);
+         ipcMain.handle("sources", async () => {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            return fixture.fixtureSources;
+         });
          ipcMain.removeHandler("preview-source");
          ipcMain.handle("preview-source", (_event, id: string | null) => {
             if (id) {
@@ -65,6 +68,7 @@ test("mismatched and stale sources stay unselected without preview or capture fa
       await expect(start).toBeDisabled();
       await expect(page.locator(".audio-listen").first()).toBeDisabled();
       expect(await app.evaluate(() => (globalThis as typeof globalThis & { previewIds: string[] }).previewIds)).toEqual([]);
+      await expect(page.getByText("Open an application to capture.", { exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Screen", exact: true }).click();
       await expect(start).toBeEnabled();
       await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).preferences.sourceId)).toBe("screen:selection-fixture");
