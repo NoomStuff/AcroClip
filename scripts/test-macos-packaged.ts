@@ -127,9 +127,28 @@ async function tones(file: string, track: number) {
       return (2 * Math.hypot(sine, cosine)) / count;
    });
 }
-function onlySelected(tone: number[]) {
-   expect(tone[0]).toBeGreaterThan(0.03);
-   expect(tone[1]).toBeLessThan(tone[0]! / 8);
+function onlyTone(tone: number[], selected: 0 | 1) {
+   expect(tone[selected]).toBeGreaterThan(0.03);
+   expect(tone[1 - selected]).toBeLessThan(tone[selected]! / 8);
+}
+async function verifyFixtureFrames(file: string) {
+   const { stdout } = await run(
+      ffmpeg,
+      ["-v", "error", "-i", file, "-vf", "crop=2:2:iw/2:ih/2,scale=1:1", "-fps_mode", "passthrough", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
+      { encoding: "buffer" }
+   );
+   expect(stdout.length).toBeGreaterThanOrEqual(6);
+   expect(stdout.length % 3).toBe(0);
+   const classes = new Set<number>();
+   for (let offset = 0; offset < stdout.length; offset += 3) {
+      const color = [
+         [228, 76, 102],
+         [65, 184, 170],
+      ].findIndex((fixtureColor) => fixtureColor.every((channel, index) => Math.abs(channel - stdout[offset + index]!) <= 22));
+      expect(color).toBeGreaterThanOrEqual(0);
+      classes.add(color);
+   }
+   expect([...classes].sort()).toEqual([0, 1]);
 }
 try {
    desktop = await electron.launch({
@@ -142,8 +161,11 @@ try {
    const page = await desktop.firstWindow();
    expect((await page.evaluate(() => window.acroClip.state())).preferences).toMatchObject({ setupComplete: true, sourceKind: "app", recordingSizeVersion: 2 });
    await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeVisible();
-   const selected = (await page.evaluate(() => window.acroClip.games())).find((candidate) => candidate.pid === identity.pid);
+   const candidates = await page.evaluate(() => window.acroClip.games());
+   const selected = candidates.find((candidate) => candidate.pid === identity.pid);
+   const other = candidates.find((candidate) => candidate.pid === decoyIdentity.pid);
    expect(selected).toBeDefined();
+   expect(other).toBeDefined();
    const captureSources = await page.evaluate(() => window.acroClip.sources());
    const captureSource = captureSources.find((source) => source.kind === "app" && source.id.split(":")[1] === String(identity.windowId));
    await writeFile(
@@ -162,11 +184,11 @@ try {
    expect(captureSource, "The fixture window must be available through the actual source picker").toBeDefined();
    const audioSources: AdditionalAudioSource[] = [
       {
-         id: "selected",
-         name: "Selected app",
-         kind: "application",
-         sourceId: selected!.id,
-         executable: selected!.executable,
+         id: "source-audio",
+         name: "Source audio",
+         kind: "source",
+         sourceId: "",
+         executable: "",
          deviceId: "",
          enabled: true,
          volume: 1,
@@ -174,12 +196,12 @@ try {
          includeInMaster: false,
       },
       {
-         id: "system",
-         name: "System audio",
-         kind: "output",
-         sourceId: "",
-         executable: "",
-         deviceId: "system",
+         id: "other",
+         name: "Other app",
+         kind: "application",
+         sourceId: other!.id,
+         executable: other!.executable,
+         deviceId: "",
          enabled: true,
          volume: 1,
          muted: false,
@@ -237,46 +259,76 @@ try {
       const audio = z
          .object({ streams: z.array(z.object({ codec_type: z.string(), tags: z.object({ title: z.string().optional() }).optional() })) })
          .parse(JSON.parse(metadata)).streams;
-      expect(audio.filter((stream) => stream.codec_type === "audio").map((stream) => stream.tags?.title)).toEqual([
-         "Master",
-         "Capture audio",
-         "Selected app",
-         "System audio",
-      ]);
-      for (const track of [0, 1, 2, 3]) {
+      expect(audio.filter((stream) => stream.codec_type === "audio").map((stream) => stream.tags?.title)).toEqual(["Master", "Source audio", "Other app"]);
+      for (const track of [0, 1, 2]) {
          const { stderr } = await run(ffmpeg, ["-hide_banner", "-i", clip.path, "-map", `0:a:${track}`, "-af", "volumedetect", "-f", "null", "-"]);
          const mean = stderr.match(/mean_volume: (-?[\d.]+) dB/);
          expect(mean).not.toBeNull();
          expect(Number(mean![1])).toBeGreaterThan(-55);
       }
-      const measured = await Promise.all([0, 1, 2, 3].map((track) => tones(clip.path, track)));
-      for (const tone of measured.slice(0, 3)) onlySelected(tone);
-      expect(Math.min(...measured[3]!)).toBeGreaterThan(0.03);
+      const measured = await Promise.all([0, 1, 2].map((track) => tones(clip.path, track)));
+      onlyTone(measured[1]!, 0);
+      onlyTone(measured[2]!, 1);
+      expect(Math.min(...measured[0]!)).toBeGreaterThan(0.03);
       expect(measured[0]![0]! / measured[1]![0]!).toBeGreaterThan(0.8);
       expect(measured[0]![0]! / measured[1]![0]!).toBeLessThan(1.2);
+      expect(measured[0]![1]! / measured[2]![1]!).toBeGreaterThan(0.8);
+      expect(measured[0]![1]! / measured[2]![1]!).toBeLessThan(1.2);
       audioEvidence.push({ clip: clip.id, tones: measured });
-      const { stdout } = await run(
-         ffmpeg,
-         ["-v", "error", "-i", clip.path, "-vf", "crop=2:2:iw/2:ih/2,scale=1:1", "-fps_mode", "passthrough", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
-         { encoding: "buffer" }
-      );
-      expect(stdout.length).toBeGreaterThanOrEqual(6);
-      expect(stdout.length % 3).toBe(0);
-      const classes = new Set<number>();
-      for (let offset = 0; offset < stdout.length; offset += 3) {
-         const color = [
-            [228, 76, 102],
-            [65, 184, 170],
-         ].findIndex((fixtureColor) => fixtureColor.every((channel, index) => Math.abs(channel - stdout[offset + index]!) <= 22));
-         expect(color).toBeGreaterThanOrEqual(0);
-         classes.add(color);
-      }
-      expect([...classes].sort()).toEqual([0, 1]);
+      await verifyFixtureFrames(clip.path);
    }
+   const systemAudio: AdditionalAudioSource = {
+      id: "system",
+      name: "System audio",
+      kind: "output",
+      sourceId: "",
+      executable: "",
+      deviceId: "system",
+      enabled: true,
+      volume: 1,
+      muted: false,
+      includeInMaster: false,
+   };
+   await page.evaluate(async (source) => {
+      const current = await window.acroClip.state();
+      await window.acroClip.savePreferences({ ...current.preferences, audioSources: [source] });
+      await window.acroClip.startRecording();
+   }, systemAudio);
+   await expect
+      .poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.availableSeconds), { timeout: 30000 })
+      .toBeGreaterThanOrEqual(4.9);
+   await page.evaluate(async () => {
+      await window.acroClip.saveClip();
+      await window.acroClip.stopRecording();
+   });
+   await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).clips.length), { timeout: 60000 }).toBe(3);
+   const completed = (await page.evaluate(() => window.acroClip.state())).clips;
+   const systemClip = completed.find((clip) => !state.clips.some((previous) => previous.id === clip.id))!;
+   expect(systemClip.duration).toBeGreaterThanOrEqual(4.5);
+   expect(systemClip.width).toBe(identity.windowPixels.width);
+   expect(systemClip.height).toBe(identity.windowPixels.height);
+   await run(ffmpeg, ["-v", "error", "-i", systemClip.path, "-map", "0", "-f", "null", "-"]);
+   const { stdout: systemMetadata } = await run(ffprobe, ["-v", "error", "-show_streams", "-of", "json", systemClip.path]);
+   const systemStreams = z
+      .object({ streams: z.array(z.object({ codec_type: z.string(), tags: z.object({ title: z.string().optional() }).optional() })) })
+      .parse(JSON.parse(systemMetadata)).streams;
+   expect(systemStreams.filter((stream) => stream.codec_type === "audio").map((stream) => stream.tags?.title)).toEqual(["Master", "System audio"]);
+   const systemTones = await Promise.all([0, 1].map((track) => tones(systemClip.path, track)));
+   for (const tone of systemTones) expect(Math.min(...tone)).toBeGreaterThan(0.03);
+   for (const tone of [0, 1]) {
+      expect(systemTones[0]![tone]! / systemTones[1]![tone]!).toBeGreaterThan(0.8);
+      expect(systemTones[0]![tone]! / systemTones[1]![tone]!).toBeLessThan(1.2);
+   }
+   audioEvidence.push({ clip: systemClip.id, tones: systemTones });
+   await verifyFixtureFrames(systemClip.path);
    await page.evaluate((id) => window.acroClip.createShareable(id, 1), original.id);
-   await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).clips[0]?.shareables.length), { timeout: 90000 }).toBe(1);
+   await expect
+      .poll(() => page.evaluate(async (id) => (await window.acroClip.state()).clips.find((clip) => clip.id === id)?.shareables.length, original.id), {
+         timeout: 90000,
+      })
+      .toBe(1);
    expect(digest(await readFile(original.path))).toBe(hash);
-   const copy = (await page.evaluate(() => window.acroClip.state())).clips[0]!.shareables[0]!;
+   const copy = (await page.evaluate(() => window.acroClip.state())).clips.find((clip) => clip.id === original.id)!.shareables[0]!;
    expect((await stat(copy.path)).size).toBeLessThanOrEqual(1000000);
    await run(ffmpeg, ["-v", "error", "-i", copy.path, "-map", "0", "-f", "null", "-"]);
    await writeFile(
@@ -296,7 +348,7 @@ try {
             generatedApplicationAudioTested: true,
             selectedApplicationAudioIsolationTested: true,
             systemMixTested: true,
-            masterExclusionTested: true,
+            automaticMasterInclusionTested: true,
             audioEvidence,
             original: { duration: original.duration, width: original.width, height: original.height, source: original.source, sha256: hash },
             shareableBytes: (await stat(copy.path)).size,

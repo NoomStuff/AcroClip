@@ -4,6 +4,7 @@ from pathlib import Path
 import tarfile
 import hashlib
 import unittest
+import urllib.error
 from unittest.mock import patch
 import tempfile
 
@@ -13,6 +14,26 @@ spec.loader.exec_module(collector)
 
 
 class SourceEvidenceTest(unittest.TestCase):
+    def test_runner_mirror_transport_keeps_suites_and_signed_index_keys(self):
+        source = "Types: deb deb-src\nURIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: noble noble-updates noble-security\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+        result = collector.concrete_repository_sources(source)
+        self.assertEqual(result.splitlines(), ["Types: deb deb-src", "URIs: https://archive.ubuntu.com/ubuntu", "Suites: noble noble-updates noble-security", "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg"])
+        self.assertEqual(collector.concrete_repository_sources(result), result)
+
+    def test_retry_still_requires_the_exact_expected_source_digest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / "source.tar.xz"
+            content = b"exact source bytes"
+            unavailable = urllib.error.HTTPError("https://example.org/source", 503, "Unavailable", None, None)
+            with patch.object(collector.urllib.request, "urlopen", side_effect=[unavailable, io.BytesIO(content)]) as request, patch.object(collector.time, "sleep"):
+                collector.download("https://example.org/source", target, hashlib.sha256(content).hexdigest())
+                self.assertEqual(request.call_count, 2)
+            self.assertEqual(target.read_bytes(), content)
+            with patch.object(collector.urllib.request, "urlopen", return_value=io.BytesIO(b"different bytes")):
+                with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
+                    collector.download("https://example.org/source", target, "0" * 64)
+            self.assertEqual(target.read_bytes(), content)
+
     def test_compiler_only_packages_include_their_notice_owner(self):
         with tempfile.TemporaryDirectory() as temporary:
             docs = Path(temporary)

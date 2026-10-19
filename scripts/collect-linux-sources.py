@@ -11,9 +11,29 @@ import re
 import shutil
 import subprocess
 import tarfile
+import time
+import urllib.error
 import urllib.request
 import urllib.parse
 from controlled_wayland_sources import MODULE, copy_inputs, verify_inputs, check_header_packages
+
+
+def source_response(request, timeout=120):
+    for attempt in range(4):
+        try:
+            return urllib.request.urlopen(request, timeout=timeout)
+        except urllib.error.HTTPError as error:
+            if error.code not in {429, 500, 502, 503, 504} or attempt == 3:
+                url = request.full_url if isinstance(request, urllib.request.Request) else request
+                raise RuntimeError(f"Source request failed for {url}: HTTP {error.code}") from error
+            time.sleep(2 ** attempt)
+
+
+def concrete_repository_sources(sources):
+    # GitHub runners use apt's mirror transport. Explicit Ubuntu HTTPS URIs
+    # keep print-uris output usable by the source downloader. Apt still checks
+    # the same signed indexes and every downloaded member keeps its digest.
+    return sources.replace("mirror+file:/etc/apt/apt-mirrors.txt", "https://archive.ubuntu.com/ubuntu")
 
 
 def run(args):
@@ -73,7 +93,7 @@ def download(url, target, expected):
     # Keep apt's authoritative path and digest, while avoiding plaintext transport.
     url = url.replace("http://archive.ubuntu.com/", "https://archive.ubuntu.com/").replace("http://security.ubuntu.com/", "https://security.ubuntu.com/")
     request = urllib.request.Request(url, headers={"User-Agent": "AcroClip-source-collector/1"})
-    with urllib.request.urlopen(request, timeout=120) as response, open(temporary, "wb") as stream:
+    with source_response(request) as response, open(temporary, "wb") as stream:
         shutil.copyfileobj(response, stream)
     if expected and digest(temporary) != expected:
         temporary.unlink()
@@ -90,7 +110,7 @@ def archive_name(name):
 def official_json(url):
     if not url.startswith("https://api.launchpad.net/1.0/"):
         raise ValueError("Unexpected Launchpad API origin")
-    with urllib.request.urlopen(url, timeout=60) as response:
+    with source_response(url, timeout=60) as response:
         return json.load(response)
 
 
@@ -338,6 +358,7 @@ def collect(args):
     (apt / "lists/partial").mkdir(parents=True, exist_ok=True)
     (apt / "archives/partial").mkdir(parents=True, exist_ok=True)
     sources = "\n\n".join(file.read_text().replace("Types: deb\n", "Types: deb deb-src\n") for file in sorted(Path("/etc/apt/sources.list.d").glob("*.sources")))
+    sources = concrete_repository_sources(sources)
     if "deb-src" not in sources:
         raise ValueError("No deb822 apt repository sources available")
     (apt / "repositories.sources").write_text(sources)
