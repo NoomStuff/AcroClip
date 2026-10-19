@@ -24,7 +24,7 @@ await copyFile(path.resolve("native/macos/fixture-Info.plist"), path.join(fixtur
 const binary = path.join(fixtureContents, "MacOS", "fixture");
 await run("swiftc", [path.resolve("native/macos/fixture.swift"), "-o", binary]);
 const fixtureOutput = path.join(folder, "fixture-output.jsonl");
-const fixture = spawn("open", ["-n", "-W", path.dirname(fixtureContents), "--args", fixtureOutput], { stdio: ["ignore", "pipe", "pipe"] });
+const fixture = spawn("open", ["-n", "-W", path.dirname(fixtureContents), "--args", fixtureOutput, "997", "bounded"], { stdio: ["ignore", "pipe", "pipe"] });
 const fixtureErrors: string[] = [];
 const fixtureHealth: Array<{ engineRunning: boolean; renderedFrames: number }> = [];
 fixture.stderr.on("data", (data: Buffer) => fixtureErrors.push(data.toString()));
@@ -34,7 +34,12 @@ async function waitForFixture(outputPath = fixtureOutput) {
       const output = await readFile(outputPath, "utf8").catch(() => "");
       if (output.includes("\n")) {
          return z
-            .object({ pid: z.number().int().positive(), windowId: z.number().int().positive(), audioStarted: z.boolean() })
+            .object({
+               pid: z.number().int().positive(),
+               windowId: z.number().int().positive(),
+               audioStarted: z.boolean(),
+               windowPixels: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }),
+            })
             .parse(JSON.parse(output.split("\n")[0]!));
       }
       await delay(50);
@@ -84,9 +89,8 @@ await writeFile(
       sourceKind: "app",
       sourceId: `window:${identity.windowId}:0`,
       quality: "custom",
-      recordingSizeVersion: 1,
-      customWidth: 640,
-      customHeight: 360,
+      recordingSizeVersion: 2,
+      resolutionLimit: 360,
       customFPS: 15,
       customCQ: 28,
       clipSeconds: 5,
@@ -136,6 +140,7 @@ try {
    });
    desktop.process().stderr?.on("data", (data: Buffer) => applicationErrors.push(data.toString()));
    const page = await desktop.firstWindow();
+   expect((await page.evaluate(() => window.acroClip.state())).preferences).toMatchObject({ setupComplete: true, sourceKind: "app", recordingSizeVersion: 2 });
    await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeVisible();
    const selected = (await page.evaluate(() => window.acroClip.games())).find((candidate) => candidate.pid === identity.pid);
    expect(selected).toBeDefined();
@@ -219,8 +224,8 @@ try {
    await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).clips.length), { timeout: 60000 }).toBe(2);
    const state = await page.evaluate(() => window.acroClip.state());
    const original = state.clips[0]!;
-   expect(original.width).toBe(640);
-   expect(original.height).toBe(360);
+   expect(original.width).toBe(identity.windowPixels.width);
+   expect(original.height).toBe(identity.windowPixels.height);
    expect(original.duration).toBeGreaterThanOrEqual(4.5);
    expect(original.source).toContain("Mac capture fixture");
    const digest = (data: Buffer) => createHash("sha256").update(data).digest("hex");

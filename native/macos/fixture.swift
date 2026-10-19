@@ -8,6 +8,7 @@ let frequency = CommandLine.arguments.count > 2 ? Double(CommandLine.arguments[2
 precondition(frequency >= 100 && frequency <= 20000)
 let mode = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : ""
 let compact = mode == "compact"
+let bounded = mode == "bounded"
 let fullscreenSpace = mode == "fullscreen"
 let evidenceOutput: FileHandle = try {
     guard let path = evidencePath else { return FileHandle.standardOutput }
@@ -31,7 +32,7 @@ final class PatternView: NSView {
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let screen = NSScreen.main!.frame
-let frame = compact ? NSRect(x: screen.minX, y: screen.maxY - 120, width: 240, height: 120) : fullscreenSpace ? screen.insetBy(dx: 50, dy: 50) : screen
+let frame = compact ? NSRect(x: screen.minX, y: screen.maxY - 120, width: 240, height: 120) : bounded ? NSRect(x: screen.minX + 50, y: screen.minY + 50, width: 320, height: 180) : fullscreenSpace ? screen.insetBy(dx: 50, dy: 50) : screen
 let view = PatternView(frame: frame)
 let mask: NSWindow.StyleMask = fullscreenSpace ? [.titled, .closable, .resizable, .miniaturizable] : [.borderless]
 let window = NSWindow(contentRect: frame, styleMask: mask, backing: .buffered, defer: false)
@@ -76,7 +77,9 @@ do {
 } catch {
     FileHandle.standardError.write(Data("Synthetic audio could not start: \(error)\n".utf8))
 }
+let windowPixels = view.convertToBacking(view.bounds)
 let result: [String: Any] = ["pid": ProcessInfo.processInfo.processIdentifier, "windowId": window.windowNumber, "displayId": CGMainDisplayID(), "audioStarted": audio,
+    "windowPixels": ["width": Int(windowPixels.width), "height": Int(windowPixels.height)],
     "screenPermission": CGPreflightScreenCaptureAccess(), "microphoneAuthorization": AVCaptureDevice.authorizationStatus(for: .audio).rawValue,
     "frequency": frequency, "bundleIdentifier": Bundle.main.bundleIdentifier ?? "",
     "screenFrame": ["x": screen.minX, "y": screen.minY, "width": screen.width, "height": screen.height],
