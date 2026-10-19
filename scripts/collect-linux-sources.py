@@ -122,7 +122,10 @@ def ubuntu_architecture():
 def published_binary(owner, version, series="noble"):
     archive = "https://api.launchpad.net/1.0/~obsproject/+archive/ubuntu/obs-studio" if owner.split(":", 1)[0] == "obs-studio" and "obsproject" in version else "https://api.launchpad.net/1.0/ubuntu/+archive/primary"
     name = owner.split(":", 1)[0]
-    url = archive + "?" + urllib.parse.urlencode({"ws.op": "getPublishedBinaries", "binary_name": name, "version": version, "exact_match": "true"})
+    parameters = {"ws.op": "getPublishedBinaries", "binary_name": name, "version": version, "exact_match": "true"}
+    if series is not None:
+        parameters["distro_arch_series"] = f"https://api.launchpad.net/1.0/ubuntu/{series}/{ubuntu_architecture()}"
+    url = archive + "?" + urllib.parse.urlencode(parameters)
     while url:
         collection = official_json(url)
         for record in collection["entries"]:
