@@ -243,7 +243,17 @@ try {
    await page.waitForTimeout(100);
    await page.evaluate(() => window.acroClip.saveClip());
    await page.evaluate(() => window.acroClip.stopRecording());
-   await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).clips.length), { timeout: 60000 }).toBe(2);
+   // The watcher can discover the files before save registration attaches their metadata.
+   await expect
+      .poll(
+         () =>
+            page.evaluate(async () => {
+               const state = await window.acroClip.state();
+               return state.clips.length === 2 && state.recorder.pendingSaves === 0;
+            }),
+         { timeout: 60000 }
+      )
+      .toBe(true);
    const state = await page.evaluate(() => window.acroClip.state());
    const original = state.clips[0]!;
    expect(original.width).toBe(identity.windowPixels.width);
@@ -301,7 +311,16 @@ try {
       await window.acroClip.saveClip();
       await window.acroClip.stopRecording();
    });
-   await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).clips.length), { timeout: 60000 }).toBe(3);
+   await expect
+      .poll(
+         () =>
+            page.evaluate(async () => {
+               const state = await window.acroClip.state();
+               return state.clips.length === 3 && state.recorder.pendingSaves === 0;
+            }),
+         { timeout: 60000 }
+      )
+      .toBe(true);
    const completed = (await page.evaluate(() => window.acroClip.state())).clips;
    const systemClip = completed.find((clip) => !state.clips.some((previous) => previous.id === clip.id))!;
    expect(systemClip.duration).toBeGreaterThanOrEqual(4.5);
