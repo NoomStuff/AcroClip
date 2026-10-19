@@ -292,13 +292,15 @@ json captureCandidates() {
 std::mutex stdoutMutex;
 std::atomic<bool> captureTextureFailure{false};
 std::string muxExecutable = "obs-ffmpeg-mux.exe";
-obs_source_t *createCaptureSource(const char *id, obs_data_t *settings) {
+bool inputTypeAvailable(const char *id) {
   const char *registered = nullptr;
-  bool found = false;
   for (size_t i = 0; obs_enum_input_types(i, &registered); i++)
     if (std::string(registered) == id)
-      found = true;
-  if (!found)
+      return true;
+  return false;
+}
+obs_source_t *createCaptureSource(const char *id, obs_data_t *settings) {
+  if (!inputTypeAvailable(id))
     throw std::runtime_error("The selected capture method is unavailable. Its "
                              "OBS module did not initialize on this session");
   return obs_source_create_private(id, "Capture", settings);
@@ -1851,7 +1853,10 @@ public:
       int screen = c.value("screenIndex", 0);
       obs_data_set_int(s, "screen", screen);
       obs_data_set_bool(s, "show_cursor", true);
-      next = createCaptureSource("xshm_input_v2", s);
+      const char *screenType = inputTypeAvailable("xshm_input_v2")
+                                   ? "xshm_input_v2"
+                                   : "xshm_input";
+      next = createCaptureSource(screenType, s);
       if (!next)
         throw std::runtime_error(
             "The X11 capture module could not create a source");
