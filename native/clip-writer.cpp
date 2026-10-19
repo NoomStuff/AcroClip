@@ -156,7 +156,10 @@ ClipResult ClipWriter::write(ClipJob &job) {
       add("160");
       add("48000");
       add("1024");
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(32, 2, 0)
+      // The pinned OBS 30 muxer has no initial-padding argument.
       add("0");
+#endif
       add("2");
     }
   }
