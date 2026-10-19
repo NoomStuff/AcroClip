@@ -100,7 +100,7 @@ export class UpdateManager {
          const module = await import("electron-updater");
          const updater = module.autoUpdater ?? module.default.autoUpdater;
          this.updater = updater;
-         updater.setFeedURL({ provider: "github", owner: "NoomStuff", repo: "AcroClip" });
+         updater.setFeedURL({ provider: "generic", url: "https://raw.githubusercontent.com/NoomStuff/AcroClip/updates/" });
          updater.autoDownload = true;
          updater.autoInstallOnAppQuit = false;
          // Only app packages appear on GitHub Releases; NSIS must download the

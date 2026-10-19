@@ -57,6 +57,10 @@ it.skipIf(process.platform === "darwin")("handles automatic progress, readiness,
    expect(() => updates.install()).toThrow("not ready");
    await updates.offer(release);
    await vi.waitFor(() => expect(automatic.checkForUpdates).toHaveBeenCalled());
+   expect(automatic.setFeedURL).toHaveBeenCalledWith({
+      provider: "generic",
+      url: "https://raw.githubusercontent.com/NoomStuff/AcroClip/updates/",
+   });
    automatic.emit("download-progress", { percent: 42.3 });
    expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ phase: "downloading", percent: 42 }));
    automatic.emit("error", new Error("network lost"));

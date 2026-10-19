@@ -1,0 +1,64 @@
+name: Package verified Mac download as DMG
+on:
+   workflow_dispatch:
+      inputs:
+         tag:
+            description: Published stable release tag
+            required: true
+            default: v0.3.0
+         architecture:
+            type: choice
+            options: [arm64, x64]
+            default: arm64
+permissions:
+   contents: read
+jobs:
+   package:
+      runs-on: macos-15
+      timeout-minutes: 15
+      steps:
+         - uses: actions/checkout@v7
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: "1.4.2"
+         - run: bun install --frozen-lockfile
+         - name: Identify the already verified app download
+           id: package
+           uses: actions/github-script@v9
+           env:
+              RELEASE_TAG: ${{ inputs.tag }}
+              RELEASE_ARCH: ${{ inputs.architecture }}
+           with:
+              script: |
+                 const tag = process.env.RELEASE_TAG;
+                 const arch = process.env.RELEASE_ARCH;
+                 if (!/^v\d+\.\d+\.\d+$/.test(tag) || !['arm64', 'x64'].includes(arch)) throw Error('Invalid release identity');
+                 const release = (await github.rest.repos.getReleaseByTag({ ...context.repo, tag })).data;
+                 if (release.draft || release.prerelease) throw Error('A published stable release is required');
+                 const name = `AcroClip-${tag.slice(1)}-mac-${arch}.zip`;
+                 const asset = release.assets.find(a => a.name === name);
+                 if (!asset || asset.state !== 'uploaded' || !/^sha256:[a-f0-9]{64}$/.test(asset.digest ?? '')) throw Error('Verified app ZIP absent');
+                 core.setOutput('sha256', asset.digest.slice(7));
+                 core.setOutput('name', name);
+         - name: Download and package the unchanged application
+           env:
+              GH_TOKEN: ${{ github.token }}
+              GH_REPO: ${{ github.repository }}
+              RELEASE_TAG: ${{ inputs.tag }}
+              PACKAGE_NAME: ${{ steps.package.outputs.name }}
+              PACKAGE_SHA256: ${{ steps.package.outputs.sha256 }}
+           run: |
+              gh release download "$RELEASE_TAG" --pattern "$PACKAGE_NAME" --dir work/dmg-input
+              bun scripts/package-macos-dmg.ts "work/dmg-input/$PACKAGE_NAME" "$PACKAGE_SHA256" work/dmg-output
+         - uses: actions/upload-artifact@v7
+           with:
+              name: verified-dmg-${{ inputs.architecture }}
+              path: work/dmg-output/*.dmg
+              if-no-files-found: error
+              retention-days: 30
+         - uses: actions/upload-artifact@v7
+           with:
+              name: dmg-verification-${{ inputs.architecture }}
+              path: work/dmg-output/*.verification.json
+              if-no-files-found: error
+              retention-days: 30
