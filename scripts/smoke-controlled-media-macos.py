@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 project = Path.cwd()
@@ -16,7 +17,11 @@ if controlled.resolve() == reference.resolve():
 temporary = Path(tempfile.mkdtemp(prefix="acroclip-macos-codecs-"))
 
 def run(binary, args):
-    return subprocess.check_output([str(binary), "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", *args], stderr=subprocess.PIPE, timeout=120)
+    try:
+        return subprocess.check_output([str(binary), "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", *args], stderr=subprocess.PIPE, timeout=120)
+    except subprocess.CalledProcessError as error:
+        print(error.stderr.decode(errors="replace"), file=sys.stderr, flush=True)
+        raise
 
 fixtures = [
     ("h264-aac.mp4", "libx264", "aac", ["-preset", "ultrafast"]),

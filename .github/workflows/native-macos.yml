@@ -38,12 +38,13 @@ jobs:
          - run: bun install --frozen-lockfile
          - name: Install build tools and independent fixture generator
            run: |
-              brew install ffmpeg meson ninja pkg-config
-              taskReference="$(brew --prefix ffmpeg)/bin"
+              brew install ffmpeg-full meson ninja pkg-config
+              taskReference="$(brew --prefix ffmpeg-full)/bin"
               echo "FFMPEG_PATH=$taskReference/ffmpeg" >> "$GITHUB_ENV"
               echo "FFPROBE_PATH=$taskReference/ffprobe" >> "$GITHUB_ENV"
               mkdir -p work/reference-media
-              brew info --json=v2 ffmpeg > work/reference-media/homebrew.json
+              brew info --json=v2 ffmpeg-full > work/reference-media/homebrew.json
+              "$taskReference/ffmpeg" -encoders > work/reference-media/encoders.txt
               "$taskReference/ffmpeg" -version > work/reference-media/ffmpeg-version.txt
               "$taskReference/ffprobe" -version > work/reference-media/ffprobe-version.txt
               shasum -a 256 "$taskReference/ffmpeg" "$taskReference/ffprobe" > work/reference-media/SHA256SUMS.txt
