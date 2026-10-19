@@ -31,6 +31,18 @@ jobs:
            if: runner.os == 'Windows'
            run: bun scripts/controlled-media.ts
          - run: bun scripts/provision-media.ts
+           if: runner.os != 'macOS'
+         - name: Build controlled macOS media
+           if: runner.os == 'macOS'
+           run: |
+              brew install ffmpeg-full meson ninja pkg-config
+              taskReference="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
+              bun scripts/release-sources.ts --controlled-inputs --collect-only
+              bash scripts/build-media-macos.sh
+              ACROCLIP_REFERENCE_FFMPEG="$taskReference" python3 scripts/smoke-controlled-media-macos.py
+              bun scripts/controlled-media-macos.ts
+              echo "FFMPEG_PATH=$PWD/work/controlled-media/macos-arm64/ffmpeg" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$PWD/work/controlled-media/macos-arm64/ffprobe" >> "$GITHUB_ENV"
          - run: bun run bundle:media
          - run: bun run build:icons
          - run: bun run build:notices

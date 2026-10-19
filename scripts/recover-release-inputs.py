@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
@@ -17,7 +18,10 @@ args = parser.parse_args()
 root = Path(args.destination).resolve()
 if root.exists() and any(root.iterdir()):
     raise ValueError("Source destination must be empty")
-request = urllib.request.Request("https://api.github.com/repos/NoomStuff/AcroClip/releases/tags/" + args.release, headers={"User-Agent": "AcroClip-source-inputs", "Accept": "application/vnd.github+json"})
+headers = {"User-Agent": "AcroClip-source-inputs", "Accept": "application/vnd.github+json"}
+if os.environ.get("GITHUB_TOKEN"):
+    headers["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
+request = urllib.request.Request("https://api.github.com/repos/NoomStuff/AcroClip/releases/tags/" + args.release, headers=headers)
 with urllib.request.urlopen(request, timeout=60) as response:
     release = json.load(response)
 assets = [asset for asset in release["assets"] if "-" + args.platform + "-sources-" in asset["name"] and asset["name"].endswith(".zip")]

@@ -139,6 +139,22 @@ try {
    await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeVisible();
    const selected = (await page.evaluate(() => window.acroClip.games())).find((candidate) => candidate.pid === identity.pid);
    expect(selected).toBeDefined();
+   const captureSources = await page.evaluate(() => window.acroClip.sources());
+   const captureSource = captureSources.find((source) => source.kind === "app" && source.id.split(":")[1] === String(identity.windowId));
+   await writeFile(
+      path.join(evidence, "capture-source.json"),
+      JSON.stringify(
+         {
+            windowId: identity.windowId,
+            sources: captureSources.map(({ id, name, kind }) => ({ id, name, kind })),
+            state: (await page.evaluate(() => window.acroClip.state())).recorder,
+            selected: captureSource?.id,
+         },
+         null,
+         2
+      )
+   );
+   expect(captureSource, "The fixture window must be available through the actual source picker").toBeDefined();
    const audioSources: AdditionalAudioSource[] = [
       {
          id: "selected",
@@ -165,10 +181,13 @@ try {
          includeInMaster: false,
       },
    ];
-   await page.evaluate(async (sources) => {
-      const current = await window.acroClip.state();
-      await window.acroClip.savePreferences({ ...current.preferences, audioSources: sources });
-   }, audioSources);
+   await page.evaluate(
+      async ({ sources, sourceId }) => {
+         const current = await window.acroClip.state();
+         await window.acroClip.savePreferences({ ...current.preferences, sourceKind: "app", sourceId, audioSources: sources });
+      },
+      { sources: audioSources, sourceId: captureSource!.id }
+   );
    expect(await page.evaluate(() => window.acroClip.audioDevices("output"))).toEqual([{ id: "system", name: "System audio" }]);
    await page.getByRole("button", { name: "Start recording", exact: true }).click();
    await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
