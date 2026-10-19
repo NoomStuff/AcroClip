@@ -150,7 +150,18 @@ try:
                      microphone=False, allowSoftwareEncoder=True))
         recording = wait(lambda event: event in events[start_index:] and event["event"] == "recording")
         assert recording["encoder"] == "obs_x264" or "videotoolbox" in recording["encoder"], recording
-        time.sleep(3)
+        # The Intel CI host uses Apple's software renderer. Encoder startup
+        # can take longer than a fixed wall-clock delay; require real footage.
+        deadline = time.monotonic() + 45
+        while True:
+            status_index = len(events)
+            command(dict(action="status"))
+            status = wait(lambda event: event in events[status_index:] and event["event"] == "status")
+            assert status["active"] and not status["waiting"], status
+            if status["availableSeconds"] >= 2:
+                break
+            assert time.monotonic() < deadline, f"Video buffer did not fill: {status}"
+            time.sleep(0.1)
         saves = []
         for number in range(2):
             file = folder / f"{kind}-{number}.mkv"

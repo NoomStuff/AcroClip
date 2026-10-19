@@ -2281,11 +2281,22 @@ public:
     refreshCapture();
     std::lock_guard<std::mutex> lock(mutex);
     checkDeliveryGap();
-    double available = ring.empty()
-                           ? 0
-                           : (ring.back().p.sys_dts_usec -
-                              ring.front().p.sys_dts_usec) /
-                                 1000000.;
+    // Audio can arrive before the video encoder delivers usable footage.
+    // Report only the video history that snapshot() can actually save.
+    int64_t firstVideo = 0, lastVideo = 0;
+    bool hasVideo = false;
+    for (const auto &packet : ring) {
+      if (packet.p.type != OBS_ENCODER_VIDEO)
+        continue;
+      if (!hasVideo) {
+        if (!packet.p.keyframe)
+          continue;
+        firstVideo = packet.p.sys_dts_usec;
+        hasVideo = true;
+      }
+      lastVideo = packet.p.sys_dts_usec;
+    }
+    double available = hasVideo ? (lastVideo - firstVideo) / 1000000. : 0;
     bool fullscreen = false;
     std::string captureError;
 #ifdef _WIN32
