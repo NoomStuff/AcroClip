@@ -5,6 +5,10 @@ on:
    pull_request:
    workflow_dispatch:
       inputs:
+         architecture:
+            type: choice
+            options: [x64, arm64]
+            default: x64
          release_candidate:
             description: Verify and retain a complete release source packet
             type: boolean
@@ -15,7 +19,7 @@ permissions:
 
 jobs:
    actual-capture:
-      runs-on: ubuntu-24.04
+      runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
       timeout-minutes: 120
       steps:
          - uses: actions/checkout@v7
@@ -24,9 +28,18 @@ jobs:
               bun-version: "1.4.2"
          - name: Install matching OBS headers and runtime
            run: |
-              sudo add-apt-repository -y ppa:obsproject/obs-studio
+              if [ "$(uname -m)" = aarch64 ]; then
+                 echo 'deb http://ports.ubuntu.com/ubuntu-ports noble-backports main universe' | sudo tee /etc/apt/sources.list.d/acroclip-backports.list
+              else
+                 sudo add-apt-repository -y ppa:obsproject/obs-studio
+              fi
               sudo apt-get update
-              sudo apt-get install -y obs-studio=32.2.0-0obsproject1~noble cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev xvfb openbox x11-apps x11-utils x11-xserver-utils ffmpeg pulseaudio pulseaudio-utils gcc-mingw-w64-x86-64 wine64 sway xwayland pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-wlr meson ninja-build libsystemd-dev libinih-dev wayland-protocols
+              if [ "$(uname -m)" = aarch64 ]; then
+                 sudo apt-get install -y obs-studio=30.2.3+dfsg-3~bpo24.04.1 libobs-dev=30.2.3+dfsg-3~bpo24.04.1 obs-plugins=30.2.3+dfsg-3~bpo24.04.1
+              else
+                 sudo apt-get install -y obs-studio=32.2.0-0obsproject1~noble gcc-mingw-w64-x86-64 wine64
+              fi
+              sudo apt-get install -y cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev xvfb openbox x11-apps x11-utils x11-xserver-utils ffmpeg pulseaudio pulseaudio-utils sway xwayland pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-wlr meson ninja-build libsystemd-dev libinih-dev wayland-protocols
          - name: Build native X11 recorder
            run: bun scripts/build-native-linux.ts
          - name: Verify source exception rejects tampered module evidence
@@ -42,6 +55,7 @@ jobs:
          - name: Verify selected application audio isolation and recovery
            run: python3 scripts/smoke-linux-app-audio.py resources/recorder
          - name: Verify real Wine image identity and application capture
+           if: inputs.architecture != 'arm64'
            run: python3 scripts/smoke-wine.py resources/recorder
          - name: Verify accepted saves and capture after process interruption
            run: python3 scripts/smoke-interruption.py resources/recorder
@@ -54,6 +68,7 @@ jobs:
          - name: Verify actual Wayland pixels, audio, permission and stream loss
            run: python3 scripts/smoke-wayland.py resources/recorder
          - name: Verify exact XWayland and Wine pixels, audio privacy and target loss
+           if: inputs.architecture != 'arm64'
            run: python3 scripts/smoke-xwayland.py resources/recorder
            env:
               ACROCLIP_XWAYLAND_ADAPTER_TEST: "1"
@@ -70,28 +85,28 @@ jobs:
            id: controlled_media_cache
            uses: actions/cache/restore@v6.1.0
            with:
-              path: work/controlled-media/linux-x64
-              key: controlled-linux-x64-${{ hashFiles('scripts/build-media-linux.sh', 'scripts/controlled-media-linux.ts', 'scripts/controlled-media.ts') }}
+              path: work/controlled-media/linux-${{ inputs.architecture || 'x64' }}
+              key: controlled-linux-${{ inputs.architecture || 'x64' }}-${{ hashFiles('scripts/build-media-linux.sh', 'scripts/controlled-media-linux.ts', 'scripts/controlled-media.ts') }}
          - name: Build controlled release media
            if: inputs.release_candidate == true
            run: |
-              sudo apt-get install -y nasm meson ninja-build pkg-config unzip
+              sudo apt-get install -y nasm meson ninja-build pkg-config unzip p7zip-full
               bun scripts/release-sources.ts --controlled-inputs --collect-only
               if [ "${{ steps.controlled_media_cache.outputs.cache-hit }}" = "true" ]; then
-                 bun -e 'import {readControlledLinuxBuild} from "./scripts/controlled-media-linux.ts"; await readControlledLinuxBuild("work/controlled-media/linux-x64");'
+                 bun -e 'import {readControlledLinuxBuild} from "./scripts/controlled-media-linux.ts"; await readControlledLinuxBuild("work/controlled-media/linux-${{ inputs.architecture || 'x64' }}");'
               else
                  bash scripts/build-media-linux.sh
               fi
               ACROCLIP_REFERENCE_FFMPEG="$FFMPEG_PATH" python3 scripts/smoke-controlled-media-linux.py
               bun scripts/controlled-media-linux.ts
-              echo "FFMPEG_PATH=$PWD/work/controlled-media/linux-x64/ffmpeg" >> "$GITHUB_ENV"
-              echo "FFPROBE_PATH=$PWD/work/controlled-media/linux-x64/ffprobe" >> "$GITHUB_ENV"
+              echo "FFMPEG_PATH=$PWD/work/controlled-media/linux-${{ inputs.architecture || 'x64' }}/ffmpeg" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$PWD/work/controlled-media/linux-${{ inputs.architecture || 'x64' }}/ffprobe" >> "$GITHUB_ENV"
          - name: Cache verified controlled media build
            if: inputs.release_candidate == true && steps.controlled_media_cache.outputs.cache-hit != 'true'
            uses: actions/cache/save@v6.1.0
            with:
-              path: work/controlled-media/linux-x64
-              key: controlled-linux-x64-${{ hashFiles('scripts/build-media-linux.sh', 'scripts/controlled-media-linux.ts', 'scripts/controlled-media.ts') }}
+              path: work/controlled-media/linux-${{ inputs.architecture || 'x64' }}
+              key: controlled-linux-${{ inputs.architecture || 'x64' }}-${{ hashFiles('scripts/build-media-linux.sh', 'scripts/controlled-media-linux.ts', 'scripts/controlled-media.ts') }}
          - run: bun run bundle:media
          - run: bun run build:icons
          - run: bun run build:notices
@@ -107,17 +122,22 @@ jobs:
            run: |
               python3 scripts/recover-release-inputs.py --platform linux-x64 --destination work/linux-release-sources
               python3 scripts/collect-linux-sources.py --stage resources/recorder --output work/linux-release-sources
-              python3 scripts/linux-source-inputs.py --sources work/linux-release-sources --notices work/linux-release-notices
-              bun -e 'import {collectElectronFfmpeg} from "./scripts/electron-source-evidence"; const root="work/linux-release-sources"; const component=await collectElectronFfmpeg(process.cwd(),root,{platform:"linux",arch:"x64"}); await Bun.write(root+"/electron-component.json",JSON.stringify(component,null,2));'
+              python3 scripts/linux-source-inputs.py --collect --sources work/linux-release-sources --notices work/linux-release-notices
+              bun -e 'import {collectElectronFfmpeg} from "./scripts/electron-source-evidence"; const root="work/linux-release-sources"; const component=await collectElectronFfmpeg(process.cwd(),root,{platform:"linux",arch:process.arch === "arm64" ? "arm64" : "x64"}); await Bun.write(root+"/electron-component.json",JSON.stringify(component,null,2));'
          - name: Stage full notices and bind the final AppImage to its source packet
            if: inputs.release_candidate == true
            run: |
+              if [ "$(uname -m)" = aarch64 ]; then
+                 mkdir -p work/appimage-toolset
+                 7z x work/linux-release-sources/toolset/appimage-12.0.1.7z -owork/appimage-toolset -y
+                 python3 scripts/collect-appimage-sources.py --output work/linux-release-sources/toolset --toolset work/appimage-toolset --archive work/linux-release-sources/toolset/appimage-12.0.1.7z
+              fi
               bun scripts/linux-source-kit.ts . --stage-notices
               bunx electron-builder --linux AppImage --publish never
               bun scripts/linux-source-kit.ts .
               bun scripts/linux-source-kit.ts . --check
               bun scripts/package-linux-source-kit.ts
-              taskSource=$(find work -maxdepth 1 -name 'AcroClip-*-linux-x64-sources-*.zip' -type f)
+              taskSource=$(find work -maxdepth 1 -name 'AcroClip-*-linux-${{ inputs.architecture || 'x64' }}-sources-*.zip' -type f)
               taskImage=$(find release -maxdepth 1 -name 'AcroClip-*-linux-*.AppImage' -type f)
               bun scripts/verify-linux-release.ts "$PWD" "$PWD" "$taskSource" "$taskImage" work/linux-release-sources
               bun run test:packaged:linux "$taskImage"
@@ -125,13 +145,13 @@ jobs:
            if: inputs.release_candidate == true
            uses: actions/upload-artifact@v7
            with:
-              name: Linux-verified-release-candidate
+              name: Linux-verified-release-candidate-${{ inputs.architecture || 'x64' }}
               path: |
                  release/AcroClip-*.AppImage
                  release/AcroClip-*.AppImage.release.json
-                 release/latest-linux.yml
-                 work/AcroClip-*-linux-x64-sources-*.zip
-                 work/AcroClip-*-linux-x64-sources-*.zip.json
+                 release/latest-linux*.yml
+                 work/AcroClip-*-linux-${{ inputs.architecture || 'x64' }}-sources-*.zip
+                 work/AcroClip-*-linux-${{ inputs.architecture || 'x64' }}-sources-*.zip.json
               if-no-files-found: error
               retention-days: 14
          - name: Keep synthetic capture evidence

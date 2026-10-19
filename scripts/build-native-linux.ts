@@ -4,8 +4,8 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
-const version = "32.2.0";
-const packageVersion = "32.2.0-0obsproject1~noble";
+const version = process.arch === "arm64" ? "30.2.3" : "32.2.0";
+const packageVersion = process.arch === "arm64" ? "30.2.3+dfsg-3~bpo24.04.1" : "32.2.0-0obsproject1~noble";
 const root = process.cwd();
 const runtime = path.resolve(process.env["ACROCLIP_RECORDER_STAGE"] ?? "resources/recorder");
 if (runtime !== path.join(root, "resources", "recorder") && !runtime.startsWith(path.join(root, ".cache") + path.sep))
@@ -15,7 +15,7 @@ const run = (command: string, args: string[]): string => {
    if (result.status !== 0) throw new Error(`${command} failed\n${result.stdout}\n${result.stderr}`);
    return result.stdout;
 };
-if (process.platform !== "linux" || process.arch !== "x64") throw new Error("This backend currently supports Linux x64");
+if (process.platform !== "linux" || (process.arch !== "x64" && process.arch !== "arm64")) throw new Error("This backend supports Linux x64 and arm64");
 if (run("pkg-config", ["--modversion", "libobs"]).trim() !== version || run("dpkg-query", ["-W", "-f=${Version}", "obs-studio"]).trim() !== packageVersion)
    throw new Error(`Install the official OBS PPA package obs-studio=${packageVersion}. Headers and runtime must match ${version}`);
 const output = path.join(root, ".cache", "native-linux-build");
@@ -28,10 +28,14 @@ await rm(runtime, { recursive: true, force: true });
 await mkdir(path.join(runtime, "lib"), { recursive: true });
 await mkdir(path.join(runtime, "obs-plugins"), { recursive: true });
 await copyFile(path.join(output, "acroclip-recorder"), path.join(runtime, "acroclip-recorder"));
-await copyFile("/usr/bin/obs-ffmpeg-mux", path.join(runtime, "obs-ffmpeg-mux"));
-const libraryRoot = "/usr/lib/x86_64-linux-gnu";
-const modules = ["linux-capture", "linux-pulseaudio", "linux-pipewire", "obs-ffmpeg", "obs-nvenc", "obs-x264"];
-const initialFiles = [path.join(runtime, "acroclip-recorder"), "/usr/bin/obs-ffmpeg-mux", path.join(libraryRoot, "libobs-opengl.so")];
+const mux = run("dpkg-query", ["-L", "obs-studio"])
+   .split("\n")
+   .find((file) => path.basename(file) === "obs-ffmpeg-mux");
+if (!mux) throw new Error("The pinned OBS package has no mux helper");
+await copyFile(mux, path.join(runtime, "obs-ffmpeg-mux"));
+const libraryRoot = `/usr/lib/${process.arch === "arm64" ? "aarch64" : "x86_64"}-linux-gnu`;
+const modules = ["linux-capture", "linux-pulseaudio", "linux-pipewire", "obs-ffmpeg", ...(process.arch === "x64" ? ["obs-nvenc"] : []), "obs-x264"];
+const initialFiles = [path.join(runtime, "acroclip-recorder"), mux, path.join(libraryRoot, "libobs-opengl.so")];
 await copyFile(path.join(libraryRoot, "libobs-opengl.so"), path.join(runtime, "lib", "libobs-opengl.so"));
 for (const name of modules) {
    const module = name === "linux-pipewire" ? waylandModule : path.join(libraryRoot, "obs-plugins", `${name}.so`);
@@ -93,10 +97,10 @@ await writeFile(
       {
          obsVersion: version,
          packageVersion,
-         sourceCommit: "7546be7266dde276d82d4681fe1ab4fd8e32cf2b",
-         source: "https://github.com/obsproject/obs-studio/tree/32.2.0",
-         repository: "https://ppa.launchpadcontent.net/obsproject/obs-studio/ubuntu/",
-         platform: "Ubuntu 24.04 x64, X11, Wayland screen portal and exact XWayland application capture",
+         sourceCommit: process.arch === "arm64" ? "144599fbff18e348652ccadfc3ca08794a03d970" : "7546be7266dde276d82d4681fe1ab4fd8e32cf2b",
+         source: `https://github.com/obsproject/obs-studio/tree/${version}`,
+         repository: process.arch === "arm64" ? "https://ports.ubuntu.com/ubuntu-ports/" : "https://ppa.launchpadcontent.net/obsproject/obs-studio/ubuntu/",
+         platform: `Ubuntu 24.04 ${process.arch}, X11, Wayland screen portal and exact XWayland application capture`,
          waylandModule: waylandProvenance,
          modules,
          build: "scripts/build-native-linux.ts",

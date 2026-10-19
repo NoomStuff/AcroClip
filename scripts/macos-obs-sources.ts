@@ -79,7 +79,7 @@ export async function collectMacObsSources(project: string): Promise<void> {
    const kit: SourceKit = {
       version: 1,
       createdAt: new Date().toISOString(),
-      platform: "darwin-arm64",
+      platform: `darwin-${process.arch}`,
       appCommit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       appDirty: !!execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim(),
       publicInstallerReady: false,

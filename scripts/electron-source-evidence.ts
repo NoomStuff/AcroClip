@@ -39,7 +39,7 @@ export async function collectElectronFfmpeg(
    if (version !== pins.electronVersion) throw new Error("Electron changed. Review its Chromium FFmpeg source pins before release.");
    const platform = options.platform ?? "win32";
    const arch = options.arch ?? "x64";
-   if (arch === "arm64" && platform !== "darwin") throw new Error("Only macOS arm64 and Windows/Linux x64 source configurations are reviewed.");
+   if (arch === "arm64" && platform === "win32") throw new Error("Windows arm64 source configurations are not supported.");
    const configPlatform = platform === "win32" ? "win" : platform === "darwin" ? "mac" : "linux";
    const moduleName =
       platform === "win32"

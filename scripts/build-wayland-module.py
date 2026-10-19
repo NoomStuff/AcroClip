@@ -2,6 +2,7 @@
 import hashlib
 import json
 import pathlib
+import platform
 import shlex
 import shutil
 import subprocess
@@ -36,7 +37,7 @@ if not archive.exists():
     finally:
         temporary.unlink(missing_ok=True)
 assert digest(archive) == expected, "OBS source archive does not match the official 32.2.0 .dsc"
-assert subprocess.check_output(["pkg-config", "--modversion", "libobs"], text=True).strip() == "32.2.0", "The installed OBS headers must match 32.2.0"
+assert subprocess.check_output(["pkg-config", "--modversion", "libobs"], text=True).strip() == ("30.2.3" if platform.machine() == "aarch64" else "32.2.0"), "The installed OBS headers must match the architecture-specific pinned runtime"
 source = root / ".cache/wayland-patched-source"
 build = root / ".cache/wayland-module-build"
 assert source.parent == root / ".cache" and build.parent == root / ".cache"

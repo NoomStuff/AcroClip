@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run on an Apple Silicon macOS host. Source archives come from release-sources.ts. This build
+# Run on a native macOS host. Source archives come from release-sources.ts. This build
 # never downloads a library or resolves a tag while compiling.
 taskProject=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 taskSources="$taskProject/work/release-sources"
-taskOutput="$taskProject/work/controlled-media/macos-arm64"
+taskArch=$(uname -m)
+case "$taskArch" in x86_64) taskArch=x64 ;; arm64) ;; *) echo "Unsupported macOS architecture" >&2; exit 1 ;; esac
+taskOutput="$taskProject/work/controlled-media/macos-$taskArch"
 taskBuildRoot=${ACROCLIP_MEDIA_BUILD_ROOT:-$(mktemp -d -t acroclip-media.XXXXXX)}
 taskJobs=${ACROCLIP_MEDIA_BUILD_JOBS:-2}
-[[ $(uname -s) == Darwin && $(uname -m) == arm64 ]] || { echo "Build on an actual macOS arm64 host" >&2; exit 1; }
+[[ $(uname -s) == Darwin ]] || { echo "Build on an actual macOS host" >&2; exit 1; }
 export MACOSX_DEPLOYMENT_TARGET=13.0
 taskPrefix="$taskBuildRoot/prefix"
 mkdir -p "$taskOutput" "$taskBuildRoot" "$taskPrefix"

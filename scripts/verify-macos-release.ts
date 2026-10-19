@@ -70,14 +70,15 @@ async function verifyMacPayload(project: string, app: string, expected: MacTreeE
 
 /** Rebuild from the archived commit, independently repackage, then compare every byte and link. */
 export async function verifyMacRelease(project: string, directory: string, sourceArchive: string, archive: string): Promise<string> {
-   if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Verify the actual Apple Silicon application on macOS.");
+   if (process.platform !== "darwin" || (process.arch !== "x64" && process.arch !== "arm64"))
+      throw new Error("Verify the actual Apple Silicon application on macOS.");
    const kit = await checkMacSourceKit(directory, project);
    const archiveBefore = await hashFile(archive);
    const sourceBefore = await hashFile(sourceArchive);
    if ((await lstat(archive)).isSymbolicLink() || (await lstat(sourceArchive)).isSymbolicLink()) throw new Error("Release assets cannot be links.");
    const companion = z
       .object({
-         platform: z.literal("darwin-arm64"),
+         platform: z.literal(process.arch === "arm64" ? "darwin-arm64" : "darwin-x64"),
          appCommit: z.string(),
          archive: z.object({ name: z.string(), sha256: z.string(), size: z.number().int().positive() }),
          staged: z.array(z.unknown()),
@@ -114,7 +115,7 @@ export async function verifyMacRelease(project: string, directory: string, sourc
    execFileSync("bun", ["run", "build:icons"], { cwd: appProject, stdio: "inherit", timeout: 180000 });
    execFileSync("bun", ["run", "build:notices"], { cwd: appProject, stdio: "inherit", timeout: 180000 });
    compareMacTrees(kit.staged, await macTree(path.join(appProject, "resources")), "Independently generated runtime notices");
-   execFileSync("bunx", ["--no-install", "electron-builder", "--mac", "zip", "--arm64", "--publish", "never"], {
+   execFileSync("bunx", ["--no-install", "electron-builder", "--mac", "zip", `--${process.arch}`, "--publish", "never"], {
       cwd: appProject,
       stdio: "inherit",
       env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },
@@ -124,7 +125,7 @@ export async function verifyMacRelease(project: string, directory: string, sourc
    execFileSync("python3", [path.join(project, "scripts/extract-macos-package.py"), "--archive", archive, "--destination", actualFolder], { stdio: "inherit" });
    const actualApp = path.join(actualFolder, "AcroClip.app");
    await verifyMacPayload(project, actualApp, kit.staged, kit.electronModule);
-   const independentApp = path.join(appProject, "release/mac-arm64/AcroClip.app");
+   const independentApp = path.join(appProject, `release/mac${process.arch === "arm64" ? "-arm64" : ""}/AcroClip.app`);
    const expected = await macTree(independentApp);
    const actual = await macTree(actualApp);
    const diagnostics = path.join(project, ".cache/macos-source");
@@ -142,7 +143,7 @@ export async function verifyMacRelease(project: string, directory: string, sourc
    const report = `${archive}.release.json`;
    await writeFile(
       report,
-      `${JSON.stringify({ version: 1, platform: "darwin-arm64", appCommit: kit.appCommit, source: companion, asset: { path: path.basename(archive), sha256: archiveBefore, size: (await stat(archive)).size }, updater, application: actual, fullApplicationComparison: "exact-files-modes-and-relative-links", independentRebuild: true }, null, 2)}\n`
+      `${JSON.stringify({ version: 1, platform: kit.platform, appCommit: kit.appCommit, source: companion, asset: { path: path.basename(archive), sha256: archiveBefore, size: (await stat(archive)).size }, updater, application: actual, fullApplicationComparison: "exact-files-modes-and-relative-links", independentRebuild: true }, null, 2)}\n`
    );
    return report;
 }

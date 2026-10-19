@@ -16,7 +16,7 @@ const treeSchema = z.discriminatedUnion("kind", [
 ]);
 const kitSchema = z.object({
    version: z.literal(1),
-   platform: z.literal("darwin-arm64"),
+   platform: z.enum(["darwin-arm64", "darwin-x64"]),
    appCommit: z.string().regex(/^[a-f\d]{40}$/),
    applicationSource: fileSchema,
    files: z.array(fileSchema).min(1),
@@ -30,7 +30,8 @@ export function parseMacTree(value: unknown): MacTreeEntry[] {
 }
 
 export async function assembleMacSourceKit(project: string, directory = path.join(project, "work/macos-release-sources")): Promise<MacSourceKit> {
-   if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Assemble against the actual Apple Silicon runtime.");
+   if (process.platform !== "darwin" || (process.arch !== "x64" && process.arch !== "arm64"))
+      throw new Error("Assemble against the actual Apple Silicon runtime.");
    if (execFileSync("git", ["status", "--porcelain"], { cwd: project, encoding: "utf8" }).trim())
       throw new Error("Freeze a clean application commit before assembling sources.");
    const appCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: project, encoding: "utf8" }).trim();
@@ -61,7 +62,10 @@ export async function assembleMacSourceKit(project: string, directory = path.joi
    };
    if (
       provenance.sourceCommit !== "ba2f32bdf791005443988a4955e963663e16b1ed" ||
-      provenance.runtimeArchive.sha256 !== "920d6f26703d2df6e4085bd3c1cbed30488325084136c7a6e9e37021fbd6aaf7"
+      provenance.runtimeArchive.sha256 !==
+         (process.arch === "arm64"
+            ? "920d6f26703d2df6e4085bd3c1cbed30488325084136c7a6e9e37021fbd6aaf7"
+            : "f8d8afe3dffdc86efa0698c02ff0c997866bac3e6208ddaf56d37108baacf197")
    )
       throw new Error("Recorder provenance identifies another OBS release.");
    const required = [
@@ -127,14 +131,14 @@ export async function assembleMacSourceKit(project: string, directory = path.joi
    const obs = JSON.parse(await readFile(path.join(directory, "obs-inputs.json"), "utf8")) as SourceKit;
    for (const source of [...obs.sources, ...(obs.dependencySources ?? [])])
       for (const file of [source, ...source.licenses]) await record(file.path, file.sha256);
-   const build = await readControlledMacBuild(path.join(project, "work/controlled-media/macos-arm64"));
+   const build = await readControlledMacBuild(path.join(project, `work/controlled-media/macos-${process.arch}`));
    if ((await hashFile(path.join(project, build.recipe.path))) !== build.recipe.sha256)
       throw new Error("Controlled media recipe differs from the frozen source.");
    for (const file of build.sourceArchives)
       await copy(path.join(project, "work/release-sources", file.path), `controlled-cli/sources/${file.path}`, file.sha256);
    for (const file of build.evidenceFiles)
-      await copy(path.join(project, "work/controlled-media/macos-arm64", file.path), `controlled-cli/evidence/${file.path}`, file.sha256);
-   await copy(path.join(project, "work/controlled-media/macos-arm64/build-manifest.json"), "controlled-cli/build-manifest.json");
+      await copy(path.join(project, `work/controlled-media/macos-${process.arch}`, file.path), `controlled-cli/evidence/${file.path}`, file.sha256);
+   await copy(path.join(project, `work/controlled-media/macos-${process.arch}/build-manifest.json`), "controlled-cli/build-manifest.json");
    await record("electron-component.json");
    const component = z
       .object({
@@ -149,17 +153,23 @@ export async function assembleMacSourceKit(project: string, directory = path.joi
       .object({
          comparison: z.literal("packaged-module-byte-equality"),
          platform: z.literal("darwin"),
-         arch: z.literal("arm64"),
-         officialArchive: z.object({ sha256: z.literal("e04e411b58a0a14375dd21b0ab4a378fd38930a702e4e20e322fee4849404c0b") }),
+         arch: z.literal(process.arch === "arm64" ? "arm64" : "x64"),
+         officialArchive: z.object({
+            sha256: z.literal(
+               process.arch === "arm64"
+                  ? "e04e411b58a0a14375dd21b0ab4a378fd38930a702e4e20e322fee4849404c0b"
+                  : "4fe494a7159b10a81e2098dab388719582065e99e604c4510bb117e282213566"
+            ),
+         }),
          ffmpegDll: z.object({ sha256: z.string().regex(/^[a-f\d]{64}$/), size: z.number().int().positive() }),
       })
-      .parse(JSON.parse(await readFile(path.join(directory, "evidence/electron-ffmpeg-darwin-arm64/correspondence.json"), "utf8")));
+      .parse(JSON.parse(await readFile(path.join(directory, `evidence/electron-ffmpeg-darwin-${process.arch}/correspondence.json`), "utf8")));
    const sourceFile = packetPath(directory, "acroclip-source.tar");
    execFileSync("git", ["archive", "--format=tar", "--prefix=acroclip/", "-o", sourceFile, appCommit], { cwd: project });
    await record("acroclip-source.tar");
    const kit: MacSourceKit = {
       version: 1,
-      platform: "darwin-arm64",
+      platform: process.arch === "arm64" ? "darwin-arm64" : "darwin-x64",
       appCommit,
       applicationSource: records.get("acroclip-source.tar")!,
       files: [...records.values()].sort((a, b) => a.path.localeCompare(b.path)),

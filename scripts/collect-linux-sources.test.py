@@ -14,6 +14,11 @@ spec.loader.exec_module(collector)
 
 
 class SourceEvidenceTest(unittest.TestCase):
+    def test_binary_publications_follow_the_native_architecture(self):
+        for machine, expected in (("x86_64", "amd64"), ("AMD64", "amd64"), ("aarch64", "arm64"), ("arm64", "arm64")):
+            with self.subTest(machine=machine), patch.object(collector.platform, "machine", return_value=machine):
+                self.assertEqual(collector.ubuntu_architecture(), expected)
+
     def test_runner_mirror_transport_keeps_suites_and_signed_index_keys(self):
         source = "Types: deb deb-src\nURIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: noble noble-updates noble-security\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
         result = collector.concrete_repository_sources(source)

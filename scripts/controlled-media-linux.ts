@@ -8,7 +8,7 @@ import { checkMediaBinary } from "./check-media-binary";
 export interface ControlledLinuxMediaBuild {
    version: 1;
    producer: "acroclip-controlled-linux";
-   target: "linux-x64";
+   target: "linux-x64" | "linux-arm64";
    sourceCommits: { ffmpeg: string; x264: string; dav1d: string; zlib: string };
    sourceArchives: { path: string; sha256: string; size: number }[];
    recipe: { path: string; sha256: string };
@@ -41,9 +41,10 @@ export function linuxSystemRequirements(dynamic: string, symbols: string): { son
 }
 
 export async function recordControlledLinuxBuild(project: string): Promise<ControlledLinuxMediaBuild> {
-   if (process.platform !== "linux" || process.arch !== "x64") throw new Error("Record Linux x64 provenance on the matching Linux host.");
+   if (process.platform !== "linux" || (process.arch !== "x64" && process.arch !== "arm64"))
+      throw new Error("Record Linux x64 provenance on the matching Linux host.");
    const kit = JSON.parse(await readFile(path.join(project, "work", "release-sources", "manifest.json"), "utf8")) as SourceKit;
-   const directory = path.join(project, "work", "controlled-media", "linux-x64");
+   const directory = path.join(project, "work", "controlled-media", `linux-${process.arch}`);
    if (!(await readFile(path.join(directory, "build.log"), "utf8")).trimEnd().endsWith(`Controlled Linux media build completed: ${directory}`))
       throw new Error("Linux media build did not finish. Do not record old binaries after a failed rebuild.");
    const sourceArchives = [
@@ -100,7 +101,7 @@ export async function recordControlledLinuxBuild(project: string): Promise<Contr
    const build: ControlledLinuxMediaBuild = {
       version: 1,
       producer: "acroclip-controlled-linux",
-      target: "linux-x64",
+      target: process.arch === "arm64" ? "linux-arm64" : "linux-x64",
       sourceCommits: commits,
       sourceArchives,
       recipe: { path: recipePath, sha256: recipeSha },
@@ -115,7 +116,12 @@ export async function recordControlledLinuxBuild(project: string): Promise<Contr
 
 export async function readControlledLinuxBuild(directory: string): Promise<ControlledLinuxMediaBuild> {
    const build = JSON.parse(await readFile(path.join(directory, "build-manifest.json"), "utf8")) as ControlledLinuxMediaBuild;
-   if (build.version !== 1 || build.producer !== "acroclip-controlled-linux" || JSON.stringify(build.sourceCommits) !== JSON.stringify(commits))
+   if (
+      build.version !== 1 ||
+      build.producer !== "acroclip-controlled-linux" ||
+      build.target !== `linux-${process.arch}` ||
+      JSON.stringify(build.sourceCommits) !== JSON.stringify(commits)
+   )
       throw new Error("Unknown controlled build provenance.");
    for (const name of ["ffmpeg", "ffprobe"] as const) {
       if ((await hashFile(path.join(directory, name))) !== build.binaries[name].sha256)

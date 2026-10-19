@@ -39,7 +39,7 @@ const electronSchema = z.object({
 const toolsetSchema = z.object({
    toolset: fileSchema,
    runtime: fileSchema,
-   packages: z.array(z.object({ binaryArchive: fileSchema, sourceArchives: z.array(sourceSchema).min(1), copyright: fileSchema, file: fileSchema })).length(6),
+   packages: z.array(z.object({ binaryArchive: fileSchema, sourceArchives: z.array(sourceSchema).min(1), copyright: fileSchema, file: fileSchema })).max(6),
    sources: z.array(sourceSchema).min(4),
    licenseFiles: z.array(fileSchema).min(1),
    buildInstructions: z.array(fileSchema).min(1),
@@ -48,7 +48,7 @@ const toolsetSchema = z.object({
 
 export interface LinuxSourceKit {
    version: 1;
-   platform: "linux-x64";
+   platform: "linux-x64" | "linux-arm64";
    appCommit: string;
    staged: FileRecord[];
    files: FileRecord[];
@@ -60,14 +60,14 @@ export interface LinuxSourceKit {
 
 const kitSchema = z.object({
    version: z.literal(1),
-   platform: z.literal("linux-x64"),
+   platform: z.enum(["linux-x64", "linux-arm64"]),
    appCommit: z.string().regex(/^[a-f\d]{40}$/),
    staged: z.array(fileSchema).min(1),
    files: z.array(fileSchema).min(1),
    applicationSource: fileSchema,
    sourcePackageCounts: z.object({ native: z.number().int().positive(), static: z.number().int().positive() }),
    nativeElfPaths: z.array(z.string()).min(1),
-   appimage: z.object({ runtime: fileSchema, libraries: z.array(fileSchema).length(6) }),
+   appimage: z.object({ runtime: fileSchema, libraries: z.array(fileSchema).max(6) }),
 });
 
 export async function verifyPacketFiles(directory: string, files: FileRecord[]): Promise<void> {
@@ -175,11 +175,11 @@ export async function collectLinuxSourceFiles(
    };
    if (
       correspondence.platform !== "linux" ||
-      correspondence.arch !== "x64" ||
+      correspondence.arch !== process.arch ||
       (await hashFile(path.join(stage, "node_modules/electron/dist/libffmpeg.so"))) !== correspondence.ffmpegDll.sha256
    )
       throw new Error("Linux Electron source evidence does not match staged module");
-   const buildDirectory = path.join(project, "work/controlled-media/linux-x64");
+   const buildDirectory = path.join(project, `work/controlled-media/linux-${process.arch}`);
    const controlled = await readControlledLinuxBuild(buildDirectory);
    for (const name of ["ffmpeg", "ffprobe"] as const)
       if ((await hashFile(path.join(stage, "resources/media", name))) !== controlled.binaries[name].sha256)
@@ -318,7 +318,7 @@ export async function assembleLinuxSourceKit(
    }
    const kit: LinuxSourceKit = {
       version: 1,
-      platform: "linux-x64",
+      platform: process.arch === "arm64" ? "linux-arm64" : "linux-x64",
       appCommit,
       staged,
       files: [...files, applicationSource],
@@ -333,6 +333,8 @@ export async function assembleLinuxSourceKit(
 
 export async function validateLinuxSourceKit(project: string, directory: string): Promise<LinuxSourceKit> {
    const kit = kitSchema.parse(JSON.parse(await readFile(path.join(directory, "linux-kit.json"), "utf8")));
+   if (kit.appimage.libraries.length !== (kit.platform === "linux-arm64" ? 0 : 6))
+      throw new Error("AppImage injected library count does not match its architecture.");
    await verifyPacketFiles(directory, kit.files);
    const files = new Map(kit.files.map((file) => [file.path, file]));
    if (new Set(kit.staged.map((file) => file.path)).size !== kit.staged.length || new Set(kit.nativeElfPaths).size !== kit.nativeElfPaths.length)
@@ -425,7 +427,7 @@ export async function validateLinuxSourceKit(project: string, directory: string)
    const electron = electronSchema.parse(JSON.parse(await readFile(path.join(directory, "electron-component.json"), "utf8")));
    [...electron.sourceArchives, ...electron.licenseFiles, ...electron.buildInstructions].forEach(requireFile);
    const correspondence = z
-      .object({ platform: z.literal("linux"), arch: z.literal("x64"), ffmpegDll: fileSchema.omit({ path: true }) })
+      .object({ platform: z.literal("linux"), arch: z.literal(kit.platform === "linux-arm64" ? "arm64" : "x64"), ffmpegDll: fileSchema.omit({ path: true }) })
       .parse(JSON.parse(await readFile(path.join(directory, "evidence/electron-ffmpeg-linux/correspondence.json"), "utf8")));
    const module = kit.staged.find((file) => file.path === "electron/libffmpeg.so");
    if (!module || module.sha256 !== correspondence.ffmpegDll.sha256 || module.size !== correspondence.ffmpegDll.size)
@@ -433,7 +435,7 @@ export async function validateLinuxSourceKit(project: string, directory: string)
    const build = JSON.parse(await readFile(path.join(directory, "controlled-cli/build/build-manifest.json"), "utf8")) as Awaited<
       ReturnType<typeof readControlledLinuxBuild>
    >;
-   if (build.producer !== "acroclip-controlled-linux" || build.target !== "linux-x64") throw new Error("Source packet CLI build identity is wrong");
+   if (build.producer !== "acroclip-controlled-linux" || build.target !== kit.platform) throw new Error("Source packet CLI build identity is wrong");
    for (const file of build.sourceArchives) requireFile({ ...file, path: `controlled-cli/sources/${file.path}` });
    for (const file of build.evidenceFiles) requireFile({ ...file, path: `controlled-cli/build/${file.path}` });
    for (const name of ["ffmpeg", "ffprobe"] as const) {

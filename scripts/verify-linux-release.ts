@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -34,14 +34,18 @@ export async function verifyAppImageLauncher(image: string, runtime: string, exp
 }
 
 export async function verifyAppImageLibraries(extracted: string, expected: FileRecord[]): Promise<void> {
-   if (expected.length !== 6 || expected.some((file) => !/^usr\/lib\/[^/]+$/.test(file.path)))
+   if (expected.length !== (process.arch === "arm64" ? 0 : 6) || expected.some((file) => !/^usr\/lib\/[^/]+$/.test(file.path)))
       throw new Error("AppImage injected library proof does not identify the exact six files");
-   compareFiles(expected, await inventory(path.join(extracted, "usr/lib"), "usr/lib"), "AppImage injected libraries");
+   compareFiles(
+      expected,
+      existsSync(path.join(extracted, "usr/lib")) ? await inventory(path.join(extracted, "usr/lib"), "usr/lib") : [],
+      "AppImage injected libraries"
+   );
 }
 
 export async function verifyLinuxUpdater(image: string, version: string, scratch: string): Promise<FileRecord> {
    const yaml = createRequire(import.meta.url)("js-yaml") as { load(text: string, options: { schema: unknown }): unknown; JSON_SCHEMA: unknown };
-   const metadataFile = path.join(path.dirname(image), "latest-linux.yml");
+   const metadataFile = path.join(path.dirname(image), process.arch === "arm64" ? "latest-linux-arm64.yml" : "latest-linux.yml");
    const metadata = z
       .object({
          version: z.string(),
@@ -86,7 +90,11 @@ export async function verifyLinuxUpdater(image: string, version: string, scratch
    await buildBlockMap(prefix, "deflate", regenerated);
    if (!inflateRawSync(embedded).equals(inflateRawSync(await readFile(regenerated))))
       throw new Error("AppImage differential update blockmap differs from its actual payload");
-   return { path: "latest-linux.yml", sha256: await hashFile(metadataFile), size: (await stat(metadataFile)).size };
+   return {
+      path: process.arch === "arm64" ? "latest-linux-arm64.yml" : "latest-linux.yml",
+      sha256: await hashFile(metadataFile),
+      size: (await stat(metadataFile)).size,
+   };
 }
 
 async function containerInventory(
@@ -226,7 +234,7 @@ export async function verifyLinuxRelease(project: string, stage: string, sourceA
    const output = `${image}.release.json`;
    await writeFile(
       output,
-      `${JSON.stringify({ version: 1, platform: "linux-x64", appCommit, source: companion, asset: { path: path.basename(image), sha256: imageBefore, size: (await stat(image)).size }, payload, updater, launcher: kit.appimage.runtime, libraries: kit.appimage.libraries, files: actualFiles, links }, null, 2)}\n`
+      `${JSON.stringify({ version: 1, platform: kit.platform, appCommit, source: companion, asset: { path: path.basename(image), sha256: imageBefore, size: (await stat(image)).size }, payload, updater, launcher: kit.appimage.runtime, libraries: kit.appimage.libraries, files: actualFiles, links }, null, 2)}\n`
    );
    return output;
 }

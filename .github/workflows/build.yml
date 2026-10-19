@@ -13,7 +13,12 @@ jobs:
       strategy:
          fail-fast: false
          matrix:
-            os: [windows-2025, ubuntu-24.04, macos-15]
+            include:
+               - { os: windows-2025, target: win-x64 }
+               - { os: macos-15-intel, target: mac-x64 }
+               - { os: macos-15, target: mac-arm64 }
+               - { os: ubuntu-24.04, target: linux-x64 }
+               - { os: ubuntu-24.04-arm, target: linux-arm64 }
       runs-on: ${{ matrix.os }}
       timeout-minutes: 45
       steps:
@@ -35,14 +40,14 @@ jobs:
          - name: Build controlled macOS media
            if: runner.os == 'macOS'
            run: |
-              brew install ffmpeg-full meson ninja pkg-config
+              brew install ffmpeg-full meson ninja pkg-config nasm
               taskReference="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
               bun scripts/release-sources.ts --controlled-inputs --collect-only
               bash scripts/build-media-macos.sh
               ACROCLIP_REFERENCE_FFMPEG="$taskReference" python3 scripts/smoke-controlled-media-macos.py
               bun scripts/controlled-media-macos.ts
-              echo "FFMPEG_PATH=$PWD/work/controlled-media/macos-arm64/ffmpeg" >> "$GITHUB_ENV"
-              echo "FFPROBE_PATH=$PWD/work/controlled-media/macos-arm64/ffprobe" >> "$GITHUB_ENV"
+              echo "FFMPEG_PATH=$PWD/work/controlled-media/macos-$(bun -p process.arch)/ffmpeg" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$PWD/work/controlled-media/macos-$(bun -p process.arch)/ffprobe" >> "$GITHUB_ENV"
          - run: bun run bundle:media
          - run: bun run build:icons
          - run: bun run build:notices
@@ -51,9 +56,18 @@ jobs:
          - name: Install matching Linux recorder dependencies
            if: runner.os == 'Linux'
            run: |
-              sudo add-apt-repository -y ppa:obsproject/obs-studio
+              if [ "$(uname -m)" = aarch64 ]; then
+                 echo 'deb http://ports.ubuntu.com/ubuntu-ports noble-backports main universe' | sudo tee /etc/apt/sources.list.d/acroclip-backports.list
+              else
+                 sudo add-apt-repository -y ppa:obsproject/obs-studio
+              fi
               sudo apt-get update
-              sudo apt-get install -y obs-studio=32.2.0-0obsproject1~noble cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev
+              if [ "$(uname -m)" = aarch64 ]; then
+                 sudo apt-get install -y obs-studio=30.2.3+dfsg-3~bpo24.04.1 libobs-dev=30.2.3+dfsg-3~bpo24.04.1 obs-plugins=30.2.3+dfsg-3~bpo24.04.1
+              else
+                 sudo apt-get install -y obs-studio=32.2.0-0obsproject1~noble
+              fi
+              sudo apt-get install -y cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev
          - name: Build recorder
            run: bun run build:native
          - name: Package without automatic publishing
@@ -69,14 +83,14 @@ jobs:
               find release -maxdepth 1 -type f -print > build-report/artifacts.txt
          - uses: actions/upload-artifact@v7
            with:
-              name: build-report-${{ runner.os }}
+              name: build-report-${{ matrix.target }}
               path: build-report/
               retention-days: 14
 
          - name: Keep private release candidates for verification
            uses: actions/upload-artifact@v7
            with:
-              name: desktop-candidate-${{ runner.os }}
+              name: desktop-candidate-${{ matrix.target }}
               path: |
                  release/AcroClip-*.exe
                  release/AcroClip-*.exe.blockmap

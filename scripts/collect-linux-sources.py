@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import posixpath
+import platform
 import re
 import shutil
 import subprocess
@@ -114,17 +115,21 @@ def official_json(url):
         return json.load(response)
 
 
+def ubuntu_architecture():
+    return "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "amd64"
+
+
 def published_binary(owner, version, series="noble"):
-    archive = "https://api.launchpad.net/1.0/~obsproject/+archive/ubuntu/obs-studio" if owner.split(":", 1)[0] == "obs-studio" else "https://api.launchpad.net/1.0/ubuntu/+archive/primary"
+    archive = "https://api.launchpad.net/1.0/~obsproject/+archive/ubuntu/obs-studio" if owner.split(":", 1)[0] == "obs-studio" and "obsproject" in version else "https://api.launchpad.net/1.0/ubuntu/+archive/primary"
     name = owner.split(":", 1)[0]
     url = archive + "?" + urllib.parse.urlencode({"ws.op": "getPublishedBinaries", "binary_name": name, "version": version, "exact_match": "true"})
     while url:
         collection = official_json(url)
         for record in collection["entries"]:
-            if record["binary_package_name"] == name and record["binary_package_version"] == version and record["distro_arch_series_link"].endswith("/amd64") and (series is None or record["distro_arch_series_link"].endswith("/" + series + "/amd64")):
+            if record["binary_package_name"] == name and record["binary_package_version"] == version and record["distro_arch_series_link"].endswith("/" + ubuntu_architecture()) and (series is None or record["distro_arch_series_link"].endswith("/" + series + "/" + ubuntu_architecture())):
                 return record
         url = collection.get("next_collection_link")
-    raise ValueError(f"No official Noble amd64 publication for {owner}={version}")
+    raise ValueError(f"No official Noble {ubuntu_architecture()} publication for {owner}={version}")
 
 
 def historical_inputs(root, owner, version, series="noble"):
@@ -135,16 +140,18 @@ def historical_inputs(root, owner, version, series="noble"):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "binary-publication.json").write_text(json.dumps(publication, indent=2) + "\n")
     build = official_json(publication["build_link"])
-    if build["source_package_name"] != source or build["source_package_version"] != source_version or build["arch_tag"] != "amd64":
+    if build["source_package_name"] != source or build["source_package_version"] != source_version:
         raise ValueError("Official build identity disagrees with package publication")
     (folder / "build.json").write_text(json.dumps(build, indent=2) + "\n")
     download(build["changesfile_url"], folder / "binary.changes", None)
     changes = next(record for record in paragraphs((folder / "binary.changes").read_text()) if "Checksums-Sha256" in record)
     binary_name = owner.split(":", 1)[0]
-    binary_files = [line.split() for line in changes["Checksums-Sha256"].splitlines() if line.strip() and line.split()[-1].startswith(binary_name + "_") and re.search(r"_(?:amd64|all)\.deb$", line.split()[-1])]
+    binary_files = [line.split() for line in changes["Checksums-Sha256"].splitlines() if line.strip() and line.split()[-1].startswith(binary_name + "_") and re.search(r"_(?:" + ubuntu_architecture() + r"|all)\.deb$", line.split()[-1])]
     if len(binary_files) != 1:
         raise ValueError("Official build changes do not identify one exact binary archive")
     binary_sha, _, binary_file = binary_files[0]
+    if not binary_file.endswith("_all.deb") and build["arch_tag"] != ubuntu_architecture():
+        raise ValueError("Official build architecture disagrees with binary archive")
     binary_url = build["changesfile_url"].rsplit("/", 1)[0] + "/" + binary_file
     source_collection = official_json(publication["archive_link"] + "?" + urllib.parse.urlencode({"ws.op": "getPublishedSources", "source_name": source, "version": source_version, "exact_match": "true"}))
     source_publication = next(record for record in source_collection["entries"] if record["source_package_name"] == source and record["source_package_version"] == source_version and record["distro_series_link"].endswith("/" + actual_series))
@@ -371,9 +378,12 @@ def collect(args):
     manifest["controlledModules"] = copy_inputs(Path(__file__).resolve().parent.parent, root, provenance)
     ldconfig = run(["/sbin/ldconfig", "-p"])
     candidates = [Path(line.rsplit(" => ", 1)[1]) for line in ldconfig.splitlines() if " => " in line]
-    candidates.extend([Path("/usr/bin/obs-ffmpeg-mux"), Path("/usr/lib/x86_64-linux-gnu/libobs-opengl.so")])
-    candidates.extend(Path("/usr/lib/x86_64-linux-gnu/obs-plugins").glob("*.so"))
-    candidates.extend(Path("/usr/lib/x86_64-linux-gnu/pulseaudio").glob("*.so"))
+    multiarch = run(["dpkg-architecture", "-qDEB_HOST_MULTIARCH"]).strip()
+    library_root = Path("/usr/lib") / multiarch
+    candidates.extend(Path(file) for file in run(["dpkg-query", "-L", "obs-studio"]).splitlines() if Path(file).name == "obs-ffmpeg-mux")
+    candidates.append(library_root / "libobs-opengl.so")
+    candidates.extend((library_root / "obs-plugins").glob("*.so"))
+    candidates.extend((library_root / "pulseaudio").glob("*.so"))
     by_name = {}
     for file in candidates:
         by_name.setdefault(file.name, []).append(file)

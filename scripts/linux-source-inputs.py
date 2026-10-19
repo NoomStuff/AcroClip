@@ -7,6 +7,7 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 import sys
+import subprocess
 import tarfile
 
 sys.dont_write_bytecode = True
@@ -17,18 +18,50 @@ spec.loader.exec_module(collector)
 # These are static/header inputs observed in the actual recorded build recipes.
 # Rust dev packages include test/build crates too, so capture the actual installed overset.
 required = {
-    "632ad7f2a509a602": r"glslang-dev|spirv-tools|libvulkan-dev|libffmpeg-nvenc-dev",
-    "beb65370f8304c33": r"librust-.*-dev|libstd-rust-1\.75",
-    "28192c144f62bba7": r"libsimde-dev|nlohmann-json3-dev|uthash-dev|libffmpeg-nvenc-dev",
-    "128ce72410800d15": r"spirv-headers",
-    "4c59bf38c52e3679": r"libstd-rust-1\.75",
+    "ffmpeg": r"glslang-dev|spirv-tools|libvulkan-dev|libffmpeg-nvenc-dev",
+    "rust-rav1e": r"librust-.*-dev|libstd-rust-\d+\.\d+",
+    "obs-studio": r"libsimde-dev|nlohmann-json3-dev|uthash-dev|libffmpeg-nvenc-dev",
+    "spirv-tools": r"spirv-headers",
+    "librsvg": r"libstd-rust-\d+\.\d+",
 }
+
+
+def selected_builds(root):
+    native = json.loads((root / "manifest.json").read_text())
+    selected = {}
+    for package in native["packages"]:
+        source = package["sourcePackage"]
+        if source not in required:
+            continue
+        identity = source, package["sourceVersion"]
+        if identity in selected:
+            continue
+        identifier = hashlib.sha256((package["binaryPackage"] + "=" + package["binaryVersion"]).encode()).hexdigest()[:16]
+        buildinfo = root / "history" / identifier / "binary.buildinfo"
+        record = next(record for record in collector.paragraphs(buildinfo.read_text()) if "Installed-Build-Depends" in record)
+        if (record["Source"], record["Version"]) != identity:
+            raise ValueError("Static inputs refer to another actual source build")
+        selected[identity] = identifier, required[source], buildinfo
+    if not {"ffmpeg", "obs-studio"}.issubset({source for source, _ in selected}):
+        raise ValueError("The staged native packages lack required OBS/FFmpeg build evidence")
+    return list(selected.values())
+
+
+def collect_static(root):
+    for identifier, pattern, buildinfo in selected_builds(root):
+        existing = root / "static" / identifier / "manifest.json"
+        if existing.exists():
+            manifest = json.loads(existing.read_text())
+            if manifest["buildinfo"]["sha256"] == collector.digest(buildinfo) and not manifest["blockers"]:
+                continue
+        subprocess.run([sys.executable, str(Path(__file__).with_name("collect-linux-static-sources.py")), "--output", str(root), "--buildinfo", str(buildinfo), "--packages", pattern], check=True)
+
 
 
 def verify_static(root):
     archives = {}
     records = []
-    for identifier, pattern in required.items():
+    for identifier, pattern, _ in selected_builds(root):
         file = root / "static" / identifier / "manifest.json"
         manifest = json.loads(file.read_text())
         if manifest["blockers"]:
@@ -118,9 +151,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sources", required=True)
     parser.add_argument("--notices")
+    parser.add_argument("--collect", action="store_true", help="Capture static sources for the actual staged architecture and package versions")
     parser.add_argument("--no-write", action="store_true", help="Validate an archived packet without changing its evidence")
     args = parser.parse_args()
     root = Path(args.sources).resolve()
+    if args.collect:
+        if args.no_write:
+            raise ValueError("Cannot collect sources in read-only verification mode")
+        collect_static(root)
     records, archives = verify_static(root)
     report = {"version": 1, "staticInputs": records, "packages": sum(record["packages"] for record in records), "uniqueArchives": len(archives)}
     if args.notices:

@@ -1,6 +1,11 @@
 name: macOS native capture
 on:
    workflow_dispatch:
+      inputs:
+         architecture:
+            type: choice
+            options: [arm64, x64]
+            default: arm64
    push:
       paths:
          - native/macos/**
@@ -28,7 +33,7 @@ permissions:
    contents: read
 jobs:
    capture:
-      runs-on: macos-15
+      runs-on: ${{ inputs.architecture == 'x64' && 'macos-15-intel' || 'macos-15' }}
       timeout-minutes: 120
       steps:
          - uses: actions/checkout@v7
@@ -38,7 +43,7 @@ jobs:
          - run: bun install --frozen-lockfile
          - name: Install build tools and independent fixture generator
            run: |
-              brew install ffmpeg-full meson ninja pkg-config
+              brew install ffmpeg-full meson ninja pkg-config nasm
               taskReference="$(brew --prefix ffmpeg-full)/bin"
               echo "FFMPEG_PATH=$taskReference/ffmpeg" >> "$GITHUB_ENV"
               echo "FFPROBE_PATH=$taskReference/ffprobe" >> "$GITHUB_ENV"
@@ -56,8 +61,8 @@ jobs:
            run: |
               ACROCLIP_REFERENCE_FFMPEG="$FFMPEG_PATH" python3 scripts/smoke-controlled-media-macos.py
               bun scripts/controlled-media-macos.ts
-              echo "FFMPEG_PATH=$PWD/work/controlled-media/macos-arm64/ffmpeg" >> "$GITHUB_ENV"
-              echo "FFPROBE_PATH=$PWD/work/controlled-media/macos-arm64/ffprobe" >> "$GITHUB_ENV"
+              echo "FFMPEG_PATH=$PWD/work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/ffmpeg" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$PWD/work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/ffprobe" >> "$GITHUB_ENV"
          - name: Stage verified media tools
            run: bun run bundle:media
          - name: Build and stage matching macOS recorder
@@ -89,7 +94,7 @@ jobs:
               bun run build:icons
               bun run build:notices
               bun run build
-              bunx electron-builder --mac zip --arm64 --publish never
+              bunx electron-builder --mac zip --${{ inputs.architecture || 'arm64' }} --publish never
            env:
               CSC_IDENTITY_AUTO_DISCOVERY: "false"
          - name: Verify packaged application capture and sharing
@@ -104,29 +109,35 @@ jobs:
               bun scripts/package-macos-source-kit.ts
          - name: Verify the complete application ZIP, independent rebuild and updater
            run: |
-              taskSource=$(find work -maxdepth 1 -name 'AcroClip-*-darwin-arm64-sources-*.zip' -type f)
-              taskApp=$(find release -maxdepth 1 -name 'AcroClip-*-mac-arm64.zip' -type f)
+              taskSource=$(find work -maxdepth 1 -name 'AcroClip-*-darwin-${{ inputs.architecture || 'arm64' }}-sources-*.zip' -type f)
+              taskApp=$(find release -maxdepth 1 -name 'AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip' -type f)
               test -n "$taskSource" && test -n "$taskApp"
               bun scripts/verify-macos-release.ts work/macos-release-sources "$taskSource" "$taskApp"
            env:
               CSC_IDENTITY_AUTO_DISCOVERY: "false"
+         - name: Package the verified application as DMG
+           run: |
+              taskApp=$(find release -maxdepth 1 -name 'AcroClip-*-mac-*.zip' -type f)
+              taskHash=$(shasum -a 256 "$taskApp" | cut -d' ' -f1)
+              bun scripts/package-macos-dmg.ts "$taskApp" "$taskHash" release
          - uses: actions/upload-artifact@v7
            if: success()
            with:
-              name: macOS-verified-release-candidate
+              name: macOS-verified-release-candidate-${{ inputs.architecture || 'arm64' }}
               path: |
-                 release/AcroClip-*-mac-arm64.zip
-                 release/AcroClip-*-mac-arm64.zip.blockmap
-                 release/AcroClip-*-mac-arm64.zip.release.json
+                 release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.dmg
+                 release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip
+                 release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip.blockmap
+                 release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip.release.json
                  release/latest-mac.yml
-                 work/AcroClip-*-darwin-arm64-sources-*.zip
-                 work/AcroClip-*-darwin-arm64-sources-*.zip.json
+                 work/AcroClip-*-darwin-${{ inputs.architecture || 'arm64' }}-sources-*.zip
+                 work/AcroClip-*-darwin-${{ inputs.architecture || 'arm64' }}-sources-*.zip.json
               if-no-files-found: error
               retention-days: 14
          - uses: actions/upload-artifact@v7
            if: always()
            with:
-              name: macOS-native-capture-proof
+              name: macOS-native-capture-proof-${{ inputs.architecture || 'arm64' }}
               path: |
                  .cache/macos-capture/**/proof.json
                  .cache/macos-capture/**/partial-proof.json
@@ -156,15 +167,15 @@ jobs:
                  .cache/macos-feedback/**/*-panel.png
                  .cache/macos-source/runtime-proof.json
                  .cache/macos-source/*-application-tree.json
-                 work/controlled-media/macos-arm64/*.json
-                 work/controlled-media/macos-arm64/*.txt
-                 work/controlled-media/macos-arm64/*.log
-                 work/controlled-media/macos-arm64/*.h
-                 work/controlled-media/macos-arm64/*.mak
-                 work/controlled-media/macos-arm64/*.sh
-                 work/controlled-media/macos-arm64/LICENSE*
-                 work/controlled-media/macos-arm64/COPYING*
-                 work/controlled-media/macos-arm64/verification/
+                 work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/*.json
+                 work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/*.txt
+                 work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/*.log
+                 work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/*.h
+                 work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/*.mak
+                 work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/*.sh
+                 work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/LICENSE*
+                 work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/COPYING*
+                 work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/verification/
                  work/reference-media/
                  work/release-sources/manifest.json
                  work/release-sources/*.tar.gz
@@ -174,21 +185,21 @@ jobs:
                  work/macos-release-sources/macos-kit.json
                  work/macos-release-sources/obs-inputs.json
                  work/macos-release-sources/obs-source-validation.json
-                 work/AcroClip-*-darwin-arm64-sources-*.zip
-                 work/AcroClip-*-darwin-arm64-sources-*.zip.json
+                 work/AcroClip-*-darwin-${{ inputs.architecture || 'arm64' }}-sources-*.zip
+                 work/AcroClip-*-darwin-${{ inputs.architecture || 'arm64' }}-sources-*.zip.json
                  release/*.zip.release.json
-                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-arm64/*.tar.gz
-                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-arm64/*.txt
-                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-arm64/*.json
-                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-arm64/*.gn
-                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-arm64/*.h
-                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-arm64/*.patch
-                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-arm64/licenses/
+                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-${{ inputs.architecture || 'arm64' }}/*.tar.gz
+                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-${{ inputs.architecture || 'arm64' }}/*.txt
+                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-${{ inputs.architecture || 'arm64' }}/*.json
+                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-${{ inputs.architecture || 'arm64' }}/*.gn
+                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-${{ inputs.architecture || 'arm64' }}/*.h
+                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-${{ inputs.architecture || 'arm64' }}/*.patch
+                 work/macos-release-sources/evidence/electron-ffmpeg-darwin-${{ inputs.architecture || 'arm64' }}/licenses/
               retention-days: 7
          - uses: actions/upload-artifact@v7
            if: always()
            with:
-              name: macOS-native-feedback-proof
+              name: macOS-native-feedback-proof-${{ inputs.architecture || 'arm64' }}
               path: |
                  .cache/macos-feedback/**/*.json
                  .cache/macos-feedback/**/*.jsonl

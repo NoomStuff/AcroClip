@@ -55,13 +55,21 @@ export async function verifyMacObsSourceInputs(
    options: { stageNotices?: boolean; writeReport?: boolean } = {}
 ): Promise<void> {
    const kit = JSON.parse(await readFile(path.join(directory, "obs-inputs.json"), "utf8")) as SourceKit;
-   if (kit.platform !== "darwin-arm64" || kit.sources.length !== 3 || kit.dependencySources?.length !== 17 || kit.dependencyFailures?.length)
+   if (
+      !["darwin-arm64", "darwin-x64"].includes(kit.platform) ||
+      kit.sources.length !== 3 ||
+      kit.dependencySources?.length !== 17 ||
+      kit.dependencyFailures?.length
+   )
       throw new Error("Mac OBS source input collection is incomplete.");
    const proof = JSON.parse(await readFile(proofFile, "utf8")) as RuntimeProbe;
    if (
       proof.version !== 1 ||
       proof.sourceCommit !== "ba2f32bdf791005443988a4955e963663e16b1ed" ||
-      proof.officialArchive.sha256 !== "920d6f26703d2df6e4085bd3c1cbed30488325084136c7a6e9e37021fbd6aaf7"
+      proof.officialArchive.sha256 !==
+         (kit.platform === "darwin-arm64"
+            ? "920d6f26703d2df6e4085bd3c1cbed30488325084136c7a6e9e37021fbd6aaf7"
+            : "f8d8afe3dffdc86efa0698c02ff0c997866bac3e6208ddaf56d37108baacf197")
    )
       throw new Error("Runtime proof refers to another official OBS release.");
    const coveredProviders = [

@@ -2,12 +2,14 @@
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import subprocess
 import tempfile
 
 project = Path.cwd()
-directory = project / "work/controlled-media/linux-x64"
+architecture = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
+directory = project / f"work/controlled-media/linux-{architecture}"
 controlled = directory / "ffmpeg"
 probe = directory / "ffprobe"
 reference = Path(os.environ.get("ACROCLIP_REFERENCE_FFMPEG", "/usr/bin/ffmpeg"))

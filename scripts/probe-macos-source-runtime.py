@@ -7,15 +7,16 @@ source/build records and are deliberately separate from provider binaries.
 import ctypes
 import hashlib
 import json
+import platform
 from pathlib import Path
 import subprocess
 import tempfile
 
-PIN = "920d6f26703d2df6e4085bd3c1cbed30488325084136c7a6e9e37021fbd6aaf7"
+PIN = "920d6f26703d2df6e4085bd3c1cbed30488325084136c7a6e9e37021fbd6aaf7" if platform.machine() == "arm64" else "f8d8afe3dffdc86efa0698c02ff0c997866bac3e6208ddaf56d37108baacf197"
 project = Path.cwd()
 runtime = project / "resources/recorder"
 provenance = json.loads((runtime / "provenance.json").read_text())
-archive = project / ".cache/macos-probe/OBS-Studio-32.2.2-macOS-Apple.dmg"
+archive = project / (".cache/macos-probe/OBS-Studio-32.2.2-macOS-Apple.dmg" if platform.machine() == "arm64" else ".cache/macos-probe/OBS-Studio-32.2.2-macOS-Intel.dmg")
 if hashlib.sha256(archive.read_bytes()).hexdigest() != PIN:
     raise RuntimeError("Official OBS image checksum mismatch")
 if provenance["runtimeArchive"]["sha256"] != PIN:

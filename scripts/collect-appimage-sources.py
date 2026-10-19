@@ -24,6 +24,7 @@ pins = {
     "libappimage": ("AppImage/libappimage", "13f401a4a384ec59ec9a144e2a7006adf751571f"),
     "squashfuse": ("vasi/squashfuse", "1f980303b89c779eabfd0a0fdd36d6a7a311bf92"),
 }
+architecture = "arm64" if collector.ubuntu_architecture() == "arm64" else "x64"
 libraries = {
     "libappindicator.so.1": ("libappindicator1", "12.10.1+13.10.20130920-0ubuntu4"),
     "libgconf-2.so.4": ("libgconf-2-4", "3.2.6-0ubuntu2"),
@@ -31,7 +32,7 @@ libraries = {
     "libnotify.so.4": ("libnotify4", "0.7.6-1ubuntu3"),
     "libXss.so.1": ("libxss1", "1:1.2.2-1"),
     "libXtst.so.6": ("libxtst6", "2:1.2.2-1"),
-}
+} if architecture == "x64" else {}
 
 
 def record(root, file):
@@ -54,23 +55,24 @@ def collect(args):
     manifest = {"version": 1, "toolset": {"name": "appimage-12.0.1.7z", "sha256": toolset_sha}, "packages": [], "sources": [], "licenseFiles": [], "buildInstructions": [], "blockers": []}
     previous = json.loads((root / "manifest.json").read_text()) if (root / "manifest.json").exists() else None
     archived = root / "appimage-12.0.1.7z"
-    shutil.copyfile(args.archive, archived)
+    if Path(args.archive).resolve() != archived:
+        shutil.copyfile(args.archive, archived)
     manifest["toolset"].update(record(root, archived))
-    runtime = toolset / "runtime-x64"
+    runtime = toolset / "runtime-" + architecture
     sevenzip = find_sevenzip(args)
-    for relative in ["runtime-x64", *["lib/x64/" + name for name in libraries]]:
+    for relative in ["runtime-" + architecture, *["lib/" + architecture + "/" + name for name in libraries]]:
         official = subprocess.check_output([sevenzip, "x", "-so", str(archived), relative])
         if (toolset / relative).read_bytes() != official:
             raise ValueError("Extracted AppImage tool differs from the hash-pinned archive member: " + relative)
     # Execute only the hash-pinned official launcher, in an isolated copy with no payload.
-    runtime_copy = root / "runtime-x64"
+    runtime_copy = root / "runtime-" + architecture
     shutil.copyfile(runtime, runtime_copy)
     runtime_copy.chmod(0o755)
     version = collector.run([str(runtime_copy), "--appimage-version"]).strip()
     if version != "Version: effcebc":
         raise ValueError("Official launcher does not declare the captured AppImageKit source commit")
     manifest["runtime"] = {**record(root, runtime_copy), "version": version}
-    actual_libraries = {file.name for file in (toolset / "lib/x64").iterdir() if file.is_file()}
+    actual_libraries = {file.name for file in (toolset / "lib" / architecture).iterdir() if file.is_file()} if (toolset / "lib" / architecture).exists() else set()
     if actual_libraries != set(libraries):
         raise ValueError("Official toolset injects an unexpected library set")
     for filename, (owner, version) in libraries.items():
@@ -79,7 +81,7 @@ def collect(args):
             existing = next((package for package in previous["packages"] if package["binaryPackage"] == owner and package["binaryVersion"] == version), None) if previous else None
             if existing:
                 validate_package(root, existing)
-                if existing["file"]["sha256"] != collector.digest(toolset / "lib/x64" / filename):
+                if existing["file"]["sha256"] != collector.digest(toolset / "lib" / architecture / filename):
                     raise ValueError("Cached source proof differs from current injected library bytes")
                 manifest["packages"].append(existing)
                 continue
@@ -93,7 +95,7 @@ def collect(args):
             if control["Package"] != owner or control["Version"] != version or collector.source_identity(control) != (source, source_version):
                 raise ValueError("AppImage library package source identity disagrees")
             data = collector.deb_data(archive)
-            actual = collector.digest(toolset / "lib/x64" / filename)
+            actual = collector.digest(toolset / "lib" / architecture / filename)
             member = collector.match_member(data, filename, actual)
             if not member:
                 raise ValueError("Injected AppImage library does not match the published Ubuntu package bytes")
@@ -117,7 +119,7 @@ def collect(args):
             manifest["packages"].append({"binaryPackage": owner, "binaryVersion": version, "sourcePackage": source, "sourceVersion": source_version,
                                         "binaryArchive": {**record(root, archive), "url": binary_url}, "sourceArchives": archives,
                                         "copyright": {**record(root, copyright_file), "debMember": notices[0].name},
-                                        "file": {"path": "usr/lib/" + filename, "sha256": actual, "size": (toolset / "lib/x64" / filename).stat().st_size, "debMember": member}})
+                                        "file": {"path": "usr/lib/" + filename, "sha256": actual, "size": (toolset / "lib" / architecture / filename).stat().st_size, "debMember": member}})
         except Exception as error:
             manifest["blockers"].append(filename + ": " + str(error))
         (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
@@ -211,7 +213,7 @@ def check(args):
         raise ValueError("AppImage supplier archive changed")
     sevenzip = find_sevenzip(args)
     runtime = collector.evidence_path(root, manifest["runtime"]["path"])
-    if collector.digest(runtime) != manifest["runtime"]["sha256"] or runtime.read_bytes() != subprocess.check_output([sevenzip, "x", "-so", str(archive), "runtime-x64"]):
+    if collector.digest(runtime) != manifest["runtime"]["sha256"] or runtime.read_bytes() != subprocess.check_output([sevenzip, "x", "-so", str(archive), "runtime-" + architecture]):
         raise ValueError("AppImage runtime differs from the official supplier archive")
     if {package["file"]["path"] for package in manifest["packages"]} != {"usr/lib/" + name for name in libraries}:
         raise ValueError("AppImage source evidence misses an injected library")
@@ -220,7 +222,7 @@ def check(args):
         filename = PurePosixPath(package["file"]["path"]).name
         if (package["binaryPackage"], package["binaryVersion"]) != libraries[filename]:
             raise ValueError("AppImage source package version differs from the pinned toolset's actual inputs")
-        official = subprocess.check_output([sevenzip, "x", "-so", str(archive), "lib/x64/" + filename])
+        official = subprocess.check_output([sevenzip, "x", "-so", str(archive), "lib/" + architecture + "/" + filename])
         if hashlib.sha256(official).hexdigest() != package["file"]["sha256"] or len(official) != package["file"]["size"]:
             raise ValueError("AppImage injected library differs from exact toolset bytes")
     captured = {source["repository"]: source for source in manifest["sources"] if "repository" in source}

@@ -109,7 +109,7 @@ def check_build_evidence(root, record, proof):
     drivers = {shlex.split(command["command"])[0] for command in commands}
     link = shlex.split(safe_path(root, "wayland/build/CMakeFiles/linux-pipewire.dir/link.txt").read_text())
     aliases = proof.get("compilerPaths", {})
-    if len(drivers) != 1 or link[0] not in drivers or set(aliases.values()) != set(compiler) or not drivers.issubset(aliases) or not PurePosixPath(aliases[link[0]]).name.startswith("x86_64-linux-gnu-gcc"):
+    if len(drivers) != 1 or link[0] not in drivers or set(aliases.values()) != set(compiler) or not drivers.issubset(aliases) or not re.fullmatch(r"(?:x86_64|aarch64)-linux-gnu-gcc(?:-\d+)?", PurePosixPath(aliases[link[0]]).name):
         raise ValueError("Module compiler and linker evidence disagree")
     trace = {line.strip() for line in safe_path(root, "wayland/build/linker-trace.txt").read_text().splitlines() if line.strip().startswith("/")}
     if trace != set(proof["linkerPaths"]) or set(proof["linkerPaths"].values()) != {file["path"] for file in proof["linkerInputs"]}:

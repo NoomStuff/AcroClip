@@ -5,7 +5,9 @@ set -euo pipefail
 # never downloads a library or resolves a tag while compiling.
 taskProject=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 taskSources="$taskProject/work/release-sources"
-taskOutput="$taskProject/work/controlled-media/linux-x64"
+taskArch=$(uname -m)
+case "$taskArch" in x86_64) taskArch=x64 ;; aarch64) taskArch=arm64 ;; *) echo "Unsupported Linux architecture" >&2; exit 1 ;; esac
+taskOutput="$taskProject/work/controlled-media/linux-$taskArch"
 taskBuildRoot=${ACROCLIP_MEDIA_BUILD_ROOT:-$(mktemp -d -t acroclip-media.XXXXXX)}
 taskJobs=${ACROCLIP_MEDIA_BUILD_JOBS:-1}
 taskPrefix="$taskBuildRoot/prefix"
