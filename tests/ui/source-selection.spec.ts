@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { defaultPreferences } from "../../src/shared/defaults";
+import type { AppState } from "../../src/shared/types";
 
 test("mismatched and stale sources stay unselected without preview or capture fallback", async () => {
    const profile = await mkdtemp(join(tmpdir(), "acroclip-source-selection-")),
@@ -23,7 +24,25 @@ test("mismatched and stale sources stay unselected without preview or capture fa
    const app = await electron.launch({ args: [resolve("."), "--disable-gpu-sandbox"], env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile } });
    try {
       const page = await app.firstWindow();
-      await app.evaluate(({ ipcMain }) => {
+      const initial = await page.evaluate(() => window.acroClip.state());
+      await app.evaluate(({ ipcMain, BrowserWindow }, initial) => {
+         // Source-selection UI does not require the CI machine to have a recorder.
+         let current = initial;
+         const supported = (state: AppState) => ({ ...state, recorder: { ...state.recorder, supported: true } });
+         const web = BrowserWindow.getAllWindows()[0]!.webContents;
+         const send = web.send.bind(web);
+         web.send = (channel, ...args) => {
+            if (channel === "app-event" && (args[0] as { type?: string })?.type === "state") {
+               current = (args[0] as { state: AppState }).state;
+               send(channel, { type: "state", state: supported(current) });
+            } else send(channel, ...args);
+         };
+         ipcMain.removeHandler("state");
+         ipcMain.handle("state", () => supported(current));
+         ipcMain.removeHandler("recording-capabilities");
+         ipcMain.handle("recording-capabilities", () => ({ supported: true, hardwareEncoders: [], recommended: "standard", message: "" }));
+         ipcMain.removeHandler("monitor-audio");
+         ipcMain.handle("monitor-audio", () => {});
          const fixture = globalThis as typeof globalThis & {
             previewIds?: string[];
             fixtureSources?: Array<{ id: string; kind: "screen" | "app"; name: string; thumbnail: string }>;
@@ -39,12 +58,12 @@ test("mismatched and stale sources stay unselected without preview or capture fa
                throw new Error("Fixture preview boundary");
             }
          });
-      });
+      }, initial);
       await page.reload();
       const start = page.getByRole("button", { name: "Start recording", exact: true });
       await expect(page.getByText("Choose what to capture", { exact: true })).toBeVisible();
       await expect(start).toBeDisabled();
-      await expect(page.getByRole("button", { name: "Listen to Source audio", exact: true })).toBeDisabled();
+      await expect(page.locator(".audio-listen").first()).toBeDisabled();
       expect(await app.evaluate(() => (globalThis as typeof globalThis & { previewIds: string[] }).previewIds)).toEqual([]);
       await page.getByRole("button", { name: "Screen", exact: true }).click();
       await expect(start).toBeEnabled();

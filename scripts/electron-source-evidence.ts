@@ -64,9 +64,18 @@ export async function collectElectronFfmpeg(
       if (!existsSync(file) && options.sourceCache && existsSync(path.join(options.sourceCache, name)))
          await copyFile(path.join(options.sourceCache, name), file);
       if (!existsSync(file)) {
-         const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
-         if (!response.ok) throw new Error(`Electron source download failed: ${url}: HTTP ${response.status}`);
-         await writeFile(file, new Uint8Array(await response.arrayBuffer()));
+         for (let attempt = 0; attempt < 4; attempt++) {
+            const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
+            if (response.ok) {
+               await writeFile(file, new Uint8Array(await response.arrayBuffer()));
+               break;
+            }
+            await response.body?.cancel();
+            if ((response.status !== 429 && response.status < 500) || attempt === 3)
+               throw new Error(`Electron source download failed: ${url}: HTTP ${response.status}`);
+            console.warn(`Retrying pinned Electron source after HTTP ${response.status}: ${url}`);
+            await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+         }
       }
       return file;
    };
