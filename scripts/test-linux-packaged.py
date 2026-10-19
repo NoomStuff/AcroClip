@@ -100,7 +100,8 @@ try:
         if time.monotonic() >= deadline:
             raise RuntimeError("Private audio fixture did not start")
         time.sleep(0.1)
-    launch(["xclock", "-update", "1", "-geometry", "200x200+10+10"], "clock")
+    launch(["openbox", "--sm-disable"], "window-manager")
+    launch(["xclock", "-update", "1", "-geometry", "640x360+0+0"], "clock")
     tone = evidence / "tone.wav"
     subprocess.run([str(package / "resources/media/ffmpeg"), "-v", "error", "-f", "lavfi",
                     "-i", "sine=frequency=997:sample_rate=48000:duration=120",

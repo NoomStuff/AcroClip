@@ -84,6 +84,7 @@ await writeFile(
       sourceKind: "app",
       sourceId: `window:${identity.windowId}:0`,
       quality: "custom",
+      recordingSizeVersion: 1,
       customWidth: 640,
       customHeight: 360,
       customFPS: 15,
@@ -100,6 +101,8 @@ await writeFile(
 const executable =
    process.env["ACROCLIP_MAC_PACKAGED_EXE"] ?? path.resolve(`release/mac${process.arch === "arm64" ? "-arm64" : ""}/AcroClip.app/Contents/MacOS/AcroClip`);
 let desktop: Awaited<ReturnType<typeof electron.launch>> | undefined;
+const recordingStates: unknown[] = [];
+const applicationErrors: string[] = [];
 const ffmpeg = path.resolve("resources/media/ffmpeg");
 const ffprobe = path.resolve("resources/media/ffprobe");
 async function tones(file: string, track: number) {
@@ -131,6 +134,7 @@ try {
       env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: folder },
       timeout: 60000,
    });
+   desktop.process().stderr?.on("data", (data: Buffer) => applicationErrors.push(data.toString()));
    const page = await desktop.firstWindow();
    await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeVisible();
    const selected = (await page.evaluate(() => window.acroClip.games())).find((candidate) => candidate.pid === identity.pid);
@@ -169,7 +173,14 @@ try {
    await page.getByRole("button", { name: "Start recording", exact: true }).click();
    await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
    await expect
-      .poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.availableSeconds), { timeout: 30000 })
+      .poll(
+         async () => {
+            const recorder = await page.evaluate(async () => (await window.acroClip.state()).recorder);
+            recordingStates.push({ at: Date.now(), ...recorder });
+            return recorder.availableSeconds;
+         },
+         { timeout: 30000 }
+      )
       .toBeGreaterThanOrEqual(4.9);
    await page.getByRole("button", { name: "Library", exact: true }).click();
    expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
@@ -289,6 +300,8 @@ try {
       }
    }
    await writeFile(path.join(evidence, "fixture.log"), fixtureErrors.join(""));
+   await writeFile(path.join(evidence, "application.log"), applicationErrors.join(""));
+   await writeFile(path.join(evidence, "recording-states.json"), JSON.stringify(recordingStates, null, 2));
    await writeFile(path.join(evidence, "fixture-health.json"), JSON.stringify(fixtureHealth, null, 2));
    try {
       if (desktop) await closeTestApplication(desktop);

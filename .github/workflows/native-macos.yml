@@ -133,6 +133,8 @@ jobs:
                  .cache/macos-native/build/CMakeFiles/CMakeConfigureLog.yaml
                  .cache/macos-packaged/proof.json
                  .cache/macos-packaged/fixture.log
+                 .cache/macos-packaged/application.log
+                 .cache/macos-packaged/recording-states.json
                  .cache/macos-packaged/fixture-health.json
                  resources/recorder/provenance.json
                  resources/media/provenance.json

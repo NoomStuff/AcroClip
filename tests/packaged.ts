@@ -107,6 +107,7 @@ try {
       await starting;
    });
    await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
+   if (linux) await page.evaluate(() => window.acroClip.window("minimize"));
    await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.availableSeconds), { timeout: 30000 }).toBeGreaterThanOrEqual(5);
    await page.evaluate(() => window.acroClip.saveClip());
    await page.waitForTimeout(1000);

@@ -31,12 +31,13 @@ export async function storeApplicationArtwork(root: string, art: ApplicationArtw
    if (!match || art.icon.length > 45000) return stored;
    const bytes = Buffer.from(match[1]!, "base64");
    if (!validPng(bytes)) return stored;
+   const canonicalRoot = await realpath(root);
    const metadataDirectory = join(root, ".acroclip");
    await mkdir(metadataDirectory, { recursive: true });
-   if (!inside(root, await realpath(metadataDirectory))) return stored;
+   if (!inside(canonicalRoot, await realpath(metadataDirectory))) return stored;
    const directory = join(metadataDirectory, "app-icons");
    await mkdir(directory, { recursive: true });
-   if (!inside(root, await realpath(directory))) return stored;
+   if (!inside(canonicalRoot, await realpath(directory))) return stored;
    const name = `${hash(bytes)}.png`,
       file = join(directory, name);
    const entries = await readdir(directory);
@@ -57,7 +58,7 @@ export async function readApplicationArtwork(root: string, stored: StoredApplica
    if (!stored.iconFile || !/^\.acroclip\/app-icons\/[a-f0-9]{64}\.png$/.test(stored.iconFile)) return undefined;
    try {
       const file = await realpath(join(root, stored.iconFile));
-      if (!inside(root, file)) return undefined;
+      if (!inside(await realpath(root), file)) return undefined;
       const handle = await open(file, "r");
       let bytes: Buffer;
       try {

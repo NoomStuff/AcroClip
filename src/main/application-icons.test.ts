@@ -7,6 +7,20 @@ import { storeApplicationArtwork, readApplicationArtwork } from "./application-i
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=";
 const id = createHash("sha256").update("verified-executable").digest("hex");
 describe("portable application artwork", () => {
+   it("stores and reads artwork through a collection directory alias", async () => {
+      const parent = await mkdtemp(join(tmpdir(), "acroclip-icon-alias-"));
+      const root = join(parent, "collection"),
+         alias = join(parent, "alias");
+      try {
+         await mkdir(root);
+         await symlink(root, alias, process.platform === "win32" ? "junction" : "dir");
+         const stored = await storeApplicationArtwork(alias, { id, icon: png });
+         expect(stored?.iconFile).toBeDefined();
+         expect(await readApplicationArtwork(alias, stored!)).toBe(png);
+      } finally {
+         await rm(parent, { recursive: true, force: true });
+      }
+   });
    it("survives moving the collection and falls back for corrupt or outside files without deleting them", async () => {
       const parent = await mkdtemp(join(tmpdir(), "acroclip-icons-")),
          root = join(parent, "original"),
