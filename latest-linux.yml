@@ -1,0 +1,12 @@
+version: 0.3.0
+path: >-
+  https://github.com/NoomStuff/AcroClip/releases/download/v0.3.0/AcroClip-0.3.0-linux-x86_64.AppImage
+sha512: >-
+  SFSMMEJ7L6pJpjnXbsBv16Fde0EU1Y+sswzPLclX9rtVYuFmnQY2uRB6GaeDbO0S/0kdXbr5PzrPVKPb9+htBA==
+files:
+  - url: >-
+      https://github.com/NoomStuff/AcroClip/releases/download/v0.3.0/AcroClip-0.3.0-linux-x86_64.AppImage
+    sha512: >-
+      SFSMMEJ7L6pJpjnXbsBv16Fde0EU1Y+sswzPLclX9rtVYuFmnQY2uRB6GaeDbO0S/0kdXbr5PzrPVKPb9+htBA==
+    size: 266358923
+releaseDate: '2026-10-19T04:09:15.972Z'
