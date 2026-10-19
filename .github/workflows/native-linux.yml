@@ -35,7 +35,7 @@ jobs:
               fi
               sudo apt-get update
               if [ "$(uname -m)" = aarch64 ]; then
-                 sudo apt-get install -y obs-studio=30.2.3+dfsg-3~bpo24.04.1 libobs-dev=30.2.3+dfsg-3~bpo24.04.1 obs-plugins=30.2.3+dfsg-3~bpo24.04.1
+                 sudo apt-get install -y obs-studio=30.2.3+dfsg-3~bpo24.04.1 libobs-dev=30.2.3+dfsg-3~bpo24.04.1 libobs0t64=30.2.3+dfsg-3~bpo24.04.1 obs-plugins=30.2.3+dfsg-3~bpo24.04.1
               else
                  sudo apt-get install -y obs-studio=32.2.0-0obsproject1~noble gcc-mingw-w64-x86-64 wine64
               fi
