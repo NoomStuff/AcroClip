@@ -7,7 +7,7 @@ import { checkMediaBinary } from "./check-media-binary";
 
 export interface ControlledLinuxMediaBuild {
    version: 1;
-   producer: "attaclip-controlled-linux";
+   producer: "acroclip-controlled-linux";
    target: "linux-x64";
    sourceCommits: { ffmpeg: string; x264: string; dav1d: string; zlib: string };
    sourceArchives: { path: string; sha256: string; size: number }[];
@@ -99,7 +99,7 @@ export async function recordControlledLinuxBuild(project: string): Promise<Contr
    await walk(directory);
    const build: ControlledLinuxMediaBuild = {
       version: 1,
-      producer: "attaclip-controlled-linux",
+      producer: "acroclip-controlled-linux",
       target: "linux-x64",
       sourceCommits: commits,
       sourceArchives,
@@ -115,7 +115,7 @@ export async function recordControlledLinuxBuild(project: string): Promise<Contr
 
 export async function readControlledLinuxBuild(directory: string): Promise<ControlledLinuxMediaBuild> {
    const build = JSON.parse(await readFile(path.join(directory, "build-manifest.json"), "utf8")) as ControlledLinuxMediaBuild;
-   if (build.version !== 1 || build.producer !== "attaclip-controlled-linux" || JSON.stringify(build.sourceCommits) !== JSON.stringify(commits))
+   if (build.version !== 1 || build.producer !== "acroclip-controlled-linux" || JSON.stringify(build.sourceCommits) !== JSON.stringify(commits))
       throw new Error("Unknown controlled build provenance.");
    for (const name of ["ffmpeg", "ffprobe"] as const) {
       if ((await hashFile(path.join(directory, name))) !== build.binaries[name].sha256)

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,7 +34,7 @@ describe("automatic game selection", () => {
       expect(selectGame([], "old", new Map())).toBeUndefined();
    });
    test("excludes launchers, respects platform, arguments and exact custom executable paths", async () => {
-      const file = join(await mkdtemp(join(tmpdir(), "attaclip-games-")), "catalog.json");
+      const file = join(await mkdtemp(join(tmpdir(), "acroclip-games-")), "catalog.json");
       const entries = [
          { id: "game", name: "Demo", executables: [{ name: "demo/game.exe", os: process.platform }] },
          { id: "launcher", name: "Launcher", executables: [{ name: "launcher.exe", os: process.platform, is_launcher: true }] },
@@ -63,7 +63,7 @@ describe("automatic game selection", () => {
       expect(() => parseCatalog([{ id: "bad", name: "Bad", executables: [{ name: "exe" }] }])).toThrow();
    });
    test("matches Windows catalog entries only for verified Wine candidates on Linux", async () => {
-      const file = join(await mkdtemp(join(tmpdir(), "attaclip-wine-games-")), "catalog.json");
+      const file = join(await mkdtemp(join(tmpdir(), "acroclip-wine-games-")), "catalog.json");
       await writeFile(
          file,
          JSON.stringify({
@@ -83,4 +83,41 @@ describe("automatic game selection", () => {
       expect(catalog.match([candidate("native", { executable: "/games/demo/game.exe" })], [])[0]?.gameName).toBe("Native demo");
       expect(catalog.match([candidate("loader", { executable: "/usr/bin/wine64", arguments: "/games/demo/game.exe" })], [])).toEqual([]);
    });
+});
+
+test("catalogue views use saved platform entries without downloading and share an in-flight local load", async () => {
+   const folder = await mkdtemp(join(tmpdir(), "acroclip-game-list-"));
+   const file = join(folder, "games.json");
+   await writeFile(
+      file,
+      JSON.stringify({
+         updated: Date.now(),
+         entries: [
+            {
+               id: "game",
+               name: "Local game",
+               executables: [
+                  { name: ">demo/game.exe", os: "win32" },
+                  { name: "game-helper.exe", os: "win32", is_launcher: true },
+                  { name: "game-linux", os: "linux" },
+               ],
+            },
+            { id: "game", name: "Local game", executables: [{ name: "game-alt.exe", os: "win32" }] },
+            { id: "other", name: "Other OS", executables: [{ name: "other", os: "darwin" }] },
+         ],
+      })
+   );
+   const fetch = vi.spyOn(globalThis, "fetch");
+   try {
+      const catalog = new GameCatalog(file, undefined, "win32");
+      const [first, second] = await Promise.all([catalog.list(), catalog.list()]);
+      expect(first).toEqual({ source: "saved", entries: [{ id: "game", name: "Local game", executables: ["demo/game.exe", "game-alt.exe"] }] });
+      expect(second).toEqual(first);
+      expect(fetch).not.toHaveBeenCalled();
+      const fallback = await new GameCatalog(join(folder, "absent.json"), undefined, "win32").list();
+      expect(fallback.source).toBe("built-in");
+      expect(fallback.entries.find((entry) => entry.name === "Baldur's Gate 3")?.executables).toHaveLength(2);
+   } finally {
+      fetch.mockRestore();
+   }
 });

@@ -295,10 +295,10 @@ export async function assembleLinuxSourceKit(
       const committed = execFileSync("git", ["show", `${appCommit}:${relative}`], { cwd: project, windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
       if (createHash("sha256").update(committed).digest("hex") !== expected) throw new Error(`Staged native helper came from different source: ${relative}`);
    }
-   const archiveRelative = `application/attaclip-${appCommit}.tar`;
+   const archiveRelative = `application/acroclip-${appCommit}.tar`;
    const archive = packetPath(directory, archiveRelative);
    await mkdir(path.dirname(archive), { recursive: true });
-   execFileSync("git", ["archive", "--format=tar", "--prefix=attaclip/", "--output", archive, appCommit], { cwd: project, windowsHide: true });
+   execFileSync("git", ["archive", "--format=tar", "--prefix=acroclip/", "--output", archive, appCommit], { cwd: project, windowsHide: true });
    const applicationSource = { path: archiveRelative, sha256: await hashFile(archive), size: (await stat(archive)).size };
    const staged = [
       ...(await inventory(path.join(stage, "resources"), "resources")),
@@ -382,14 +382,14 @@ export async function validateLinuxSourceKit(project: string, directory: string)
    const provenance = z
       .object({ sourceHashes: z.record(z.string(), z.string().regex(/^[a-f\d]{64}$/)), recorder: z.object({ sha256: z.string(), size: z.number() }) })
       .parse(JSON.parse(await readFile(packetPath(directory, "evidence/native-provenance.json"), "utf8")));
-   const helper = kit.staged.find((file) => file.path === "resources/recorder/attaclip-recorder");
+   const helper = kit.staged.find((file) => file.path === "resources/recorder/acroclip-recorder");
    if (!helper || helper.sha256 !== provenance.recorder.sha256 || helper.size !== provenance.recorder.size)
       throw new Error("Native helper differs from the compiled source fingerprint record");
    for (const required of ["native/recorder.cpp", "native/clip-writer.cpp", "native/clip-writer.hpp", "native/CMakeLists.txt", "scripts/build-native-linux.ts"])
       if (!provenance.sourceHashes[required]) throw new Error(`Native helper source fingerprint omits ${required}`);
    for (const [relative, expected] of Object.entries(provenance.sourceHashes)) {
       packetPath(directory, relative);
-      const bytes = execFileSync("tar", ["-xOf", packetPath(directory, kit.applicationSource.path), `attaclip/${relative}`], {
+      const bytes = execFileSync("tar", ["-xOf", packetPath(directory, kit.applicationSource.path), `acroclip/${relative}`], {
          maxBuffer: 32 * 1024 * 1024,
          windowsHide: true,
       });
@@ -433,7 +433,7 @@ export async function validateLinuxSourceKit(project: string, directory: string)
    const build = JSON.parse(await readFile(path.join(directory, "controlled-cli/build/build-manifest.json"), "utf8")) as Awaited<
       ReturnType<typeof readControlledLinuxBuild>
    >;
-   if (build.producer !== "attaclip-controlled-linux" || build.target !== "linux-x64") throw new Error("Source packet CLI build identity is wrong");
+   if (build.producer !== "acroclip-controlled-linux" || build.target !== "linux-x64") throw new Error("Source packet CLI build identity is wrong");
    for (const file of build.sourceArchives) requireFile({ ...file, path: `controlled-cli/sources/${file.path}` });
    for (const file of build.evidenceFiles) requireFile({ ...file, path: `controlled-cli/build/${file.path}` });
    for (const name of ["ffmpeg", "ffprobe"] as const) {

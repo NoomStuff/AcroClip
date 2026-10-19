@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "attaclip",
+      "name": "acroclip",
       "dependencies": {
         "electron-updater": "^6.7.3",
         "lucide-react": "^1.52.0",

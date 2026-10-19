@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { portalScreenId, portalSources, sourceChoices } from "./capture-policy";
+import { portalScreenId, portalSources, sourceChoices, selectedCaptureSource } from "./capture-policy";
 import type { RecordingCapabilities } from "./types";
 
 const ready: RecordingCapabilities = {
@@ -50,5 +50,23 @@ describe("system picker capture policy", () => {
       expect(sourceChoices(sources, capability).find((choice) => choice.value === "auto")?.disabled).toBe(false);
       expect(sourceChoices(sources).find((choice) => choice.value === "auto")?.disabled).toBe(true);
       expect(sourceChoices(sources, { ...capability, sourceKinds: ["screen", "app"] }).find((choice) => choice.value === "auto")?.disabled).toBe(true);
+   });
+});
+
+describe("saved capture selection", () => {
+   const sources = [
+      { id: "screen:0", kind: "screen" as const, name: "Screen", thumbnail: "" },
+      { id: "window:1:0", kind: "app" as const, name: "App", thumbnail: "" },
+   ];
+   it("requires both the selected ID and capture mode to match", () => {
+      expect(selectedCaptureSource(sources, { sourceKind: "app", sourceId: "screen:0" })).toBeUndefined();
+      expect(selectedCaptureSource(sources, { sourceKind: "screen", sourceId: "window:1:0" })).toBeUndefined();
+      expect(selectedCaptureSource(sources, { sourceKind: "app", sourceId: "window:1:0" })).toBe(sources[1]);
+   });
+   it("does not substitute another source for a stale saved ID", () => {
+      expect(selectedCaptureSource(sources, { sourceKind: "app", sourceId: "window:gone:0" })).toBeUndefined();
+      expect(selectedCaptureSource(sources, { sourceKind: "screen", sourceId: "screen:gone" })).toBeUndefined();
+      expect(selectedCaptureSource(sources, { sourceKind: "app", sourceId: "" })).toBeUndefined();
+      expect(selectedCaptureSource(sources, { sourceKind: "screen", sourceId: "" })).toBe(sources[0]);
    });
 });

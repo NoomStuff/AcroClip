@@ -1,26 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import {
-   ArrowLeft,
-   Check,
-   ChevronDown,
-   Clapperboard,
-   ExternalLink,
-   Film,
-   FolderOpen,
-   Grip,
-   LoaderCircle,
-   Maximize,
-   MoreHorizontal,
-   Pause,
-   Play,
-   Share2,
-   Trash2,
-   Volume2,
-   VolumeX,
-} from "lucide-react";
+import { Clapperboard, Film, FolderOpen, LoaderCircle, MoreHorizontal, Share2, SlidersHorizontal, Trash2, X } from "lucide-react";
 import type { AppState, Clip } from "../../shared/types";
-import { api, Button, describeError, Empty, formatSize, formatTime, IconButton, Menu, MenuItem, Segmented } from "./ui";
+import { api, Button, describeError, Empty, fileDragProps, formatSize, formatTime, HeaderActions, IconButton, Menu, MenuItem, Segmented, Select } from "./ui";
 import type { Run } from "./ui";
+import { DropdownSelect } from "./DropdownSelect";
+import { ViewerTransport } from "./ViewerTransport";
+import { PaneDivider, usePaneSize } from "./layout";
 
 export function Viewer({
    state,
@@ -35,6 +20,8 @@ export function Viewer({
    run: Run;
    openLibrary: () => void;
 }) {
+   const layout = useRef<HTMLDivElement>(null);
+   const sidebar = usePaneSize(layout, { key: "viewer.sidebar", initial: 270, min: 230, max: 380, reserve: 440, axis: "x" });
    const [selectedVersion, setVersion] = useState<"original" | "shareable">("original");
    const version = clip?.originalMissing ? "shareable" : selectedVersion;
    const [shareId, setShareId] = useState("");
@@ -44,6 +31,10 @@ export function Viewer({
    const [time, setTime] = useState(0);
    const [duration, setDuration] = useState(0);
    const [volume, setVolume] = useState(1);
+   const [muted, setMuted] = useState(false);
+   const [fullscreen, setFullscreen] = useState(false);
+   const [controlsShown, setControlsShown] = useState(true);
+   const controlsTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
    const [track, setTrack] = useState(-1);
    const [target, setTarget] = useState(state.preferences.shareSizeMB);
    const [override, setOverride] = useState(false);
@@ -77,6 +68,7 @@ export function Viewer({
    useEffect(() => {
       if (!visible) {
          video.current?.pause();
+         if (document.fullscreenElement === player.current) void document.exitFullscreen().catch(() => undefined);
          resume.current = false;
          return;
       }
@@ -126,206 +118,256 @@ export function Viewer({
    };
    useEffect(() => {
       if (!visible) return;
-      const key = (event: KeyboardEvent) => {
-         const element = event.target as HTMLElement;
-         if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(element.tagName)) return;
-         if (event.code === "Space") {
-            event.preventDefault();
-            if (video.current?.paused) void video.current.play().catch(() => undefined);
-            else video.current?.pause();
-         }
-         if (event.code === "ArrowRight" && video.current) video.current.currentTime = Math.min(video.current.duration, video.current.currentTime + 5);
-         if (event.code === "ArrowLeft" && video.current) video.current.currentTime = Math.max(0, video.current.currentTime - 5);
+      const command = (event: Event) => {
+         const id = (event as CustomEvent<string>).detail,
+            node = video.current;
+         if (!clip || !node) return;
+         if (id === "playPause") {
+            if (node.paused) void run(() => node.play());
+            else node.pause();
+         } else if (id === "seekBack") node.currentTime = Math.max(0, node.currentTime - 5);
+         else if (id === "seekForward") node.currentTime = Math.min(node.duration, node.currentTime + 5);
+         else if (id === "mutePlayback") {
+            node.muted = !node.muted;
+            setMuted(node.muted);
+         } else if (id === "fullscreen" && player.current)
+            void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()));
+         else if (id === "createShareable") void run(() => api.createShareable(clip.id, override ? target : undefined));
+         else if (id === "showFile" && path) void run(() => api.reveal(path));
       };
-      window.addEventListener("keydown", key);
-      return () => window.removeEventListener("keydown", key);
-   }, [visible]);
+      window.addEventListener("acroclip-shortcut", command);
+      return () => window.removeEventListener("acroclip-shortcut", command);
+   }, [visible, clip, override, target, path, run]);
+   useEffect(() => {
+      const changed = () => setFullscreen(document.fullscreenElement === player.current);
+      document.addEventListener("fullscreenchange", changed);
+      return () => document.removeEventListener("fullscreenchange", changed);
+   }, []);
+   useEffect(() => {
+      if (video.current) {
+         video.current.volume = volume;
+         video.current.muted = muted;
+      }
+   }, [volume, muted, url]);
+   useEffect(() => {
+      if (!playing || !visible) return;
+      let frame = 0;
+      const tick = () => {
+         if (video.current && !switching.current) {
+            setTime(video.current.currentTime);
+            seek.current = video.current.currentTime;
+         }
+         frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(frame);
+   }, [playing, visible]);
+   const wakeControls = () => {
+      clearTimeout(controlsTimer.current);
+      setControlsShown(true);
+      if (fullscreen && playing)
+         controlsTimer.current = setTimeout(() => {
+            if (
+               !player.current?.querySelector(".player-controls")?.contains(document.activeElement) &&
+               !player.current?.querySelector(".select-menu")?.contains(document.activeElement)
+            )
+               setControlsShown(false);
+         }, 2200);
+   };
+   useEffect(() => {
+      setControlsShown(true);
+      if (fullscreen && playing) controlsTimer.current = setTimeout(() => setControlsShown(false), 2200);
+      return () => clearTimeout(controlsTimer.current);
+   }, [fullscreen, playing]);
    const create = () => {
       if (clip) void run(() => api.createShareable(clip.id, override ? target : undefined));
    };
    const remove = async () => {
-      if (!clip || !shareable) return;
+      if (!clip || (version === "shareable" && !shareable)) return;
       await run(async () => {
-         await api.deleteClip(clip.id, shareable.id);
+         await api.deleteClip(clip.id, version === "shareable" ? shareable!.id : undefined);
          const latest = await api.state();
-         if (!latest.clips.find((item) => item.id === clip.id)?.shareables.some((item) => item.id === shareable.id)) setVersion("original");
+         if (!latest.clips.find((item) => item.id === clip.id)?.shareables.some((item) => item.id === shareable?.id)) setVersion("original");
       });
    };
    if (!clip)
       return (
-         <Empty icon={<Film size={40} />} title="Open a moment" detail="Choose a clip from the Library to watch it and create a shareable.">
-            <Button onClick={openLibrary}>
-               <FolderOpen size={16} />
-               Go to Library
-            </Button>
-         </Empty>
+         <div className="viewer-page" ref={layout}>
+            <Empty icon={<Film size={40} />} title="No clip selected">
+               <Button onClick={openLibrary}>
+                  <FolderOpen size={16} />
+                  Open Library
+               </Button>
+            </Empty>
+         </div>
       );
    return (
-      <div className="viewer-page">
-         <aside className="viewer-sidebar">
-            <button className="back-link" onClick={openLibrary}>
-               <ArrowLeft size={16} />
-               Library
-            </button>
-            <div className="viewer-title">
-               <span className="source-label">{clip.source || "Video"}</span>
-               <h1>{clip.name}</h1>
-               <span className="muted">{new Date(clip.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>
-            </div>
-            <Segmented
-               label="Clip version"
-               value={version}
-               onChange={changeVersion}
-               values={[
-                  { value: "original", label: "Original", disabled: !!clip.originalMissing },
-                  { value: "shareable", label: "Shareable" },
-               ]}
-            />
-            {clip.originalMissing && (
-               <p className="permission-note" role="status">
-                  Original missing or changed. Your shareables are still available.
-               </p>
-            )}
-            <div className="version-info">
-               {version === "original" ? (
-                  <>
-                     <div>
-                        <span>File size</span>
-                        <strong>{formatSize(clip.size)}</strong>
-                     </div>
-                     <div>
-                        <span>Resolution</span>
-                        <strong>
-                           {clip.width} × {clip.height}
-                        </strong>
-                     </div>
-                     <div>
-                        <span>Duration</span>
-                        <strong>{formatTime(clip.duration)}</strong>
-                     </div>
-                     <div>
-                        <span>Audio tracks</span>
-                        <strong>{clip.tracks.length || "None"}</strong>
-                     </div>
-                  </>
-               ) : shareable ? (
-                  <>
-                     {clip.shareables.length > 1 && (
-                        <div className="select-wrap version-select">
-                           <select
-                              aria-label="Choose shareable"
-                              value={shareable.id}
-                              onChange={(event) => {
-                                 seek.current = video.current?.currentTime ?? time;
-                                 setShareId(event.target.value);
-                              }}
-                           >
-                              {clip.shareables.map((item) => (
-                                 <option key={item.id} value={item.id}>
-                                    {item.targetMB} MB target · {formatSize(item.size)}
-                                 </option>
-                              ))}
-                           </select>
-                           <ChevronDown size={14} />
-                        </div>
+      <div className="viewer-page" ref={layout}>
+         <aside className="viewer-sidebar" style={{ width: sidebar.size }}>
+            <div className="viewer-sidebar-scroll">
+               <header className="viewer-title action-header">
+                  <h1>{clip.name}</h1>
+                  <HeaderActions>
+                     <Menu label="File actions" trigger={<MoreHorizontal size={17} />}>
+                        <MenuItem danger disabled={!!job || (version === "shareable" && !shareable)} onClick={() => void remove()}>
+                           <Trash2 size={14} />
+                           {version === "shareable" ? "Delete shareable" : clip.shareables.length ? "Delete original and shareables" : "Delete original"}
+                        </MenuItem>
+                     </Menu>
+                  </HeaderActions>
+                  <div className="viewer-metadata">
+                     {clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown" && (
+                        <span className="source-label" title={clip.source}>
+                           {clip.source}
+                        </span>
                      )}
-                     <div>
-                        <span>File size</span>
-                        <strong>{formatSize(shareable.size)}</strong>
-                     </div>
-                     <div>
-                        <span>Size target</span>
-                        <strong>{shareable.targetMB} MB</strong>
-                     </div>
-                     <div>
-                        <span>Ready to share</span>
-                        <Check size={15} className="success-text" />
-                     </div>
-                  </>
-               ) : (
-                  <p className="muted">No shareable yet. Create a smaller copy without changing your original.</p>
-               )}
-               {path && (
-                  <button
-                     className="drag-file"
-                     draggable
-                     onDragStart={(event) => {
-                        event.preventDefault();
-                        api.dragFile(path);
-                     }}
-                     onClick={() => void run(() => api.reveal(path))}
-                  >
-                     <Grip size={17} />
-                     <span>Drag file into another app</span>
-                     <ExternalLink size={13} />
-                  </button>
-               )}
+                     <time dateTime={new Date(clip.createdAt).toISOString()}>
+                        {new Date(clip.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                     </time>
+                  </div>
+               </header>
+               <section className="viewer-file" aria-label="Displayed file">
+                  <Segmented
+                     label="Clip version"
+                     value={version}
+                     onChange={changeVersion}
+                     values={[
+                        { value: "original", label: "Original", disabled: !!clip.originalMissing },
+                        { value: "shareable", label: "Shareable" },
+                     ]}
+                  />
+                  {clip.originalMissing && (
+                     <p className="permission-note" role="status">
+                        Original missing or changed. Your shareables are still available.
+                     </p>
+                  )}
+                  <div className="version-info">
+                     {version === "original" ? (
+                        <>
+                           <div>
+                              <span>File size</span>
+                              <strong>{clip.availability && !clip.size ? "Checking" : formatSize(clip.size)}</strong>
+                           </div>
+                           <div>
+                              <span>Resolution</span>
+                              <strong>
+                                 {clip.width} × {clip.height}
+                              </strong>
+                           </div>
+                           <div>
+                              <span>Duration</span>
+                              <strong>{clip.availability && !clip.duration ? "Checking" : formatTime(clip.duration)}</strong>
+                           </div>
+                           <div>
+                              <span>Audio tracks</span>
+                              <strong>{clip.availability && !clip.tracks.length ? "Checking" : clip.tracks.length || "None"}</strong>
+                           </div>
+                        </>
+                     ) : shareable ? (
+                        <>
+                           {clip.shareables.length > 1 && (
+                              <div className="select-wrap version-select">
+                                 <Select
+                                    label="Choose shareable"
+                                    value={shareable.id}
+                                    onChange={(value) => {
+                                       seek.current = video.current?.currentTime ?? time;
+                                       setShareId(value);
+                                    }}
+                                 >
+                                    {clip.shareables.map((item) => (
+                                       <option key={item.id} value={item.id}>
+                                          {item.targetMB} MB target · {formatSize(item.size)}
+                                       </option>
+                                    ))}
+                                 </Select>
+                              </div>
+                           )}
+                           <div>
+                              <span>File size</span>
+                              <strong>{formatSize(shareable.size)}</strong>
+                           </div>
+                           <div>
+                              <span>Size target</span>
+                              <strong>{shareable.targetMB} MB</strong>
+                           </div>
+                        </>
+                     ) : (
+                        <p className="muted">No shareables.</p>
+                     )}
+                  </div>
+               </section>
             </div>
             <div className="viewer-sidebar-bottom">
-               {job ? (
-                  <div className="export-progress">
-                     <div>
-                        <LoaderCircle size={15} className="spin" />
-                        <span>{job.state === "queued" ? "Waiting to create" : "Creating shareable"}</span>
-                        <strong>{Math.round(job.progress * 100)}%</strong>
-                     </div>
-                     <progress max={1} value={job.progress} />
-                     <Button onClick={() => void run(() => api.cancelJob(job.id))}>Cancel</Button>
-                  </div>
-               ) : (
-                  <>
-                     <div className="share-target">
-                        <button onClick={() => setOverride(!override)}>
-                           Size target{" "}
-                           <span>
-                              {override ? target : state.preferences.shareSizeMB} MB <ChevronDown size={12} />
-                           </span>
-                        </button>
-                        {override && (
-                           <div className="target-override">
-                              <input
-                                 type="number"
-                                 min={1}
-                                 max={2000}
-                                 value={target}
-                                 aria-label="Shareable size target in MB"
-                                 onChange={(event) => setTarget(Math.max(1, Math.min(2000, Number(event.target.value))))}
-                              />
-                              <span>MB</span>
-                              <button onClick={() => setOverride(false)}>Use default</button>
-                           </div>
-                        )}
-                     </div>
-                     <Button className="primary wide" onClick={create} disabled={!!clip.originalMissing}>
-                        <Share2 size={17} />
-                        {clip.shareables.length ? "Create another shareable" : "Create shareable"}
-                     </Button>
-                  </>
-               )}
+               <Button
+                  className="quiet wide"
+                  title="Edit the original clip in AttaCut"
+                  disabled={!!clip.originalMissing}
+                  onClick={() => void run(() => api.openInAttaCut(clip.id))}
+               >
+                  <Clapperboard size={17} />
+                  Open in AttaCut
+               </Button>
                {path && (
                   <div className="reveal-row">
                      <Button className="wide" onClick={() => void run(() => api.reveal(path))}>
                         <FolderOpen size={16} />
-                        Show file
+                        Show in folder
                      </Button>
-                     {version === "shareable" && shareable && (
-                        <Menu label="Shareable actions" trigger={<MoreHorizontal size={17} />}>
-                           <MenuItem danger onClick={() => void remove()}>
-                              <Trash2 size={14} />
-                              Delete shareable
-                           </MenuItem>
-                        </Menu>
-                     )}
                   </div>
                )}
-               <Button className="quiet wide" disabled={!!clip.originalMissing} onClick={() => void run(() => api.openInAttaCut(clip.id))}>
-                  <Clapperboard size={17} />
-                  Open in AttaCut
-                  <ExternalLink size={13} />
-               </Button>
+               <div className="viewer-create-row">
+                  <div className="viewer-create-main">
+                     <Button
+                        className="primary wide"
+                        onClick={create}
+                        disabled={!!clip.originalMissing}
+                        busy={!!job}
+                        busyIndicator="content"
+                        {...(job ? { progress: job.progress } : {})}
+                        aria-label={
+                           job
+                              ? `${job.state === "queued" ? "Waiting to create shareable" : "Creating shareable"}, ${Math.round(job.progress * 100)} percent`
+                              : undefined
+                        }
+                     >
+                        {job ? (
+                           <>
+                              <LoaderCircle size={17} className="spin" />
+                              <span role="status">{Math.round(job.progress * 100)}%</span>
+                           </>
+                        ) : (
+                           <>
+                              <Share2 size={17} />
+                              Create shareable
+                           </>
+                        )}
+                     </Button>
+                     {job && (
+                        <IconButton className="viewer-cancel-export" label="Cancel shareable" onClick={() => void run(() => api.cancelJob(job.id))}>
+                           <X size={15} />
+                        </IconButton>
+                     )}
+                  </div>
+                  <ShareSizePicker
+                     defaultTarget={state.preferences.shareSizeMB}
+                     target={target}
+                     override={override}
+                     disabled={!!clip.originalMissing || !!job}
+                     onOverride={setOverride}
+                     onTarget={setTarget}
+                  />
+               </div>
             </div>
          </aside>
-         <div className="viewer-main" ref={player}>
+         <PaneDivider label="Viewer sidebar width" pane={sidebar} />
+         <div
+            className="viewer-main"
+            ref={player}
+            data-controls-hidden={(fullscreen && !controlsShown) || undefined}
+            onPointerMove={wakeControls}
+            onFocus={wakeControls}
+         >
             <div className="video-stage">
                {loading && (
                   <div className="video-loading">
@@ -336,6 +378,8 @@ export function Viewer({
                {url ? (
                   <video
                      ref={video}
+                     {...fileDragProps(path)}
+                     title="Drag this video into another app"
                      src={url}
                      poster={clip.thumbnail || undefined}
                      onLoadedMetadata={(event) => {
@@ -344,6 +388,7 @@ export function Viewer({
                         media.currentTime = Math.min(seek.current, media.duration || 0);
                         switching.current = false;
                         media.volume = volume;
+                        media.muted = muted;
                         if (resume.current) void media.play().catch(() => undefined);
                      }}
                      onTimeUpdate={(event) => {
@@ -354,21 +399,24 @@ export function Viewer({
                      onPlay={() => setPlaying(true)}
                      onPause={() => setPlaying(false)}
                      onError={() => setMediaError("This video could not be played. Try opening it in AttaCut or another player.")}
-                     onClick={toggle}
+                     onClick={() => {
+                        if (fullscreen && !controlsShown) wakeControls();
+                        else toggle();
+                     }}
+                     onDoubleClick={() => void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()))}
                   />
                ) : (
                   !loading && (
                      <Empty
                         icon={<Share2 size={38} />}
-                        title={mediaError ? "Playback unavailable" : "Make it shareable"}
-                        detail={mediaError || "Create a smaller copy, then compare it here."}
-                     >
-                        {!mediaError && (
-                           <Button className="primary" onClick={create} disabled={!!job}>
-                              Create shareable
-                           </Button>
-                        )}
-                     </Empty>
+                        title={mediaError ? "Playback unavailable" : clip.originalMissing && !shareable ? "Original unavailable" : "No shareable"}
+                        detail={
+                           mediaError ||
+                           (clip.originalMissing && !shareable
+                              ? "The original is missing or changed. Locate it in your collection folder."
+                              : "Create a compressed copy of the full clip.")
+                        }
+                     />
                   )
                )}
                {mediaError && url && (
@@ -377,79 +425,124 @@ export function Viewer({
                   </div>
                )}
             </div>
-            <div className="player-controls">
-               <input
-                  className="seek-slider"
-                  type="range"
-                  aria-label="Playback position"
-                  min={0}
-                  max={duration || clip.duration || 1}
-                  step={0.05}
-                  value={Math.min(time, duration || clip.duration)}
-                  onChange={(event) => {
-                     const next = Number(event.target.value);
-                     if (video.current) video.current.currentTime = next;
-                     setTime(next);
-                     seek.current = next;
-                  }}
-                  disabled={!url}
-                  style={{ "--progress": `${duration ? (time / duration) * 100 : 0}%` } as React.CSSProperties}
-               />
-               <div className="player-control-row">
-                  <IconButton label={playing ? "Pause" : "Play"} disabled={!url} onClick={toggle}>
-                     {playing ? <Pause size={21} fill="currentColor" /> : <Play size={21} fill="currentColor" />}
-                  </IconButton>
-                  <span className="player-time tabular">
-                     {formatTime(time)} <span>/ {formatTime(duration || clip.duration)}</span>
-                  </span>
-                  <div className="volume-control">
-                     <IconButton
-                        label={volume > 0 ? "Mute playback" : "Unmute playback"}
-                        onClick={() => {
-                           const next = volume > 0 ? 0 : 1;
-                           setVolume(next);
-                           if (video.current) video.current.volume = next;
-                        }}
-                     >
-                        {volume > 0 ? <Volume2 size={18} /> : <VolumeX size={18} />}
-                     </IconButton>
-                     <input
-                        type="range"
-                        aria-label="Playback volume"
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={volume}
-                        onChange={(event) => {
-                           const next = Number(event.target.value);
-                           setVolume(next);
-                           if (video.current) video.current.volume = next;
-                        }}
-                     />
-                  </div>
-                  <div className="player-spacer" />
-                  {version === "original" && clip.tracks.length > 1 && (
-                     <div className="audio-select select-wrap">
-                        <select aria-label="Audio track" value={track} onChange={(event) => changeTrack(Number(event.target.value))}>
-                           {clip.tracks.map((item, ordinal) => (
-                              <option value={ordinal === 0 ? -1 : item.index} key={item.index}>
-                                 {item.title || `Track ${item.index + 1}`}
-                              </option>
-                           ))}
-                        </select>
-                        <ChevronDown size={13} />
-                     </div>
-                  )}
-                  <IconButton
-                     label="Fullscreen"
-                     disabled={!url}
-                     onClick={() => void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()))}
-                  >
-                     <Maximize size={18} />
-                  </IconButton>
+            <ViewerTransport
+               time={time}
+               duration={duration || clip.duration}
+               playing={playing}
+               volume={volume}
+               muted={muted}
+               tracks={version === "original" ? clip.tracks : [{ index: -1, title: "Master" }]}
+               track={version === "original" ? track : -1}
+               disabled={!url || loading}
+               fullscreen={fullscreen}
+               onToggle={toggle}
+               onSeek={(next) => {
+                  if (video.current) video.current.currentTime = next;
+                  setTime(next);
+                  seek.current = next;
+               }}
+               onVolume={(next) => {
+                  setVolume(next);
+                  setMuted(false);
+               }}
+               onMute={() => {
+                  if (volume === 0) setVolume(1);
+                  setMuted(volume > 0 && !muted);
+               }}
+               onTrack={changeTrack}
+               onFullscreen={() => void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()))}
+            />
+         </div>
+      </div>
+   );
+}
+
+function ShareSizePicker({
+   defaultTarget,
+   target,
+   override,
+   disabled,
+   onOverride,
+   onTarget,
+}: {
+   defaultTarget: number;
+   target: number;
+   override: boolean;
+   disabled: boolean;
+   onOverride: (value: boolean) => void;
+   onTarget: (value: number) => void;
+}) {
+   const [custom, setCustom] = useState(false);
+   const [editing, setEditing] = useState(false);
+   const root = useRef<HTMLDivElement>(null);
+   const close = () => {
+      setEditing(false);
+      root.current?.querySelector<HTMLButtonElement>("button")?.focus();
+   };
+   useEffect(() => {
+      if (!editing) return;
+      root.current?.querySelector<HTMLInputElement>("input")?.focus();
+      root.current?.querySelector<HTMLInputElement>("input")?.select();
+      const dismiss = (event: PointerEvent) => {
+         if (!root.current?.contains(event.target as Node)) setEditing(false);
+      };
+      document.addEventListener("pointerdown", dismiss);
+      return () => document.removeEventListener("pointerdown", dismiss);
+   }, [editing]);
+   return (
+      <div
+         className="viewer-size-picker"
+         ref={root}
+         onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false);
+         }}
+         onKeyDown={(event) => {
+            if (!editing || !["Escape", "Enter"].includes(event.key)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            close();
+         }}
+      >
+         <DropdownSelect
+            label={`Shareable size: ${override ? target : defaultTarget} MB${override ? "" : " (default)"}`}
+            iconOnly
+            placement="up"
+            disabled={disabled}
+            triggerContent={<SlidersHorizontal size={17} />}
+            value={custom && override ? "custom" : String(override ? target : defaultTarget)}
+            options={[
+               ...Array.from(new Set([10, 20, 50, 100, defaultTarget]))
+                  .sort((a, b) => a - b)
+                  .map((size) => ({ value: String(size), label: `${size} MB${size === defaultTarget ? " (default)" : ""}` })),
+               { value: "custom", label: "Custom" },
+            ]}
+            onChange={(value) => {
+               setCustom(value === "custom");
+               onOverride(value === "custom" || Number(value) !== defaultTarget);
+               if (value === "custom") setEditing(true);
+               else {
+                  setEditing(false);
+                  onTarget(Number(value));
+               }
+            }}
+         />
+         {editing && (
+            <div className="viewer-size-popover">
+               <label htmlFor="viewer-custom-size">Custom size</label>
+               <div className="number-unit">
+                  <input
+                     id="viewer-custom-size"
+                     type="number"
+                     min={1}
+                     max={2000}
+                     value={target}
+                     aria-label="Shareable size target in MB"
+                     onChange={(event) => onTarget(Math.max(1, Math.min(2000, Number(event.target.value))))}
+                  />
+                  <span>MB</span>
                </div>
             </div>
-         </div>
+         )}
       </div>
    );
 }

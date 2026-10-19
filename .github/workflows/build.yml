@@ -60,3 +60,18 @@ jobs:
               name: build-report-${{ runner.os }}
               path: build-report/
               retention-days: 14
+
+         - name: Keep private release candidates for verification
+           uses: actions/upload-artifact@v7
+           with:
+              name: desktop-candidate-${{ runner.os }}
+              path: |
+                 release/AcroClip-*.exe
+                 release/AcroClip-*.exe.blockmap
+                 release/AcroClip-*.AppImage
+                 release/AcroClip-*.dmg
+                 release/AcroClip-*.zip
+                 release/AcroClip-*.zip.blockmap
+                 release/latest*.yml
+              if-no-files-found: error
+              retention-days: 7

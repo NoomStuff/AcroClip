@@ -9,7 +9,7 @@ import shutil
 
 def prepare(packet, project):
     build = json.loads((packet / "controlled-cli/build/build-manifest.json").read_text())
-    if build["producer"] != "attaclip-controlled-linux" or build["target"] != "linux-x64" or len(build["sourceArchives"]) != 4:
+    if build["producer"] != "acroclip-controlled-linux" or build["target"] != "linux-x64" or len(build["sourceArchives"]) != 4:
         raise ValueError("Unexpected controlled Linux source recipe")
     root = project / "work/release-sources"
     if (root / "manifest.json").exists():

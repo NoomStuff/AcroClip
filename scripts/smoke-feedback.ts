@@ -9,7 +9,7 @@ import sharp from "sharp";
 if (process.platform !== "win32") throw new Error("The native feedback proof requires Windows");
 const folder = path.resolve(".cache/native-feedback", randomUUID());
 await mkdir(folder, { recursive: true });
-const child = spawn(path.resolve("resources/recorder/attaclip-notifier.exe"), [], { windowsHide: true, stdio: "pipe" });
+const child = spawn(path.resolve("resources/recorder/acroclip-notifier.exe"), [], { windowsHide: true, stdio: "pipe" });
 const events: Array<{ event: string; window?: number; visible?: boolean; protected?: boolean; focusPreserved?: boolean }> = [];
 const errors: string[] = [];
 const metrics: Array<{ memory: number; cpuSeconds: number }> = [];

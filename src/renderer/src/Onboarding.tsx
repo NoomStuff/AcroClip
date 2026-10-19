@@ -1,21 +1,38 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Clapperboard, Folder, LoaderCircle, Mic, Monitor, Share2, Video } from "lucide-react";
 import type { AppState, CaptureSource, Preferences, RecordingCapabilities } from "../../shared/types";
-import { api, Button, Field, Segmented, Select, Toggle } from "./ui";
+import { api, Button, Field, Segmented, Select, Toggle, reportFeedback, describeError } from "./ui";
 import type { Run } from "./ui";
-import { customQualityError, CustomQualityControls, QualityPicker, ShortcutInput } from "./Settings";
+import { ShortcutInput } from "./Settings";
+import { RecordingPresets, customQualityError } from "./RecordingPresets";
+import { applyRecordingPreset } from "../../shared/recording-presets";
 import { portalScreenId, sourceChoices } from "../../shared/capture-policy";
 
-const steps = ["Capture", "Audio", "Clips", "Quality", "Sharing", "Ready"];
+const steps = [
+   { name: "Capture", icon: Monitor },
+   { name: "Audio", icon: Mic },
+   { name: "Clipping", icon: Clapperboard },
+   { name: "Recording presets", icon: Video },
+   { name: "Shareables", icon: Share2 },
+   { name: "Startup", icon: Check },
+];
 export function Onboarding({ state, run }: { state: AppState; run: Run }) {
    const [step, setStep] = useState(0);
    const [draft, setDraft] = useState(state.preferences);
+   const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
+   const [sourceRequest, setSourceRequest] = useState(0);
    const [sources, setSources] = useState<CaptureSource[]>([]);
+   const [failedThumbnails, setFailedThumbnails] = useState<ReadonlySet<string>>(() => new Set());
    const [busy, setBusy] = useState(false);
    const [micPermission, setMicPermission] = useState("");
    const [audioDevices, setAudioDevices] = useState<{ id: string; name: string }[]>([]);
    const [capabilities, setCapabilities] = useState<RecordingCapabilities | null>(null);
    const qualityChosen = useRef(false);
+   const body = useRef<HTMLDivElement>(null);
+   useEffect(() => {
+      body.current?.scrollTo({ top: 0 });
+      body.current?.querySelector<HTMLHeadingElement>("h2")?.focus({ preventScroll: true });
+   }, [step]);
    useEffect(() => {
       if (capabilities) return;
       let disposed = false;
@@ -24,7 +41,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
          .then((result) => {
             if (disposed) return;
             setCapabilities(result);
-            if (!qualityChosen.current && result.supported) setDraft((current) => ({ ...current, quality: result.recommended }));
+            if (!qualityChosen.current && result.supported) setDraft((current) => applyRecordingPreset(current, result.recommended));
          })
          .catch((failure: unknown) => {
             if (!disposed)
@@ -45,12 +62,25 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
    const source = sources.find((item) => item.id === draft.sourceId);
    const portal = sources.some((item) => item.id === portalScreenId);
    useEffect(() => {
-      void run(async () => {
-         const choices = await api.sources();
-         setSources(choices);
-         setDraft((current) => (current.sourceId ? current : { ...current, sourceId: choices.find((item) => item.kind === "screen")?.id ?? "" }));
-      });
-   }, [run]);
+      let disposed = false;
+      setSourcePhase("loading");
+      void api
+         .sources()
+         .then((choices) => {
+            if (disposed) return;
+            setSources(choices);
+            setSourcePhase("ready");
+            setDraft((current) => (current.sourceId ? current : { ...current, sourceId: choices.find((item) => item.kind === "screen")?.id ?? "" }));
+         })
+         .catch((error: unknown) => {
+            if (disposed) return;
+            setSourcePhase("error");
+            reportFeedback({ kind: "notice", error: true, message: describeError(error) });
+         });
+      return () => {
+         disposed = true;
+      };
+   }, [sourceRequest]);
    const change = <K extends keyof Preferences>(key: K, value: Preferences[K]) => setDraft((current) => ({ ...current, [key]: value }));
    const microphone = async (enabled: boolean) => {
       change("microphone", enabled);
@@ -79,47 +109,32 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
    return (
       <div className="onboarding-backdrop">
          <div className="onboarding">
-            <aside className="onboarding-sidebar">
-               <div className="setup-brand">
-                  <Clapperboard size={30} />
-                  <span>AttaClip</span>
-               </div>
-               <div className="setup-intro">
-                  <h1>
-                     Your moments.
-                     <br />
-                     Your files.
-                  </h1>
-                  <p>A few choices, then you're ready to clip.</p>
-               </div>
-               <ol className="setup-steps">
-                  {steps.map((name, index) => (
-                     <li key={name} className={step === index ? "current" : step > index ? "complete" : ""}>
-                        <span>{step > index ? <Check size={13} /> : index + 1}</span>
-                        {name}
+            <div className="onboarding-main">
+               <ol className="setup-progress" aria-label="Setup progress">
+                  {steps.map(({ name, icon: StepIcon }, index) => (
+                     <li
+                        key={name}
+                        className={step === index ? "current" : step > index ? "complete" : ""}
+                        aria-current={step === index ? "step" : undefined}
+                        aria-label={`Step ${index + 1} of ${steps.length}: ${name}, ${step === index ? "current" : step > index ? "complete" : "upcoming"}`}
+                     >
+                        <span aria-hidden="true">
+                           <StepIcon size={16} />
+                        </span>
                      </li>
                   ))}
                </ol>
-               <div className="setup-privacy">
-                  <Folder size={16} />
-                  <span>Saved locally. Nothing uploaded.</span>
-               </div>
-            </aside>
-            <div className="onboarding-main">
-               <div className="onboarding-body">
+               <div className="onboarding-body" ref={body}>
                   {step === 0 && (
                      <>
-                        <div className="setup-icon">
-                           <Monitor size={25} />
-                        </div>
-                        <h2>What would you like to capture?</h2>
-                        <p>
-                           {portal
-                              ? capabilities?.applicationBackend === "xwayland"
-                                 ? "Choose a screen through the system picker, or capture an XWayland application. Native Wayland apps are unavailable."
-                                 : "Choose a screen in the system picker when recording starts. Application and Auto capture are unavailable in this Wayland session."
-                              : "Start with a screen, choose an application, or follow a game automatically. You can switch later."}
-                        </p>
+                        <h2 tabIndex={-1}>Capture</h2>
+                        {portal && (
+                           <p>
+                              {capabilities?.applicationBackend === "xwayland"
+                                 ? "Choose a screen through the system picker, or capture an XWayland app. Native Wayland apps are unavailable."
+                                 : "Choose a screen when recording starts. App and Auto capture are unavailable in this Wayland session."}
+                           </p>
+                        )}
                         <Segmented
                            label="Setup capture source"
                            value={draft.sourceKind}
@@ -130,33 +145,58 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                            }}
                         />
                         {draft.sourceKind !== "auto" ? (
-                           <>
-                              <div className="setup-source-list">
-                                 {sources
-                                    .filter((item) => item.kind === draft.sourceKind)
-                                    .map((item) => (
-                                       <button
-                                          key={item.id}
-                                          onClick={() => change("sourceId", item.id)}
-                                          className={item.id === draft.sourceId ? "selected" : ""}
-                                       >
-                                          <Monitor size={17} />
-                                          <span>{item.name}</span>
-                                          {item.id === draft.sourceId && <Check size={17} />}
-                                       </button>
-                                    ))}
-                                 {sources.filter((item) => item.kind === draft.sourceKind).length === 0 && (
-                                    <p>No sources available. Check capture permissions, or choose a screen.</p>
-                                 )}
-                              </div>
-                              {source?.thumbnail && <img className="setup-preview" src={source.thumbnail} alt={`Preview of ${source.name}`} />}
-                           </>
+                           <div
+                              className="setup-source-grid"
+                              aria-busy={sourcePhase === "loading"}
+                              role="group"
+                              aria-label={draft.sourceKind === "screen" ? "Screens" : "Applications"}
+                           >
+                              {sources
+                                 .filter((item) => item.kind === draft.sourceKind)
+                                 .map((item) => (
+                                    <button
+                                       key={item.id}
+                                       type="button"
+                                       className="setup-source-tile"
+                                       aria-pressed={item.id === draft.sourceId}
+                                       onClick={() => change("sourceId", item.id)}
+                                    >
+                                       <span className="setup-source-preview">
+                                          {item.thumbnail && !failedThumbnails.has(item.id) ? (
+                                             <img
+                                                src={item.thumbnail}
+                                                alt=""
+                                                onError={() => setFailedThumbnails((current) => new Set([...current, item.id]))}
+                                             />
+                                          ) : (
+                                             <span className="setup-source-placeholder">
+                                                <Monitor size={22} aria-hidden="true" />
+                                                <span>{item.id === portalScreenId ? "System picker" : "Preview unavailable"}</span>
+                                             </span>
+                                          )}
+                                       </span>
+                                       <span className="setup-source-label">
+                                          <span title={item.name}>{item.name}</span>
+                                          {item.id === draft.sourceId && <Check size={15} aria-hidden="true" />}
+                                       </span>
+                                    </button>
+                                 ))}
+                              {sourcePhase === "loading" && !sources.length && <div className="source-placeholder" aria-label="Finding capture sources" />}
+                              {sourcePhase === "error" && (
+                                 <Button className="setup-source-retry" onClick={() => setSourceRequest((value) => value + 1)}>
+                                    Retry sources
+                                 </Button>
+                              )}
+                              {sourcePhase === "ready" && sources.filter((item) => item.kind === draft.sourceKind).length === 0 && (
+                                 <p className="setup-source-empty">No sources available. Check capture permissions, or choose a screen.</p>
+                              )}
+                           </div>
                         ) : (
                            <>
                               <p className="setup-auto-detail">Follow the active game. Recording waits when no game is found.</p>
                               <Toggle
                                  label="Screen fallback"
-                                 detail="Record a screen when no game is found. Off by default."
+                                 detail="Record a screen when no game is found."
                                  checked={draft.desktopFallback}
                                  onChange={(value) => change("desktopFallback", value)}
                               />
@@ -177,27 +217,18 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                   )}
                   {step === 1 && (
                      <>
-                        <div className="setup-icon">
-                           <Mic size={25} />
-                        </div>
-                        <h2>Choose your sound</h2>
-                        <p>The master mix is ready for sharing. Individual sources stay separate in your original clip.</p>
+                        <h2 tabIndex={-1}>Audio</h2>
                         <Toggle
                            label="Capture audio"
                            detail="Desktop audio for a screen, application audio for an app."
                            checked={draft.captureAudio}
                            onChange={(value) => change("captureAudio", value)}
                         />
-                        <Toggle
-                           label="Microphone"
-                           detail="Include your voice. Off until you enable it."
-                           checked={draft.microphone}
-                           onChange={(value) => void microphone(value)}
-                        />
+                        <Toggle label="Microphone" checked={draft.microphone} onChange={(value) => void microphone(value)} />
                         {draft.microphone && (
                            <Field label="Microphone">
                               <Select label="Setup microphone device" value={draft.microphoneDevice} onChange={(value) => change("microphoneDevice", value)}>
-                                 <option value="default">System default</option>
+                                 <option value="default">Default</option>
                                  {audioDevices
                                     .filter((item) => item.id !== "default")
                                     .map((item) => (
@@ -209,16 +240,12 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                            </Field>
                         )}
                         {micPermission && <p className="permission-note">{micPermission}</p>}
-                        <p className="setup-secondary">You can check your microphone meter on the Recording page.</p>
                      </>
                   )}
                   {step === 2 && (
                      <>
-                        <div className="setup-icon">
-                           <Clapperboard size={25} />
-                        </div>
-                        <h2>Save it with a shortcut</h2>
-                        <p>AttaClip keeps recent footage while recording. Press your shortcut to save the moment.</p>
+                        <h2 tabIndex={-1}>Clipping</h2>
+                        <p>Your shortcut saves recent footage while recording.</p>
                         <Field label="Clip length">
                            <div className="number-unit">
                               <input
@@ -235,7 +262,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                         <Field label="Clip shortcut">
                            <ShortcutInput value={draft.shortcut} onChange={(value) => change("shortcut", value)} />
                         </Field>
-                        <Field label="Collection folder" detail="Your clips save here. Existing supported videos also appear in the Library.">
+                        <Field label="Collection folder" detail="Supported videos in this folder also appear in Library.">
                            <Button onClick={choose}>
                               <Folder size={15} />
                               Choose folder
@@ -248,46 +275,24 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                   )}
                   {step === 3 && (
                      <>
-                        <div className="setup-icon">
-                           <Video size={25} />
-                        </div>
-                        <h2>Find your balance</h2>
-                        <p>Choose how much detail to keep.</p>
-                        <QualityPicker
-                           value={draft.quality}
-                           {...(capabilities?.supported ? { recommended: capabilities.recommended } : {})}
-                           onChange={(value) => {
+                        <h2 tabIndex={-1}>Recording presets</h2>
+                        <RecordingPresets
+                           value={draft}
+                           sources={sources}
+                           capabilities={capabilities}
+                           onChange={(next) => {
                               qualityChosen.current = true;
-                              change("quality", value);
+                              setDraft(next);
                            }}
                         />
-                        {draft.quality === "custom" && (
-                           <CustomQualityControls value={draft} onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))} />
-                        )}
                         {customQualityError(draft) && <p className="permission-note">{customQualityError(draft)}</p>}
                         {capabilities?.message && <p className="permission-note">{capabilities.message}</p>}
-                        {capabilities?.supported && !capabilities.hardwareEncoders.length && draft.quality !== "custom" && (
-                           <Toggle
-                              label="Allow software encoding"
-                              detail="Uses your CPU to record. Low reduces the cost."
-                              checked={draft.allowSoftwareEncoder}
-                              onChange={(value) => change("allowSoftwareEncoder", value)}
-                           />
-                        )}
-                        <div className="setup-secondary">
-                           {capabilities?.hardwareEncoders.length
-                              ? "Hardware encoding is available. If recording affects your game, try Low."
-                              : "If recording affects your game, try Low."}
-                        </div>
                      </>
                   )}
                   {step === 4 && (
                      <>
-                        <div className="setup-icon">
-                           <Share2 size={25} />
-                        </div>
-                        <h2>Small enough to send</h2>
-                        <p>A shareable is a smaller copy of your clip. Your original is always preserved.</p>
+                        <h2 tabIndex={-1}>Shareables</h2>
+                        <p>Shareables are smaller copies. Originals stay unchanged.</p>
                         <Field label="Default maximum size">
                            <div className="number-unit">
                               <input
@@ -310,7 +315,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                         </div>
                         <Toggle
                            label="Automatically create shareables"
-                           detail="Uses extra resources after each clip saves. Otherwise create them when you need them."
+                           detail="Creates a copy after each save and uses extra resources."
                            checked={draft.autoShare}
                            onChange={(value) => change("autoShare", value)}
                         />
@@ -318,11 +323,8 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                   )}
                   {step === 5 && (
                      <>
-                        <div className="setup-icon ready-icon">
-                           <Check size={27} />
-                        </div>
-                        <h2>You're ready to clip</h2>
-                        <p>Recording is in your control. Close the window to keep AttaClip in the tray.</p>
+                        <h2 tabIndex={-1}>Startup</h2>
+                        <p>Closing the window keeps AcroClip running in the tray.</p>
                         <div className="setup-summary">
                            <span>
                               <Monitor size={17} />
@@ -339,8 +341,8 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                         </div>
                         <Toggle label="Start with your computer" checked={draft.startWithOS} onChange={(value) => change("startWithOS", value)} />
                         <Toggle
-                           label="Start recording when AttaClip opens"
-                           detail="Applies when launched manually, too."
+                           label="Start recording when AcroClip opens"
+                           detail="Applies to manual launches too."
                            checked={draft.autoRecord}
                            onChange={(value) => change("autoRecord", value)}
                         />
@@ -356,13 +358,10 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                   ) : (
                      <span />
                   )}
-                  <span className="setup-step-number">
-                     {step + 1} of {steps.length}
-                  </span>
                   {step === steps.length - 1 ? (
                      <Button className="primary" busy={busy} onClick={() => void finish()}>
                         {busy ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />}
-                        {draft.autoRecord ? "Start recording" : "Open AttaClip"}
+                        {draft.autoRecord ? "Start recording" : "Open AcroClip"}
                      </Button>
                   ) : (
                      <Button className="primary" disabled={step === 3 && Boolean(customQualityError(draft))} onClick={() => setStep(step + 1)}>

@@ -44,7 +44,7 @@ final class FeedbackView: NSView {
         icon.stroke()
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
-        "AttaClip".draw(in: NSRect(x: 72, y: 60, width: 268, height: 17), withAttributes: [
+        "AcroClip".draw(in: NSRect(x: 72, y: 60, width: 268, height: 17), withAttributes: [
             .font: NSFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: NSColor(srgbRed: 164.0 / 255, green: 160.0 / 255, blue: 177.0 / 255, alpha: 1),
             .paragraphStyle: paragraph,
@@ -75,7 +75,7 @@ final class Feedback {
         panel = FeedbackPanel(contentRect: view.frame, styleMask: [.borderless, .nonactivatingPanel],
                               backing: .buffered, defer: false)
         panel.contentView = view
-        panel.title = "AttaClip feedback"
+        panel.title = "AcroClip feedback"
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false

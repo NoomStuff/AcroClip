@@ -10,7 +10,7 @@ import { inventory, type SourceKit } from "./release-sources";
 
 describe("final release correspondence", () => {
    it("rejects stale updater hashes, sizes, names and differential blockmaps", async () => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "attaclip-release-updater-"));
+      const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-release-updater-"));
       try {
          const bytes = Buffer.from("verified installer bytes".repeat(1000));
          const installer = path.join(root, "installer.exe");
@@ -53,9 +53,9 @@ describe("final release correspondence", () => {
    });
 
    it("rejects an old or incomplete app.asar even with unchanged Git sources", async () => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "attaclip-release-asar-"));
+      const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-release-asar-"));
       try {
-         const packageJson = { name: "attaclip", version: "0.1.0", main: "out/main/index.js" };
+         const packageJson = { name: "acroclip", version: "0.1.0", main: "out/main/index.js" };
          await mkdir(path.join(root, "out/main"), { recursive: true });
          await writeFile(path.join(root, "package.json"), JSON.stringify(packageJson));
          await writeFile(path.join(root, "out/main/index.js"), "original app");
@@ -77,7 +77,7 @@ describe("final release correspondence", () => {
    });
 
    it("rejects packaged native drift while the source-kit staging remains unchanged", async () => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "attaclip-release-native-"));
+      const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-release-native-"));
       try {
          await mkdir(path.join(root, "resources/recorder"), { recursive: true });
          await writeFile(path.join(root, "resources/recorder/helper.exe"), "verified build");

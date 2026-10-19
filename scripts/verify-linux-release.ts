@@ -142,7 +142,7 @@ export async function verifyLinuxRelease(project: string, stage: string, sourceA
    // Prove that the archived application is the immutable commit, rather than
    // trusting the self-reported commit field in the packet.
    const freshArchive = path.join(scratch, "application.tar");
-   execFileSync("git", ["archive", "--format=tar", "--prefix=attaclip/", "--output", freshArchive, appCommit], { cwd: project });
+   execFileSync("git", ["archive", "--format=tar", "--prefix=acroclip/", "--output", freshArchive, appCommit], { cwd: project });
    if ((await hashFile(freshArchive)) !== kit.applicationSource.sha256) throw new Error("Archived application source differs from the immutable Git commit");
    const tracked = git("ls-files", "-z").split("\0").filter(Boolean);
    for (const relative of tracked.filter(
@@ -153,7 +153,7 @@ export async function verifyLinuxRelease(project: string, stage: string, sourceA
             file
          )
    )) {
-      const bytes = execFileSync("tar", ["-xOf", packetPath(sourceFolder, kit.applicationSource.path), `attaclip/${relative}`], {
+      const bytes = execFileSync("tar", ["-xOf", packetPath(sourceFolder, kit.applicationSource.path), `acroclip/${relative}`], {
          maxBuffer: 32 * 1024 * 1024,
       });
       if (!bytes.equals(await readFile(packetPath(stage, relative))))
@@ -193,7 +193,7 @@ export async function verifyLinuxRelease(project: string, stage: string, sourceA
    };
    if (
       (await readFile(path.join(extracted, "AppRun"), "utf8")) !==
-      launcher.generateAppRunScript({ ExecutableName: pkg.name, ProductName: "AttaClip", ProductFilename: "AttaClip" })
+      launcher.generateAppRunScript({ ExecutableName: pkg.name, ProductName: "AcroClip", ProductFilename: "AcroClip" })
    )
       throw new Error("Packaged AppRun differs from the locked builder's generated launcher");
    const knownElfs = new Set<string>([

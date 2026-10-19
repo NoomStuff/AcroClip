@@ -37,7 +37,7 @@ def fixture(name, frequency, compact=False):
     (contents / "MacOS").mkdir(parents=True)
     with (root / "native/macos/fixture-Info.plist").open("rb") as source:
         info = plistlib.load(source)
-    info["CFBundleIdentifier"] = "dev.attaclip.audio-proof." + name.lower()
+    info["CFBundleIdentifier"] = "dev.acroclip.audio-proof." + name.lower()
     info["CFBundleName"] = name
     with (contents / "Info.plist").open("wb") as target:
         plistlib.dump(info, target)
@@ -128,7 +128,7 @@ def only_main(track):
 try:
     selected = fixture("Selected", 997)
     decoy = fixture("Decoy", 1613, True)
-    helper = launch([str(runtime / "attaclip-recorder"), str(runtime)], "native", True)
+    helper = launch([str(runtime / "acroclip-recorder"), str(runtime)], "native", True)
     def read():
         for line in helper.stdout:
             events.append(json.loads(line))

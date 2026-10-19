@@ -9,7 +9,7 @@ import { verifyMacUpdater } from "./verify-macos-release";
 test("Mac updater binds the actual archive, version and differential blockmap", async () => {
    const root = await mkdtemp(path.join(os.tmpdir(), "mac-updater-"));
    try {
-      const archive = path.join(root, "AttaClip-0.1.0-mac-arm64.zip");
+      const archive = path.join(root, "AcroClip-0.1.0-mac-arm64.zip");
       const bytes = Buffer.from("independent package bytes\n".repeat(32768));
       await writeFile(archive, bytes);
       const sha512 = createHash("sha512").update(bytes).digest("base64");

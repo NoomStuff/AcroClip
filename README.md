@@ -1,20 +1,20 @@
-# AttaClip
+# AcroClip
 
 Save the moment. Keep it yours.
 
-AttaClip is a local-first desktop clipping app built with Electron and a separate native libOBS recorder. It keeps recent footage while recording, saves clips through a global shortcut, and creates smaller shareable copies without changing the original.
+AcroClip is a local-first desktop clipping app built with Electron and a separate native libOBS recorder. It keeps recent footage while recording, saves clips through a global shortcut, and creates smaller shareable copies without changing the original.
 
 ## The workflow
 
 Choose a screen or application, start recording, and press the clip shortcut when something happens. Browse your collection, preview individual audio tracks, and create a copy under your chosen file-size limit. Nothing is uploaded by the app.
 
-The library is an ordinary folder. Existing supported videos appear automatically. Categories and original/shareable relationships live in `.attaclip`; compressed copies live under `shareables`, mirroring the source folders. Your videos remain usable without AttaClip.
+The library is an ordinary folder. Existing supported videos appear automatically. Categories and original/shareable relationships live in `.acroclip`; compressed copies live under `shareables`, mirroring the source folders. Your videos remain usable without AcroClip.
 
-AttaClip is for clips. Use OBS for full-session recording and AttaCut for cutting.
+AcroClip is for clips. Use OBS for full-session recording and AttaCut for cutting.
 
 ## Download
 
-[Download AttaClip 0.2.0](https://github.com/NoomStuff/AttaClip/releases/tag/v0.2.0).
+[Download the current AttaClip 0.2.0 release](https://github.com/NoomStuff/AttaClip/releases/tag/v0.2.0).
 
 - Windows x64 has an installer and portable executable.
 - Linux x64 has an AppImage, verified on Ubuntu 24.04. Make it executable before opening it.
@@ -39,7 +39,7 @@ bun run build:native
 bun run dev
 ```
 
-Windows uses AttaClip's controlled FFmpeg build. In Ubuntu 24.04, including WSL, install `gcc-mingw-w64-x86-64`, `g++-mingw-w64-x86-64`, `binutils-mingw-w64-x86-64`, `make`, `nasm`, `meson`, `ninja-build`, and `pkg-config`. Run `bun scripts/release-sources.ts --controlled-inputs --collect-only`, then `bash scripts/build-media-windows.sh` in Ubuntu. Back in Windows, run `bun scripts/controlled-media.ts` before the commands above. CI builds the same recipe and passes its captured inputs and binaries to Windows verification.
+Windows uses AcroClip's controlled FFmpeg build. In Ubuntu 24.04, including WSL, install `gcc-mingw-w64-x86-64`, `g++-mingw-w64-x86-64`, `binutils-mingw-w64-x86-64`, `make`, `nasm`, `meson`, `ninja-build`, and `pkg-config`. Run `bun scripts/release-sources.ts --controlled-inputs --collect-only`, then `bash scripts/build-media-windows.sh` in Ubuntu. Back in Windows, run `bun scripts/controlled-media.ts` before the commands above. CI builds the same recipe and passes its captured inputs and binaries to Windows verification.
 
 On Linux and macOS, `provision-media.ts` downloads checksum-pinned provider builds. It exports binary paths to later GitHub Actions steps. For a local shell, set `FFMPEG_PATH` and `FFPROBE_PATH` to the printed paths before running `bundle:media`. You can also supply compatible binaries for development. `bundle:media` stages them and records their hashes and configuration. A development override does not establish release source correspondence. Development runs work without a native helper, but recording stays unavailable until it is built. The UI never simulates successful recording.
 
@@ -67,11 +67,11 @@ bun run test:portable
 
 `test:capture-loss` records an isolated application, loses its source for longer than the configured history, saves the retained footage, then verifies recovery and full decoding. `test:ui:native` verifies actual capture while preview streams end during navigation, minimize and close to tray. The regular UI suite tests moving preview pixels without requiring NVENC. Linux's Actions workflow records real X11 pixels and PulseAudio tones, then checks Wayland picker cancellation, actual frames and portal/PipeWire loss in an isolated Sway session. The private portal fixture does not replace the desktop's installed backend.
 
-`ATTACLIP_PROFILE`, `ATTACLIP_COLLECTION`, and `ATTACLIP_TEST=1` isolate manual or automated runs from your real preferences and library. The test flag suppresses notification windows and OS startup changes. Never point destructive tests at a real collection.
+`ACROCLIP_PROFILE`, `ACROCLIP_COLLECTION`, and `ACROCLIP_TEST=1` isolate manual or automated runs from your real preferences and library. The test flag suppresses notification windows and OS startup changes. Never point destructive tests at a real collection.
 
 ## Recording guarantees and current limits
 
-Recording and clip requests belong to the native helper, not the library renderer. Source switches keep a stable output size. Clip requests retain their request boundaries while writing is queued. Stopping clears unsaved history but preserves accepted saves. If an application disappears, AttaClip preserves the last available footage and identifies it when saved. Capture recovery begins a fresh history to avoid a timestamp gap.
+Recording and clip requests belong to the native helper, not the library renderer. Source switches keep a stable output size. Clip requests retain their request boundaries while writing is queued. Stopping clears unsaved history but preserves accepted saves. If an application disappears, AcroClip preserves the last available footage and identifies it when saved. Capture recovery begins a fresh history to avoid a timestamp gap.
 
 Clips overlap by default. The optional overlap reduction starts near the previous successfully saved moment. A preceding video keyframe can leave a small overlap. Failed saves do not advance that boundary, and queued requests keep their original endpoints.
 
@@ -89,4 +89,4 @@ Installed Windows and Linux AppImage updates can download through electron-updat
 
 ## License
 
-AttaClip is GPL-3.0-or-later. Reused AttaCut code retains its MIT notices. See [third-party notices](THIRD_PARTY_NOTICES.md). Commercial use is permitted by the GPL; recorded videos do not inherit the software license.
+AcroClip is GPL-3.0-or-later. Reused AttaCut code retains its MIT notices. See [third-party notices](THIRD_PARTY_NOTICES.md). Commercial use is permitted by the GPL; recorded videos do not inherit the software license.

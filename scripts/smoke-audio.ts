@@ -35,7 +35,7 @@ public class TonePlayer {
  [DllImport("winmm.dll")] static extern uint waveOutReset(IntPtr handle);
  [DllImport("winmm.dll")] static extern uint waveOutClose(IntPtr handle);
  public static void Play(string file) {
-  uint id=0xffffffff; string requested=Environment.GetEnvironmentVariable("ATTACLIP_TEST_AUDIO_DEVICE_NAME");
+  uint id=0xffffffff; string requested=Environment.GetEnvironmentVariable("ACROCLIP_TEST_AUDIO_DEVICE_NAME");
   if(!String.IsNullOrEmpty(requested)){for(uint i=0;i<waveOutGetNumDevs();i++){Caps caps;waveOutGetDevCapsW((UIntPtr)i,out caps,(uint)Marshal.SizeOf(typeof(Caps))); if(caps.name.Contains(requested))id=i;} if(id==0xffffffff)throw new Exception("The requested loopback test output was not found");}
   byte[] wav=File.ReadAllBytes(file); int offset=12; while(System.Text.Encoding.ASCII.GetString(wav,offset,4)!="data")offset+=8+BitConverter.ToInt32(wav,offset+4); int count=BitConverter.ToInt32(wav,offset+4); offset+=8;
   IntPtr memory=Marshal.AllocHGlobal(count); Marshal.Copy(wav,offset,memory,count);
@@ -54,7 +54,7 @@ public class TonePlayer {
 const tone = spawn("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", toneScript], { windowsHide: true, stdio: "pipe" });
 tone.stderr.on("data", (data: Buffer) => console.error(data.toString()));
 const runtime = path.resolve("resources/recorder");
-const helper = spawn(path.join(runtime, "attaclip-recorder.exe"), [runtime], { cwd: runtime, windowsHide: true, stdio: "pipe" });
+const helper = spawn(path.join(runtime, "acroclip-recorder.exe"), [runtime], { cwd: runtime, windowsHide: true, stdio: "pipe" });
 interface Event {
    event: string;
    id?: string;

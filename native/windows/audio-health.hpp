@@ -10,7 +10,7 @@
 #include <mutex>
 #include <string>
 
-namespace attaclip::windows {
+namespace acroclip::windows {
 class AudioHealth {
   using Clock = InputDelivery::Clock;
   struct Entry {

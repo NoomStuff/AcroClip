@@ -14,4 +14,4 @@ const header = Buffer.alloc(8);
 header.write("icns");
 header.writeUInt32BE(png.length + 16, 4);
 await writeFile("build/icon.icns", Buffer.concat([header, element, png]));
-console.log("Generated AttaClip icons.");
+console.log("Generated icons.");

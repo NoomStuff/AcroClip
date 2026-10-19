@@ -15,7 +15,7 @@ describe("recording settings boundaries", () => {
    });
    it("applies bounded gain and mute changes without clearing recorded history", () => {
       expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, captureVolume: 0.5, microphoneMuted: true })).toBe(false);
-      expect(preferencesSchema.safeParse({ ...defaultPreferences, captureVolume: 2.1 }).success).toBe(false);
+      expect(preferencesSchema.safeParse({ ...defaultPreferences, captureVolume: 4.1 }).success).toBe(false);
       expect(preferencesSchema.safeParse({ ...defaultPreferences, microphoneVolume: -1 }).success).toBe(false);
    });
    it("requires stopping for custom profile changes and rejects dimensions incompatible with subsampled video", () => {
@@ -31,8 +31,27 @@ describe("recording settings boundaries", () => {
    });
 });
 describe("preference persistence recovery", () => {
+   it("migrates legacy preset fields to their previous actual profile without changing Custom or audio", async () => {
+      const root = await mkdtemp(join(tmpdir(), "acroclip-preset-migration-"));
+      const file = join(root, "preferences.json");
+      const legacy: Partial<typeof defaultPreferences> = { ...defaultPreferences };
+      delete legacy.recordingPresetVersion;
+      await writeFile(file, JSON.stringify({ ...legacy, collection: root, quality: "high", customWidth: 1280, customCQ: 31, microphone: false }));
+      expect(await readPreferences(file, root)).toMatchObject({
+         quality: "high",
+         customWidth: 2560,
+         customHeight: 1440,
+         customCQ: 18,
+         microphone: false,
+         recordingPresetVersion: 1,
+      });
+      await writeFile(file, JSON.stringify({ ...legacy, collection: root, quality: "custom", customWidth: 1280, customCQ: 31 }));
+      expect(await readPreferences(file, root)).toMatchObject({ quality: "custom", customWidth: 1280, customCQ: 31 });
+      await rm(root, { recursive: true, force: true });
+   });
+
    it("uses the chosen collection for missing fields and recovers a damaged primary from backup", async () => {
-      const root = await mkdtemp(join(tmpdir(), "attaclip-preferences-"));
+      const root = await mkdtemp(join(tmpdir(), "acroclip-preferences-"));
       const path = join(root, "preferences.json");
       try {
          await writeFile(path, JSON.stringify({ sound: false }));

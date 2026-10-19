@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(attaclip_pipewire_module LANGUAGES C)
+project(acroclip_pipewire_module LANGUAGES C)
 set(CMAKE_C_STANDARD 17)
 set(OBS_PIPEWIRE_SOURCE_DIR "" CACHE PATH "Patched matching OBS source tree")
 if(NOT OBS_PIPEWIRE_SOURCE_DIR)

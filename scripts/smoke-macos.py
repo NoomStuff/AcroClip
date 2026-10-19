@@ -131,7 +131,7 @@ try:
             direct_results.append(dict(mode=mode, error="Timed out after 15 seconds"))
         (folder / "direct-sck.log").write_text("\n".join(direct_logs))
         (folder / "direct-sck.json").write_text(json.dumps(direct_results, indent=2))
-    helper = launch([str(runtime / "attaclip-recorder"), str(runtime)], "native", True)
+    helper = launch([str(runtime / "acroclip-recorder"), str(runtime)], "native", True)
     def read():
         for line in helper.stdout:
             events.append(json.loads(line))

@@ -70,12 +70,12 @@ try {
    ]);
    run("cmake", ["--build", build, "--parallel", "2"]);
    await mkdir(path.join(folder, "config"), { recursive: true });
-   const report = JSON.parse(run(path.join(build, "attaclip-macos-probe"), [app, path.join(folder, "config")])) as Record<string, unknown>;
+   const report = JSON.parse(run(path.join(build, "acroclip-macos-probe"), [app, path.join(folder, "config")])) as Record<string, unknown>;
    await writeFile(
       path.join(folder, "module-proof.json"),
       `${JSON.stringify({ ...report, platform: `${process.platform}-${process.arch}`, runtimeArchive: pin, sourceCommit: commit, simdeCommit }, null, 2)}\n`
    );
-   await writeFile(path.join(folder, "link-proof.txt"), run("otool", ["-L", path.join(build, "attaclip-macos-probe")]));
+   await writeFile(path.join(folder, "link-proof.txt"), run("otool", ["-L", path.join(build, "acroclip-macos-probe")]));
    console.log("Actual Mac module probe passed. Capture, microphone audio and permissions were not tested. Production recording remains unavailable.");
 } finally {
    run("hdiutil", ["detach", mount]);

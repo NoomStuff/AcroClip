@@ -133,11 +133,11 @@ def collect(args):
         git_commit = root / "build" / (name + "-commit.json")
         if not tree.exists():
             tree.parent.mkdir(parents=True, exist_ok=True)
-            request = urllib.request.Request("https://api.github.com/repos/" + repository + "/git/trees/" + commit + "?recursive=1", headers={"User-Agent": "AttaClip-source-collector/1"})
+            request = urllib.request.Request("https://api.github.com/repos/" + repository + "/git/trees/" + commit + "?recursive=1", headers={"User-Agent": "AcroClip-source-collector/1"})
             with urllib.request.urlopen(request, timeout=60) as response:
                 tree.write_text(json.dumps(json.load(response), indent=2) + "\n")
         if not git_commit.exists():
-            request = urllib.request.Request("https://api.github.com/repos/" + repository + "/git/commits/" + commit, headers={"User-Agent": "AttaClip-source-collector/1"})
+            request = urllib.request.Request("https://api.github.com/repos/" + repository + "/git/commits/" + commit, headers={"User-Agent": "AcroClip-source-collector/1"})
             with urllib.request.urlopen(request, timeout=60) as response:
                 git_commit.write_text(json.dumps(json.load(response), indent=2) + "\n")
         raw_commit = root / "build" / (name + "-commit.raw")

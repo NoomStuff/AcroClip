@@ -9,7 +9,7 @@
 #include <thread>
 #include <wayland-client.h>
 
-namespace attaclip::wayland {
+namespace acroclip::wayland {
 namespace {
 wl_display *display = nullptr;
 GMainLoop *loop = nullptr;
@@ -128,7 +128,7 @@ Health Capture::health() const {
   calldata_t data{};
   calldata_init(&data);
   bool called = proc_handler_call(obs_source_get_proc_handler(value),
-                                  "attaclip_status", &data);
+                                  "acroclip_status", &data);
   Health result;
   result.authorized = calldata_bool(&data, "authorized");
   result.closed = calldata_bool(&data, "closed");
@@ -145,7 +145,7 @@ void Capture::closeSession() {
     calldata_t data{};
     calldata_init(&data);
     bool called = proc_handler_call(obs_source_get_proc_handler(value),
-                                    "attaclip_close", &data);
+                                    "acroclip_close", &data);
     calldata_free(&data);
     if (!called)
       throw std::runtime_error("The portal session could not be closed");
@@ -168,11 +168,11 @@ std::shared_ptr<Capture> createScreen() {
   calldata_t data{};
   calldata_init(&data);
   bool called = proc_handler_call(obs_source_get_proc_handler(source),
-                                  "attaclip_status", &data);
+                                  "acroclip_status", &data);
   calldata_free(&data);
   if (!called)
     throw std::runtime_error(
         "The screen capture module has no verified health bridge");
   return capture;
 }
-} // namespace attaclip::wayland
+} // namespace acroclip::wayland

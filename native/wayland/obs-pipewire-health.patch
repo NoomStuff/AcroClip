@@ -4,7 +4,7 @@
  };
  
  struct _obs_pipewire_stream {
-+	struct attaclip_portal_health *health;
++	struct acroclip_portal_health *health;
  	obs_pipewire *obs_pw;
  	obs_source_t *source;
  
@@ -69,8 +69,8 @@
  #include <pipewire/pipewire.h>
 +#include <stdatomic.h>
 +
-+// AttaClip health bridge. Atomics avoid locks in the video callback.
-+struct attaclip_portal_health {
++// AcroClip health bridge. Atomics avoid locks in the video callback.
++struct acroclip_portal_health {
 +	atomic_bool authorized, closed, failed, valid_frame;
 +	atomic_int stream_state;
 +};
@@ -79,7 +79,7 @@
  typedef struct _obs_pipewire_stream obs_pipewire_stream;
  
  struct obs_pipewire_connect_stream_info {
-+	struct attaclip_portal_health *health;
++	struct acroclip_portal_health *health;
  	const char *stream_name;
  	struct pw_properties *stream_properties;
  	struct {
@@ -89,15 +89,15 @@
  	OBS_PORTAL_CAPTURE_TYPE_UNIFIED = PORTAL_CAPTURE_TYPE_MONITOR | PORTAL_CAPTURE_TYPE_WINDOW,
  };
  
-+struct attaclip_destroy_completion {
++struct acroclip_destroy_completion {
 +	GMutex mutex;
 +	GCond condition;
 +	bool complete;
 +};
 +
  struct screencast_portal_capture {
-+	struct attaclip_destroy_completion *completion;
-+	struct attaclip_portal_health health;
++	struct acroclip_destroy_completion *completion;
++	struct acroclip_portal_health health;
 +	unsigned closed_subscription;
 +	unsigned references;
 +	bool destroyed;
@@ -111,7 +111,7 @@
 +
 +
 +typedef struct screencast_portal_capture ScreencastCapture;
-+static void attaclip_capture_release(ScreencastCapture *capture)
++static void acroclip_capture_release(ScreencastCapture *capture)
 +{
 +	if (--capture->references == 0) {
 +		if (capture->completion) {
@@ -123,8 +123,8 @@
 +		bfree(capture);
 +	}
 +}
-+G_DEFINE_AUTOPTR_CLEANUP_FUNC(ScreencastCapture, attaclip_capture_release)
-+static void attaclip_status(void *data, calldata_t *params)
++G_DEFINE_AUTOPTR_CLEANUP_FUNC(ScreencastCapture, acroclip_capture_release)
++static void acroclip_status(void *data, calldata_t *params)
 +{
 +	ScreencastCapture *capture = data;
 +	calldata_set_bool(params, "authorized", atomic_load(&capture->health.authorized));
@@ -134,7 +134,7 @@
 +	calldata_set_int(params, "stream_state", atomic_load(&capture->health.stream_state));
 +	calldata_set_int(params, "source_type", capture->capture_type);
 +}
-+static void attaclip_close_finished(GObject *source, GAsyncResult *result, gpointer data)
++static void acroclip_close_finished(GObject *source, GAsyncResult *result, gpointer data)
 +{
 +	g_autoptr(ScreencastCapture) capture = data;
 +	g_autoptr(GError) error = NULL;
@@ -143,7 +143,7 @@
 +	if (error) atomic_store(&capture->health.failed, true);
 +	else atomic_store(&capture->health.closed, true);
 +}
-+static void attaclip_close(void *data, calldata_t *params)
++static void acroclip_close(void *data, calldata_t *params)
 +{
 +	UNUSED_PARAMETER(params);
 +	ScreencastCapture *capture = data;
@@ -151,9 +151,9 @@
 +	capture->references++;
 +	g_dbus_connection_call(portal_get_dbus_connection(), "org.freedesktop.portal.Desktop",
 +		capture->session_handle, "org.freedesktop.portal.Session", "Close", NULL, NULL,
-+		G_DBUS_CALL_FLAGS_NONE, -1, capture->cancellable, attaclip_close_finished, capture);
++		G_DBUS_CALL_FLAGS_NONE, -1, capture->cancellable, acroclip_close_finished, capture);
 +}
-+static void attaclip_closed(GDBusConnection *connection, const gchar *sender,
++static void acroclip_closed(GDBusConnection *connection, const gchar *sender,
 +                           const gchar *path, const gchar *interface,
 +                           const gchar *signal, GVariant *parameters, gpointer data)
 +{
@@ -334,7 +334,7 @@
 +	capture->closed_subscription = g_dbus_connection_signal_subscribe(
 +		portal_get_dbus_connection(), "org.freedesktop.portal.Desktop",
 +		"org.freedesktop.portal.Session", "Closed", capture->session_handle, NULL,
-+		G_DBUS_SIGNAL_FLAGS_NONE, attaclip_closed, capture, NULL);
++		G_DBUS_SIGNAL_FLAGS_NONE, acroclip_closed, capture, NULL);
  
  	select_source(capture);
  }
@@ -376,9 +376,9 @@
 +	atomic_init(&capture->health.valid_frame, false);
 +	atomic_init(&capture->health.stream_state, PW_STREAM_STATE_UNCONNECTED);
 +	proc_handler_add(obs_source_get_proc_handler(capture->source),
-+		"void attaclip_status(out bool authorized, out bool closed, out bool failed, out bool valid_frame, out int stream_state, out int source_type)",
-+		attaclip_status, capture);
-+	proc_handler_add(obs_source_get_proc_handler(capture->source), "void attaclip_close()", attaclip_close, capture);
++		"void acroclip_status(out bool authorized, out bool closed, out bool failed, out bool valid_frame, out int stream_state, out int source_type)",
++		acroclip_status, capture);
++	proc_handler_add(obs_source_get_proc_handler(capture->source), "void acroclip_close()", acroclip_close, capture);
  	capture->cancellable = g_cancellable_new();
  	connection = portal_get_dbus_connection();
 -	if (!connection)
@@ -400,7 +400,7 @@
  }
  
 -static void screencast_portal_capture_destroy(void *data)
-+static gboolean attaclip_destroy_on_dispatcher(gpointer data)
++static gboolean acroclip_destroy_on_dispatcher(gpointer data)
  {
  	struct screencast_portal_capture *capture = data;
  
@@ -418,7 +418,7 @@
  	g_cancellable_cancel(capture->cancellable);
  	g_clear_object(&capture->cancellable);
 -	bfree(capture);
-+	attaclip_capture_release(capture);
++	acroclip_capture_release(capture);
 +	return G_SOURCE_REMOVE;
 +}
 +
@@ -427,18 +427,18 @@
 +	struct screencast_portal_capture *capture = data;
 +	if (!capture) return;
 +	if (g_main_context_is_owner(g_main_context_default())) {
-+		attaclip_destroy_on_dispatcher(capture);
++		acroclip_destroy_on_dispatcher(capture);
 +		return;
 +	}
 +	/* OBS queues destruction on its worker. Portal callbacks retain their owner
 +	 * until cancellation completes on the GLib dispatcher, before module unload. */
-+	struct attaclip_destroy_completion completion = {0};
++	struct acroclip_destroy_completion completion = {0};
 +	g_mutex_init(&completion.mutex);
 +	g_cond_init(&completion.condition);
 +	capture->completion = &completion;
 +	g_mutex_lock(&completion.mutex);
 +	GSource *idle = g_idle_source_new();
-+	g_source_set_callback(idle, attaclip_destroy_on_dispatcher, capture, NULL);
++	g_source_set_callback(idle, acroclip_destroy_on_dispatcher, capture, NULL);
 +	g_source_attach(idle, g_main_context_default());
 +	g_source_unref(idle);
 +	while (!completion.complete) g_cond_wait(&completion.condition, &completion.mutex);

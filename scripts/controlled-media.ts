@@ -5,7 +5,7 @@ import { hashFile, type SourceKit } from "./release-sources";
 
 export interface ControlledMediaBuild {
    version: 1;
-   producer: "attaclip-controlled-windows";
+   producer: "acroclip-controlled-windows";
    target: "windows-x64";
    sourceCommits: { ffmpeg: string; x264: string; dav1d: string; zlib: string };
    sourceArchives: { path: string; sha256: string; size: number }[];
@@ -22,7 +22,7 @@ const commits = {
 };
 
 export function verifyControlledConfiguration(version: string, components: string): void {
-   for (const flag of ["8.1.3-attaclip-local", "--disable-autodetect", "--enable-libx264", "--enable-libdav1d", "--enable-zlib", "--disable-network"])
+   for (const flag of ["8.1.3-acroclip-local", "--disable-autodetect", "--enable-libx264", "--enable-libdav1d", "--enable-zlib", "--disable-network"])
       if (!version.includes(flag)) throw new Error(`Controlled executable configuration is missing ${flag}.`);
    for (const component of [
       "PNG_ENCODER",
@@ -95,7 +95,7 @@ export async function recordControlledBuild(project: string): Promise<Controlled
    await walk(directory);
    const build: ControlledMediaBuild = {
       version: 1,
-      producer: "attaclip-controlled-windows",
+      producer: "acroclip-controlled-windows",
       target: "windows-x64",
       sourceCommits: commits,
       sourceArchives,
@@ -111,7 +111,7 @@ export async function recordControlledBuild(project: string): Promise<Controlled
 
 export async function readControlledBuild(directory: string): Promise<ControlledMediaBuild> {
    const build = JSON.parse(await readFile(path.join(directory, "build-manifest.json"), "utf8")) as ControlledMediaBuild;
-   if (build.version !== 1 || build.producer !== "attaclip-controlled-windows" || JSON.stringify(build.sourceCommits) !== JSON.stringify(commits))
+   if (build.version !== 1 || build.producer !== "acroclip-controlled-windows" || JSON.stringify(build.sourceCommits) !== JSON.stringify(commits))
       throw new Error("Unknown controlled build provenance.");
    for (const name of ["ffmpeg", "ffprobe"] as const) {
       if ((await hashFile(path.join(directory, `${name}.exe`))) !== build.binaries[name].sha256)

@@ -1,9 +1,18 @@
+import type { ShortcutBindings } from "./shortcuts";
 export type SourceKind = "screen" | "app" | "auto";
+export interface ApplicationArtwork {
+   id: string;
+   icon: string;
+}
 export interface CaptureSource {
+   applicationId?: string;
+   appIcon?: string;
    id: string;
    name: string;
    kind: "screen" | "app";
    thumbnail: string;
+   pixelSize?: { width: number; height: number };
+   processId?: number;
    displayId?: string;
    bounds?: { x: number; y: number; width: number; height: number };
 }
@@ -12,12 +21,17 @@ export interface GameCandidate {
    name: string;
    executable: string;
    pid: number;
+   pixelSize?: { width: number; height: number };
    foreground: boolean;
    fullscreen: boolean;
    arguments?: string;
    runtime?: "wine";
    runtimeExecutable?: string;
    gameName?: string;
+}
+export interface GameCatalogSnapshot {
+   source: "saved" | "built-in";
+   entries: Array<{ id: string; name: string; executables: string[] }>;
 }
 export interface CustomGame {
    name: string;
@@ -36,7 +50,7 @@ export interface RecordingCapabilities {
 export interface AdditionalAudioSource {
    id: string;
    name: string;
-   kind: "application" | "input" | "output";
+   kind: "source" | "application" | "input" | "output";
    deviceId: string;
    sourceId: string;
    executable: string;
@@ -51,9 +65,13 @@ export interface AudioLevels {
    additional?: Record<string, number>;
 }
 export interface Preferences {
+   shortcuts: ShortcutBindings;
    collection: string;
    clipSeconds: number;
    shortcut: string;
+   recordingPresetVersion: 1;
+   recordingSizeVersion: 2;
+   resolutionLimit: number;
    quality: "low" | "standard" | "high" | "custom";
    customWidth: number;
    customHeight: number;
@@ -71,9 +89,11 @@ export interface Preferences {
    microphoneMuted: boolean;
    desktopFallback: boolean;
    customGames: CustomGame[];
+   audioSourcesVersion: 2;
    audioSources: AdditionalAudioSource[];
    shareSizeMB: number;
    autoShare: boolean;
+   updateCheck: boolean;
    startWithOS: boolean;
    autoRecord: boolean;
    notifications: "everywhere" | "outside-fullscreen" | "off";
@@ -98,8 +118,10 @@ export interface Shareable {
    createdAt: number;
 }
 export interface Clip {
+   applicationId?: string;
    id: string;
    originalMissing?: boolean;
+   availability?: "unverified";
    path: string;
    relativePath: string;
    name: string;
@@ -116,6 +138,7 @@ export interface Clip {
    shareables: Shareable[];
 }
 export interface Category {
+   icon?: string | undefined;
    id: string;
    name: string;
    color: string;
@@ -140,17 +163,43 @@ export interface RecorderState {
    sourceName?: string;
    sourceKind?: "screen" | "app" | "waiting";
 }
+export interface AvailableUpdate {
+   version: string;
+   name: string;
+   url: string;
+   mode: "automatic" | "download" | "releases";
+}
+export interface UpdateStatus {
+   phase: "downloading" | "ready" | "downloaded" | "error";
+   version: string;
+   percent: number | null;
+   message?: string;
+   path?: string;
+}
 export interface UpdateState {
-   state: "idle" | "checking" | "available" | "downloading" | "ready" | "error";
+   lastChecked?: number;
+   state: "idle" | "checking" | "available" | "downloading" | "ready" | "downloaded" | "error";
    version: string;
    progress: number;
    message: string;
+   mode?: AvailableUpdate["mode"];
+   url?: string;
+   path?: string;
+   indeterminate?: boolean;
 }
 export interface AppState {
    storageWarning?: string;
    windowVisible: boolean;
    preferences: Preferences;
    clips: Clip[];
+   collectionStatus?: {
+      root: string;
+      phase: "loading" | "refreshing" | "ready" | "error";
+      error?: string;
+      discovery?: { videos: number; byFolder: Record<string, number>; complete: boolean };
+   };
+   folders?: string[];
+   applicationIcons?: Record<string, string>;
    categories: Category[];
    jobs: Job[];
    recorder: RecorderState;
@@ -159,21 +208,27 @@ export interface AppState {
    platform: string;
 }
 export interface AppEvent {
-   type: "state" | "notice" | "clip-action" | "audio-levels" | "visibility";
+   type: "state" | "notice" | "clip-action" | "audio-levels" | "audio-monitor" | "visibility";
    state?: AppState;
    message?: string;
    error?: boolean;
    levels?: AudioLevels;
+   monitorError?: string;
+   listeningError?: string;
    visible?: boolean;
 }
 export interface DesktopAPI {
    state(): Promise<AppState>;
    sources(): Promise<CaptureSource[]>;
    games(): Promise<GameCandidate[]>;
+   gameCatalog(): Promise<GameCatalogSnapshot>;
    recordingCapabilities(): Promise<RecordingCapabilities>;
-   previewSource(sourceId: string | null): Promise<void>;
+   previewSource(sourceId: string | null, owner?: string): Promise<void>;
+   monitorAudio(enabled: boolean): Promise<string[]>;
+   listenAudio(source: string | null): Promise<void>;
    audioDevices(kind?: "input" | "output"): Promise<{ id: string; name: string }[]>;
    savePreferences(value: Preferences): Promise<AppState>;
+   captureShortcut(enabled: boolean): Promise<void>;
    chooseFolder(): Promise<string | null>;
    startRecording(): Promise<void>;
    stopRecording(): Promise<void>;
@@ -183,8 +238,8 @@ export interface DesktopAPI {
    renameClip(id: string, name: string): Promise<void>;
    deleteClip(id: string, shareableId?: string): Promise<void>;
    category(
-      action: "create" | "delete" | "assign",
-      value: { id?: string; name?: string; color?: string; clipId?: string; categoryIds?: string[] }
+      action: "create" | "update" | "delete" | "assign",
+      value: { id?: string; name?: string; color?: string; icon?: string; clipId?: string; categoryIds?: string[] }
    ): Promise<void>;
    reveal(path: string): Promise<void>;
    openInAttaCut(id: string): Promise<void>;
@@ -192,6 +247,9 @@ export interface DesktopAPI {
    playback(path: string, track?: number): Promise<string>;
    refresh(): Promise<void>;
    checkUpdate(): Promise<void>;
+   downloadUpdate(): Promise<void>;
+   revealUpdate(): Promise<void>;
+   openUpdateRelease(): Promise<void>;
    installUpdate(): Promise<void>;
    window(action: "minimize" | "maximize" | "close"): void;
    exit(): Promise<void>;

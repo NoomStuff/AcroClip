@@ -34,6 +34,6 @@ describe("shortcut and update validation", () => {
       expect(releaseIsNewer("nonsense", "0.1.0")).toBe(false);
    });
    it("quotes Linux executable paths and escapes desktop entry interpolation", () => {
-      expect(desktopExec("/home/user/My App%/AttaClip", ["/project/path"])).toBe('"/home/user/My App%%/AttaClip" "/project/path"');
+      expect(desktopExec("/home/user/My App%/AcroClip", ["/project/path"])).toBe('"/home/user/My App%%/AcroClip" "/project/path"');
    });
 });

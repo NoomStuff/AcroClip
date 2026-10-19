@@ -20,7 +20,7 @@ if hashlib.sha256(archive.read_bytes()).hexdigest() != PIN:
     raise RuntimeError("Official OBS image checksum mismatch")
 if provenance["runtimeArchive"]["sha256"] != PIN:
     raise RuntimeError("Staged recorder uses another OBS release")
-mount = Path(tempfile.mkdtemp(prefix="attaclip-source-obs-"))
+mount = Path(tempfile.mkdtemp(prefix="acroclip-source-obs-"))
 subprocess.run(["hdiutil", "attach", "-readonly", "-nobrowse", "-mountpoint", str(mount), str(archive)], check=True, capture_output=True)
 files = []
 links = []

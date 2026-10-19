@@ -18,7 +18,7 @@ void tone(int frequency) {
   pa_sample_spec spec{PA_SAMPLE_FLOAT32LE, 48000, 2};
   int error = 0;
   auto *stream = pa_simple_new(
-      nullptr, "AttaClip private tone fixture", PA_STREAM_PLAYBACK, nullptr,
+      nullptr, "AcroClip private tone fixture", PA_STREAM_PLAYBACK, nullptr,
       "Deterministic test tone", &spec, nullptr, nullptr, &error);
   if (!stream)
     _exit(4);
@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
   auto window = XCreateSimpleWindow(display, DefaultRootWindow(display), 30, 30,
                                     320, 180, 0, 0, 0x0000ff);
   XStoreName(display, window,
-             argc > 1 ? argv[1] : "AttaClip private audio fixture");
+             argc > 1 ? argv[1] : "AcroClip private audio fixture");
   unsigned long pid = getpid();
   XChangeProperty(display, window, XInternAtom(display, "_NET_WM_PID", False),
                   XA_CARDINAL, 32, PropModeReplace,

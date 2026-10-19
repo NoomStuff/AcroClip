@@ -20,7 +20,7 @@ int main() {
   pa_sample_spec spec{PA_SAMPLE_FLOAT32LE, 48000, 2};
   pa_buffer_attr attributes{48000 * 8 / 4, 48000 * 8 / 20, 0, 48000 * 8 / 100, UINT32_MAX};
   int error = 0;
-  auto *stream = pa_simple_new(nullptr, "AttaClip private sync fixture",
+  auto *stream = pa_simple_new(nullptr, "AcroClip private sync fixture",
       PA_STREAM_PLAYBACK, nullptr, "Audio and visible playback marker",
       &spec, nullptr, &attributes, &error);
   if (!stream) { XCloseDisplay(display); return 4; }

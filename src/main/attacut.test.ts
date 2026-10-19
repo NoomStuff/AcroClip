@@ -6,7 +6,7 @@ import { findAttaCut, rememberAttaCut } from "./attacut";
 
 describe("AttaCut locations", () => {
    it("remembers an explicitly chosen executable with spaces and safely forgets a missing one", async () => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "attaclip-attacut-"));
+      const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-attacut-"));
       try {
          const executable = path.join(root, "Dave's portable AttaCut");
          const settings = path.join(root, "attacut.json");

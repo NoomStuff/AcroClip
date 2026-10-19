@@ -112,7 +112,7 @@ def fixture(name, mode=""):
     contents = folder / (name + ".app") / "Contents"
     (contents / "MacOS").mkdir(parents=True)
     info = (root / "native/macos/fixture-Info.plist").read_text()
-    info = info.replace("dev.attaclip.capture-fixture", "dev.attaclip.feedback-proof." + name.lower())
+    info = info.replace("dev.acroclip.capture-fixture", "dev.acroclip.feedback-proof." + name.lower())
     (contents / "Info.plist").write_text(info)
     shutil.copyfile(fixture_binary, contents / "MacOS/fixture")
     os.chmod(contents / "MacOS/fixture", 0o755)
@@ -222,10 +222,10 @@ try:
     fixture_binary = folder / "fixture"
     subprocess.run(["swiftc", str(root / "native/macos/fixture.swift"), "-o", str(fixture_binary)], check=True)
     normal, normal_output, identity = fixture("Normal")
-    notifier = launch([str(runtime / "attaclip-notifier")], "notifier", True)
+    notifier = launch([str(runtime / "acroclip-notifier")], "notifier", True)
     notifier_identity = wait("notifier", lambda event: event["event"] == "ready")
-    assert notifier_identity["bundleIdentifier"] == "dev.attaclip.notifier", notifier_identity
-    recorder = launch([str(runtime / "attaclip-recorder"), str(runtime)], "recorder", True)
+    assert notifier_identity["bundleIdentifier"] == "dev.acroclip.notifier", notifier_identity
+    recorder = launch([str(runtime / "acroclip-recorder"), str(runtime)], "recorder", True)
     wait("recorder", lambda event: event["event"] == "ready")
     captures = []
     for kind in ("screen", "app"):
@@ -296,7 +296,7 @@ try:
         motion_preferences.set(True)
         # A fresh native process reads the real OS preference. No helper-only
         # override can turn this into simulated accessibility behavior.
-        notifier = launch([str(runtime / "attaclip-notifier")], "notifier", True)
+        notifier = launch([str(runtime / "acroclip-notifier")], "notifier", True)
         ready = wait("notifier", lambda event: event["event"] == "ready" and event["pid"] == notifier.pid)
         assert ready["bundleIdentifier"] == notifier_identity["bundleIdentifier"], ready
         request, shown = notice(space_identity, "reduced-motion", False, True)

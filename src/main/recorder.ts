@@ -1,19 +1,38 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { selectedCaptureSource } from "../shared/capture-policy";
+import { promisify } from "node:util";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { stoppedRecorder } from "../shared/defaults";
-import type { AudioLevels, CaptureSource, CustomGame, GameCandidate, Preferences, RecorderState, RecordingCapabilities, SourceKind } from "../shared/types";
+import type {
+   ApplicationArtwork,
+   AudioLevels,
+   CaptureSource,
+   CustomGame,
+   GameCandidate,
+   Preferences,
+   RecorderState,
+   RecordingCapabilities,
+   SourceKind,
+} from "../shared/types";
 import { GameCatalog, selectGame } from "./games";
+import { nativeAudioPreferences } from "../shared/audio-model";
 import { resolveAudioSources } from "./audio-sources";
 
 interface RecorderOptions {
    nativePath?: string;
    gameCatalogPath?: string;
    onState: (state: RecorderState) => void;
-   onSaved: (file: string, source: string, requestId: string, capture: { previousFootage: boolean; secondsSinceCapture: number }) => void | Promise<void>;
+   onSaved: (
+      file: string,
+      source: string,
+      requestId: string,
+      capture: { previousFootage: boolean; secondsSinceCapture: number; application?: ApplicationArtwork }
+   ) => void | Promise<void>;
    onError: (message: string) => void;
+   onAudioMonitorError?: (message: string, listeningError?: string) => void;
    onAudioLevels?: (levels: AudioLevels) => void;
 }
 interface NativeMessage {
@@ -44,6 +63,10 @@ interface NativeMessage {
    applicationBackend?: string;
    sourceKinds?: unknown;
    portalPicker?: boolean;
+   audioMonitor?: boolean;
+   audioListen?: boolean;
+   monitorMessage?: string;
+   listeningMessage?: string;
 }
 
 export class Recorder {
@@ -77,6 +100,13 @@ export class Recorder {
    private applicationBackend: "xwayland" | undefined;
    private sourceKinds: SourceKind[] = ["screen", "app", "auto"];
    private portalPicker = false;
+   private audioMonitor = false;
+   private audioListen = false;
+   private monitorKey = "";
+   private requestArtwork = new Map<string, ApplicationArtwork>();
+   private sourceAudioId: string | null = null;
+   private monitorGeneration = 0;
+   private monitorLevels: AudioLevels = { capture: 0, microphone: 0 };
    constructor(options: RecorderOptions) {
       this.options = options;
       this.catalog = new GameCatalog(options.gameCatalogPath ?? path.join(process.cwd(), ".cache", "game-catalog.json"));
@@ -89,11 +119,11 @@ export class Recorder {
       const resources = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
       return (
          this.options.nativePath ??
-         path.join(resources ?? process.cwd(), "recorder", process.platform === "win32" ? "attaclip-recorder.exe" : "attaclip-recorder")
+         path.join(resources ?? process.cwd(), "recorder", process.platform === "win32" ? "acroclip-recorder.exe" : "acroclip-recorder")
       );
    }
    private get developmentExecutable(): string {
-      return path.join(process.cwd(), "resources", "recorder", process.platform === "win32" ? "attaclip-recorder.exe" : "attaclip-recorder");
+      return path.join(process.cwd(), "resources", "recorder", process.platform === "win32" ? "acroclip-recorder.exe" : "acroclip-recorder");
    }
    get status(): RecorderState {
       return { ...this.current };
@@ -152,6 +182,9 @@ export class Recorder {
          };
       }
    }
+   async gameCatalog() {
+      return this.catalog.list();
+   }
    async games(additions: CustomGame[] = []): Promise<GameCandidate[]> {
       if (!this.current.supported) return [];
       await this.initialize();
@@ -163,6 +196,30 @@ export class Recorder {
          const gameName = games.find((game) => game.id === candidate.id)?.gameName;
          return { ...candidate, ...(gameName ? { gameName } : {}) };
       });
+   }
+   async capturableApplications(): Promise<GameCandidate[]> {
+      if (!this.current.supported) return [];
+      if (process.platform === "win32") {
+         const executable = existsSync(this.executable) ? this.executable : this.developmentExecutable;
+         try {
+            const { stdout } = await promisify(execFile)(executable, [path.dirname(executable), "--candidates"], {
+               windowsHide: true,
+               timeout: 5000,
+               maxBuffer: 2 * 1024 * 1024,
+            });
+            const parsed: unknown = JSON.parse(stdout);
+            return parsed && typeof parsed === "object" && "windows" in parsed && Array.isArray(parsed.windows)
+               ? parsed.windows.filter(
+                    (item): item is GameCandidate =>
+                       !!item && typeof item === "object" && typeof item.id === "string" && typeof item.pid === "number" && typeof item.name === "string"
+                 )
+               : [];
+         } catch {
+            return [];
+         }
+      }
+      await this.initialize();
+      return this.candidates();
    }
    async applicationCandidates(): Promise<GameCandidate[]> {
       if (!this.current.supported) return [];
@@ -194,14 +251,22 @@ export class Recorder {
       for (const game of games) if (game.foreground) this.focused.set(game.id, Date.now());
       const selected = selectGame(games, this.current.sourceKind === "app" ? (this.current.sourceId ?? null) : null, this.focused);
       if (selected)
-         return { ...preferences, resolvedKind: "app", sourceId: selected.id, sourceName: selected.gameName, pid: selected.pid, preferGameCapture: true };
+         return {
+            ...nativeAudioPreferences(preferences),
+            resolvedKind: "app",
+            sourceId: selected.id,
+            sourceName: selected.gameName,
+            pid: selected.pid,
+            pixelSize: selected.pixelSize,
+            preferGameCapture: true,
+         };
       if (preferences.desktopFallback) {
          const screen =
             sources.find((item) => item.kind === "screen" && item.id === preferences.sourceId) ??
             (!preferences.sourceId ? sources.find((item) => item.kind === "screen") : undefined);
          if (screen)
             return {
-               ...preferences,
+               ...nativeAudioPreferences(preferences),
                resolvedKind: "screen",
                sourceId: screen.id,
                sourceName: screen.name,
@@ -210,7 +275,7 @@ export class Recorder {
                screenIndex: sources.filter((item) => item.kind === "screen").findIndex((item) => item.id === screen.id),
             };
       }
-      return { ...preferences, resolvedKind: "waiting", sourceId: "", sourceName: "Waiting for game" };
+      return { ...nativeAudioPreferences(preferences), resolvedKind: "waiting", sourceId: "", sourceName: "Waiting for game" };
    }
    private async followGame(): Promise<void> {
       if (this.autoBusy || !this.autoPreferences || !["recording", "waiting"].includes(this.current.state)) return;
@@ -332,6 +397,7 @@ export class Recorder {
                : "";
             if (unexpected && this.current.state !== "error") this.error(message);
             this.requests.clear();
+            this.requestArtwork.clear();
             for (const command of this.commands.values()) {
                clearTimeout(command.timeout);
                command.reject(new Error("The recording helper exited during this action"));
@@ -371,6 +437,8 @@ export class Recorder {
          }
       }
       if (value.event === "ready") {
+         this.audioMonitor = value.audioMonitor === true;
+         this.audioListen = value.audioListen === true;
          this.current.supported = true;
          this.encoders = Array.isArray(value.encoders) ? value.encoders.filter((value) => typeof value === "string" && value.length < 200) : [];
          this.captureBackend = value.captureBackend === "wayland-portal" ? "wayland-portal" : undefined;
@@ -418,10 +486,15 @@ export class Recorder {
          this.devicesResolve?.(value.devices.filter((device) => typeof device.id === "string" && typeof device.name === "string"));
          this.devicesResolve = null;
       }
-      if (value.event === "audio-levels")
+      if (value.event === "audio-levels") {
+         const idle = !["starting", "recording", "waiting"].includes(this.current.state);
+         if (idle) {
+            if (typeof value.additional?.["monitor-capture"] === "number") this.monitorLevels.capture = value.additional["monitor-capture"];
+            if (typeof value.additional?.["monitor-microphone"] === "number") this.monitorLevels.microphone = value.additional["monitor-microphone"];
+         }
          this.options.onAudioLevels?.({
-            capture: Number.isFinite(value.capture) ? Math.max(0, Math.min(1, value.capture!)) : 0,
-            microphone: Number.isFinite(value.microphone) ? Math.max(0, Math.min(1, value.microphone!)) : 0,
+            capture: idle ? this.monitorLevels.capture : Number.isFinite(value.capture) ? Math.max(0, Math.min(1, value.capture!)) : 0,
+            microphone: idle ? this.monitorLevels.microphone : Number.isFinite(value.microphone) ? Math.max(0, Math.min(1, value.microphone!)) : 0,
             ...(value.additional && typeof value.additional === "object" && !Array.isArray(value.additional)
                ? {
                     additional: Object.fromEntries(
@@ -432,9 +505,12 @@ export class Recorder {
                  }
                : {}),
          });
+      }
       if (value.event === "recording") this.update({ state: "recording", startedAt: Date.now(), availableSeconds: 0, message: "", supported: true });
       if (value.event === "stopped") this.update({ state: "stopped", startedAt: null, availableSeconds: 0, message: "" });
+      if (value.event === "audio-monitor") this.options.onAudioMonitorError?.(value.monitorMessage ?? "", value.listeningMessage ?? "");
       if (value.event === "status") {
+         if (typeof value.monitorMessage === "string") this.options.onAudioMonitorError?.(value.monitorMessage, value.listeningMessage ?? "");
          this.fullscreen = value.fullscreen === true;
          this.update({
             ...(value.active
@@ -459,17 +535,23 @@ export class Recorder {
             this.options.onSaved(value.path, value.source ?? this.source, value.requestId ?? "", {
                previousFootage: value.previousFootage ?? false,
                secondsSinceCapture: value.secondsSinceCapture ?? 0,
+               ...(value.requestId && this.requestArtwork.has(value.requestId) ? { application: this.requestArtwork.get(value.requestId)! } : {}),
             })
          )
             .catch((error: unknown) => this.error(error instanceof Error ? error.message : "The saved clip could not be added to the library"))
             .finally(() => {
-               if (value.requestId) this.requests.delete(value.requestId);
+               if (value.requestId) {
+                  this.requests.delete(value.requestId);
+                  this.requestArtwork.delete(value.requestId);
+               }
                this.update({ pendingSaves: this.requests.size });
             });
       }
       if (value.event === "error") {
-         if (value.requestId) this.requests.delete(value.requestId);
-         else if (this.current.state === "starting") this.update({ state: "error", startedAt: null, message: value.message ?? "Recording could not start" });
+         if (value.requestId) {
+            this.requests.delete(value.requestId);
+            this.requestArtwork.delete(value.requestId);
+         } else if (this.current.state === "starting") this.update({ state: "error", startedAt: null, message: value.message ?? "Recording could not start" });
          this.update({ pendingSaves: this.requests.size });
          this.error(value.message ?? "Recording failed");
       }
@@ -492,12 +574,11 @@ export class Recorder {
       });
    }
    private async configuration(preferences: Preferences, sources: CaptureSource[]): Promise<Record<string, unknown>> {
+      this.sourceAudioId = preferences.audioSources.find((source) => source.kind === "source")?.id ?? null;
       if (!this.sourceKinds.includes(preferences.sourceKind))
          throw new Error("Application and Auto capture are unavailable in this Wayland session. Choose Screen to use the system picker.");
       if (preferences.sourceKind === "auto") return this.autoConfiguration(preferences, sources);
-      const selected =
-         sources.find((s) => s.id === preferences.sourceId && s.kind === preferences.sourceKind) ??
-         (!preferences.sourceId && preferences.sourceKind === "screen" ? sources.find((s) => s.kind === "screen") : undefined);
+      const selected = selectedCaptureSource(sources, preferences);
       if (!selected) throw new Error("The selected capture source is unavailable");
       this.source = selected.name;
       const screenIndex = sources.filter((s) => s.kind === "screen").findIndex((s) => s.id === selected.id);
@@ -506,7 +587,8 @@ export class Recorder {
       if (preferences.sourceKind === "app" && !selected.id.startsWith("window:"))
          throw new Error("This application does not have a supported capture identity");
       return {
-         ...preferences,
+         ...nativeAudioPreferences(preferences),
+         pixelSize: selected.pixelSize,
          sourceName: selected.name,
          displayId: selected.displayId,
          screenIndex: Math.max(0, screenIndex),
@@ -514,13 +596,108 @@ export class Recorder {
          window: window?.value ?? "",
       };
    }
+   async listenAudio(source: string | null, deviceId = "default"): Promise<void> {
+      if (source && source === this.sourceAudioId) source = "capture";
+      if (!source) {
+         if (this.process) await this.command({ action: "listen-audio", source: "" });
+         return;
+      }
+      if (this.current.state === "starting") throw new Error("Wait for recording to start before listening.");
+      await this.initialize();
+      if (!this.audioListen) throw new Error("Restart AcroClip to enable source listening.");
+      await this.command({
+         action: "listen-audio",
+         source: !["recording", "waiting"].includes(this.current.state) && ["capture", "microphone"].includes(source) ? `monitor-${source}` : source,
+         deviceId,
+      });
+   }
+   async monitorAudio(preferences: Preferences | null): Promise<string[]> {
+      const generation = ++this.monitorGeneration;
+      try {
+         if (["starting", "recording", "waiting"].includes(this.current.state)) return [];
+         if (!preferences) {
+            this.monitorKey = "";
+            this.monitorLevels = { capture: 0, microphone: 0 };
+            if (this.process && this.audioMonitor) await this.command({ action: "monitor-audio", enabled: false });
+            return [];
+         }
+         this.sourceAudioId = preferences.audioSources.find((source) => source.kind === "source")?.id ?? null;
+         const audio = nativeAudioPreferences(preferences);
+         await this.initialize();
+         if (!this.audioMonitor) throw new Error("Restart AcroClip to enable audio monitoring.");
+         const candidates = await this.applicationCandidates();
+         const sources: Array<Record<string, unknown>> = resolveAudioSources(
+            audio.audioSources.filter((source) => source.enabled),
+            candidates
+         ).map((source) => ({ ...source }));
+         if (audio.microphone)
+            sources.push({
+               id: "monitor-microphone",
+               name: "Microphone",
+               kind: "input",
+               deviceId: audio.microphoneDevice || "default",
+               volume: audio.microphoneVolume,
+               muted: audio.microphoneMuted,
+            });
+         if (audio.captureAudio) {
+            if (preferences.sourceKind === "auto") await this.catalog.load();
+            const target =
+               preferences.sourceKind === "app" && preferences.sourceId.startsWith("window:")
+                  ? candidates.find((item) => item.id.split(":")[1] === preferences.sourceId.split(":")[1])
+                  : preferences.sourceKind === "auto"
+                    ? selectGame(this.catalog.match(candidates, preferences.customGames), null, this.focused)
+                    : undefined;
+            if (preferences.sourceKind === "app" && !target) throw new Error("Capture audio source unavailable. Choose an application.");
+            if (target)
+               sources.push({
+                  id: "monitor-capture",
+                  name: "Source audio",
+                  kind: "application",
+                  sourceId: target.id,
+                  pid: target.pid,
+                  volume: audio.captureVolume,
+                  muted: audio.captureMuted,
+               });
+            else if (preferences.sourceKind === "screen" || (preferences.sourceKind === "auto" && preferences.desktopFallback))
+               sources.push({
+                  id: "monitor-capture",
+                  name: "Source audio",
+                  kind: "output",
+                  deviceId: process.platform === "darwin" ? "system" : "default",
+                  volume: audio.captureVolume,
+                  muted: audio.captureMuted,
+               });
+         }
+         const key = JSON.stringify(sources.map((source) => Object.fromEntries(Object.entries(source).filter(([key]) => key !== "volume" && key !== "muted"))));
+         if (["starting", "recording", "waiting"].includes(this.current.state)) return [];
+         if (generation !== this.monitorGeneration) return [];
+         if (key !== this.monitorKey) {
+            this.monitorKey = "";
+            this.monitorLevels = { capture: 0, microphone: 0 };
+            await this.command({ action: "monitor-audio", enabled: true, audioSources: sources });
+            if (generation !== this.monitorGeneration) return [];
+            this.monitorKey = key;
+         } else for (const source of sources) await this.command({ action: "audio", source: source["id"], volume: source["volume"], muted: source["muted"] });
+         return sources.map((source) => String(source["id"]).replace("monitor-", ""));
+      } catch (error) {
+         if (generation === this.monitorGeneration && !["starting", "recording", "waiting"].includes(this.current.state)) {
+            this.monitorKey = "";
+            this.monitorLevels = { capture: 0, microphone: 0 };
+            if (this.process && this.audioMonitor) await this.command({ action: "monitor-audio", enabled: false }).catch(() => undefined);
+         }
+         throw error;
+      }
+   }
    async start(preferences: Preferences, sources: CaptureSource[] = []): Promise<void> {
+      this.monitorGeneration++;
+      this.monitorKey = "";
+      this.monitorLevels = { capture: 0, microphone: 0 };
       this.update({ state: "starting", message: "Starting recording" });
       try {
          await this.initialize();
          const configuration = await this.configuration(preferences, sources);
          configuration["audioSources"] = resolveAudioSources(
-            preferences.audioSources,
+            nativeAudioPreferences(preferences).audioSources,
             preferences.audioSources.some((source) => source.enabled && source.kind === "application") ? await this.candidates() : []
          );
          await this.command({ action: "start", ...configuration });
@@ -539,7 +716,8 @@ export class Recorder {
       if (this.process) await this.command({ action: "stop" });
    }
    async setAudio(value: { source: string; volume: number; muted: boolean }): Promise<void> {
-      if (!Number.isFinite(value.volume) || value.volume < 0 || value.volume > 2) throw new Error("Audio volume must be between 0 and 200 percent");
+      if (value.source === this.sourceAudioId) value = { ...value, source: "capture" };
+      if (!Number.isFinite(value.volume) || value.volume < 0 || value.volume > 4) throw new Error("Audio volume must be between 0 and 400 percent");
       if (this.process) await this.command({ action: "audio", ...value });
    }
    async switchSource(preferences: Preferences, sources: CaptureSource[] = []): Promise<void> {
@@ -554,11 +732,12 @@ export class Recorder {
          this.autoKey = this.configurationKey(configuration);
       }
    }
-   async save(file?: string, requestedAt = Date.now()): Promise<void> {
+   async save(file?: string, requestedAt = Date.now(), application?: ApplicationArtwork): Promise<void> {
       if (this.current.state !== "recording" && this.current.state !== "waiting") throw new Error("Start recording before saving a clip");
       if (!file) throw new Error("A destination path is required for the clip");
       const requestId = randomUUID();
       this.requests.add(requestId);
+      if (application) this.requestArtwork.set(requestId, application);
       this.update({ pendingSaves: this.requests.size });
       await this.command({ action: "save", path: file, requestId, requestedAt, requestAgeMs: Math.max(0, Date.now() - requestedAt) });
    }

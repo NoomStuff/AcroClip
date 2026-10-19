@@ -5,13 +5,16 @@ import { join, resolve } from "node:path";
 import { defaultPreferences } from "../../src/shared/defaults";
 
 test("live preview captures the chosen window and releases tracks on navigation, source changes, and hiding", async () => {
-   const profile = await mkdtemp(join(tmpdir(), "attaclip-preview-ui-"));
+   const profile = await mkdtemp(join(tmpdir(), "acroclip-preview-ui-"));
    const collection = join(profile, "clips");
    await mkdir(collection, { recursive: true });
    await writeFile(
       join(profile, "preferences.json"),
       JSON.stringify({
          ...defaultPreferences,
+         shortcuts: { ...defaultPreferences.shortcuts, toggleRecording: "" },
+         audioSourcesVersion: undefined,
+         audioSources: [],
          collection,
          setupComplete: true,
          sourceKind: "app",
@@ -22,7 +25,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
    );
    const desktop = await electron.launch({
       args: [resolve("."), "--disable-gpu-sandbox"],
-      env: { ...process.env, ATTACLIP_TEST: "1", ATTACLIP_PROFILE: profile },
+      env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile },
    });
    try {
       const page = await desktop.firstWindow();
@@ -46,24 +49,39 @@ test("live preview captures the chosen window and releases tracks on navigation,
          }
       });
       // Window creation can finish before the compositor exposes the second window.
+      await desktop.evaluate(async ({ BrowserWindow }) => {
+         for (const name of ["Hidden capture fixture", "Protected capture fixture"]) {
+            const fixture = new BrowserWindow({ title: name, width: 320, height: 200, show: false, webPreferences: { sandbox: true } });
+            await fixture.loadURL(`data:text/html,<title>${name}</title><body>Controlled fixture`);
+            if (name.startsWith("Protected")) {
+               fixture.setContentProtection(true);
+               fixture.showInactive();
+            }
+         }
+      });
       await expect
-         .poll(async () => {
-            const visible = await page.evaluate(() => window.attaClip.sources());
-            return ["Preview fixture A", "Preview fixture B"].every((name) => visible.some((source) => source.name === name));
-         })
+         .poll(
+            async () => {
+               const visible = await page.evaluate(() => window.acroClip.sources());
+               return ["Preview fixture A", "Preview fixture B"].every((name) => visible.some((source) => source.name === name));
+            },
+            { timeout: 15000 }
+         )
          .toBe(true);
-      const choices = await page.evaluate(() => window.attaClip.sources());
+      const choices = await page.evaluate(() => window.acroClip.sources());
       const sourceA = choices.find((source) => source.name === "Preview fixture A");
       const sourceB = choices.find((source) => source.name === "Preview fixture B");
+      expect(choices.some((source) => ["Hidden capture fixture", "Protected capture fixture"].includes(source.name))).toBe(false);
       expect(sourceA).toBeDefined();
       expect(sourceB).toBeDefined();
       await page.evaluate(async (id) => {
-         const state = await window.attaClip.state();
-         await window.attaClip.savePreferences({ ...state.preferences, sourceKind: "app", sourceId: id });
+         const state = await window.acroClip.state();
+         await window.acroClip.savePreferences({ ...state.preferences, sourceKind: "app", sourceId: id });
       }, sourceA!.id);
-      await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
+      const initialRequestedAt = performance.now();
       const preview = page.locator(".preview-stream");
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      console.log("Preview initial first frame ms", Math.round(performance.now() - initialRequestedAt));
       const first = await preview.evaluate((video: HTMLVideoElement) => video.getVideoPlaybackQuality().totalVideoFrames);
       await expect.poll(() => preview.evaluate((video: HTMLVideoElement) => video.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(first + 5);
       const snapshot = async () =>
@@ -91,44 +109,71 @@ test("live preview captures the chosen window and releases tracks on navigation,
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
          .toEqual(["ended"]);
       await expect.poll(() => preview.evaluate((video: HTMLVideoElement) => video.srcObject === null)).toBe(true);
+      const returnRequestedAt = performance.now();
+      await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
+      await page.evaluate(() => {
+         (window as unknown as { cacheShown: boolean }).cacheShown = false;
+         const root = document.querySelector(".recording-page")!;
+         const observer = new MutationObserver(() => {
+            if (root.getClientRects().length && root.querySelector(".preview-canvas.cached")) (window as unknown as { cacheShown: boolean }).cacheShown = true;
+         });
+         observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
+      });
       await page.getByRole("button", { name: "Recording", exact: true }).click();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      console.log("Preview tab return first frame ms", Math.round(performance.now() - returnRequestedAt));
+      expect(await page.evaluate(() => (window as unknown as { cacheShown: boolean }).cacheShown)).toBe(true);
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();
       });
+      const switchRequestedAt = performance.now();
       await page.locator(".source-row").filter({ hasText: "Preview fixture B" }).click();
       await expect(preview).toHaveAttribute("aria-label", "Live preview of Preview fixture B");
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      console.log("Preview source switch first frame ms", Math.round(performance.now() - switchRequestedAt));
       await expect
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
          .toEqual(["ended"]);
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();
       });
-      await page.evaluate(() => window.attaClip.window("minimize"));
+      await page.evaluate(() => window.acroClip.window("minimize"));
       await expect
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
          .toEqual(["ended"]);
       await desktop.evaluate(({ BrowserWindow }) => {
-         const main = BrowserWindow.getAllWindows().find((window) => window.getTitle() === "AttaClip");
+         const main = BrowserWindow.getAllWindows().find((window) => window.getTitle() === "AcroClip");
          main?.restore();
          main?.show();
       });
+      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      // Rapid requests must not let an older completion revoke the final source.
+      await page.evaluate(
+         async ({ a, b }) => {
+            for (const id of [a, b, a, b]) {
+               const state = await window.acroClip.state();
+               await window.acroClip.savePreferences({ ...state.preferences, sourceId: id });
+               await new Promise((resolve) => setTimeout(resolve, 35));
+            }
+         },
+         { a: sourceA!.id, b: sourceB!.id }
+      );
+      await expect(preview).toHaveAttribute("aria-label", "Live preview of Preview fixture B");
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       await page.waitForTimeout(300);
       await page.screenshot({ path: "test-results/recording-live-preview.png" });
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();
       });
-      await page.evaluate(() => window.attaClip.window("close"));
+      await page.evaluate(() => window.acroClip.window("close"));
       await expect
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
          .toEqual(["ended"]);
-      expect((await page.evaluate(() => window.attaClip.state())).recorder.state).toBe("stopped");
+      expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("stopped");
    } finally {
       await desktop.evaluate(({ BrowserWindow }) => {
          for (const window of BrowserWindow.getAllWindows()) {
-            if (window.getTitle() !== "AttaClip") window.destroy();
+            if (window.getTitle() !== "AcroClip") window.destroy();
             else {
                window.restore();
                window.show();

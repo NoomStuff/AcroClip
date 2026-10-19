@@ -20,7 +20,7 @@ await writeFile(
 const saved: string[] = [];
 const failures: string[] = [];
 const recorder = new Recorder({
-   nativePath: path.resolve(runtime, "attaclip-recorder"),
+   nativePath: path.resolve(runtime, "acroclip-recorder"),
    gameCatalogPath: catalog,
    onState: () => undefined,
    onError: (message) => failures.push(message),

@@ -102,7 +102,7 @@ export async function assembleMacSourceKit(project: string, directory = path.joi
          JSON.stringify([...proof.providerLinks].sort((a, b) => a.path.localeCompare(b.path)))
    )
       throw new Error("Native framework links differ from their official provider proof.");
-   const covered = new Set([...proof.providerFiles.map((file) => file.path), "attaclip-recorder", "attaclip-notifier", "obs-ffmpeg-mux"]);
+   const covered = new Set([...proof.providerFiles.map((file) => file.path), "acroclip-recorder", "acroclip-notifier", "obs-ffmpeg-mux"]);
    for (const file of runtimeTree.filter((entry): entry is Extract<MacTreeEntry, { kind: "file" }> => entry.kind === "file")) {
       const handle = await open(packetPath(runtime, file.path), "r");
       try {
@@ -154,14 +154,14 @@ export async function assembleMacSourceKit(project: string, directory = path.joi
          ffmpegDll: z.object({ sha256: z.string().regex(/^[a-f\d]{64}$/), size: z.number().int().positive() }),
       })
       .parse(JSON.parse(await readFile(path.join(directory, "evidence/electron-ffmpeg-darwin-arm64/correspondence.json"), "utf8")));
-   const sourceFile = packetPath(directory, "attaclip-source.tar");
-   execFileSync("git", ["archive", "--format=tar", "--prefix=attaclip/", "-o", sourceFile, appCommit], { cwd: project });
-   await record("attaclip-source.tar");
+   const sourceFile = packetPath(directory, "acroclip-source.tar");
+   execFileSync("git", ["archive", "--format=tar", "--prefix=acroclip/", "-o", sourceFile, appCommit], { cwd: project });
+   await record("acroclip-source.tar");
    const kit: MacSourceKit = {
       version: 1,
       platform: "darwin-arm64",
       appCommit,
-      applicationSource: records.get("attaclip-source.tar")!,
+      applicationSource: records.get("acroclip-source.tar")!,
       files: [...records.values()].sort((a, b) => a.path.localeCompare(b.path)),
       staged: await macTree(path.join(project, "resources")),
       compiled: await macTree(path.join(project, "out")),

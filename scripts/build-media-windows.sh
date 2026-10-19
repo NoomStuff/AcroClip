@@ -6,8 +6,8 @@ set -euo pipefail
 taskProject=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 taskSources="$taskProject/work/release-sources"
 taskOutput="$taskProject/work/controlled-media/windows-x64"
-taskBuildRoot=${ATTACLIP_MEDIA_BUILD_ROOT:-$(mktemp -d -t attaclip-media.XXXXXX)}
-taskJobs=${ATTACLIP_MEDIA_BUILD_JOBS:-4}
+taskBuildRoot=${ACROCLIP_MEDIA_BUILD_ROOT:-$(mktemp -d -t acroclip-media.XXXXXX)}
+taskJobs=${ACROCLIP_MEDIA_BUILD_JOBS:-4}
 taskPrefix="$taskBuildRoot/prefix"
 mkdir -p "$taskOutput" "$taskBuildRoot" "$taskPrefix"
 # A rebuild must not retain verification records for the previous executables.
@@ -108,7 +108,7 @@ cp "$taskBuildRoot/dav1d/COPYING" "$taskOutput/LICENSE-dav1d"
 cd "$taskBuildRoot/ffmpeg"
 # Keep FFmpeg's built-in import decoders, demuxers and filters. Only external
 # dependencies and output encoders are reduced. Dav1d supplies software AV1.
-./configure --prefix="$taskPrefix" --target-os=mingw32 --arch=x86_64 --enable-cross-compile --cross-prefix=x86_64-w64-mingw32- --cc=x86_64-w64-mingw32-gcc-posix --cxx=x86_64-w64-mingw32-g++-posix --enable-gpl --enable-libx264 --enable-libdav1d --enable-zlib --disable-autodetect --disable-network --disable-shared --enable-static --disable-doc --disable-debug --disable-ffplay --disable-devices --enable-indev=lavfi --disable-encoders --enable-encoder=libx264,aac,mjpeg,png,wrapped_avframe,pcm_s16le --disable-protocols --enable-protocol=file,pipe --pkg-config=pkg-config --pkg-config-flags=--static --extra-cflags="-I$taskPrefix/include" --extra-ldflags="-L$taskPrefix/lib -static -static-libgcc -static-libstdc++" --extra-version=attaclip-local
+./configure --prefix="$taskPrefix" --target-os=mingw32 --arch=x86_64 --enable-cross-compile --cross-prefix=x86_64-w64-mingw32- --cc=x86_64-w64-mingw32-gcc-posix --cxx=x86_64-w64-mingw32-g++-posix --enable-gpl --enable-libx264 --enable-libdav1d --enable-zlib --disable-autodetect --disable-network --disable-shared --enable-static --disable-doc --disable-debug --disable-ffplay --disable-devices --enable-indev=lavfi --disable-encoders --enable-encoder=libx264,aac,mjpeg,png,wrapped_avframe,pcm_s16le --disable-protocols --enable-protocol=file,pipe --pkg-config=pkg-config --pkg-config-flags=--static --extra-cflags="-I$taskPrefix/include" --extra-ldflags="-L$taskPrefix/lib -static -static-libgcc -static-libstdc++" --extra-version=acroclip-local
 make -j"$taskJobs" ffmpeg.exe ffprobe.exe
 cp ffmpeg.exe ffprobe.exe "$taskOutput/"
 cp config.h config_components.h "$taskOutput/"

@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace attaclip::macos {
+namespace acroclip::macos {
 namespace {
 std::filesystem::path runtime;
 std::string graphics, mux;
@@ -158,7 +158,7 @@ void loadModules() {
 
 obs_source_t *createCapture(const nlohmann::json &configuration) {
   if (!CGPreflightScreenCaptureAccess())
-    throw std::runtime_error("Allow AttaClip in System Settings, Privacy & Security, Screen Recording, then reopen the app");
+    throw std::runtime_error("Allow AcroClip in System Settings, Privacy & Security, Screen Recording, then reopen the app");
   const std::string kind = configuration.value("resolvedKind", configuration.value("sourceKind", "screen"));
   CGDirectDisplayID display = 0;
   CGWindowID window = 0;
@@ -277,7 +277,7 @@ bool foregroundFullscreen() {
 
 void requireMicrophonePermission() {
   if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] != AVAuthorizationStatusAuthorized)
-    throw std::runtime_error("Allow AttaClip microphone access in System Settings before recording your microphone");
+    throw std::runtime_error("Allow AcroClip microphone access in System Settings before recording your microphone");
 }
 
 void watchInput(obs_source_t *source) {
@@ -304,7 +304,7 @@ namespace {
 obs_source_t *audioSource(obs_data_t *settings, const std::string &name) {
   if (!CGPreflightScreenCaptureAccess()) {
     obs_data_release(settings);
-    throw std::runtime_error("Allow AttaClip in System Settings, Privacy & Security, Screen Recording, then reopen the app");
+    throw std::runtime_error("Allow AcroClip in System Settings, Privacy & Security, Screen Recording, then reopen the app");
   }
   auto *source = obs_source_create_private("sck_audio_capture", name.c_str(), settings);
   obs_data_release(settings);

@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Isolated, animated Direct3D surface for verifying real OBS game hooks.
+#include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <d3d11.h>
 #include <iostream>
 #include <mmsystem.h>
 #include <vector>
 #include <windows.h>
 LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
+  if(message==WM_GETMINMAXINFO){auto *limits=reinterpret_cast<MINMAXINFO *>(l);limits->ptMaxTrackSize={8192,8192};return 0;}
   if (message == WM_DESTROY) {
     PostQuitMessage(0);
     return 0;
@@ -26,11 +29,15 @@ int main(int argc, char **argv) {
   WNDCLASSW klass{};
   klass.lpfnWndProc = procedure;
   klass.hInstance = GetModuleHandleW(nullptr);
-  klass.lpszClassName = L"AttaClipIsolatedD3DProof";
+  klass.lpszClassName = L"AcroClipIsolatedD3DProof";
   RegisterClassW(&klass);
+  const auto dimension=[](const char *key,int fallback){const char *value=std::getenv(key);return value?std::clamp(std::atoi(value),64,3840):fallback;};
+  const int frameWidth=dimension("ACROCLIP_FIXTURE_WIDTH",640), frameHeight=dimension("ACROCLIP_FIXTURE_HEIGHT",360);
+  RECT client{0,0,frameWidth,frameHeight};
+  AdjustWindowRect(&client,WS_OVERLAPPEDWINDOW,FALSE);
   HWND window = CreateWindowW(klass.lpszClassName,
-                              L"AttaClip isolated Direct3D capture proof",
-                              WS_OVERLAPPEDWINDOW, 80, 80, 660, 400, nullptr,
+                              L"AcroClip isolated Direct3D capture proof",
+                              WS_OVERLAPPEDWINDOW, 80, 80, client.right-client.left, client.bottom-client.top, nullptr,
                               nullptr, klass.hInstance, nullptr);
   if (argc > 1)
     SetWindowTextA(window, argv[1]);
@@ -51,7 +58,7 @@ int main(int argc, char **argv) {
     header.lpData = reinterpret_cast<LPSTR>(tone.data());
     header.dwBufferLength = DWORD(tone.size() * sizeof(int16_t));
     header.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
-    header.dwLoops = 120;
+    header.dwLoops = std::getenv("ACROCLIP_FIXTURE_LONG") ? 600 : 120;
     if (waveOutPrepareHeader(sound, &header, sizeof(header)) !=
             MMSYSERR_NOERROR ||
         waveOutWrite(sound, &header, sizeof(header)) != MMSYSERR_NOERROR)
@@ -59,8 +66,8 @@ int main(int argc, char **argv) {
   }
   DXGI_SWAP_CHAIN_DESC desc{};
   desc.BufferCount = 2;
-  desc.BufferDesc.Width = 640;
-  desc.BufferDesc.Height = 360;
+  desc.BufferDesc.Width = frameWidth;
+  desc.BufferDesc.Height = frameHeight;
   desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
   desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   desc.OutputWindow = window;
@@ -118,7 +125,7 @@ int main(int argc, char **argv) {
   const ULONGLONG started = GetTickCount64();
   while (message.message != WM_QUIT &&
          (!(fullscreenRequested || delayedFullscreen) ||
-          GetTickCount64() - started < 45000)) {
+          GetTickCount64() - started < (std::getenv("ACROCLIP_FIXTURE_LONG") ? 360000u : 45000u))) {
     if (delayedFullscreen && !fullscreenRequested) {
       DWORD available = 0;
       HANDLE input = GetStdHandle(STD_INPUT_HANDLE);

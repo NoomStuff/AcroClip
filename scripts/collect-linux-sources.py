@@ -72,7 +72,7 @@ def download(url, target, expected):
     target.parent.mkdir(parents=True, exist_ok=True)
     # Keep apt's authoritative path and digest, while avoiding plaintext transport.
     url = url.replace("http://archive.ubuntu.com/", "https://archive.ubuntu.com/").replace("http://security.ubuntu.com/", "https://security.ubuntu.com/")
-    request = urllib.request.Request(url, headers={"User-Agent": "AttaClip-source-collector/1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "AcroClip-source-collector/1"})
     with urllib.request.urlopen(request, timeout=120) as response, open(temporary, "wb") as stream:
         shutil.copyfileobj(response, stream)
     if expected and digest(temporary) != expected:
@@ -314,12 +314,12 @@ def check(args):
         except Exception as error:
             blockers.append(f"{notice['path']}: {error}")
     if packet:
-        expected = {file.removeprefix("resources/recorder/") for file in packet["nativeElfPaths"] if file != "resources/recorder/attaclip-recorder"}
+        expected = {file.removeprefix("resources/recorder/") for file in packet["nativeElfPaths"] if file != "resources/recorder/acroclip-recorder"}
         if expected != set(proven):
             blockers.append("Source packet ELF coverage differs from its native inventory")
     else:
         for file in stage.rglob("*"):
-            if file.is_file() and file.name != "attaclip-recorder" and file.open("rb").read(4) == b"\x7fELF" and str(file.relative_to(stage)) not in proven:
+            if file.is_file() and file.name != "acroclip-recorder" and file.open("rb").read(4) == b"\x7fELF" and str(file.relative_to(stage)) not in proven:
                 blockers.append(f"Staged ELF has no exact package/source evidence: {file.relative_to(stage)}")
     print(json.dumps({"packages": len(manifest["packages"]), "elfFiles": len(proven), "blockers": blockers, "staticDependencyReview": manifest.get("staticDependencyReview", "pending")}, indent=2))
     if not blockers and args.refresh_provenance:
@@ -368,7 +368,7 @@ def collect(args):
             groups.setdefault((owner, fields["Version"]), [])
     expected_files = {entry["path"]: entry["sha256"] for entry in provenance["libraries"]}
     for file in stage.rglob("*"):
-        if file.is_file() and file.name != "attaclip-recorder" and file.open("rb").read(4) == b"\x7fELF":
+        if file.is_file() and file.name != "acroclip-recorder" and file.open("rb").read(4) == b"\x7fELF":
             relative = str(file.relative_to(stage))
             actual = digest(file)
             if relative in expected_files and expected_files[relative] != actual:

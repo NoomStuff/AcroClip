@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { defaultPreferences, stoppedRecorder } from "../../shared/defaults";
 import type { AppState } from "../../shared/types";
-vi.stubGlobal("window", { attaClip: {} });
+vi.stubGlobal("window", { acroClip: {} });
 const { Recording } = await import("./Recording");
 const { RecordingStatus } = await import("./App");
 afterAll(() => vi.unstubAllGlobals());
@@ -27,9 +27,14 @@ describe("persistent recording feedback", () => {
                visible: false,
                run: async () => true,
                pulse: 0,
+               openGames: vi.fn(),
             })
          );
-         expect(html).toContain(message || "Waiting for capture");
+         expect(html).not.toContain("mixer-monitor-error");
+         const status = renderToStaticMarkup(
+            createElement(RecordingStatus, { state: { ...state, recorder: { ...state.recorder, state: "waiting", message } }, elapsed: 0 })
+         );
+         expect(status).toContain(message || "Waiting for application");
          expect(html).not.toContain("Recording audio");
       }
       const html = renderToStaticMarkup(
@@ -38,14 +43,16 @@ describe("persistent recording feedback", () => {
             visible: false,
             run: async () => true,
             pulse: 0,
+            openGames: vi.fn(),
          })
       );
-      expect(html).toContain("Recording audio");
+      expect(html).not.toContain("Waiting for capture");
+      expect(html).toContain('aria-label="Source audio peak"');
    });
-   it("shows the unavailable selected microphone instead of suggesting default", () => {
-      const html = renderToStaticMarkup(createElement(Recording, { state, visible: false, run: async () => true, pulse: 0 }));
-      expect(html).toContain('value="missing-raw-device" selected="">Selected device unavailable');
-      expect(html).not.toContain('value="default" selected=""');
+   it("keeps the microphone as an ordinary editable row with no permanent device selector", () => {
+      const html = renderToStaticMarkup(createElement(Recording, { state, visible: false, run: vi.fn(), pulse: 0, openGames: vi.fn() }));
+      expect(html).toContain('aria-label="Microphone options"');
+      expect(html).not.toContain('aria-label="Microphone device"');
    });
    it("keeps the actual recording indicator, timing and pending saves beside low storage", () => {
       const html = renderToStaticMarkup(

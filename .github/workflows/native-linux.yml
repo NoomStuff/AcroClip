@@ -43,7 +43,7 @@ jobs:
          - name: Record actual screen and audio
            run: python3 scripts/smoke-linux.py resources/recorder
            env:
-              ATTACLIP_TEST_X11_APP: "1"
+              ACROCLIP_TEST_X11_APP: "1"
          - name: Build private monitor portal fixture
            run: python3 scripts/build-wayland-fixture.py
          - name: Verify actual Wayland pixels, audio, permission and stream loss
@@ -51,7 +51,7 @@ jobs:
          - name: Verify exact XWayland and Wine pixels, audio privacy and target loss
            run: python3 scripts/smoke-xwayland.py resources/recorder
            env:
-              ATTACLIP_XWAYLAND_ADAPTER_TEST: "1"
+              ACROCLIP_XWAYLAND_ADAPTER_TEST: "1"
          - run: bun install --frozen-lockfile
          - name: Stage pinned standalone media for the private package test
            run: bun scripts/provision-media.ts

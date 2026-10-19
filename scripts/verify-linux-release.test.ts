@@ -7,7 +7,7 @@ import { buildBlockMap } from "app-builder-lib/out/targets/blockmap/blockmap";
 import { verifyAppImageLauncher, verifyAppImageLibraries, verifyLinuxUpdater } from "./verify-linux-release";
 
 it("binds the real container prefix to the exact reviewed launcher", async () => {
-   const root = await mkdtemp(path.join(os.tmpdir(), "attaclip-appimage-check-"));
+   const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-appimage-check-"));
    const runtime = path.join(root, "runtime");
    const image = path.join(root, "image");
    const bytes = Buffer.from("exact official launcher bytes");
@@ -22,7 +22,7 @@ it("binds the real container prefix to the exact reviewed launcher", async () =>
 });
 
 it("rejects changed and additional injected libraries", async () => {
-   const root = await mkdtemp(path.join(os.tmpdir(), "attaclip-libraries-check-"));
+   const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-libraries-check-"));
    await mkdir(path.join(root, "usr/lib"), { recursive: true });
    const records = [];
    for (const name of ["libappindicator.so.1", "libgconf-2.so.4", "libindicator.so.7", "libnotify.so.4", "libXss.so.1", "libXtst.so.6"]) {
@@ -38,11 +38,11 @@ it("rejects changed and additional injected libraries", async () => {
 });
 
 it("checks Linux update metadata and regenerates the embedded differential map", async () => {
-   const root = await mkdtemp(path.join(os.tmpdir(), "attaclip-linux-updater-"));
-   const image = path.join(root, "AttaClip.AppImage");
+   const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-linux-updater-"));
+   const image = path.join(root, "AcroClip.AppImage");
    await writeFile(image, Buffer.alloc(65000, 42));
    const info = await buildBlockMap(image, "deflate");
-   const metadata = { version: "0.1.0", path: "AttaClip.AppImage", sha512: info.sha512, files: [{ url: "AttaClip.AppImage", ...info }] };
+   const metadata = { version: "0.1.0", path: "AcroClip.AppImage", sha512: info.sha512, files: [{ url: "AcroClip.AppImage", ...info }] };
    await writeFile(path.join(root, "latest-linux.yml"), JSON.stringify(metadata));
    const scratch = path.join(root, "scratch");
    await mkdir(scratch);

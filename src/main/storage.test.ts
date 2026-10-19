@@ -21,7 +21,7 @@ function monitor(readSpace?: (root: string) => Promise<bigint>) {
 }
 describe("collection free-space warning", () => {
    it("uses actual bigint filesystem stats for an isolated folder", async () => {
-      const root = await mkdtemp(join(tmpdir(), "attaclip-space-read-"));
+      const root = await mkdtemp(join(tmpdir(), "acroclip-space-read-"));
       try {
          const stats = await statfs(root, { bigint: true });
          const { value } = monitor();

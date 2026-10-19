@@ -12,7 +12,7 @@
 #include <thread>
 #include <vector>
 
-namespace attaclip {
+namespace acroclip {
 
 struct Packet {
   encoder_packet p{};
@@ -78,4 +78,4 @@ private:
   ClipResult write(ClipJob &job);
 };
 
-} // namespace attaclip
+} // namespace acroclip

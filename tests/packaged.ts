@@ -15,10 +15,10 @@ import { closeTestApplication } from "../scripts/close-test-application";
 // runner supplies a private X11/PulseAudio fixture and explicit software opt-in.
 if (process.platform !== "win32" && process.platform !== "linux") throw new Error("Packaged capture verification requires Windows or Linux X11");
 const linux = process.platform === "linux";
-if (linux && process.env["ATTACLIP_PACKAGED_PRIVATE_X11"] !== "1") throw new Error("Use scripts/test-linux-packaged.py for isolated Linux capture.");
-const profile = await mkdtemp(join(tmpdir(), "attaclip-packaged-"));
+if (linux && process.env["ACROCLIP_PACKAGED_PRIVATE_X11"] !== "1") throw new Error("Use scripts/test-linux-packaged.py for isolated Linux capture.");
+const profile = await mkdtemp(join(tmpdir(), "acroclip-packaged-"));
 const collection = join(profile, "clips");
-const executable = resolve(process.env["ATTACLIP_PACKAGED_EXE"] ?? (linux ? "release/linux-unpacked/attaclip" : "release/win-unpacked/AttaClip.exe"));
+const executable = resolve(process.env["ACROCLIP_PACKAGED_EXE"] ?? (linux ? "release/linux-unpacked/acroclip" : "release/win-unpacked/AcroClip.exe"));
 await mkdir(collection);
 await writeFile(
    join(profile, "preferences.json"),
@@ -34,7 +34,7 @@ await writeFile(
       allowSoftwareEncoder: linux,
    })
 );
-const portable = process.env["ATTACLIP_PACKAGED_PORTABLE"] === "1";
+const portable = process.env["ACROCLIP_PACKAGED_PORTABLE"] === "1";
 let closeApplication: (() => Promise<void>) | undefined;
 try {
    let page;
@@ -50,7 +50,7 @@ try {
       const launcher = spawn(executable, [`--remote-debugging-port=${address.port}`, "--disable-gpu-sandbox"], {
          windowsHide: true,
          stdio: "ignore",
-         env: { ...process.env, ATTACLIP_TEST: "1", ATTACLIP_PROFILE: profile, ATTACLIP_COLLECTION: collection },
+         env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile, ACROCLIP_COLLECTION: collection },
       });
       closeApplication = async () => {
          if (launcher.exitCode === null) launcher.kill();
@@ -71,7 +71,7 @@ try {
       if (!page) throw new Error("Portable application did not open its window");
       const portablePage = page;
       closeApplication = async () => {
-         await portablePage.evaluate(() => window.attaClip.exit()).catch(() => undefined);
+         await portablePage.evaluate(() => window.acroClip.exit()).catch(() => undefined);
          await browser.close().catch(() => undefined);
          if (launcher.exitCode === null) launcher.kill();
       };
@@ -79,52 +79,52 @@ try {
       const application = await electron.launch({
          executablePath: executable,
          args: linux ? ["--no-sandbox", "--disable-gpu-sandbox"] : ["--disable-gpu-sandbox"],
-         env: { ...process.env, ATTACLIP_TEST: "1", ATTACLIP_PROFILE: profile, ATTACLIP_COLLECTION: collection },
+         env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile, ACROCLIP_COLLECTION: collection },
       });
       closeApplication = async () => {
          await closeTestApplication(application);
       };
       page = await application.firstWindow();
    }
-   await page.waitForFunction(() => !!window.attaClip);
-   const sources = await page.evaluate(() => window.attaClip.sources());
+   await page.waitForFunction(() => !!window.acroClip);
+   const sources = await page.evaluate(() => window.acroClip.sources());
    const source = sources.find((item) => item.kind === "screen");
    assert(source, "A screen source must be available");
    await page.evaluate(async (id) => {
-      const state = await window.attaClip.state();
-      await window.attaClip.savePreferences({ ...state.preferences, sourceId: id, sourceKind: "screen" });
+      const state = await window.acroClip.state();
+      await window.acroClip.savePreferences({ ...state.preferences, sourceId: id, sourceKind: "screen" });
    }, source.id);
    await page.evaluate(async () => {
-      const starting = window.attaClip.startRecording();
-      const state = await window.attaClip.state();
+      const starting = window.acroClip.startRecording();
+      const state = await window.acroClip.state();
       let blocked = false;
       try {
-         await window.attaClip.savePreferences({ ...state.preferences, quality: "high" });
+         await window.acroClip.savePreferences({ ...state.preferences, quality: "high" });
       } catch {
          blocked = true;
       }
       if (!blocked) throw new Error("Settings changed during capture startup");
       await starting;
    });
-   await expect.poll(() => page.evaluate(async () => (await window.attaClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
-   await expect.poll(() => page.evaluate(async () => (await window.attaClip.state()).recorder.availableSeconds), { timeout: 30000 }).toBeGreaterThanOrEqual(5);
-   await page.evaluate(() => window.attaClip.saveClip());
+   await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
+   await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.availableSeconds), { timeout: 30000 }).toBeGreaterThanOrEqual(5);
+   await page.evaluate(() => window.acroClip.saveClip());
    await page.waitForTimeout(1000);
    await page.evaluate(async () => {
-      await window.attaClip.saveClip();
-      await window.attaClip.stopRecording();
+      await window.acroClip.saveClip();
+      await window.acroClip.stopRecording();
    });
    await expect
       .poll(
          () =>
             page.evaluate(async () => {
-               const state = await window.attaClip.state();
+               const state = await window.acroClip.state();
                return state.clips.length === 2 && state.recorder.pendingSaves === 0;
             }),
          { timeout: 60000 }
       )
       .toBe(true);
-   const state = await page.evaluate(() => window.attaClip.state());
+   const state = await page.evaluate(() => window.acroClip.state());
    assert.equal(state.recorder.state, "stopped");
    assert.equal(state.recorder.availableSeconds, 0);
    for (const saved of state.clips) assert.equal(saved.source, source.name, "Each completed clip must register its actual capture source");
@@ -153,18 +153,18 @@ try {
          assert(level && Number(level) > -40 && Number(level) < -15, "The private tone must exist in both master and isolated capture audio");
       }
    }
-   await page.evaluate((id) => window.attaClip.createShareable(id, 1), clip.id);
+   await page.evaluate((id) => window.acroClip.createShareable(id, 1), clip.id);
    await expect
-      .poll(() => page.evaluate(async (id) => (await window.attaClip.state()).clips.find((item) => item.id === id)?.shareables.length, clip.id), {
+      .poll(() => page.evaluate(async (id) => (await window.acroClip.state()).clips.find((item) => item.id === id)?.shareables.length, clip.id), {
          timeout: 120000,
       })
       .toBe(1);
-   const updated = await page.evaluate(() => window.attaClip.state());
+   const updated = await page.evaluate(() => window.acroClip.state());
    const shareable = updated.clips.find((item) => item.id === clip.id)!.shareables[0]!;
    assert((await stat(shareable.path)).size <= 1_000_000);
    assert.equal(hash(await readFile(clip.path)), originalHash);
    await promisify(execFile)(ffmpeg, ["-v", "error", "-i", shareable.path, "-f", "null", "-"], { windowsHide: true });
-   const url = await page.evaluate((file) => window.attaClip.playback(file), clip.path);
+   const url = await page.evaluate((file) => window.acroClip.playback(file), clip.path);
    await page.evaluate(async (url) => {
       const video = document.createElement("video");
       video.muted = true;

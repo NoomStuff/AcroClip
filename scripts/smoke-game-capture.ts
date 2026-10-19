@@ -9,7 +9,7 @@ if (process.platform !== "win32") throw new Error("This real game-hook proof req
 const folder = path.resolve(".cache/native-game", randomUUID());
 await mkdir(folder, { recursive: true });
 const runtime = path.resolve("resources/recorder");
-const fixture = spawn(path.resolve(".cache/native-tests/Release/attaclip-d3d-fixture.exe"), ["997", "--attaclip-catalog-proof"], { stdio: "pipe" });
+const fixture = spawn(path.resolve(".cache/native-tests/Release/acroclip-d3d-fixture.exe"), ["997", "--acroclip-catalog-proof"], { stdio: "pipe" });
 let handle = "";
 fixture.stdout.once("data", (value: Buffer) => {
    handle = value.toString().trim();
@@ -26,7 +26,7 @@ interface Event {
 }
 const events: Event[] = [];
 const logs: string[] = [];
-const helper = spawn(path.join(runtime, "attaclip-recorder.exe"), [runtime], { cwd: runtime, stdio: "pipe", windowsHide: true });
+const helper = spawn(path.join(runtime, "acroclip-recorder.exe"), [runtime], { cwd: runtime, stdio: "pipe", windowsHide: true });
 helper.stderr.on("data", (value: Buffer) => logs.push(value.toString()));
 createInterface({ input: helper.stdout }).on("line", (value) => events.push(JSON.parse(value) as Event));
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,7 +56,7 @@ try {
    assert(candidate, "Exact fixture HWND absent from candidates");
    assert.equal(candidate.pid, fixture.pid);
    assert(
-      candidate.arguments?.includes("--attaclip-catalog-proof"),
+      candidate.arguments?.includes("--acroclip-catalog-proof"),
       "Verified process arguments must support catalog entries that distinguish games sharing a runtime executable"
    );
    send({

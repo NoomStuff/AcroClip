@@ -23,7 +23,7 @@ describe("Linux source packet ownership", () => {
          expect(() => packetPath(root, name)).toThrow("Unsafe");
    });
    it("rejects changed archive bytes and duplicate manifest references", async () => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "attaclip-source-check-"));
+      const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-source-check-"));
       await writeFile(path.join(root, "source.tar"), "actual source");
       const record = { path: "source.tar", sha256: await hashFile(path.join(root, "source.tar")), size: 13 };
       await expect(verifyPacketFiles(root, [record])).resolves.toBeUndefined();

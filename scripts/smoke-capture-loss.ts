@@ -9,11 +9,11 @@ if (process.platform !== "win32") throw new Error("This real application capture
 const runtime = path.resolve("resources/recorder");
 const folder = path.resolve(".cache/native-loss", randomUUID());
 await mkdir(folder, { recursive: true });
-const title = `AttaClip capture fixture ${randomUUID()}`;
-const profileSwitch = Boolean(process.env["ATTACLIP_TEST_PROFILE_SWITCH"]);
+const title = `AcroClip capture fixture ${randomUUID()}`;
+const profileSwitch = Boolean(process.env["ACROCLIP_TEST_PROFILE_SWITCH"]);
 const writerGate = path.join(folder, "writer-ready");
-const appAudio = Boolean(process.env["ATTACLIP_TEST_APP_AUDIO"]);
-const autoCapture = Boolean(process.env["ATTACLIP_TEST_AUTO_CAPTURE"]);
+const appAudio = Boolean(process.env["ACROCLIP_TEST_APP_AUDIO"]);
+const autoCapture = Boolean(process.env["ACROCLIP_TEST_AUTO_CAPTURE"]);
 const tonePath = path.join(folder, "fixture-tone.wav");
 if (appAudio) {
    const tone = spawnSync(
@@ -72,11 +72,11 @@ interface NativeEvent {
 }
 const events: NativeEvent[] = [];
 const logs: string[] = [];
-const helper = spawn(path.join(runtime, "attaclip-recorder.exe"), [runtime], {
+const helper = spawn(path.join(runtime, "acroclip-recorder.exe"), [runtime], {
    cwd: runtime,
    windowsHide: true,
    stdio: "pipe",
-   env: { ...process.env, ...(profileSwitch ? { ATTACLIP_NATIVE_TEST_WRITER_GATE: writerGate } : {}) },
+   env: { ...process.env, ...(profileSwitch ? { ACROCLIP_NATIVE_TEST_WRITER_GATE: writerGate } : {}) },
 });
 helper.stderr.on("data", (value: Buffer) => logs.push(value.toString()));
 createInterface({ input: helper.stdout }).on("line", (line) => events.push(JSON.parse(line) as NativeEvent));

@@ -1,10 +1,10 @@
 # Third-party notices
 
-AttaClip is distributed under GPL-3.0-or-later. Reused MIT code retains its original license. See LICENSE and licenses/AttaCut-MIT.txt.
+AcroClip is distributed under GPL-3.0-or-later. Reused MIT code retains its original license. See LICENSE and licenses/AttaCut-MIT.txt.
 
 ## AttaCut
 
-Copyright NoomStuff. MIT. AttaClip adapts AttaCut's media serving, binary provisioning, release conventions, and explicit update behavior. The renderer is a new design for this product.
+Copyright NoomStuff. MIT. AcroClip adapts AttaCut's media serving, binary provisioning, release conventions, and explicit update behavior. The renderer adapts AttaCut's dropdown, player, transport, audio picker, and volume controls for AcroClip.
 
 Source: https://github.com/NoomStuff/AttaCut
 
@@ -24,4 +24,4 @@ Source and build instructions: https://ffmpeg.org/ and https://github.com/BtbN/F
 
 Electron, React, electron-updater, Lucide, Zod, and the development toolchain retain their upstream licenses. The lockfile identifies the exact dependency versions. Lucide icons are ISC licensed. Electron includes Chromium and Node.js and their notices.
 
-Release bundles must preserve upstream licenses and provide corresponding source for GPL components. A source archive of AttaClip alone does not include all bundled dependency sources.
+Release bundles must preserve upstream licenses and provide corresponding source for GPL components. A source archive of AcroClip alone does not include all bundled dependency sources.

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { CollectionService, fileIdentity, withinRoot } from "../src/main/collection";
 import { ffmpegBase, probe, runMedia } from "../src/main/media";
 
-const workspace = await realpath(await mkdtemp(join(tmpdir(), "attaclip-media-")));
+const workspace = await realpath(await mkdtemp(join(tmpdir(), "acroclip-media-")));
 const root = join(workspace, "collection");
 const external = join(workspace, "external");
 await mkdir(join(root, "Existing game"), { recursive: true });
@@ -126,7 +126,7 @@ try {
    assert.equal(cancelling.jobs.at(-1)?.state, "cancelled");
    assert.equal(await fileIdentity(original), before);
 
-   const primary = join(root, ".attaclip", "collection.json");
+   const primary = join(root, ".acroclip", "collection.json");
    await copyFile(primary, `${primary}.bak`);
    await writeFile(primary, "broken metadata");
    const recovered = new CollectionService();
@@ -151,7 +151,7 @@ try {
    assert.ok(deleteFiles[0]?.includes("shareables"));
    assert.equal(await fileIdentity(relocated), before);
 
-   const movedMetadataPath = join(moved, ".attaclip", "collection.json");
+   const movedMetadataPath = join(moved, ".acroclip", "collection.json");
    const metadata = JSON.parse(await readFile(movedMetadataPath, "utf8")) as { clips: { id: string; relativePath: string; absolutePath: string }[] };
    const linkToOutside = metadata.clips.find((entry) => entry.id === clip.id);
    assert.ok(linkToOutside);

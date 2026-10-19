@@ -19,8 +19,8 @@ root = pathlib.Path.cwd()
 runtime = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "resources/recorder").resolve()
 folder = root / ".cache/linux-smoke" / str(uuid.uuid4())
 folder.mkdir(parents=True)
-private = pathlib.Path(tempfile.mkdtemp(prefix="attaclip-native-"))
-env = dict(os.environ, XDG_RUNTIME_DIR=str(private), PULSE_SERVER="unix:" + str(private / "audio.sock"), DBUS_SESSION_BUS_ADDRESS="unix:path=" + str(private / "dbus.sock"), WAYLAND_DISPLAY="", XDG_SESSION_TYPE="x11", ATTACLIP_NATIVE_TEST_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe")
+private = pathlib.Path(tempfile.mkdtemp(prefix="acroclip-native-"))
+env = dict(os.environ, XDG_RUNTIME_DIR=str(private), PULSE_SERVER="unix:" + str(private / "audio.sock"), DBUS_SESSION_BUS_ADDRESS="unix:path=" + str(private / "dbus.sock"), WAYLAND_DISPLAY="", XDG_SESSION_TYPE="x11", ACROCLIP_NATIVE_TEST_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe")
 env["LD_LIBRARY_PATH"] = str(runtime / "lib")
 display = next(number for number in range(90, 180) if not pathlib.Path(f"/tmp/.X11-unix/X{number}").exists())
 env["DISPLAY"] = f"127.0.0.1:{display}"
@@ -64,7 +64,7 @@ def volume(file, track):
     return float(re.search(r"mean_volume: (-?[\d.]+) dB", result.stderr)[1])
 
 
-proof = {'physicalHotplugTested':False, 'hostOSAudioChanged':False,'helperSHA256':hashlib.sha256((runtime/'attaclip-recorder').read_bytes()).hexdigest()}
+proof = {'physicalHotplugTested':False, 'hostOSAudioChanged':False,'helperSHA256':hashlib.sha256((runtime/'acroclip-recorder').read_bytes()).hexdigest()}
 def pactl(*args):
     return subprocess.check_output(['pactl',*args],env=env,text=True).strip()
 def status():
@@ -107,31 +107,31 @@ try:
     while True:
         try:socket.create_connection(('127.0.0.1',6000+display),timeout=.2).close();break
         except OSError:assert time.monotonic()<deadline;time.sleep(.1)
-    pulseArgs=['pulseaudio','-n','--daemonize=no','--exit-idle-time=-1','--use-pid-file=no','--disable-shm=true','--load=module-native-protocol-unix socket='+str(private/'audio.sock')+' auth-anonymous=1','--load=module-null-sink sink_name=attaclip-test rate=48000 channels=2','--load=module-null-sink sink_name=unrelated rate=48000 channels=2']
+    pulseArgs=['pulseaudio','-n','--daemonize=no','--exit-idle-time=-1','--use-pid-file=no','--disable-shm=true','--load=module-native-protocol-unix socket='+str(private/'audio.sock')+' auth-anonymous=1','--load=module-null-sink sink_name=acroclip-test rate=48000 channels=2','--load=module-null-sink sink_name=unrelated rate=48000 channels=2']
     pulse=launch(pulseArgs,'pulse')
     deadline=time.monotonic()+10
     while not(private/'audio.sock').exists():assert time.monotonic()<deadline;time.sleep(.1)
-    pactl('set-default-sink','attaclip-test')
+    pactl('set-default-sink','acroclip-test')
     inputModule=pactl('load-module','module-null-source','source_name=private-input','rate=48000','channels=2')
     pactl('set-default-source','private-input')
-    helper=launch([str(runtime/'attaclip-recorder'),str(runtime)],'helper',True)
+    helper=launch([str(runtime/'acroclip-recorder'),str(runtime)],'helper',True)
     reader=threading.Thread(target=lambda:[events.append(json.loads(line)) for line in helper.stdout],daemon=True);reader.start()
     wait(lambda event:event['event']=='ready')
     subprocess.run(['xsetroot','-solid','purple'],env=env,check=True)
     command(dict(base,action='start'));awaitState(False)
     time.sleep(3);assert not status()['waiting'];proof['silentOutputHealthy']=True
-    pactl('suspend-sink','attaclip-test','1');time.sleep(3);assert not status()['waiting']
-    pactl('suspend-sink','attaclip-test','0');proof['suspendedIdleOutputHealthy']=True
+    pactl('suspend-sink','acroclip-test','1');time.sleep(3);assert not status()['waiting']
+    pactl('suspend-sink','acroclip-test','0');proof['suspendedIdleOutputHealthy']=True
     tone=folder/'tone.wav'
     subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','sine=frequency=997:sample_rate=48000:duration=180','-c:a','pcm_s16le',str(tone)],check=True)
-    playing=launch(['paplay','--device=attaclip-test',str(tone)],'tone')
+    playing=launch(['paplay','--device=acroclip-test',str(tone)],'tone')
     time.sleep(4)
     request,file=save('before-client-loss');decodeFile=file
     # Kill exactly the private helper-owned source-output. Pulse reports its
     # actual stream terminated while the server and same device stay alive.
     outputs=json.loads(pactl('-f','json','list','source-outputs'))
-    chosen=next(value for value in outputs if value['properties'].get('application.name')=='AttaClip device audio')
-    subprocess.run([str(root/'.cache/native-tests-linux/attaclip-pulse-client-control'),str(chosen['index'])],env=env,check=True)
+    chosen=next(value for value in outputs if value['properties'].get('application.name')=='AcroClip device audio')
+    subprocess.run([str(root/'.cache/native-tests-linux/acroclip-pulse-client-control'),str(chosen['index'])],env=env,check=True)
     awaitState(True)
     first=saved(request);decode(file);assert volume(file,1)>-40
     # Automatic recovery recreates the terminated real capture client.
@@ -172,7 +172,7 @@ try:
     command(dict(action='stop'))
     # Explicit extra output must remain tied to its selected monitor, even
     # when an unrelated output and default source continue to exist.
-    extra=dict(id='private-extra',name='Private physical output',kind='output',deviceId='attaclip-test.monitor',enabled=True,includeInMaster=True,volume=1,muted=False)
+    extra=dict(id='private-extra',name='Private physical output',kind='output',deviceId='acroclip-test.monitor',enabled=True,includeInMaster=True,volume=1,muted=False)
     command(dict(base,action='start',captureAudio=False,audioSources=[extra]));awaitState(False);fill();time.sleep(3)
     request,file=save('extra-full-volume');saved(request);decode(file)
     full=volume(file,2);assert abs(full-volume(file,0))<1
@@ -183,20 +183,20 @@ try:
     command(dict(action='stop'));extra['includeInMaster']=False
     command(dict(base,action='start',captureAudio=False,audioSources=[extra]));awaitState(False)
     if playing.poll() is None:playing.terminate();playing.wait(timeout=5)
-    playing=launch(['paplay','--device=attaclip-test',str(tone)],'extra-excluded-tone')
+    playing=launch(['paplay','--device=acroclip-test',str(tone)],'extra-excluded-tone')
     fill();assert playing.poll() is None
     request,file=save('extra-before-device-loss')
     modules=[line.split('\t') for line in pactl('list','short','modules').splitlines()]
-    owned=next(value for value in modules if value[1]=='module-null-sink' and 'sink_name=attaclip-test ' in value[2])
+    owned=next(value for value in modules if value[1]=='module-null-sink' and 'sink_name=acroclip-test ' in value[2])
     (folder/'modules.json').write_text(json.dumps(modules,indent=2))
     moduleId=owned[0];assert moduleId.isdigit(),owned
     pactl('unload-module',str(moduleId))
     saved(request);decode(file);assert volume(file,2)>-40 and volume(file,0)<-70
     failed=awaitState(True,'selected audio device');time.sleep(4)
     request,file=save('last-valid-after-device-loss');result=saved(request);assert result['previousFootage'];decode(file)
-    assert status()['waiting'];assert 'attaclip-test.monitor' not in pactl('list','short','sources')
-    pactl('load-module','module-null-sink','sink_name=attaclip-test','rate=48000','channels=2')
-    playing=launch(['paplay','--device=attaclip-test',str(tone)],'recovered-tone')
+    assert status()['waiting'];assert 'acroclip-test.monitor' not in pactl('list','short','sources')
+    pactl('load-module','module-null-sink','sink_name=acroclip-test','rate=48000','channels=2')
+    playing=launch(['paplay','--device=acroclip-test',str(tone)],'recovered-tone')
     awaitState(False);time.sleep(4)
     request,file=save('extra-after-device-recovery');saved(request);decode(file);assert volume(file,2)>-40 and volume(file,0)<-70
     proof['extraTrackGainMuteAndMasterPolicy']={'fullDB':full,'halfDB':half,'excludedFromMaster':True}
@@ -204,7 +204,7 @@ try:
     command(dict(action='stop'))
     # Primary default output uses our own independent context and recovers
     # after the entire isolated server actually exits and restarts.
-    pactl('set-default-sink','attaclip-test')
+    pactl('set-default-sink','acroclip-test')
     command(dict(base,action='start'));awaitState(False);time.sleep(4)
     request,file=save('queued-before-server-loss');pulse.terminate();pulse.wait(timeout=5)
     saved(request);decode(file);awaitState(True);time.sleep(4)
@@ -212,15 +212,15 @@ try:
     pulse=launch(pulseArgs,'restarted-pulse')
     deadline=time.monotonic()+10
     while True:
-        try:pactl('set-default-sink','attaclip-test');break
+        try:pactl('set-default-sink','acroclip-test');break
         except subprocess.CalledProcessError:assert time.monotonic()<deadline;time.sleep(.1)
-    serverPlaying=launch(['paplay','--device=attaclip-test',str(tone)],'server-recovered-tone')
+    serverPlaying=launch(['paplay','--device=acroclip-test',str(tone)],'server-recovered-tone')
     awaitState(False);time.sleep(4)
     request,file=save('server-recovered');saved(request);decode(file);assert volume(file,1)>-40
     proof['actualServerRestartRecovery']=True
     command(dict(action='stop'))
     serverPlaying.terminate();serverPlaying.wait(timeout=5)
-    sync=launch([str(root/'.cache/native-tests-linux/attaclip-pulse-sync-fixture')],'sync-marker')
+    sync=launch([str(root/'.cache/native-tests-linux/acroclip-pulse-sync-fixture')],'sync-marker')
     command(dict(base,action='start',customFPS=30,clipSeconds=4));awaitState(False);time.sleep(7)
     request,file=save('playback-marker-sync');saved(request)
     streams=decode(file,3,5.3)

@@ -65,7 +65,7 @@ def inspect(packet, app_name):
     return records
 
 
-def extract(archive, destination, app_name="AttaClip.app"):
+def extract(archive, destination, app_name="AcroClip.app"):
     root = Path(destination).resolve()
     if root.exists() and any(root.iterdir()):
         raise ValueError("Extract into an empty directory")

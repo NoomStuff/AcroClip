@@ -7,15 +7,17 @@ import { promisify } from "node:util";
 import { defaultPreferences } from "../../src/shared/defaults";
 
 test("native capture survives preview teardown and saves the selected application pixels", async () => {
-   test.skip(process.platform !== "win32" || process.env["ATTACLIP_NATIVE_UI"] !== "1", "Run explicitly on a Windows machine with a working recording driver.");
+   test.skip(process.platform !== "win32" || process.env["ACROCLIP_NATIVE_UI"] !== "1", "Run explicitly on a Windows machine with a working recording driver.");
    test.setTimeout(120000);
-   const profile = await mkdtemp(join(tmpdir(), "attaclip-preview-native-"));
+   const profile = await mkdtemp(join(tmpdir(), "acroclip-preview-native-"));
    const collection = join(profile, "clips");
    await mkdir(collection, { recursive: true });
    await writeFile(
       join(profile, "preferences.json"),
       JSON.stringify({
          ...defaultPreferences,
+         audioSourcesVersion: undefined,
+         audioSources: [],
          collection,
          setupComplete: true,
          sourceKind: "app",
@@ -34,7 +36,7 @@ test("native capture survives preview teardown and saves the selected applicatio
    );
    const desktop = await electron.launch({
       args: [resolve("."), "--disable-gpu-sandbox"],
-      env: { ...process.env, ATTACLIP_TEST: "1", ATTACLIP_PROFILE: profile },
+      env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile },
    });
    try {
       const page = await desktop.firstWindow();
@@ -54,18 +56,20 @@ test("native capture survives preview teardown and saves the selected applicatio
          );
          fixture.showInactive();
       });
-      const source = (await page.evaluate(() => window.attaClip.sources())).find((item) => item.name === "Native preview fixture");
+      const source = (await page.evaluate(() => window.acroClip.sources())).find((item) => item.name === "Native preview fixture");
       expect(source).toBeDefined();
+      expect(source!.applicationId).toMatch(/^[a-f0-9]{64}$/);
+      expect(source!.appIcon).toMatch(/^data:image\/png;base64,/);
+      expect(source!.pixelSize).toBeDefined();
       await page.evaluate(async (id) => {
-         const state = await window.attaClip.state();
-         await window.attaClip.savePreferences({ ...state.preferences, sourceKind: "app", sourceId: id });
+         const state = await window.acroClip.state();
+         await window.acroClip.savePreferences({ ...state.preferences, sourceKind: "app", sourceId: id });
       }, source!.id);
-      await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       await page.getByRole("button", { name: "Start recording", exact: true }).click();
-      await expect.poll(() => page.evaluate(async () => (await window.attaClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
+      await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
       await expect
-         .poll(() => page.evaluate(async () => (await window.attaClip.state()).recorder.availableSeconds), { timeout: 30000 })
+         .poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.availableSeconds), { timeout: 30000 })
          .toBeGreaterThanOrEqual(3);
       const preview = page.locator(".preview-stream");
       const retain = () =>
@@ -92,28 +96,30 @@ test("native capture survives preview teardown and saves the selected applicatio
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect.poll(ended).toBe(true);
       const hiddenMetrics = await sample();
-      expect((await page.evaluate(() => window.attaClip.state())).recorder.state).toBe("recording");
+      expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
       await page.getByRole("button", { name: "Recording", exact: true }).click();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       await retain();
-      await page.evaluate(() => window.attaClip.window("minimize"));
+      await page.evaluate(() => window.acroClip.window("minimize"));
       await expect.poll(ended).toBe(true);
-      expect((await page.evaluate(() => window.attaClip.state())).recorder.state).toBe("recording");
+      expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
       await desktop.evaluate(({ BrowserWindow }) => {
-         const main = BrowserWindow.getAllWindows().find((window) => window.getTitle() === "AttaClip");
+         const main = BrowserWindow.getAllWindows().find((window) => window.getTitle() === "AcroClip");
          main?.restore();
          main?.show();
       });
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       await retain();
-      await page.evaluate(() => window.attaClip.window("close"));
+      await page.evaluate(() => window.acroClip.window("close"));
       await expect.poll(ended).toBe(true);
-      expect((await page.evaluate(() => window.attaClip.state())).recorder.state).toBe("recording");
-      await page.evaluate(() => window.attaClip.saveClip());
-      await expect.poll(() => page.evaluate(async () => (await window.attaClip.state()).clips.length), { timeout: 30000 }).toBe(1);
-      const clip = (await page.evaluate(() => window.attaClip.state())).clips[0]!;
-      expect(clip.width).toBe(640);
-      expect(clip.height).toBe(360);
+      expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
+      await page.evaluate(() => window.acroClip.saveClip());
+      await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).clips.length), { timeout: 30000 }).toBe(1);
+      const clip = (await page.evaluate(() => window.acroClip.state())).clips[0]!;
+      expect(clip.width).toBe(Math.floor(source!.pixelSize!.width / 2) * 2);
+      expect(clip.height).toBe(Math.floor(source!.pixelSize!.height / 2) * 2);
+      expect(clip.applicationId).toBe(source!.applicationId);
+      expect((await page.evaluate(() => window.acroClip.state())).applicationIcons?.[clip.applicationId!]).toMatch(/^data:image\/png;base64,/);
       expect(clip.duration).toBeGreaterThanOrEqual(4.5);
       expect(clip.source).toBe("Native preview fixture");
       const ffmpeg = resolve("resources/media/ffmpeg.exe");
@@ -156,13 +162,13 @@ test("native capture survives preview teardown and saves the selected applicatio
       };
       await writeFile("test-results/preview-cost.json", JSON.stringify(measurements, null, 2));
       await test.info().attach("preview process cost", { body: JSON.stringify(measurements, null, 2), contentType: "application/json" });
-      await page.evaluate(() => window.attaClip.stopRecording());
+      await page.evaluate(() => window.acroClip.stopRecording());
    } finally {
       const page = await desktop.firstWindow();
-      await page.evaluate(() => window.attaClip.stopRecording()).catch(() => undefined);
+      await page.evaluate(() => window.acroClip.stopRecording()).catch(() => undefined);
       await desktop.evaluate(({ BrowserWindow }) => {
          for (const window of BrowserWindow.getAllWindows()) {
-            if (window.getTitle() !== "AttaClip") window.destroy();
+            if (window.getTitle() !== "AcroClip") window.destroy();
             else {
                window.restore();
                window.show();

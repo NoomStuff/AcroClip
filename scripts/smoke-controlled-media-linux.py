@@ -10,10 +10,10 @@ project = Path.cwd()
 directory = project / "work/controlled-media/linux-x64"
 controlled = directory / "ffmpeg"
 probe = directory / "ffprobe"
-reference = Path(os.environ.get("ATTACLIP_REFERENCE_FFMPEG", "/usr/bin/ffmpeg"))
+reference = Path(os.environ.get("ACROCLIP_REFERENCE_FFMPEG", "/usr/bin/ffmpeg"))
 if controlled.resolve() == reference.resolve():
     raise RuntimeError("Use an independent reference FFmpeg to generate fixtures")
-temporary = Path(tempfile.mkdtemp(prefix="attaclip-linux-codecs-"))
+temporary = Path(tempfile.mkdtemp(prefix="acroclip-linux-codecs-"))
 
 def run(binary, args):
     return subprocess.check_output([str(binary), "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", *args], stderr=subprocess.PIPE, timeout=120)

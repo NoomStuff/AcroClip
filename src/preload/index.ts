@@ -4,9 +4,13 @@ const api: DesktopAPI = {
    state: () => ipcRenderer.invoke("state"),
    sources: () => ipcRenderer.invoke("sources"),
    games: () => ipcRenderer.invoke("games"),
+   gameCatalog: () => ipcRenderer.invoke("game-catalog"),
    recordingCapabilities: () => ipcRenderer.invoke("recording-capabilities"),
-   previewSource: (sourceId) => ipcRenderer.invoke("preview-source", sourceId),
+   previewSource: (sourceId, owner) => ipcRenderer.invoke("preview-source", sourceId, owner),
+   listenAudio: (source) => ipcRenderer.invoke("listen-audio", source),
+   monitorAudio: (enabled) => ipcRenderer.invoke("monitor-audio", enabled),
    audioDevices: (kind) => ipcRenderer.invoke("audio-devices", kind),
+   captureShortcut: (enabled) => ipcRenderer.invoke("capture-shortcut", enabled),
    savePreferences: (value) => ipcRenderer.invoke("preferences", value),
    chooseFolder: () => ipcRenderer.invoke("choose-folder"),
    startRecording: () => ipcRenderer.invoke("record-start"),
@@ -23,6 +27,9 @@ const api: DesktopAPI = {
    playback: (path, track) => ipcRenderer.invoke("playback", path, track),
    refresh: () => ipcRenderer.invoke("refresh"),
    checkUpdate: () => ipcRenderer.invoke("update-check"),
+   downloadUpdate: () => ipcRenderer.invoke("update-download"),
+   revealUpdate: () => ipcRenderer.invoke("update-reveal"),
+   openUpdateRelease: () => ipcRenderer.invoke("update-release"),
    installUpdate: () => ipcRenderer.invoke("update-install"),
    window: (action) => ipcRenderer.send("window", action),
    exit: () => ipcRenderer.invoke("exit"),
@@ -34,4 +41,4 @@ const api: DesktopAPI = {
       };
    },
 };
-contextBridge.exposeInMainWorld("attaClip", api);
+contextBridge.exposeInMainWorld("acroClip", api);

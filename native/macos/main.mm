@@ -2,7 +2,7 @@
 #import <Cocoa/Cocoa.h>
 #include <thread>
 
-int attaclip_recorder_main(int argc, char **argv);
+int acroclip_recorder_main(int argc, char **argv);
 
 // OBS capture modules dispatch Cocoa work to the main queue. Reading stdin on
 // that thread would deadlock source creation and stop delivery of Mac events.
@@ -14,7 +14,7 @@ int main(int argc, char **argv) {
     int result = 1;
     std::thread commands([&] {
       @autoreleasepool {
-        result = attaclip_recorder_main(argc, argv);
+        result = acroclip_recorder_main(argc, argv);
       }
       dispatch_async(dispatch_get_main_queue(), ^{
         [NSApp stop:nil];

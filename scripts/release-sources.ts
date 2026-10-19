@@ -98,10 +98,10 @@ interface RecorderBuildProvenance {
 
 export async function validateRecorderBuild(parsed: RecorderBuildProvenance, staged: HashedFile[], project: string): Promise<string[]> {
    const blockers: string[] = [];
-   const ownBinaries = ["attaclip-recorder.exe"];
+   const ownBinaries = ["acroclip-recorder.exe"];
    const inputs = ["native/recorder.cpp", "native/clip-writer.cpp", "native/clip-writer.hpp", "native/CMakeLists.txt", "scripts/build-native.ts"];
-   if (staged.some((file) => file.path === "recorder/attaclip-notifier.exe") || parsed.sourceHashes?.["native/notifications/windows.cpp"]) {
-      ownBinaries.push("attaclip-notifier.exe");
+   if (staged.some((file) => file.path === "recorder/acroclip-notifier.exe") || parsed.sourceHashes?.["native/notifications/windows.cpp"]) {
+      ownBinaries.push("acroclip-notifier.exe");
       inputs.push("native/notifications/windows.cpp", "native/notifications/CMakeLists.txt");
    }
    if (existsSync(path.join(project, "native/windows/audio-health.hpp")) || parsed.controlledWasapi || parsed.sourceHashes?.["native/windows/audio-health.hpp"])
@@ -296,7 +296,7 @@ async function exportRepository(ref: DependencyRecipeRef, file: string, director
       const folder = path.join(directory, "svn-exports", key);
       await mkdir(path.dirname(folder), { recursive: true });
       await runAsync(
-         process.env["ATTACLIP_SVN_PATH"] || "svn",
+         process.env["ACROCLIP_SVN_PATH"] || "svn",
          [
             "export",
             "--non-interactive",
@@ -609,7 +609,7 @@ export async function validateKit(kit: SourceKit, kitDirectory: string, project:
       if (!component.version || !component.license || !component.licenseFiles.length) blockers.push(`Missing version or license evidence: ${id}`);
       const permissive = /^(MIT|BSD-2-Clause|BSD-3-Clause|ISC|Zlib|curl|Apache-2\.0|BSL-1\.0)$/.test(component.license);
       const knownCopyleft = [
-         "attaclip-source",
+         "acroclip-source",
          "ffmpeg-core-build-config",
          "obs-dependency-build-config",
          "obs-ffmpeg-core-and-enabled-dependencies",
@@ -666,7 +666,7 @@ export async function collectKit(project: string, destination: string, downloadS
    }
    if (controlledBuild) {
       if (
-         controlledBuild.producer !== "attaclip-controlled-windows" ||
+         controlledBuild.producer !== "acroclip-controlled-windows" ||
          controlledBuild.sourceCommits.ffmpeg !== sourcePins.find((pin) => pin.name === "ffmpeg-btbn-core")?.commit
       )
          blockers.push("Controlled FFmpeg source identity is not recognized.");
@@ -731,14 +731,14 @@ export async function collectKit(project: string, destination: string, downloadS
       for (const file of staged.filter((file) => file.path.startsWith("recorder/"))) {
          const relative = file.path.substring("recorder/".length);
          if (exactWasapiException(file, verifiedWasapi)) continue;
-         if (relative === "attaclip-recorder.exe" || relative === "attaclip-notifier.exe" || relative === "provenance.json" || relative.startsWith("LICENSE-"))
+         if (relative === "acroclip-recorder.exe" || relative === "acroclip-notifier.exe" || relative === "provenance.json" || relative.startsWith("LICENSE-"))
             continue;
          const official = path.join(verifiedRuntime, relative.includes("/") ? relative : path.posix.join("bin/64bit", relative));
          if (!existsSync(official) || (await hashFile(official)) !== file.sha256)
             blockers.push(`Staged OBS runtime file does not match the official archive: ${relative}`);
       }
    }
-   const requiredEvidence = ["attaclip-source", "electron-notices"];
+   const requiredEvidence = ["acroclip-source", "electron-notices"];
    if (staged.some((file) => file.path === "electron/ffmpeg.dll")) requiredEvidence.push("electron-ffmpeg-source");
    if (staged.some((file) => file.path.startsWith("recorder/") && /\.(dll|exe)$/i.test(file.path))) {
       requiredEvidence.push("obs-dependency-build-config");

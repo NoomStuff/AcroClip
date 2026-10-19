@@ -1,3 +1,5 @@
+import { windowsDevExecutable } from "../../scripts/windows-dev-identity";
+import { selectOption } from "./select-option";
 import { test, expect, _electron as electron } from "@playwright/test";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -6,9 +8,9 @@ import { join, resolve } from "node:path";
 import { defaultPreferences } from "../../src/shared/defaults";
 
 test("Auto waits privately, adds a local game and follows it without losing accepted clips", async () => {
-   test.skip(process.platform !== "win32" || process.env["ATTACLIP_NATIVE_UI"] !== "1", "Requires actual Windows capture");
+   test.skip(process.platform !== "win32" || process.env["ACROCLIP_NATIVE_UI"] !== "1", "Requires actual Windows capture");
    test.setTimeout(100_000);
-   const profile = await mkdtemp(join(tmpdir(), "attaclip-auto-native-"));
+   const profile = await mkdtemp(join(tmpdir(), "acroclip-auto-native-"));
    const collection = join(profile, "clips");
    await mkdir(collection);
    const title = `Clip detector fixture ${Date.now()}`;
@@ -46,9 +48,13 @@ $form.Dispose()
       join(profile, "preferences.json"),
       JSON.stringify({
          ...defaultPreferences,
+         shortcuts: { ...defaultPreferences.shortcuts, toggleRecording: "" },
+         audioSourcesVersion: undefined,
+         audioSources: [],
          collection,
          setupComplete: true,
          sourceKind: "auto",
+         shortcut: "Control+Alt+Shift+F4",
          clipSeconds: 5,
          quality: "custom",
          customWidth: 640,
@@ -57,9 +63,18 @@ $form.Dispose()
          captureAudio: false,
       })
    );
+   await writeFile(
+      join(profile, "game-catalog.json"),
+      JSON.stringify({
+         updated: Date.now(),
+         entries: [{ id: "fixture-unrelated", name: "Unrelated fixture", executables: [{ name: "never-running-fixture.exe", os: process.platform }] }],
+      })
+   );
+   const executablePath = await windowsDevExecutable(process.cwd());
    const desktop = await electron.launch({
+      ...(executablePath ? { executablePath } : {}),
       args: [resolve("."), "--disable-gpu-sandbox"],
-      env: { ...process.env, ATTACLIP_TEST: "1", ATTACLIP_PROFILE: profile, ATTACLIP_COLLECTION: collection },
+      env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile, ACROCLIP_COLLECTION: collection },
    });
    try {
       await expect
@@ -76,49 +91,55 @@ $form.Dispose()
       await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeEnabled();
       await page.getByRole("button", { name: "Start recording", exact: true }).click();
       console.log("Auto recording start requested");
-      await expect.poll(async () => (await page.evaluate(() => window.attaClip.state())).recorder.state).toBe("waiting");
-      expect((await page.evaluate(() => window.attaClip.state())).recorder.availableSeconds).toBe(0);
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.state, { timeout: 30_000 }).toBe("waiting");
+      expect((await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds).toBe(0);
+      await page.getByRole("button", { name: "Add game", exact: true }).click();
+      await expect(page.getByRole("textbox", { name: "Search games", exact: true })).toBeFocused();
       await page.getByRole("button", { name: "Add game", exact: true }).click();
       console.log("Auto waiting state confirmed");
-      await expect.poll(async () => (await page.evaluate(() => window.attaClip.games())).some((game) => game.name === title)).toBe(true);
-      const candidate = (await page.evaluate(() => window.attaClip.games())).find((game) => game.name === title)!;
-      await page.getByRole("combobox", { name: "Running application" }).selectOption(candidate.id);
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.games())).some((game) => game.name === title)).toBe(true);
+      const candidate = (await page.evaluate(() => window.acroClip.games())).find((game) => game.name === title)!;
+      await selectOption(page, "Running application", candidate.id);
       await page.getByRole("button", { name: "Add selected game", exact: true }).click();
+      await page.locator(".rail").getByRole("button", { name: "Recording", exact: true }).click();
       console.log("Local fixture game added");
       await writeFile(action, "focus");
-      await expect.poll(async () => (await page.evaluate(() => window.attaClip.state())).recorder.sourceId, { timeout: 20_000 }).toBe(candidate.id);
-      await expect.poll(async () => (await page.evaluate(() => window.attaClip.state())).recorder.availableSeconds, { timeout: 15_000 }).toBeGreaterThan(3);
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.sourceId, { timeout: 20_000 }).toBe(candidate.id);
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds, { timeout: 15_000 }).toBeGreaterThan(3);
+      await expect(page.locator(".detected-game")).toContainText(title);
+      await expect(page.locator(".detected-game img")).toHaveCount(1);
+      await page.screenshot({ path: "test-results/auto-detected-game.png" });
       await desktop.evaluate(({ BrowserWindow }) => {
-         const window = BrowserWindow.getAllWindows().find((item) => item.getTitle() === "AttaClip");
+         const window = BrowserWindow.getAllWindows().find((item) => item.getTitle() === "AcroClip");
          window?.show();
          window?.focus();
       });
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await page.waitForTimeout(1500);
-      expect((await page.evaluate(() => window.attaClip.state())).recorder.sourceId).toBe(candidate.id);
+      expect((await page.evaluate(() => window.acroClip.state())).recorder.sourceId).toBe(candidate.id);
       await desktop.evaluate(({ BrowserWindow }) => {
          BrowserWindow.getAllWindows()
-            .find((item) => item.getTitle() === "AttaClip")
+            .find((item) => item.getTitle() === "AcroClip")
             ?.hide();
       });
       const second = spawn(resolve("node_modules/electron/dist/electron.exe"), [resolve("."), "--clip"], {
          windowsHide: true,
          stdio: "ignore",
-         env: { ...process.env, ATTACLIP_TEST: "1", ATTACLIP_PROFILE: profile, ATTACLIP_COLLECTION: collection },
+         env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile, ACROCLIP_COLLECTION: collection },
       });
       await new Promise<void>((resolve, reject) => {
          second.on("error", reject);
          second.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`Clip command exited ${code}`))));
       });
-      await expect.poll(async () => (await page.evaluate(() => window.attaClip.state())).clips.length, { timeout: 20_000 }).toBe(1);
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length, { timeout: 20_000 }).toBe(1);
       expect(
          await desktop.evaluate(({ BrowserWindow }) =>
             BrowserWindow.getAllWindows()
-               .find((item) => item.getTitle() === "AttaClip")
+               .find((item) => item.getTitle() === "AcroClip")
                ?.isVisible()
          )
       ).toBe(false);
-      const clip = (await page.evaluate(() => window.attaClip.state())).clips[0]!;
+      const clip = (await page.evaluate(() => window.acroClip.state())).clips[0]!;
       expect(clip.source).toBe(title);
       expect(clip.duration).toBeGreaterThan(3);
       const decoded = spawnSync(resolve("resources/media/ffmpeg.exe"), ["-v", "error", "-i", clip.path, "-f", "null", "-"], {
@@ -136,15 +157,38 @@ $form.Dispose()
       const blue = Number(/lavfi.signalstats.UAVG=([\d.]+)/.exec(image.stdout)?.[1]);
       expect(luma).toBeGreaterThan(50);
       expect(blue).toBeGreaterThan(160);
+      await desktop.evaluate(({ BrowserWindow }) => {
+         const window = BrowserWindow.getAllWindows().find((item) => item.getTitle() === "AcroClip");
+         window?.restore();
+         window?.show();
+      });
+      await page.locator(".rail").getByRole("button", { name: "Library", exact: true }).click();
+      await page.getByRole("button", { name: `Open ${clip.name}`, exact: true }).click();
+      await expect(page.locator(".viewer-metadata .source-label")).toHaveText(title);
+      const metadata = await page.locator(".viewer-metadata").evaluate((node) => {
+         const source = node.querySelector(".source-label")!.getBoundingClientRect(),
+            time = node.querySelector("time")!.getBoundingClientRect();
+         return Math.abs(source.top - time.top);
+      });
+      expect(metadata).toBeLessThan(1);
+      await page.screenshot({ path: "test-results/viewer-known-source.png" });
       await writeFile(action, "exit");
-      await expect.poll(async () => (await page.evaluate(() => window.attaClip.state())).recorder.state, { timeout: 20_000 }).toBe("waiting");
-      await expect.poll(async () => (await page.evaluate(() => window.attaClip.state())).recorder.sourceKind).toBe("waiting");
-      await page.evaluate(() => window.attaClip.stopRecording());
-      expect((await page.evaluate(() => window.attaClip.state())).recorder.availableSeconds).toBe(0);
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.state, { timeout: 20_000 }).toBe("waiting");
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.sourceKind).toBe("waiting");
+      await page.evaluate(() => window.acroClip.stopRecording());
+      expect((await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds).toBe(0);
       const saved = JSON.parse(await readFile(join(profile, "preferences.json"), "utf8"));
       expect(saved.customGames).toEqual([{ name: title, executable: candidate.executable }]);
       expect(saved.desktopFallback).toBe(false);
    } finally {
+      console.log(
+         "auto-native.spec.ts final recorder",
+         await desktop
+            .windows()[0]
+            ?.evaluate(() => window.acroClip.state())
+            .then((state) => state.recorder)
+            .catch(() => undefined)
+      );
       await desktop.evaluate(({ app }) => app.exit(0)).catch(() => undefined);
       await desktop.close().catch(() => undefined);
       if (fixture.exitCode === null) fixture.kill();

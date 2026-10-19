@@ -3,7 +3,7 @@
 #include <iostream>
 #include <stdexcept>
 using namespace std::chrono_literals;
-using namespace attaclip::windows;
+using namespace acroclip::windows;
 static void require(bool condition) { if (!condition) throw std::runtime_error("Audio health assertion failed"); }
 int main() {
   const auto start = InputDelivery::Clock::time_point{};

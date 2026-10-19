@@ -1,0 +1,246 @@
+:root {
+   --scrollbar-size: 6px;
+   --workspace-padding: 12px;
+   font-family:
+      "Segoe UI Variable Text",
+      "Segoe UI Variable",
+      "Segoe UI",
+      -apple-system,
+      BlinkMacSystemFont,
+      "Noto Sans",
+      "Liberation Sans",
+      sans-serif;
+   color: var(--text);
+   background: var(--base);
+   font-size: 14px;
+   font-synthesis: none;
+   line-height: 1.45;
+   --text: #eeeeee;
+   --base: #0d0c0f;
+   --surface: #18171b;
+   --raised: #27252b;
+   --hover: #322e39;
+   --accent: #b197fc;
+   --accent-soft: #b197fc16;
+   --muted: #b0b0b0;
+   --subtle: #929292;
+   --line: #ffffff10;
+   --red: #ef8585;
+   --green: #8dccaa;
+   --ease: cubic-bezier(0.22, 0.8, 0.3, 1);
+   --spring: cubic-bezier(0.22, 1.7, 0.36, 1);
+}
+
+* {
+   box-sizing: border-box;
+}
+
+body {
+   margin: 0;
+   overflow: hidden;
+}
+
+button,
+input,
+select {
+   font: inherit;
+}
+
+button {
+   color: inherit;
+   cursor: pointer;
+   border: 0;
+   background: transparent;
+}
+
+button,
+a,
+input,
+select {
+   -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+   cursor: default;
+   opacity: 0.38;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+video:focus-visible {
+   outline: 2px solid var(--accent);
+   outline-offset: 3px;
+}
+
+button {
+   transition:
+      background 150ms var(--ease),
+      color 150ms var(--ease),
+      opacity 150ms var(--ease),
+      transform 150ms var(--ease);
+}
+
+input,
+select {
+   color: inherit;
+   border: 1px solid #ffffff0c;
+   background: var(--raised);
+   border-radius: 9px;
+   padding: 10px 12px;
+   outline: none;
+}
+
+input:focus,
+select:focus {
+   border-color: #b197fc55;
+}
+
+input[type="number"] {
+   width: 90px;
+}
+
+input[type="range"] {
+   accent-color: var(--accent);
+   cursor: pointer;
+   border: 0;
+   padding: 0;
+}
+
+input[type="checkbox"] {
+   accent-color: var(--accent);
+}
+
+h1,
+h2,
+h3,
+p {
+   margin: 0;
+}
+
+h1 {
+   font-size: 24px;
+   font-weight: 600;
+   letter-spacing: -0.3px;
+}
+
+h2 {
+   font-size: 14px;
+   font-weight: 600;
+   letter-spacing: 0;
+}
+
+h3 {
+   font-size: 13px;
+   font-weight: 600;
+}
+
+p {
+   line-height: 1.6;
+}
+
+svg {
+   flex-shrink: 0;
+}
+
+[hidden] {
+   display: none !important;
+}
+
+.muted,
+.section-description {
+   color: var(--muted);
+}
+
+.tabular {
+   font-variant-numeric: tabular-nums;
+}
+
+.success-text {
+   color: var(--green);
+}
+
+.error-text,
+.danger {
+   color: var(--red);
+}
+
+.spin {
+   animation: rotate 1.2s linear infinite;
+}
+
+@keyframes rotate {
+   to {
+      transform: rotate(360deg);
+   }
+}
+
+progress {
+   width: 100%;
+   height: 4px;
+   border: 0;
+   border-radius: 3px;
+   overflow: hidden;
+   background: #ffffff08;
+   accent-color: var(--accent);
+   margin: 12px 0;
+}
+
+progress::-webkit-progress-bar {
+   background: #ffffff08;
+}
+
+progress::-webkit-progress-value {
+   background: var(--accent);
+}
+
+/* Reserve the track at each scrolling pane's edge, independently of its content padding. */
+:is(.settings-scroll, .settings-nav, .sidebar-scroll, .library-scroll, .viewer-sidebar-scroll, .mixer-scroll, .source-panel, .dialog-panel, .onboarding-body) {
+   scrollbar-gutter: stable;
+   min-height: 0;
+   scroll-padding-block: 8px;
+}
+
+::-webkit-scrollbar {
+   width: var(--scrollbar-size);
+   height: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-corner {
+   background: transparent;
+}
+
+::-webkit-scrollbar-track {
+   background: transparent;
+   margin-block: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+   background: #ffffff26;
+   border-radius: 8px;
+   min-height: 32px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+   background-color: #ffffff45;
+}
+
+::-webkit-scrollbar-thumb:active {
+   background-color: #ffffff65;
+}
+
+@media (prefers-reduced-motion: reduce) {
+   *,
+   *:before,
+   *:after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+   .spin {
+      animation: none !important;
+   }
+}

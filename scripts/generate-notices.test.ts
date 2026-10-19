@@ -6,7 +6,7 @@ import { dependencyNotices } from "./generate-notices";
 
 describe("production dependency notices", () => {
    it("follows installed dependencies and peers, retains exact text, and omits development packages", async () => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "attaclip-notices-"));
+      const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-notices-"));
       const add = async (name: string, data: object) => {
          const folder = path.join(root, "node_modules", name);
          await mkdir(folder, { recursive: true });
@@ -27,7 +27,7 @@ describe("production dependency notices", () => {
       }
    });
    it("refuses to replace a missing license with only the package license identifier", async () => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "attaclip-notices-"));
+      const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-notices-"));
       try {
          await mkdir(path.join(root, "node_modules", "app"), { recursive: true });
          await writeFile(path.join(root, "package.json"), JSON.stringify({ dependencies: { app: "1" } }));

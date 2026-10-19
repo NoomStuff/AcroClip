@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(attaclip_wasapi_health LANGUAGES CXX)
+project(acroclip_wasapi_health LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(OBS_SOURCE_DIR "" CACHE PATH "Exact pinned OBS source")

@@ -22,11 +22,11 @@ interface Event {
 }
 const events: Event[] = [];
 const logs: string[] = [];
-const child = spawn(path.join(runtime, "attaclip-recorder.exe"), [runtime], {
+const child = spawn(path.join(runtime, "acroclip-recorder.exe"), [runtime], {
    cwd: runtime,
    stdio: "pipe",
    windowsHide: true,
-   env: { ...process.env, ATTACLIP_NATIVE_TEST_WRITER_GATE: gate },
+   env: { ...process.env, ACROCLIP_NATIVE_TEST_WRITER_GATE: gate },
 });
 child.stderr.on("data", (value: Buffer) => logs.push(value.toString()));
 createInterface({ input: child.stdout }).on("line", (value) => events.push(JSON.parse(value) as Event));

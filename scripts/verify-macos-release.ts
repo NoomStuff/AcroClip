@@ -99,13 +99,13 @@ export async function verifyMacRelease(project: string, directory: string, sourc
    const archivedKit = await checkMacSourceKit(extractedSource);
    if (JSON.stringify(archivedKit) !== JSON.stringify(kit)) throw new Error("Archived source manifest differs from the reviewed packet.");
    const freshArchive = path.join(scratch, "git-source.tar");
-   execFileSync("git", ["archive", "--format=tar", "--prefix=attaclip/", "-o", freshArchive, kit.appCommit], { cwd: project });
+   execFileSync("git", ["archive", "--format=tar", "--prefix=acroclip/", "-o", freshArchive, kit.appCommit], { cwd: project });
    if ((await hashFile(freshArchive)) !== kit.applicationSource.sha256) throw new Error("Archived application differs from the immutable Git commit.");
    // The tar is now byte-identical to Git's own archive, before extracting it.
    const rebuilt = path.join(scratch, "rebuild");
    await mkdir(rebuilt);
    execFileSync("tar", ["-xf", freshArchive, "-C", rebuilt]);
-   const appProject = path.join(rebuilt, "attaclip");
+   const appProject = path.join(rebuilt, "acroclip");
    execFileSync("bun", ["install", "--frozen-lockfile"], { cwd: appProject, stdio: "inherit", timeout: 300000 });
    execFileSync("bun", ["run", "build"], { cwd: appProject, stdio: "inherit", timeout: 300000 });
    compareMacTrees(kit.compiled, await macTree(path.join(appProject, "out")), "Independent application rebuild");
@@ -122,9 +122,9 @@ export async function verifyMacRelease(project: string, directory: string, sourc
    });
    const actualFolder = path.join(scratch, "actual");
    execFileSync("python3", [path.join(project, "scripts/extract-macos-package.py"), "--archive", archive, "--destination", actualFolder], { stdio: "inherit" });
-   const actualApp = path.join(actualFolder, "AttaClip.app");
+   const actualApp = path.join(actualFolder, "AcroClip.app");
    await verifyMacPayload(project, actualApp, kit.staged, kit.electronModule);
-   const independentApp = path.join(appProject, "release/mac-arm64/AttaClip.app");
+   const independentApp = path.join(appProject, "release/mac-arm64/AcroClip.app");
    const expected = await macTree(independentApp);
    const actual = await macTree(actualApp);
    const diagnostics = path.join(project, ".cache/macos-source");

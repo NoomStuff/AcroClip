@@ -25,15 +25,15 @@ function update(status: RecorderState) {
 describe("actual tray status", () => {
    it("uses the waiting reason and a neutral fallback for unknown reasons", () => {
       expect(update({ ...stoppedRecorder, state: "waiting", message: "Microphone: selected device is unavailable" })).toBe(
-         "AttaClip · Microphone: selected device is unavailable"
+         "AcroClip · Microphone: selected device is unavailable"
       );
-      expect(update({ ...stoppedRecorder, state: "waiting", message: "" })).toBe("AttaClip · Waiting for capture");
+      expect(update({ ...stoppedRecorder, state: "waiting", message: "" })).toBe("AcroClip · Waiting for capture");
    });
    it("keeps persistent failure visible and ordinary idle/capture wording intact", () => {
       expect(update({ ...stoppedRecorder, state: "error", message: "Recording stopped unexpectedly with exit code 17" })).toBe(
-         "AttaClip · Recording stopped unexpectedly with exit code 17"
+         "AcroClip · Recording stopped unexpectedly with exit code 17"
       );
-      expect(update({ ...stoppedRecorder, state: "recording" })).toBe("AttaClip · Recording");
-      expect(update(stoppedRecorder)).toBe("AttaClip");
+      expect(update({ ...stoppedRecorder, state: "recording" })).toBe("AcroClip · Recording");
+      expect(update(stoppedRecorder)).toBe("AcroClip");
    });
 });

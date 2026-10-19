@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Check, Clapperboard, Film, Folder, LoaderCircle, Minus, Monitor, Settings2, Square, Video, X } from "lucide-react";
 import type { AppState, Clip } from "../../shared/types";
-import { api, describeError, Dialog, formatTime, IconButton } from "./ui";
-import type { DialogRequest, Run } from "./ui";
+import { SelectionIndicator, TabMarker, api, describeError, Dialog, formatTime, IconButton, reportFeedback } from "./ui";
+import type { DialogRequest, RendererFeedback, Run } from "./ui";
+import { shortcutRegistry, bindingFor, eventBinding, normalizeBinding } from "../../shared/shortcuts";
 import { Recording } from "./Recording";
 import { Library } from "./Library";
 import { Viewer } from "./Viewer";
 import { Settings } from "./Settings";
+import type { SettingsTarget } from "./Settings";
+import { AppUpdate } from "./AppUpdate";
 import { Onboarding } from "./Onboarding";
 
 type Page = "recording" | "library" | "viewer" | "settings";
@@ -14,6 +17,11 @@ export type Ask = (request: Omit<DialogRequest, "resolve">) => Promise<string | 
 export function App() {
    const [state, setState] = useState<AppState | null>(null);
    const [page, setPage] = useState<Page>("recording");
+   const [settingsTarget, setSettingsTarget] = useState<SettingsTarget | null>(null);
+   const openSettings = (section: SettingsTarget["section"]) => {
+      setSettingsTarget((current) => ({ section, request: (current?.request ?? 0) + 1 }));
+      setPage("settings");
+   };
    const [windowVisible, setWindowVisible] = useState(!document.hidden);
    useEffect(() => {
       const update = () => setWindowVisible(!document.hidden);
@@ -21,6 +29,7 @@ export function App() {
       return () => document.removeEventListener("visibilitychange", update);
    }, []);
    const [selected, setSelected] = useState<string | null>(null);
+   const [audioStatus, setAudioStatus] = useState("");
    const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
    const [dialog, setDialog] = useState<DialogRequest | null>(null);
    const [clipPulse, setClipPulse] = useState(0);
@@ -36,13 +45,16 @@ export function App() {
    }, []);
    const ask: Ask = useCallback((request) => new Promise((resolve) => setDialog({ ...request, resolve })), []);
    useEffect(() => {
+      let receivedState = false;
       void run(async () => {
          const loaded = await api.state();
+         if (receivedState) return;
          setState(loaded);
          setWindowVisible(loaded.windowVisible);
       });
-      return api.onEvent((event) => {
+      const unsubscribe = api.onEvent((event) => {
          if (event.state) {
+            receivedState = true;
             setState(event.state);
             setWindowVisible(event.state.windowVisible);
          }
@@ -50,6 +62,16 @@ export function App() {
          if (event.type === "clip-action") setClipPulse((value) => value + 1);
          if (event.message) setNotice({ message: event.message, error: event.error ?? false });
       });
+      const feedback = (event: Event) => {
+         const value = (event as CustomEvent<RendererFeedback>).detail;
+         if (value.kind === "audio-status") setAudioStatus(value.message);
+         else setNotice({ message: value.message, error: value.error });
+      };
+      window.addEventListener("acroclip-feedback", feedback);
+      return () => {
+         unsubscribe();
+         window.removeEventListener("acroclip-feedback", feedback);
+      };
    }, [run]);
    useEffect(() => {
       if (!notice || notice.error) return;
@@ -63,6 +85,34 @@ export function App() {
       const timer = window.setInterval(update, 1000);
       return () => window.clearInterval(timer);
    }, [state?.recorder.startedAt]);
+   useEffect(() => {
+      if (!state) return;
+      const key = (event: KeyboardEvent) => {
+         const target = event.target instanceof HTMLElement ? event.target : null;
+         if (
+            event.defaultPrevented ||
+            event.repeat ||
+            target?.closest("input,textarea,select,[contenteditable=true],[role=textbox],[role=slider],[role=combobox],.shortcut-input.editing") ||
+            document.querySelector('[role="dialog"]')
+         )
+            return;
+         const mac = state.platform === "darwin",
+            pressed = normalizeBinding(eventBinding(event), mac);
+         const action = shortcutRegistry.find(
+            (item) =>
+               item.scope === "local" &&
+               (item.page === "all" || item.page === page) &&
+               bindingFor(state.preferences, item.id) &&
+               normalizeBinding(bindingFor(state.preferences, item.id), mac) === pressed
+         );
+         if (!action || (target?.closest("button") && !event.ctrlKey && !event.metaKey && !event.altKey)) return;
+         event.preventDefault();
+         if (["recording", "library", "viewer", "settings"].includes(action.id)) setPage(action.id as Page);
+         else window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: action.id }));
+      };
+      window.addEventListener("keydown", key);
+      return () => window.removeEventListener("keydown", key);
+   }, [state, page]);
    const clip = state?.clips.find((item) => item.id === selected) ?? (selected === null ? state?.clips[0] : undefined);
    useEffect(() => {
       // An empty viewer may receive its first clip after opening. Retain that
@@ -83,13 +133,14 @@ export function App() {
          <header className="titlebar">
             <div className="wordmark">
                <Clapperboard size={17} />
-               <span>AttaClip</span>
+               <span>AcroClip</span>
             </div>
-            <div className="titlebar-drag" />
             <span className="window-page">
                {page === "viewer" ? "Clip viewer" : page[0]?.toUpperCase()}
                {page === "viewer" ? "" : page.slice(1)}
             </span>
+            <div className="titlebar-drag" />
+            {state && <AppUpdate state={state.update} run={run} />}
             {state?.platform !== "darwin" && (
                <div className="window-controls">
                   <IconButton label="Minimize" onClick={() => api.window("minimize")}>
@@ -104,7 +155,8 @@ export function App() {
                </div>
             )}
          </header>
-         <nav className="rail" aria-label="Main navigation">
+         <nav className="moving-selection rail" aria-label="Main navigation">
+            <SelectionIndicator value={page} />
             <div className="rail-main">
                {pages.map((item) => (
                   <button
@@ -118,6 +170,7 @@ export function App() {
                         setPage(item.id);
                      }}
                   >
+                     {page === item.id && <TabMarker />}
                      <item.icon size={23} strokeWidth={1.65} />
                      <span>{item.title}</span>
                   </button>
@@ -130,6 +183,7 @@ export function App() {
                className={`rail-button ${page === "settings" ? "selected" : ""}`}
                onClick={() => setPage("settings")}
             >
+               {page === "settings" && <TabMarker />}
                <Settings2 size={23} strokeWidth={1.65} />
                <span>Settings</span>
             </button>
@@ -138,16 +192,29 @@ export function App() {
             {state ? (
                <>
                   <section className="page" hidden={page !== "recording"}>
-                     <Recording state={state} visible={page === "recording" && windowVisible} run={run} pulse={clipPulse} />
+                     <Recording
+                        state={state}
+                        visible={page === "recording" && windowVisible && state.preferences.setupComplete}
+                        run={run}
+                        pulse={clipPulse}
+                        openGames={() => openSettings("games")}
+                     />
                   </section>
                   <section className="page" hidden={page !== "library"}>
-                     <Library state={state} run={run} ask={ask} openClip={openClip} openSettings={() => setPage("settings")} />
+                     <Library
+                        state={state}
+                        visible={page === "library" && windowVisible}
+                        run={run}
+                        ask={ask}
+                        openClip={openClip}
+                        openSettings={() => openSettings("collection")}
+                     />
                   </section>
                   <section className="page" hidden={page !== "viewer"}>
                      <Viewer state={state} clip={clip} visible={page === "viewer" && windowVisible} run={run} openLibrary={() => setPage("library")} />
                   </section>
                   <section className="page" hidden={page !== "settings"}>
-                     <Settings state={state} run={run} ask={ask} />
+                     <Settings state={state} run={run} ask={ask} target={settingsTarget} />
                   </section>
                </>
             ) : (
@@ -157,7 +224,7 @@ export function App() {
                </div>
             )}
          </main>
-         <RecordingStatus state={state} elapsed={elapsed} />
+         <RecordingStatus state={state} elapsed={elapsed} audioMessage={page === "recording" ? audioStatus : ""} />
          {notice && (
             <div className={`toast ${notice.error ? "error" : ""}`} role={notice.error ? "alert" : "status"}>
                {notice.error ? <AlertCircle size={18} /> : <Check size={18} />}
@@ -173,7 +240,7 @@ export function App() {
    );
 }
 
-export function RecordingStatus({ state, elapsed }: { state: AppState | null; elapsed: number }) {
+export function RecordingStatus({ state, elapsed, audioMessage = "" }: { state: AppState | null; elapsed: number; audioMessage?: string }) {
    const recorder = state?.recorder;
    const active = recorder?.state === "recording";
    const status = active
@@ -197,7 +264,9 @@ export function RecordingStatus({ state, elapsed }: { state: AppState | null; el
             ) : (
                <span className={`status-dot ${active ? "recording" : ""}`} />
             )}
-            <span>{status}</span>
+            <span className="status-summary" title={status}>
+               {status}
+            </span>
             {active && (
                <>
                   <span className="status-divider" />
@@ -207,13 +276,24 @@ export function RecordingStatus({ state, elapsed }: { state: AppState | null; el
             )}
          </div>
          <div className="status-right">
+            {audioMessage && (
+               <button
+                  className="status-audio"
+                  title={audioMessage}
+                  aria-label={`Audio status: ${audioMessage}`}
+                  onClick={() => reportFeedback({ kind: "notice", message: audioMessage, error: true })}
+               >
+                  <AlertCircle size={13} />
+                  Audio unavailable
+               </button>
+            )}
             {state?.storageWarning && (
                <span className="storage-warning" role="status" title={state.storageWarning}>
                   <AlertCircle size={13} />
                   {state.storageWarning}
                </span>
             )}
-            {recorder && !active && recorder.message && (
+            {recorder && !active && recorder.message && recorder.message !== status && (
                <span className="status-message" title={recorder.message}>
                   {recorder.message}
                </span>

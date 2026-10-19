@@ -7,7 +7,7 @@ import path from "node:path";
 const version = "32.2.0";
 const packageVersion = "32.2.0-0obsproject1~noble";
 const root = process.cwd();
-const runtime = path.resolve(process.env["ATTACLIP_RECORDER_STAGE"] ?? "resources/recorder");
+const runtime = path.resolve(process.env["ACROCLIP_RECORDER_STAGE"] ?? "resources/recorder");
 if (runtime !== path.join(root, "resources", "recorder") && !runtime.startsWith(path.join(root, ".cache") + path.sep))
    throw new Error("Linux recorder staging must remain inside resources/recorder or the workspace .cache directory");
 const run = (command: string, args: string[]): string => {
@@ -27,11 +27,11 @@ run("cmake", ["--build", output, "--clean-first", "-j2"]);
 await rm(runtime, { recursive: true, force: true });
 await mkdir(path.join(runtime, "lib"), { recursive: true });
 await mkdir(path.join(runtime, "obs-plugins"), { recursive: true });
-await copyFile(path.join(output, "attaclip-recorder"), path.join(runtime, "attaclip-recorder"));
+await copyFile(path.join(output, "acroclip-recorder"), path.join(runtime, "acroclip-recorder"));
 await copyFile("/usr/bin/obs-ffmpeg-mux", path.join(runtime, "obs-ffmpeg-mux"));
 const libraryRoot = "/usr/lib/x86_64-linux-gnu";
 const modules = ["linux-capture", "linux-pulseaudio", "linux-pipewire", "obs-ffmpeg", "obs-nvenc", "obs-x264"];
-const initialFiles = [path.join(runtime, "attaclip-recorder"), "/usr/bin/obs-ffmpeg-mux", path.join(libraryRoot, "libobs-opengl.so")];
+const initialFiles = [path.join(runtime, "acroclip-recorder"), "/usr/bin/obs-ffmpeg-mux", path.join(libraryRoot, "libobs-opengl.so")];
 await copyFile(path.join(libraryRoot, "libobs-opengl.so"), path.join(runtime, "lib", "libobs-opengl.so"));
 for (const name of modules) {
    const module = name === "linux-pipewire" ? waylandModule : path.join(libraryRoot, "obs-plugins", `${name}.so`);
@@ -101,11 +101,11 @@ await writeFile(
          modules,
          build: "scripts/build-native-linux.ts",
          recorder: {
-            path: "attaclip-recorder",
+            path: "acroclip-recorder",
             sha256: createHash("sha256")
-               .update(await readFile(path.join(runtime, "attaclip-recorder")))
+               .update(await readFile(path.join(runtime, "acroclip-recorder")))
                .digest("hex"),
-            size: (await stat(path.join(runtime, "attaclip-recorder"))).size,
+            size: (await stat(path.join(runtime, "acroclip-recorder"))).size,
          },
          libraries: recorded,
          sourceHashes: Object.fromEntries(

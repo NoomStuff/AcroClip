@@ -1,8 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-   AppWindow,
+   AlertCircle,
    Check,
-   ChevronDown,
    Clapperboard,
    Folder,
    FolderOpen,
@@ -17,27 +16,75 @@ import {
    Trash2,
    X,
 } from "lucide-react";
-import type { AppState, Clip } from "../../shared/types";
+import type { AppState, Category, Clip } from "../../shared/types";
 import type { Ask } from "./App";
-import { age, api, Button, Empty, folderName, formatSize, formatTime, IconButton, Menu, MenuItem } from "./ui";
+import {
+   SelectionIndicator,
+   ContextHeader,
+   fileDragProps,
+   age,
+   api,
+   Button,
+   Empty,
+   folderName,
+   formatSize,
+   formatTime,
+   IconButton,
+   Menu,
+   MenuItem,
+   Select,
+} from "./ui";
 import type { Run } from "./ui";
+import { ApplicationIcon } from "./ApplicationIcon";
+import { FolderTree } from "./FolderTree";
+import { categoryColors, categoryStyle } from "./category-color";
+import { CategoryEditor, CategoryMark } from "./CategoryEditor";
+import { useGridMotion } from "./useGridMotion";
+import { PaneDivider, usePaneSize } from "./layout";
 
 export function Library({
    state,
+   visible = true,
    run,
    ask,
    openClip,
    openSettings,
 }: {
    state: AppState;
+   visible?: boolean;
    run: Run;
    ask: Ask;
    openClip: (clip: Clip) => void;
    openSettings: () => void;
 }) {
+   const layout = useRef<HTMLDivElement>(null);
+   const scrollArea = useRef<HTMLDivElement>(null);
+   const [placeholderCount, setPlaceholderCount] = useState(8);
+   useLayoutEffect(() => {
+      const node = scrollArea.current;
+      if (!node || !visible) return;
+      const observer = new ResizeObserver(([entry]) => {
+         if (!entry || entry.contentRect.width < 1) return;
+         const { width, height } = entry.contentRect;
+         const columns = Math.max(1, Math.floor((width + 18) / 248));
+         const cardHeight = Math.max(205, (((width - (columns - 1) * 18) / columns) * 9) / 16 + 68);
+         setPlaceholderCount(Math.min(24, columns * Math.max(1, Math.ceil(height / (cardHeight + 18)))));
+      });
+      observer.observe(node);
+      return () => observer.disconnect();
+   }, [visible]);
+   const sidebar = usePaneSize(layout, { key: "library.sidebar", initial: 245, min: 200, max: 380, reserve: 440, axis: "x" });
+   const pending = state.collectionStatus?.phase === "loading" || state.collectionStatus?.phase === "refreshing";
+   const unavailable = state.collectionStatus?.phase === "error";
+   const initial = state.collectionStatus?.phase === "loading" && !state.clips.length;
+   const collectionRoot = state.collectionStatus?.root || state.preferences.collection;
    const [query, setQuery] = useState("");
    const [filter, setFilter] = useState("all");
    const [order, setOrder] = useState("newest");
+   useEffect(() => {
+      setFilter("all");
+      setQuery("");
+   }, [collectionRoot]);
    const [categoryClip, setCategoryClip] = useState<Clip | null>(null);
    const categoryEdit = useRef<{ clip: Clip; persisted: string[]; pending: Promise<void> } | null>(null);
    const openCategories = (clip: Clip) => {
@@ -48,10 +95,62 @@ export function Library({
       categoryEdit.current = null;
       setCategoryClip(null);
    };
-   const sources = useMemo(() => [...new Set(state.clips.map((item) => item.source))].filter(Boolean).sort(), [state.clips]);
-   const folders = useMemo(
-      () => [...new Set(state.clips.map((item) => item.relativePath.replaceAll("\\", "/").split("/").slice(0, -1).join("/")))].filter(Boolean).sort(),
-      [state.clips]
+   const sources = useMemo(() => {
+      const apps = new Map<string, { id: string; name: string; icon?: string | undefined }>();
+      for (const clip of state.clips)
+         if (clip.source) {
+            const id = clip.applicationId ?? `label:${clip.source}`;
+            if (!apps.has(id)) apps.set(id, { id, name: clip.source, icon: clip.applicationId ? state.applicationIcons?.[clip.applicationId] : undefined });
+         }
+      return [...apps.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+   }, [state.clips, state.applicationIcons]);
+   const folderPath = filter.startsWith("folder:") ? filter.slice(7) : null;
+   const folders = useMemo(() => {
+      const found = new Set(state.folders ?? []);
+      for (const clip of state.clips) {
+         const parts = clip.relativePath.replaceAll("\\", "/").split("/");
+         for (let i = 1; i < parts.length; i++) found.add(parts.slice(0, i).join("/"));
+      }
+      return [...found].sort((a, b) => a.localeCompare(b));
+   }, [state.folders, state.clips]);
+   const folderStats = useMemo(() => {
+      const result = new Map<string, { newest: number; oldest: number; matches: boolean }>();
+      for (const clip of state.clips) {
+         const parts = clip.relativePath.replaceAll("\\", "/").split("/");
+         const matches = !query || `${clip.name} ${clip.source}`.toLowerCase().includes(query.toLowerCase());
+         for (let i = 1; i < parts.length; i++) {
+            const path = parts.slice(0, i).join("/"),
+               previous = result.get(path);
+            result.set(path, {
+               newest: Math.max(previous?.newest ?? 0, clip.createdAt),
+               oldest: Math.min(previous?.oldest ?? Infinity, clip.createdAt),
+               matches: (previous?.matches ?? false) || matches,
+            });
+         }
+      }
+      return result;
+   }, [state.clips, query]);
+   const childFolders = useMemo(
+      () =>
+         folderPath === null
+            ? []
+            : folders
+                 .filter((path) => {
+                    const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+                    return (
+                       parent === folderPath &&
+                       (!query || path.split("/").at(-1)!.toLowerCase().includes(query.toLowerCase()) || folderStats.get(path)?.matches)
+                    );
+                 })
+                 .sort((a, b) => {
+                    if (order === "name") return a.localeCompare(b);
+                    const first = folderStats.get(a),
+                       second = folderStats.get(b);
+                    return (
+                       (order === "oldest" ? (first?.oldest ?? 0) - (second?.oldest ?? 0) : (second?.newest ?? 0) - (first?.newest ?? 0)) || a.localeCompare(b)
+                    );
+                 }),
+      [folderPath, folders, query, folderStats, order]
    );
    const clips = useMemo(
       () =>
@@ -61,28 +160,50 @@ export function Library({
                   (!query || `${item.name} ${item.source}`.toLowerCase().includes(query.toLowerCase())) &&
                   (filter === "all" ||
                      (filter.startsWith("category:") && item.categories.includes(filter.slice(9))) ||
-                     (filter.startsWith("source:") && item.source === filter.slice(7)) ||
-                     (filter.startsWith("folder:") && item.relativePath.replaceAll("\\", "/").startsWith(`${filter.slice(7)}/`)))
+                     (filter.startsWith("source:") && (item.applicationId ?? `label:${item.source}`) === filter.slice(7)) ||
+                     (folderPath !== null && item.relativePath.replaceAll("\\", "/").split("/").slice(0, -1).join("/") === folderPath))
             )
             .sort((a, b) => (order === "name" ? a.name.localeCompare(b.name) : order === "oldest" ? a.createdAt - b.createdAt : b.createdAt - a.createdAt)),
-      [state.clips, query, filter, order]
+      [state.clips, query, filter, folderPath, order]
    );
    const selectedCategory = state.categories.find((item) => `category:${item.id}` === filter);
-   const heading = filter === "all" ? "All clips" : (selectedCategory?.name ?? filter.slice(filter.indexOf(":") + 1));
-   const createCategory = async () => {
-      const name = await ask({
-         title: "New category",
-         detail: "Group clips without moving their files. A clip can belong to several categories.",
-         confirm: "Create",
-         initial: "",
-      });
-      if (typeof name === "string" && name) await run(() => api.category("create", { name, color: "#b197fc" }));
-   };
+   const discovering = state.collectionStatus?.phase === "loading";
+   const discovery = state.collectionStatus?.discovery;
+   const discoveredCount =
+      query || (filter !== "all" && folderPath === null)
+         ? undefined
+         : folderPath === null
+           ? discovery?.videos
+           : (discovery?.byFolder[folderPath] ?? (discovery?.complete ? 0 : undefined));
+   const slots = discovery && discoveredCount !== undefined && (discovery.complete || discoveredCount > 0) ? discoveredCount : placeholderCount;
+   const remainingSlots = discovering && !query && discoveredCount !== undefined ? Math.max(0, discoveredCount - clips.length) : 0;
+   const showPlaceholders = discovering && !clips.length && !childFolders.length && !query;
+   const grid = useRef<HTMLDivElement>(null);
+   useGridMotion(grid, JSON.stringify([collectionRoot, childFolders, clips.map((clip) => clip.id)]), visible);
+   const heading =
+      filter === "all"
+         ? "All clips"
+         : folderPath !== null
+           ? folderPath.split("/").at(-1) || folderName(collectionRoot)
+           : (selectedCategory?.name ?? sources.find((source) => `source:${source.id}` === filter)?.name ?? filter.slice(filter.indexOf(":") + 1));
+   const [editingCategory, setEditingCategory] = useState<Category | "new" | null>(null);
+   const createCategory = () => setEditingCategory("new");
+   useEffect(() => {
+      const command = (event: Event) => {
+         const id = (event as CustomEvent<string>).detail;
+         if (id === "search") layout.current?.querySelector<HTMLInputElement>('input[aria-label="Search clips"]')?.focus();
+         else if (id === "refresh") void run(() => api.refresh());
+         else if (id === "newCategory") setEditingCategory("new");
+         else if (id === "openClip" && clips[0]) openClip(clips[0]);
+      };
+      window.addEventListener("acroclip-shortcut", command);
+      return () => window.removeEventListener("acroclip-shortcut", command);
+   }, [clips, openClip, run]);
    const removeCategory = async (id: string, name: string) => {
       if (
          await ask({
             title: `Delete ${name}?`,
-            detail: "Only the category is removed. Your clips and shareables stay where they are.",
+            detail: "Deletes the category without deleting its clips or shareables.",
             confirm: "Delete category",
             danger: true,
          })
@@ -91,7 +212,7 @@ export function Library({
       }
    };
    const rename = async (clip: Clip) => {
-      const name = await ask({ title: "Rename clip", detail: "Change the name of this clip in your collection.", confirm: "Rename", initial: clip.name });
+      const name = await ask({ title: "Rename clip", confirm: "Rename", initial: clip.name });
       if (typeof name === "string" && name) await run(() => api.renameClip(clip.id, name));
    };
    const remove = async (clip: Clip) => {
@@ -115,35 +236,40 @@ export function Library({
       });
    };
    return (
-      <div className="library-page">
-         <aside className="library-sidebar">
-            <div className="collection-home">
-               <Folder size={20} />
-               <div>
-                  <span className="collection-label">Collection</span>
-                  <button title={state.preferences.collection} onClick={() => void run(() => api.reveal(state.preferences.collection))}>
-                     {folderName(state.preferences.collection)}
-                  </button>
-               </div>
-               <Menu label="Collection actions" trigger={<MoreHorizontal size={17} />}>
-                  <MenuItem onClick={() => void run(() => api.reveal(state.preferences.collection))}>
-                     <FolderOpen size={15} />
-                     Show in file manager
-                  </MenuItem>
-                  <MenuItem onClick={openSettings}>
-                     <Folder size={15} />
-                     Choose folder in settings
-                  </MenuItem>
-                  <MenuItem onClick={() => void run(() => api.refresh())}>
-                     <Grid2X2 size={15} />
-                     Refresh collection
-                  </MenuItem>
-               </Menu>
-            </div>
-            <div className="sidebar-scroll">
+      <div className="library-page" ref={layout}>
+         <aside
+            className="library-sidebar"
+            style={{ width: sidebar.size, ...(selectedCategory ? { "--selection-background": categoryColors(selectedCategory.color).tint } : {}) }}
+         >
+            <ContextHeader
+               className="collection-home"
+               label="Collection"
+               title={folderName(collectionRoot)}
+               icon={<Folder size={20} />}
+               hint={collectionRoot}
+               onTitleClick={() => setFilter("folder:")}
+               actions={
+                  <Menu label="Collection actions" trigger={<MoreHorizontal size={17} />}>
+                     <MenuItem onClick={() => void run(() => api.reveal(collectionRoot))}>
+                        <FolderOpen size={15} />
+                        Show in file manager
+                     </MenuItem>
+                     <MenuItem onClick={openSettings}>
+                        <Folder size={15} />
+                        Choose folder in settings
+                     </MenuItem>
+                     <MenuItem onClick={() => void run(() => api.refresh())}>
+                        <Grid2X2 size={15} />
+                        Refresh collection
+                     </MenuItem>
+                  </Menu>
+               }
+            />
+            <div className="sidebar-scroll moving-selection">
+               <SelectionIndicator value={filter} />
                <button className={`sidebar-item ${filter === "all" ? "selected" : ""}`} onClick={() => setFilter("all")}>
                   <Grid2X2 size={17} />
-                  All clips<span className="count">{state.clips.length}</span>
+                  All clips<span className="count">{initial ? "" : state.clips.length}</span>
                </button>
                <div className="sidebar-group-title">
                   Categories
@@ -153,12 +279,20 @@ export function Library({
                </div>
                {state.categories.map((item) => (
                   <div className="category-item" key={item.id}>
-                     <button className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`} onClick={() => setFilter(`category:${item.id}`)}>
-                        <Tag size={16} style={{ color: item.color }} />
+                     <button
+                        className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`}
+                        style={categoryStyle(item.color)}
+                        onClick={() => setFilter(`category:${item.id}`)}
+                     >
+                        <CategoryMark category={item} />
                         {item.name}
                         <span className="count">{state.clips.filter((clip) => clip.categories.includes(item.id)).length}</span>
                      </button>
                      <Menu label={`Actions for ${item.name}`} trigger={<MoreHorizontal size={14} />}>
+                        <MenuItem onClick={() => setEditingCategory(item)}>
+                           <Pencil size={14} />
+                           Edit category
+                        </MenuItem>
                         <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
                            <Trash2 size={14} />
                            Delete category
@@ -166,23 +300,17 @@ export function Library({
                      </Menu>
                   </div>
                ))}
-               {!state.categories.length && (
-                  <button className="sidebar-item new-category" onClick={() => void createCategory()}>
-                     <Plus size={16} />
-                     New category
-                  </button>
-               )}
                {sources.length > 0 && (
                   <>
                      <div className="sidebar-group-title">Applications</div>
                      {sources.map((source) => (
                         <button
-                           key={source}
-                           className={`sidebar-item ${filter === `source:${source}` ? "selected" : ""}`}
-                           onClick={() => setFilter(`source:${source}`)}
+                           key={source.id}
+                           className={`sidebar-item ${filter === `source:${source.id}` ? "selected" : ""}`}
+                           onClick={() => setFilter(`source:${source.id}`)}
                         >
-                           <AppWindow size={16} />
-                           {source}
+                           <ApplicationIcon src={source.icon} size={16} />
+                           {source.name}
                         </button>
                      ))}
                   </>
@@ -190,33 +318,46 @@ export function Library({
                {folders.length > 0 && (
                   <>
                      <div className="sidebar-group-title">Folders</div>
-                     {folders.map((folder) => (
-                        <button
-                           key={folder}
-                           className={`sidebar-item ${filter === `folder:${folder}` ? "selected" : ""}`}
-                           onClick={() => setFilter(`folder:${folder}`)}
-                           title={folder}
-                        >
-                           <Folder size={16} />
-                           {folder}
-                        </button>
-                     ))}
+                     <FolderTree paths={folders} selected={folderPath} onSelect={(path) => setFilter(`folder:${path}`)} />
                   </>
                )}
             </div>
             <div className="sidebar-bottom">
-               {state.clips.length} {state.clips.length === 1 ? "clip" : "clips"} · {formatSize(state.clips.reduce((sum, item) => sum + item.size, 0))}
+               {initial ? (
+                  <span aria-hidden="true">&nbsp;</span>
+               ) : (
+                  <>
+                     {state.clips.length} {state.clips.length === 1 ? "clip" : "clips"} · {formatSize(state.clips.reduce((sum, item) => sum + item.size, 0))}
+                  </>
+               )}
             </div>
          </aside>
+         <PaneDivider label="Library sidebar width" pane={sidebar} />
          <div className="library-content">
             <header className="library-heading">
                <div>
                   <h1>{heading}</h1>
                   <p>
-                     {clips.length} {clips.length === 1 ? "moment" : "moments"} saved
+                     {childFolders.length > 0 && `${childFolders.length} ${childFolders.length === 1 ? "folder" : "folders"} · `}
+                     {discovering && discovery && discoveredCount !== undefined ? (
+                        `${discoveredCount} videos found`
+                     ) : initial ? (
+                        <span aria-hidden="true">&nbsp;</span>
+                     ) : (
+                        <>
+                           {clips.length} {clips.length === 1 ? "clip" : "clips"}
+                        </>
+                     )}
                   </p>
                </div>
                <div className="library-tools">
+                  <span className="library-refresh-status">
+                     {unavailable && (
+                        <IconButton label={`Collection refresh failed: ${state.collectionStatus?.error}. Retry`} onClick={() => void run(() => api.refresh())}>
+                           <AlertCircle size={16} />
+                        </IconButton>
+                     )}
+                  </span>
                   <div className="search-input">
                      <Search size={16} />
                      <input aria-label="Search clips" placeholder="Search clips" value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -227,26 +368,70 @@ export function Library({
                      )}
                   </div>
                   <div className="sort-control">
-                     <select value={order} onChange={(event) => setOrder(event.target.value)} aria-label="Sort clips">
+                     <Select value={order} onChange={setOrder} label="Sort clips">
                         <option value="newest">Newest first</option>
                         <option value="oldest">Oldest first</option>
                         <option value="name">Name</option>
-                     </select>
-                     <ChevronDown size={13} />
+                     </Select>
                   </div>
                </div>
             </header>
-            <div className="library-scroll">
-               {clips.length ? (
-                  <div className="clip-grid">
+            <div className="library-scroll" ref={scrollArea} aria-busy={pending}>
+               {folderPath !== null && (
+                  <nav className="folder-breadcrumb" aria-label="Folder path">
+                     <button onClick={() => setFilter("folder:")}>Collection</button>
+                     {folderPath
+                        .split("/")
+                        .filter(Boolean)
+                        .map((part, index, parts) => (
+                           <button
+                              key={index}
+                              aria-current={index === parts.length - 1 ? "page" : undefined}
+                              onClick={() => setFilter(`folder:${parts.slice(0, index + 1).join("/")}`)}
+                           >
+                              <span aria-hidden="true">/</span>
+                              {part}
+                           </button>
+                        ))}
+                  </nav>
+               )}
+               {showPlaceholders ? (
+                  <div className="clip-grid library-skeleton" aria-label="Opening collection">
+                     {Array.from({ length: slots }, (_, key) => (
+                        <div className="clip-placeholder" key={key}>
+                           <div />
+                           <span />
+                        </div>
+                     ))}
+                  </div>
+               ) : clips.length || childFolders.length ? (
+                  <div className="clip-grid" ref={grid}>
+                     {childFolders.map((path) => (
+                        <article className="clip-card folder-card" key={`folder:${path}`} data-layout-key={`folder:${path}`}>
+                           <button className="clip-open" aria-label={`Open folder ${path}`} onClick={() => setFilter(`folder:${path}`)}>
+                              <div className="clip-thumbnail">
+                                 <Folder size={58} />
+                              </div>
+                              <div className="clip-card-info">
+                                 <strong>{path.split("/").at(-1)}</strong>
+                              </div>
+                           </button>
+                        </article>
+                     ))}
                      {clips.map((clip) => {
                         const job = state.jobs.find(
                            (item) => item.clipId === clip.id && item.kind === "shareable" && ["running", "queued"].includes(item.state)
                         );
                         const shareable = clip.shareables.at(-1);
                         return (
-                           <article className="clip-card" key={clip.id}>
-                              <button className="clip-open" onClick={() => openClip(clip)} aria-label={`Open ${clip.name}`}>
+                           <article className="clip-card" key={clip.id} data-layout-key={clip.id}>
+                              <button
+                                 className="clip-open"
+                                 {...fileDragProps(clip.originalMissing ? shareable?.path : clip.path)}
+                                 onClick={() => openClip(clip)}
+                                 aria-label={`Open ${clip.name}`}
+                                 title={clip.availability === "unverified" ? "Checking file availability" : undefined}
+                              >
                                  <div className="clip-thumbnail">
                                     {clip.thumbnail ? (
                                        <img src={clip.thumbnail} alt="" loading="lazy" />
@@ -255,7 +440,7 @@ export function Library({
                                           <Clapperboard size={34} />
                                        </div>
                                     )}
-                                    <span className="duration">{formatTime(clip.duration)}</span>
+                                    {clip.duration > 0 && <span className="duration">{formatTime(clip.duration)}</span>}
                                     {shareable && (
                                        <span className="copy-indicator" title={`${clip.shareables.length} shareable${clip.shareables.length === 1 ? "" : "s"}`}>
                                           <Share2 size={12} />
@@ -270,8 +455,15 @@ export function Library({
                                  <div className="clip-card-info">
                                     <h3 title={clip.name}>{clip.name}</h3>
                                     <p>
-                                       <span>{clip.originalMissing ? "Original unavailable" : clip.source || "Video"}</span>
-                                       <span>·</span>
+                                       {clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown" && (
+                                          <>
+                                             <span className="clip-source-label">
+                                                {clip.applicationId && <ApplicationIcon src={state.applicationIcons?.[clip.applicationId]} size={12} />}
+                                                {clip.source}
+                                             </span>
+                                             <span aria-hidden="true">&middot;</span>
+                                          </>
+                                       )}
                                        <span>{age(clip.createdAt)}</span>
                                     </p>
                                  </div>
@@ -324,11 +516,21 @@ export function Library({
                            </article>
                         );
                      })}
+                     {Array.from({ length: remainingSlots }, (_, index) => (
+                        <div className="clip-placeholder" key={`pending:${index}`} aria-hidden="true">
+                           <div />
+                           <span />
+                        </div>
+                     ))}
                   </div>
+               ) : pending ? null : unavailable ? (
+                  <Empty icon={<FolderOpen size={38} />} title="Collection unavailable">
+                     <Button onClick={() => void run(() => api.refresh())}>Retry</Button>
+                  </Empty>
                ) : (
                   <Empty
                      icon={<FolderOpen size={38} />}
-                     title={query ? "No matching clips" : filter !== "all" ? "No clips here yet" : "Your moments live here"}
+                     title={query ? "No matching clips" : folderPath !== null ? "Folder is empty" : "No clips"}
                      detail={
                         query
                            ? "Try another name or application."
@@ -348,7 +550,7 @@ export function Library({
                         </Button>
                      )}
                      {filter === "all" && !query && (
-                        <Button onClick={() => void run(() => api.reveal(state.preferences.collection))}>
+                        <Button onClick={() => void run(() => api.reveal(collectionRoot))}>
                            <FolderOpen size={16} />
                            Open collection folder
                         </Button>
@@ -357,6 +559,9 @@ export function Library({
                )}
             </div>
          </div>
+         {editingCategory && (
+            <CategoryEditor category={editingCategory === "new" ? undefined : editingCategory} close={() => setEditingCategory(null)} run={run} />
+         )}
          {categoryClip && (
             <div className="modal-backdrop" onClick={closeCategories}>
                <div
@@ -373,8 +578,14 @@ export function Library({
                   <p>{categoryClip.name}</p>
                   {state.categories.length ? (
                      state.categories.map((item) => (
-                        <button key={item.id} className="category-option" onClick={() => void assign(item.id)}>
-                           <Tag size={17} style={{ color: item.color }} />
+                        <button
+                           key={item.id}
+                           className="category-option"
+                           aria-pressed={categoryClip.categories.includes(item.id)}
+                           style={categoryStyle(item.color)}
+                           onClick={() => void assign(item.id)}
+                        >
+                           <CategoryMark category={item} size={17} />
                            {item.name}
                            {categoryClip.categories.includes(item.id) && <Check size={17} />}
                         </button>

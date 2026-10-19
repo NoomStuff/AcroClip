@@ -108,7 +108,7 @@ export async function generateNotices(project: string): Promise<void> {
    const destination = path.join(project, "resources", "notices");
    await mkdir(destination, { recursive: true });
    const text = [
-      "AttaClip bundled JavaScript dependencies",
+      "AcroClip bundled JavaScript dependencies",
       "Generated from the installed production dependency graph. Electron and Chromium retain their separate packaged notices.",
       ...packages.flatMap((dependency) => [
          `${dependency.name}@${dependency.version}\nLicense: ${dependency.license}\nUpstream: ${dependency.repository}`,

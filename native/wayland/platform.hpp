@@ -4,7 +4,7 @@
 #include <obs.h>
 #include <string>
 
-namespace attaclip::wayland {
+namespace acroclip::wayland {
 bool requested();
 bool enabled();
 // Must precede obs_startup. Keep this object alive through obs_shutdown.
@@ -35,4 +35,4 @@ private:
   obs_source_t *value;
 };
 std::shared_ptr<Capture> createScreen();
-} // namespace attaclip::wayland
+} // namespace acroclip::wayland

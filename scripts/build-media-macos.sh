@@ -6,8 +6,8 @@ set -euo pipefail
 taskProject=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 taskSources="$taskProject/work/release-sources"
 taskOutput="$taskProject/work/controlled-media/macos-arm64"
-taskBuildRoot=${ATTACLIP_MEDIA_BUILD_ROOT:-$(mktemp -d -t attaclip-media.XXXXXX)}
-taskJobs=${ATTACLIP_MEDIA_BUILD_JOBS:-2}
+taskBuildRoot=${ACROCLIP_MEDIA_BUILD_ROOT:-$(mktemp -d -t acroclip-media.XXXXXX)}
+taskJobs=${ACROCLIP_MEDIA_BUILD_JOBS:-2}
 [[ $(uname -s) == Darwin && $(uname -m) == arm64 ]] || { echo "Build on an actual macOS arm64 host" >&2; exit 1; }
 export MACOSX_DEPLOYMENT_TARGET=13.0
 taskPrefix="$taskBuildRoot/prefix"
@@ -90,7 +90,7 @@ cp "$taskBuildRoot/dav1d/COPYING" "$taskOutput/LICENSE-dav1d"
 cd "$taskBuildRoot/ffmpeg"
 # Keep FFmpeg's built-in import decoders, demuxers and filters. Only external
 # dependencies and output encoders are reduced. Dav1d supplies software AV1.
-./configure --prefix="$taskPrefix" --cc=clang --cxx=clang++ --arch=arm64 --target-os=darwin --enable-gpl --enable-libx264 --enable-libdav1d --enable-zlib --disable-autodetect --disable-network --disable-shared --enable-static --disable-doc --disable-debug --disable-ffplay --disable-devices --enable-indev=lavfi --disable-encoders --enable-encoder=libx264,aac,mjpeg,png,rawvideo,wrapped_avframe,pcm_s16le,pcm_f32le --disable-protocols --enable-protocol=file,pipe --pkg-config=pkg-config --pkg-config-flags=--static --extra-cflags="-I$taskPrefix/include -mmacosx-version-min=13.0" --extra-ldflags="-L$taskPrefix/lib -mmacosx-version-min=13.0" --extra-version=attaclip-local
+./configure --prefix="$taskPrefix" --cc=clang --cxx=clang++ --arch=arm64 --target-os=darwin --enable-gpl --enable-libx264 --enable-libdav1d --enable-zlib --disable-autodetect --disable-network --disable-shared --enable-static --disable-doc --disable-debug --disable-ffplay --disable-devices --enable-indev=lavfi --disable-encoders --enable-encoder=libx264,aac,mjpeg,png,rawvideo,wrapped_avframe,pcm_s16le,pcm_f32le --disable-protocols --enable-protocol=file,pipe --pkg-config=pkg-config --pkg-config-flags=--static --extra-cflags="-I$taskPrefix/include -mmacosx-version-min=13.0" --extra-ldflags="-L$taskPrefix/lib -mmacosx-version-min=13.0" --extra-version=acroclip-local
 make -j"$taskJobs" ffmpeg ffprobe
 codesign --force --sign - ffmpeg ffprobe
 cp ffmpeg ffprobe "$taskOutput/"

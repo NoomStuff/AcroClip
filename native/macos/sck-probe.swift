@@ -74,7 +74,7 @@ extension Dictionary where Key == Int, Value == Int {
         let obsConfiguration = mode != "baseline"
         let content = try await SCShareableContent.excludingDesktopWindows(obsConfiguration, onScreenWindowsOnly: !obsConfiguration)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
-            throw NSError(domain: "AttaClip-probe", code: 1, userInfo: [NSLocalizedDescriptionKey: "Exact display unavailable"])
+            throw NSError(domain: "AcroClip-probe", code: 1, userInfo: [NSLocalizedDescriptionKey: "Exact display unavailable"])
         }
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let configuration = SCStreamConfiguration()
@@ -90,7 +90,7 @@ extension Dictionary where Key == Int, Value == Int {
         configuration.channelCount = 2
         if obsConfiguration {
             guard let displayMode = CGDisplayCopyDisplayMode(displayID) else {
-                throw NSError(domain: "AttaClip-probe", code: 2, userInfo: [NSLocalizedDescriptionKey: "Display mode unavailable"])
+                throw NSError(domain: "AcroClip-probe", code: 2, userInfo: [NSLocalizedDescriptionKey: "Display mode unavailable"])
             }
             configuration.width = displayMode.pixelWidth
             configuration.height = displayMode.pixelHeight
@@ -105,7 +105,7 @@ extension Dictionary where Key == Int, Value == Int {
         let samples = Samples()
         if mode == "obs-reconfigure" { samples.reconfigure = configuration }
         let stream = SCStream(filter: filter, configuration: configuration, delegate: nil)
-        let queue = DispatchQueue(label: "AttaClip.private-sck-proof")
+        let queue = DispatchQueue(label: "AcroClip.private-sck-proof")
         try stream.addStreamOutput(samples, type: .screen, sampleHandlerQueue: queue)
         try stream.addStreamOutput(samples, type: .audio, sampleHandlerQueue: queue)
         try await stream.startCapture()

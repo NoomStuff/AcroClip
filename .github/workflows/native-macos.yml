@@ -46,7 +46,7 @@ jobs:
            run: bash scripts/build-media-macos.sh
          - name: Verify independent codec fixtures and record actual build
            run: |
-              ATTACLIP_REFERENCE_FFMPEG="$FFMPEG_PATH" python3 scripts/smoke-controlled-media-macos.py
+              ACROCLIP_REFERENCE_FFMPEG="$FFMPEG_PATH" python3 scripts/smoke-controlled-media-macos.py
               bun scripts/controlled-media-macos.ts
               echo "FFMPEG_PATH=$PWD/work/controlled-media/macos-arm64/ffmpeg" >> "$GITHUB_ENV"
               echo "FFPROBE_PATH=$PWD/work/controlled-media/macos-arm64/ffprobe" >> "$GITHUB_ENV"
@@ -72,9 +72,9 @@ jobs:
            if: failure()
            continue-on-error: true
            run: |
-              if test -x resources/recorder/attaclip-recorder; then
+              if test -x resources/recorder/acroclip-recorder; then
                  mkdir -p .cache/macos-native
-                 lldb --batch -o 'process launch -i /dev/null' -o 'thread backtrace all' -- resources/recorder/attaclip-recorder "$PWD/resources/recorder" > .cache/macos-native/crash-backtrace.txt 2>&1
+                 lldb --batch -o 'process launch -i /dev/null' -o 'thread backtrace all' -- resources/recorder/acroclip-recorder "$PWD/resources/recorder" > .cache/macos-native/crash-backtrace.txt 2>&1
               fi
          - name: Build the actual macOS application
            run: |
@@ -96,8 +96,8 @@ jobs:
               bun scripts/package-macos-source-kit.ts
          - name: Verify the complete application ZIP, independent rebuild and updater
            run: |
-              taskSource=$(find work -maxdepth 1 -name 'AttaClip-*-darwin-arm64-sources-*.zip' -type f)
-              taskApp=$(find release -maxdepth 1 -name 'AttaClip-*-mac-arm64.zip' -type f)
+              taskSource=$(find work -maxdepth 1 -name 'AcroClip-*-darwin-arm64-sources-*.zip' -type f)
+              taskApp=$(find release -maxdepth 1 -name 'AcroClip-*-mac-arm64.zip' -type f)
               test -n "$taskSource" && test -n "$taskApp"
               bun scripts/verify-macos-release.ts work/macos-release-sources "$taskSource" "$taskApp"
            env:
@@ -107,12 +107,12 @@ jobs:
            with:
               name: macOS-verified-release-candidate
               path: |
-                 release/AttaClip-*-mac-arm64.zip
-                 release/AttaClip-*-mac-arm64.zip.blockmap
-                 release/AttaClip-*-mac-arm64.zip.release.json
+                 release/AcroClip-*-mac-arm64.zip
+                 release/AcroClip-*-mac-arm64.zip.blockmap
+                 release/AcroClip-*-mac-arm64.zip.release.json
                  release/latest-mac.yml
-                 work/AttaClip-*-darwin-arm64-sources-*.zip
-                 work/AttaClip-*-darwin-arm64-sources-*.zip.json
+                 work/AcroClip-*-darwin-arm64-sources-*.zip
+                 work/AcroClip-*-darwin-arm64-sources-*.zip.json
               if-no-files-found: error
               retention-days: 14
          - uses: actions/upload-artifact@v7
@@ -161,8 +161,8 @@ jobs:
                  work/macos-release-sources/electron-component.json
                  work/macos-release-sources/macos-kit.json
                  work/macos-release-sources/obs-source-validation.json
-                 work/AttaClip-*-darwin-arm64-sources-*.zip
-                 work/AttaClip-*-darwin-arm64-sources-*.zip.json
+                 work/AcroClip-*-darwin-arm64-sources-*.zip
+                 work/AcroClip-*-darwin-arm64-sources-*.zip.json
                  release/*.zip.release.json
                  work/macos-release-sources/evidence/electron-ffmpeg-darwin-arm64/*.tar.gz
                  work/macos-release-sources/evidence/electron-ffmpeg-darwin-arm64/*.txt

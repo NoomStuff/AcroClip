@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <util/pipe.h>
 
-namespace attaclip {
+namespace acroclip {
 namespace {
 struct PacketInfo {
   int64_t pts, dts;
@@ -107,7 +107,7 @@ void ClipWriter::run() {
 }
 
 ClipResult ClipWriter::write(ClipJob &job) {
-  if (auto *gate = std::getenv("ATTACLIP_NATIVE_TEST_WRITER_GATE")) {
+  if (auto *gate = std::getenv("ACROCLIP_NATIVE_TEST_WRITER_GATE")) {
     for (int i = 0; i < 1000 && !std::filesystem::exists(gate); i++)
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
@@ -207,4 +207,4 @@ ClipResult ClipWriter::write(ClipJob &job) {
   result.saved = true;
   return result;
 }
-} // namespace attaclip
+} // namespace acroclip

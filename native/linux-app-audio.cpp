@@ -65,7 +65,7 @@ struct Connection {
     try {
       loop = pa_mainloop_new();
       context = loop ? pa_context_new(pa_mainloop_get_api(loop),
-                                      "AttaClip application audio")
+                                      "AcroClip application audio")
                      : nullptr;
       if (!context || pa_context_connect(context, nullptr,
                                          PA_CONTEXT_NOAUTOSPAWN, nullptr) < 0)
@@ -404,7 +404,7 @@ struct ApplicationAudio {
           obs_data_set_int(settings, "levels",
                            int64_t(reinterpret_cast<uintptr_t>(levels.get())));
           auto *source = obs_source_create_private(
-              "attaclip_pulse_input", "Verified application audio input",
+              "acroclip_pulse_input", "Verified application audio input",
               settings);
           obs_data_release(settings);
           if (!source || inputEnded(source)) {
@@ -449,7 +449,7 @@ struct ApplicationAudio {
 };
 void registerLinuxApplicationAudio() {
   obs_source_info info{};
-  info.id = "attaclip_pulse_input";
+  info.id = "acroclip_pulse_input";
   info.type = OBS_SOURCE_TYPE_INPUT;
   info.output_flags = OBS_SOURCE_AUDIO;
   info.get_name = [](void *) { return "Verified application audio input"; };

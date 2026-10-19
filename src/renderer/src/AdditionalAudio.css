@@ -1,0 +1,30 @@
+.audio-source-form {
+   display: grid;
+   gap: 12px;
+   margin-top: 16px;
+}
+
+.audio-source-actions {
+   display: flex;
+   justify-content: flex-end;
+   gap: 8px;
+}
+
+.audio-add {
+   width: fit-content;
+   margin-top: 12px;
+   font-size: 11px;
+   display: flex;
+   margin-left: auto;
+   margin-right: auto;
+}
+
+.extra-audio .menu-wrap {
+   margin-top: 3px;
+}
+
+.dialog-panel {
+   max-height: calc(100vh - 64px);
+   overflow: auto;
+   padding-right: calc(28px - var(--scrollbar-size));
+}

@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { GameCandidate, CustomGame } from "../shared/types";
+import type { GameCandidate, CustomGame, GameCatalogSnapshot } from "../shared/types";
 
 export interface GameDefinition {
    id: string;
@@ -56,9 +56,11 @@ export function parseCatalog(input: unknown): GameDefinition[] {
 
 export class GameCatalog {
    private entries = fallback;
+   private saved = false;
    private index = new Map<string, { game: GameDefinition; suffix: string; os: string; arguments?: string }[]>();
    private loading: Promise<void> | null = null;
    private loaded = false;
+   private loadPromise: Promise<void> | null = null;
    private updated = 0;
    private attempted = 0;
    private readonly file: string;
@@ -84,17 +86,36 @@ export class GameCatalog {
    }
    async load(): Promise<void> {
       if (this.loaded) return;
-      this.loaded = true;
-      try {
-         const saved: unknown = JSON.parse(await readFile(this.file, "utf8"));
-         if (saved && typeof saved === "object" && "entries" in saved) {
-            this.entries = parseCatalog(saved.entries);
-            if ("updated" in saved && typeof saved.updated === "number") this.updated = saved.updated;
-            this.reindex();
+      if (this.loadPromise) return this.loadPromise;
+      this.loadPromise = (async () => {
+         try {
+            const saved: unknown = JSON.parse(await readFile(this.file, "utf8"));
+            if (saved && typeof saved === "object" && "entries" in saved) {
+               this.entries = parseCatalog(saved.entries);
+               this.saved = true;
+               if ("updated" in saved && typeof saved.updated === "number") this.updated = saved.updated;
+               this.reindex();
+            }
+         } catch {
+            /* Offline capture remains available with the fallback and local additions. */
+         } finally {
+            this.loaded = true;
          }
-      } catch {
-         /* Offline capture remains available with the fallback and local additions. */
+      })();
+      return this.loadPromise;
+   }
+   async list(): Promise<GameCatalogSnapshot> {
+      await this.load();
+      const entries = new Map<string, GameCatalogSnapshot["entries"][number]>();
+      for (const game of this.entries) {
+         const names = game.executables
+            .filter((exe) => !exe.is_launcher && (exe.os === this.platform || (this.platform === "linux" && exe.os === "win32")))
+            .map((exe) => exe.name.replace(/^>/, ""));
+         if (!names.length) continue;
+         const previous = entries.get(game.id);
+         entries.set(game.id, { id: game.id, name: game.name, executables: [...new Set([...(previous?.executables ?? []), ...names])] });
       }
+      return { source: this.saved ? "saved" : "built-in", entries: [...entries.values()].sort((a, b) => a.name.localeCompare(b.name)) };
    }
    async refresh(): Promise<void> {
       await this.load();
@@ -127,6 +148,7 @@ export class GameCatalog {
             await writeFile(next, JSON.stringify({ updated, entries }));
             await rename(next, this.file);
             this.entries = entries;
+            this.saved = true;
             this.updated = updated;
             this.reindex();
          } catch {

@@ -18,9 +18,9 @@ fixture = root / ".cache/wayland-portal-fixture"
 assert fixture.is_file(), "Build scripts/build-wayland-fixture.py first"
 folder = root / ".cache/linux-smoke" / str(uuid.uuid4())
 folder.mkdir(parents=True)
-private = pathlib.Path(tempfile.mkdtemp(prefix="attaclip-wayland-"))
+private = pathlib.Path(tempfile.mkdtemp(prefix="acroclip-wayland-"))
 private.chmod(0o700)
-env = dict(os.environ, XDG_RUNTIME_DIR=str(private), XDG_CONFIG_HOME=str(private / "config"), XDG_DATA_HOME=str(private / "data"), XDG_CACHE_HOME=str(private / "cache"), XDG_CURRENT_DESKTOP="sway", XDG_SESSION_TYPE="wayland", WLR_BACKENDS="headless", WLR_LIBINPUT_NO_DEVICES="1", WLR_RENDERER="pixman", WLR_RENDERER_ALLOW_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe", ATTACLIP_NATIVE_TEST_SOFTWARE="1", ATTACLIP_NATIVE_TEST_PORTAL="1", PULSE_SERVER="unix:" + str(private / "audio.sock"))
+env = dict(os.environ, XDG_RUNTIME_DIR=str(private), XDG_CONFIG_HOME=str(private / "config"), XDG_DATA_HOME=str(private / "data"), XDG_CACHE_HOME=str(private / "cache"), XDG_CURRENT_DESKTOP="sway", XDG_SESSION_TYPE="wayland", WLR_BACKENDS="headless", WLR_LIBINPUT_NO_DEVICES="1", WLR_RENDERER="pixman", WLR_RENDERER_ALLOW_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe", ACROCLIP_NATIVE_TEST_SOFTWARE="1", ACROCLIP_NATIVE_TEST_PORTAL="1", PULSE_SERVER="unix:" + str(private / "audio.sock"))
 for key in ["DISPLAY", "WAYLAND_DISPLAY", "SWAYSOCK", "DBUS_SESSION_BUS_ADDRESS"]:
     env.pop(key, None)
 env["LD_LIBRARY_PATH"] = str(runtime / "lib")
@@ -97,19 +97,19 @@ try:
         time.sleep(0.1)
     env["WAYLAND_DISPLAY"] = sockets[0].name
     env["SDL_VIDEODRIVER"] = "wayland"
-    launch(["ffplay", "-v", "error", "-an", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24", "-window_title", "AttaClip private Wayland motion"], "motion")
+    launch(["ffplay", "-v", "error", "-an", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24", "-window_title", "AcroClip private Wayland motion"], "motion")
     dbus = launch(["dbus-daemon", "--session", "--nofork", "--print-address"], "dbus", stdout=True)
     env["DBUS_SESSION_BUS_ADDRESS"] = dbus.stdout.readline().strip()
     pipewire = launch(["pipewire"], "pipewire")
     launch(["wireplumber"], "wireplumber")
-    launch(["pulseaudio", "-n", "--daemonize=no", "--exit-idle-time=-1", "--use-pid-file=no", "--disable-shm=true", "--load=module-native-protocol-unix socket=" + str(private / "audio.sock") + " auth-anonymous=1", "--load=module-null-sink sink_name=attaclip-test rate=48000 channels=2"], "pulse")
+    launch(["pulseaudio", "-n", "--daemonize=no", "--exit-idle-time=-1", "--use-pid-file=no", "--disable-shm=true", "--load=module-native-protocol-unix socket=" + str(private / "audio.sock") + " auth-anonymous=1", "--load=module-null-sink sink_name=acroclip-test rate=48000 channels=2"], "pulse")
     deadline = time.monotonic() + 10
     while not (private / "audio.sock").exists():
         assert time.monotonic() < deadline
         time.sleep(0.1)
     tone = folder / "tone.wav"
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=997:sample_rate=48000:duration=180", "-ac", "2", str(tone)], check=True)
-    launch(["paplay", "--device=attaclip-test", str(tone)], "tone")
+    launch(["paplay", "--device=acroclip-test", str(tone)], "tone")
     chooser = private / "choose.sh"
     chooser.write_text("#!/bin/sh\nsleep 4\nif test -f '" + str(private / "deny") + "'; then exit 1; fi\nprintf 'HEADLESS-1\\n'\n")
     chooser.chmod(0o700)
@@ -125,7 +125,7 @@ try:
         time.sleep(0.1)
     launch(["/usr/libexec/xdg-desktop-portal", "--verbose"], "portal")
     time.sleep(2)
-    helper = launch([str(runtime / "attaclip-recorder"), str(runtime)], "native", pipe=True)
+    helper = launch([str(runtime / "acroclip-recorder"), str(runtime)], "native", pipe=True)
     def read():
         for line in helper.stdout:
             events.append(json.loads(line))
@@ -199,7 +199,7 @@ try:
     assert helper.wait(timeout=10) == 0
     native_log = (folder / "native.log").read_text()
     assert "loop->recurse" not in native_log and "Assertion" not in native_log, native_log
-    hashes = {name: hashlib.sha256((runtime / name).read_bytes()).hexdigest() for name in ["attaclip-recorder", "obs-plugins/linux-pipewire.so"]}
+    hashes = {name: hashlib.sha256((runtime / name).read_bytes()).hexdigest() for name in ["acroclip-recorder", "obs-plugins/linux-pipewire.so"]}
     (folder / "wayland-proof.json").write_text(json.dumps(dict(binaryHashes=hashes, startAckSeconds=ack, sourceAckSeconds=source_ack, actual=actual, queued=queued_media, closed=closed_media, loss=loss, checks=["screen-only", "explicit-portal-identity", "async-start-and-source", "stop-before-grant", "denial", "moving-pixels", "audible-master-and-capture", "queued-save-survives-source-switch", "last-valid-save-after-session-close", "last-valid-save-and-stop-after-PipeWire-loss", "clean-teardown"]), indent=2) + "\n")
     print("Actual Wayland portal proof passed", folder)
 finally:

@@ -7,7 +7,7 @@ import { checkMediaBinary } from "./check-media-binary";
 
 export interface ControlledMacMediaBuild {
    version: 1;
-   producer: "attaclip-controlled-macos";
+   producer: "acroclip-controlled-macos";
    target: "macos-arm64";
    sourceCommits: { ffmpeg: string; x264: string; dav1d: string; zlib: string };
    sourceArchives: { path: string; sha256: string; size: number }[];
@@ -86,7 +86,7 @@ export async function recordControlledMacBuild(project: string): Promise<Control
    await walk(directory);
    const build: ControlledMacMediaBuild = {
       version: 1,
-      producer: "attaclip-controlled-macos",
+      producer: "acroclip-controlled-macos",
       target: "macos-arm64",
       sourceCommits: commits,
       sourceArchives,
@@ -104,7 +104,7 @@ export async function readControlledMacBuild(directory: string): Promise<Control
    const build = JSON.parse(await readFile(path.join(directory, "build-manifest.json"), "utf8")) as ControlledMacMediaBuild;
    if (
       build.version !== 1 ||
-      build.producer !== "attaclip-controlled-macos" ||
+      build.producer !== "acroclip-controlled-macos" ||
       build.target !== "macos-arm64" ||
       JSON.stringify(build.sourceCommits) !== JSON.stringify(commits)
    )

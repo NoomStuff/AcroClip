@@ -29,7 +29,7 @@ struct Connection {
   }
   Connection(std::atomic<bool> &stop) : quit(stop) {
     loop = pa_mainloop_new();
-    context = loop ? pa_context_new(pa_mainloop_get_api(loop), "AttaClip device audio") : nullptr;
+    context = loop ? pa_context_new(pa_mainloop_get_api(loop), "AcroClip device audio") : nullptr;
     try {
       if (!context || pa_context_connect(context, nullptr, PA_CONTEXT_NOAUTOSPAWN, nullptr) < 0)
         throw std::runtime_error("Audio server is unavailable");
@@ -250,8 +250,8 @@ void *create(obs_data_t *settings, obs_source_t *source, bool input) {
   return capture;
 }
 }
-const char *linuxInputAudioType() { return "attaclip_pulse_device_input"; }
-const char *linuxOutputAudioType() { return "attaclip_pulse_device_output"; }
+const char *linuxInputAudioType() { return "acroclip_pulse_device_input"; }
+const char *linuxOutputAudioType() { return "acroclip_pulse_device_output"; }
 void registerLinuxDeviceAudio() {
   for (const bool input : {true, false}) {
     obs_source_info info{};

@@ -29,7 +29,7 @@ std::wstring proofPath;
 std::wstring wide(const std::string &value) {
   int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
                                int(value.size()), nullptr, 0);
-  if (!size) return L"AttaClip needs attention";
+  if (!size) return L"AcroClip needs attention";
   std::wstring result(size, L'\0');
   MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
                       int(value.size()), result.data(), size);
@@ -84,7 +84,7 @@ void paint() {
     Font label(&family, 11, FontStyleRegular, UnitPixel);
     Font body(&family, 14, FontStyleRegular, UnitPixel);
     SolidBrush muted(Color(255, 169, 161, 184)), ink(Color(255, 243, 239, 250));
-    g.DrawString(L"AttaClip", -1, &label, PointF(70, 25), &muted);
+    g.DrawString(L"AcroClip", -1, &label, PointF(70, 25), &muted);
     StringFormat format;
     format.SetTrimming(StringTrimmingEllipsisWord);
     format.SetFormatFlags(StringFormatFlagsLineLimit);
@@ -178,11 +178,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
   ULONG_PTR token; GdiplusStartupInput graphics;
   if (GdiplusStartup(&token, &graphics, nullptr) != Ok) return 1;
   WNDCLASS cls{}; cls.lpfnWndProc = events; cls.hInstance = instance;
-  cls.lpszClassName = L"AttaClipNativeFeedback";
+  cls.lpszClassName = L"AcroClipNativeFeedback";
   RegisterClass(&cls);
   window = CreateWindowEx(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE |
                          WS_EX_TOPMOST | WS_EX_TRANSPARENT,
-                         cls.lpszClassName, L"AttaClip feedback", WS_POPUP,
+                         cls.lpszClassName, L"AcroClip feedback", WS_POPUP,
                          0, 0, 368, 100, nullptr, nullptr, instance, nullptr);
   if (!window) { GdiplusShutdown(token); return 1; }
   // Prevent the popup appearing in screen/window clips. Never acquire focus.

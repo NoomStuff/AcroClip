@@ -127,15 +127,15 @@ export async function assembleSourceEvidence(project: string): Promise<SourceKit
       if (!licenses.length) throw new Error(`Component has no retained license: ${id}`);
       components.push({ id, version, license, sourceArchives: archives, licenseFiles: licenses, buildInstructions: instructions });
    };
-   const appSourcePath = path.join(folder, `attaclip-${kit.appCommit}.tar.gz`);
-   execFileSync("git", ["archive", "--format=tar.gz", `--prefix=attaclip-${kit.appCommit}/`, `--output=${appSourcePath}`, kit.appCommit], {
+   const appSourcePath = path.join(folder, `acroclip-${kit.appCommit}.tar.gz`);
+   execFileSync("git", ["archive", "--format=tar.gz", `--prefix=acroclip-${kit.appCommit}/`, `--output=${appSourcePath}`, kit.appCommit], {
       cwd: project,
       windowsHide: true,
    });
    const appSource = await fileRecord(appSourcePath);
-   const appLicense = await copyEvidence(path.join(project, "LICENSE"), "LICENSE-AttaClip");
-   const appBuild = await copyEvidence(path.join(project, "README.md"), "attaclip-build.md");
-   add("attaclip-source", kit.appCommit, "GPL-3.0-or-later", [appSource], [appLicense], [appSource, appBuild]);
+   const appLicense = await copyEvidence(path.join(project, "LICENSE"), "LICENSE-AcroClip");
+   const appBuild = await copyEvidence(path.join(project, "README.md"), "acroclip-build.md");
+   add("acroclip-source", kit.appCommit, "GPL-3.0-or-later", [appSource], [appLicense], [appSource, appBuild]);
    const electronLicense = await copyEvidence(path.join(project, "node_modules/electron/dist/LICENSE"), "LICENSE-Electron");
    const chromiumNotices = await copyEvidence(path.join(project, "node_modules/electron/dist/LICENSES.chromium.html"), "LICENSES.chromium.html");
    const npmNotices = await copyEvidence(path.join(project, "resources/notices/javascript.txt"), "LICENSES-JavaScript.txt");
@@ -306,7 +306,7 @@ export async function assembleSourceEvidence(project: string): Promise<SourceKit
    const buildInstructions = recordedFiles.filter((file) => /build-media-windows\.sh|mingw-cross\.ini|config|toolchain|build\.log|sha256/.test(file.path));
    const licenses = recordedFiles.filter((file) => /COPYING|LICENSE/.test(file.path));
    await copyNativeLicenses(project, directory, licenses);
-   add("ffmpeg-core-build-config", "8.1.3-attaclip-local", "GPL-2.0-or-later", controlled.sourceArchives, licenses, buildInstructions);
+   add("ffmpeg-core-build-config", "8.1.3-acroclip-local", "GPL-2.0-or-later", controlled.sourceArchives, licenses, buildInstructions);
    add(
       "ffmpeg-external:libx264",
       controlled.sourceCommits.x264,

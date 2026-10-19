@@ -56,9 +56,9 @@ class SourceEvidenceTest(unittest.TestCase):
 
     def test_manifest_paths_cannot_read_outside_packet(self):
         with self.assertRaises(ValueError):
-            collector.evidence_path(Path("/tmp/attaclip-source-test"), "../private")
+            collector.evidence_path(Path("/tmp/acroclip-source-test"), "../private")
         with self.assertRaises(ValueError):
-            collector.evidence_path(Path("/tmp/attaclip-source-test"), "/etc/passwd")
+            collector.evidence_path(Path("/tmp/acroclip-source-test"), "/etc/passwd")
 
     def test_upstream_archive_names_cannot_escape_download_directory(self):
         self.assertEqual(collector.archive_name("foo_1.2-3ubuntu0~24.04.1.tar.xz"), "foo_1.2-3ubuntu0~24.04.1.tar.xz")

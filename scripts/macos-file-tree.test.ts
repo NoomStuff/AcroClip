@@ -6,10 +6,10 @@ import { relativeMember, macTree, compareMacTrees } from "./macos-file-tree";
 
 test("Mac package names reject path traversal and ambiguous separators", () => {
    for (const value of ["../app", "app/../x", "/app", "app\\x", "app:x", "app//x", "app/./x"]) expect(() => relativeMember(value)).toThrow();
-   expect(relativeMember("AttaClip.app/Contents/MacOS/AttaClip")).toBe("AttaClip.app/Contents/MacOS/AttaClip");
+   expect(relativeMember("AcroClip.app/Contents/MacOS/AcroClip")).toBe("AcroClip.app/Contents/MacOS/AcroClip");
 });
 test("Mac comparison rejects changed file, link, mode, and extra binary", () => {
-   const file = { path: "Contents/MacOS/AttaClip", kind: "file" as const, sha256: "a".repeat(64), size: 12, executable: true };
+   const file = { path: "Contents/MacOS/AcroClip", kind: "file" as const, sha256: "a".repeat(64), size: 12, executable: true };
    const link = { path: "Versions/Current", kind: "link" as const, target: "A" };
    compareMacTrees([file, link], [file, link], "app");
    for (const actual of [

@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace attaclip::macos {
+namespace acroclip::macos {
 void prepareProcess(const std::filesystem::path &root);
 bool startup(const char *locale, const char *configuration);
 const char *graphicsModule();

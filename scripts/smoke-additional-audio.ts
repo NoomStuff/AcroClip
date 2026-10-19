@@ -10,15 +10,15 @@ const folder = path.resolve(".cache/native-extra-audio", randomUUID());
 await mkdir(folder, { recursive: true });
 const fixtures = [997, 577, 1234].map((frequency) => {
    const child = spawn(
-      path.resolve(".cache/native-tests/Release/attaclip-d3d-fixture.exe"),
-      [`AttaClip private tone ${frequency} ${randomUUID()}`, String(frequency)],
+      path.resolve(".cache/native-tests/Release/acroclip-d3d-fixture.exe"),
+      [`AcroClip private tone ${frequency} ${randomUUID()}`, String(frequency)],
       { stdio: "pipe" }
    );
    const handle = new Promise<string>((resolve) => child.stdout.once("data", (value: Buffer) => resolve(value.toString().trim())));
    return { child, handle };
 });
 const runtime = path.resolve("resources/recorder");
-const helper = spawn(path.join(runtime, "attaclip-recorder.exe"), [runtime], { cwd: runtime, windowsHide: true, stdio: "pipe" });
+const helper = spawn(path.join(runtime, "acroclip-recorder.exe"), [runtime], { cwd: runtime, windowsHide: true, stdio: "pipe" });
 interface Event {
    event: string;
    id?: string;
@@ -48,7 +48,7 @@ async function command(value: Record<string, unknown>): Promise<void> {
    const result = await wait((event) => event.id === id);
    assert.equal(result.event, "response", result.message ?? "Native command failed");
 }
-const decoder = process.env["ATTACLIP_TEST_FFMPEG"] ?? "ffmpeg";
+const decoder = process.env["ACROCLIP_TEST_FFMPEG"] ?? "ffmpeg";
 function levels(file: string, track: number): Record<string, number> {
    const result = spawnSync(decoder, ["-v", "error", "-i", file, "-map", `0:a:${track}`, "-ac", "1", "-ar", "48000", "-f", "f32le", "-"], {
       windowsHide: true,

@@ -12,7 +12,7 @@ interface Probe {
 const project = process.cwd();
 const directory = path.join(project, "work/controlled-media/windows-x64");
 await readControlledBuild(directory);
-const reference = process.env["ATTACLIP_REFERENCE_FFMPEG"] || path.join(project, "resources/media/ffmpeg.exe");
+const reference = process.env["ACROCLIP_REFERENCE_FFMPEG"] || path.join(project, "resources/media/ffmpeg.exe");
 const controlled = path.join(directory, "ffmpeg.exe");
 const probe = path.join(directory, "ffprobe.exe");
 if (path.resolve(reference) === path.resolve(controlled)) throw new Error("Fixture generation needs the independent full reference FFmpeg.");

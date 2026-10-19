@@ -10,10 +10,10 @@ const mode = process.argv[2] ?? "app";
 assert(["app", "screen", "transition", "auto"].includes(mode), "Expected app, screen, transition or auto");
 const folder = path.resolve(".cache/native-fullscreen", randomUUID());
 await mkdir(folder, { recursive: true });
-const runtime = path.resolve(process.env["ATTACLIP_FULLSCREEN_RUNTIME"] ?? "resources/recorder");
+const runtime = path.resolve(process.env["ACROCLIP_FULLSCREEN_RUNTIME"] ?? "resources/recorder");
 const fixture = spawn(
-   path.resolve(".cache/native-tests/Release/attaclip-d3d-fixture.exe"),
-   ["AttaClip fullscreen regression", "997", "--attaclip-catalog-proof", mode === "transition" ? "--fullscreen-after" : "--fullscreen"],
+   path.resolve(".cache/native-tests/Release/acroclip-d3d-fixture.exe"),
+   ["AcroClip fullscreen regression", "997", "--acroclip-catalog-proof", mode === "transition" ? "--fullscreen-after" : "--fullscreen"],
    { stdio: "pipe" }
 );
 let handle = "";
@@ -36,7 +36,7 @@ interface Event {
 }
 const events: Event[] = [];
 const logs: string[] = [];
-const helper = spawn(path.join(runtime, "attaclip-recorder.exe"), [runtime], { cwd: runtime, stdio: "pipe", windowsHide: true });
+const helper = spawn(path.join(runtime, "acroclip-recorder.exe"), [runtime], { cwd: runtime, stdio: "pipe", windowsHide: true });
 helper.stderr.on("data", (value: Buffer) => logs.push(value.toString()));
 createInterface({ input: helper.stdout }).on("line", (value) => events.push(JSON.parse(value) as Event));
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -69,7 +69,7 @@ try {
    assert(candidate, "Exact fixture HWND absent from candidates");
    assert.equal(candidate.pid, fixture.pid);
    assert(
-      candidate.arguments?.includes("--attaclip-catalog-proof"),
+      candidate.arguments?.includes("--acroclip-catalog-proof"),
       "Verified process arguments must support catalog entries that distinguish games sharing a runtime executable"
    );
    send({

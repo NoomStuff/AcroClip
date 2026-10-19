@@ -13,7 +13,7 @@ import { defaultPreferences } from "../shared/defaults";
 
 afterEach(() => vi.useRealTimers());
 it("dispatches the actual saveClip body without waiting for a stuck free-space read", async () => {
-   const root = await mkdtemp(join(tmpdir(), "attaclip-save-dispatch-"));
+   const root = await mkdtemp(join(tmpdir(), "acroclip-save-dispatch-"));
    const content = await readFile(join(import.meta.dirname, "index.ts"), "utf8");
    const parsed = ts.createSourceFile("index.ts", content, ts.ScriptTarget.Latest, true);
    const functionNode = parsed.statements.find((node): node is ts.FunctionDeclaration => ts.isFunctionDeclaration(node) && node.name?.text === "saveClip");
@@ -36,6 +36,7 @@ it("dispatches the actual saveClip body without waiting for a stuck free-space r
          collections: { root },
          preferences: { ...defaultPreferences, collection: root },
          cachedSources: [],
+         lastRecordingArtwork: undefined,
          send: () => undefined,
          notice: () => undefined,
          recordingDestination,

@@ -8,7 +8,7 @@ import { readControlledBuild } from "./controlled-media.ts";
 export async function provisionMedia(): Promise<{ FFMPEG_PATH: string; FFPROBE_PATH: string }> {
    if (process.platform === "win32") {
       if (process.arch !== "x64") throw new Error("Controlled Windows media supports x64 only.");
-      const directory = resolve(process.env["ATTACLIP_CONTROLLED_MEDIA"] || "work/controlled-media/windows-x64");
+      const directory = resolve(process.env["ACROCLIP_CONTROLLED_MEDIA"] || "work/controlled-media/windows-x64");
       await readControlledBuild(directory);
       const paths = { FFMPEG_PATH: join(directory, "ffmpeg.exe"), FFPROBE_PATH: join(directory, "ffprobe.exe") };
       for (const [variable, file] of Object.entries(paths)) {

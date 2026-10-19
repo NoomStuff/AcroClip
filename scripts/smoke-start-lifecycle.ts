@@ -7,12 +7,12 @@ import { createInterface } from "node:readline";
 
 if (process.platform !== "win32") throw new Error("This native lifecycle proof requires Windows");
 const sourceRuntime = path.resolve("resources/recorder");
-const executable = path.resolve(process.argv[2] ?? ".cache/native-build/Release/attaclip-recorder.exe");
+const executable = path.resolve(process.argv[2] ?? ".cache/native-build/Release/acroclip-recorder.exe");
 const folder = path.resolve(".cache/start-lifecycle", randomUUID());
 await mkdir(folder, { recursive: true });
 const runtime = path.join(folder, "runtime");
 await cp(sourceRuntime, runtime, { recursive: true });
-await copyFile(executable, path.join(runtime, "attaclip-recorder.exe"));
+await copyFile(executable, path.join(runtime, "acroclip-recorder.exe"));
 const writerGate = path.join(folder, "writer-ready");
 await writeFile(writerGate, "ready");
 interface Event {
@@ -32,16 +32,16 @@ interface Event {
 }
 const events: Event[] = [];
 const stderr: string[] = [];
-const child = spawn(path.join(runtime, "attaclip-recorder.exe"), [runtime], {
+const child = spawn(path.join(runtime, "acroclip-recorder.exe"), [runtime], {
    cwd: runtime,
    windowsHide: true,
    stdio: "pipe",
    env: {
       ...process.env,
       PATH: `${runtime};${process.env["PATH"] ?? ""}`,
-      ATTACLIP_NATIVE_TEST_LIFECYCLE: "1",
-      ATTACLIP_NATIVE_TEST_SOFTWARE: "1",
-      ATTACLIP_NATIVE_TEST_WRITER_GATE: writerGate,
+      ACROCLIP_NATIVE_TEST_LIFECYCLE: "1",
+      ACROCLIP_NATIVE_TEST_SOFTWARE: "1",
+      ACROCLIP_NATIVE_TEST_WRITER_GATE: writerGate,
    },
 });
 const exit = new Promise<number | null>((resolve) => child.once("exit", resolve));
@@ -101,7 +101,7 @@ try {
    const initial = await state();
    proof["initial"] = initial;
    const failures = [
-      { name: "missing microphone", changes: { microphone: true, microphoneDevice: "attaclip-missing-device" } },
+      { name: "missing microphone", changes: { microphone: true, microphoneDevice: "acroclip-missing-device" } },
       { name: "missing hardware encoder", changes: { allowSoftwareEncoder: false } },
       { name: "encoder failure during startup", changes: { testEncoderFailure: true } },
       {

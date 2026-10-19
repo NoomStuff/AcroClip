@@ -4,7 +4,7 @@ These files preserve the material behind the product discussions and UI review. 
 
 ## Mockups
 
-Open [AttaClip.excalidraw](mockups/AttaClip.excalidraw) in Excalidraw to edit the original canvas. The canvas also contains earlier sketches for other work. The four PNGs below isolate the AttaClip views that Dave shared.
+Open [AcroClip.excalidraw](mockups/AcroClip.excalidraw) in Excalidraw to edit the original canvas. The canvas also contains earlier sketches for other work. The four PNGs below isolate the AcroClip views that Dave shared.
 
 | View                                  | Original image                         |
 | ------------------------------------- | -------------------------------------- |
@@ -15,7 +15,7 @@ Open [AttaClip.excalidraw](mockups/AttaClip.excalidraw) in Excalidraw to edit th
 
 These sketches show the intended layout and visual direction. They are not a requirement to copy every label, border or control. The shared recording-status strip was omitted from the sketches but remains part of the design. The viewer and settings details were left for refinement in the app.
 
-The visual direction is purple accents on a near-black background, lighter rounded cards, few borders, smooth transitions and button feedback for shortcuts. AttaCut is a reference for useful controls and interaction feedback; AttaClip has its own full-page layout.
+The visual direction is purple accents on a near-black background, lighter rounded cards, few borders, smooth transitions and button feedback for shortcuts. AttaCut is a reference for useful controls and interaction feedback; AcroClip has its own full-page layout.
 
 ## Original proposal and diagnostic reference
 

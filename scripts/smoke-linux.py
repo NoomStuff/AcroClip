@@ -14,8 +14,8 @@ root = pathlib.Path.cwd()
 runtime = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "resources/recorder").resolve()
 folder = root / ".cache/linux-smoke" / str(uuid.uuid4())
 folder.mkdir(parents=True)
-private = pathlib.Path(tempfile.mkdtemp(prefix="attaclip-native-"))
-env = dict(os.environ, XDG_RUNTIME_DIR=str(private), PULSE_SERVER="unix:" + str(private / "audio.sock"), DBUS_SESSION_BUS_ADDRESS="unix:path=" + str(private / "dbus.sock"), WAYLAND_DISPLAY="", XDG_SESSION_TYPE="x11", ATTACLIP_NATIVE_TEST_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe")
+private = pathlib.Path(tempfile.mkdtemp(prefix="acroclip-native-"))
+env = dict(os.environ, XDG_RUNTIME_DIR=str(private), PULSE_SERVER="unix:" + str(private / "audio.sock"), DBUS_SESSION_BUS_ADDRESS="unix:path=" + str(private / "dbus.sock"), WAYLAND_DISPLAY="", XDG_SESSION_TYPE="x11", ACROCLIP_NATIVE_TEST_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe")
 env["LD_LIBRARY_PATH"] = str(runtime / "lib")
 display = next(number for number in range(90, 180) if not pathlib.Path(f"/tmp/.X11-unix/X{number}").exists())
 env["DISPLAY"] = f"127.0.0.1:{display}"
@@ -65,19 +65,19 @@ try:
         except OSError:
             assert time.monotonic() < deadline, "Private Xvfb did not start"
             time.sleep(0.1)
-    launch(["pulseaudio", "-n", "--daemonize=no", "--exit-idle-time=-1", "--use-pid-file=no", "--disable-shm=true", "--load=module-native-protocol-unix socket=" + str(private / "audio.sock") + " auth-anonymous=1", "--load=module-null-sink sink_name=attaclip-test rate=48000 channels=2"], "pulse")
+    launch(["pulseaudio", "-n", "--daemonize=no", "--exit-idle-time=-1", "--use-pid-file=no", "--disable-shm=true", "--load=module-native-protocol-unix socket=" + str(private / "audio.sock") + " auth-anonymous=1", "--load=module-null-sink sink_name=acroclip-test rate=48000 channels=2"], "pulse")
     deadline = time.monotonic() + 10
     while not (private / "audio.sock").exists():
         assert time.monotonic() < deadline, "Private PulseAudio did not start"
         time.sleep(0.1)
-    if os.environ.get("ATTACLIP_TEST_X11_APP"):
+    if os.environ.get("ACROCLIP_TEST_X11_APP"):
         launch(["openbox", "--sm-disable"], "window-manager")
         time.sleep(1)
     launch(["xclock", "-update", "1", "-geometry", "200x200+10+10"], "clock")
     tone = folder / "tone.wav"
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=997:sample_rate=48000:duration=90", "-ac", "2", str(tone)], check=True)
-    launch(["paplay", "--device=attaclip-test", str(tone)], "tone")
-    helper = launch([str(runtime / "attaclip-recorder"), str(runtime)], "native", True)
+    launch(["paplay", "--device=acroclip-test", str(tone)], "tone")
+    helper = launch([str(runtime / "acroclip-recorder"), str(runtime)], "native", True)
     import threading
     def read():
         for line in helper.stdout:
@@ -137,8 +137,8 @@ try:
     wait(lambda event: event["event"]=="error" and event.get("requestId")=="collision")
     assert sentinel.read_bytes()==b"existing user file"
     command(dict(action="stop"))
-    if os.environ.get("ATTACLIP_TEST_X11_APP"):
-        title = "AttaClip isolated blue X11 app " + str(uuid.uuid4())
+    if os.environ.get("ACROCLIP_TEST_X11_APP"):
+        title = "AcroClip isolated blue X11 app " + str(uuid.uuid4())
         fixture = launch(["ffplay", "-v", "error", "-f", "lavfi", "-i", "color=blue:size=320x180:rate=30:duration=60", "-window_title", title, "-an"], "application")
         candidate = None
         for attempt in range(30):

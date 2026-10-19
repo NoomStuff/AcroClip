@@ -6,16 +6,16 @@ import { linuxDesktopIdentity, linuxDesktopName } from "./startup";
 
 describe("Linux packaged portal identity", () => {
    it("creates a matching desktop entry and updates only entries it owns", async () => {
-      const directory = await mkdtemp(join(tmpdir(), "attaclip-desktop-"));
+      const directory = await mkdtemp(join(tmpdir(), "acroclip-desktop-"));
       const file = join(directory, "applications", linuxDesktopName);
       const icon = join(directory, "source-icon.png");
       await writeFile(icon, "isolated app icon");
       await linuxDesktopIdentity(directory, "/apps/My App%.AppImage", icon);
       const initial = await readFile(file, "utf8");
       expect(initial).toContain('Exec="/apps/My App%%.AppImage"');
-      expect(initial).toContain("StartupWMClass=dev.attaclip.app");
-      expect(initial).toContain("Icon=dev.attaclip.app");
-      expect(await readFile(join(directory, "icons", "hicolor", "256x256", "apps", "dev.attaclip.app.png"), "utf8")).toBe("isolated app icon");
+      expect(initial).toContain("StartupWMClass=dev.acroclip.app");
+      expect(initial).toContain("Icon=dev.acroclip.app");
+      expect(await readFile(join(directory, "icons", "hicolor", "256x256", "apps", "dev.acroclip.app.png"), "utf8")).toBe("isolated app icon");
       await linuxDesktopIdentity(directory, "/apps/new.AppImage", icon);
       expect(await readFile(file, "utf8")).toContain('Exec="/apps/new.AppImage"');
       await writeFile(file, "[Desktop Entry]\nName=My custom launcher\n");
@@ -23,7 +23,7 @@ describe("Linux packaged portal identity", () => {
       expect(await readFile(file, "utf8")).toBe("[Desktop Entry]\nName=My custom launcher\n");
    });
    it("rejects paths that inject desktop entry keys", async () => {
-      const directory = await mkdtemp(join(tmpdir(), "attaclip-desktop-"));
+      const directory = await mkdtemp(join(tmpdir(), "acroclip-desktop-"));
       await expect(linuxDesktopIdentity(directory, "/apps/app\nExec=other", "/apps/icon.png")).rejects.toThrow("app path");
       await expect(linuxDesktopIdentity(directory, "/apps/app", "/apps/icon\nHidden=true")).rejects.toThrow("app path");
    });

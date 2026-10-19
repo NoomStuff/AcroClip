@@ -18,7 +18,7 @@ if not archive.exists():
         assert hashlib.sha256(data).hexdigest() == expected
         archive.write_bytes(data)
 assert hashlib.file_digest(archive.open("rb"), "sha256").hexdigest() == expected
-with tempfile.TemporaryDirectory(prefix="attaclip-portal-build-") as private:
+with tempfile.TemporaryDirectory(prefix="acroclip-portal-build-") as private:
     source = pathlib.Path(private) / "source"
     source.mkdir()
     with tarfile.open(archive) as package:

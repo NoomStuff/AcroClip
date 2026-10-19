@@ -24,7 +24,7 @@ final class PatternView: NSView {
         color.setFill()
         bounds.fill()
         let attributes: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 36)]
-        "AttaClip synthetic Mac capture \(count)".draw(at: NSPoint(x: 32, y: 32), withAttributes: attributes)
+        "AcroClip synthetic Mac capture \(count)".draw(at: NSPoint(x: 32, y: 32), withAttributes: attributes)
     }
 }
 

@@ -1,73 +1,94 @@
-import { app, shell } from "electron";
-import type { UpdateState } from "../shared/types";
-import type { AppUpdater } from "electron-updater";
-import { releaseIsNewer } from "./safety";
-// Adapted from AttaCut's explicit-install update flow. Unsigned macOS and portable
-// Windows distributions open the release instead of promising an unsupported install.
+import { app, net, shell } from "electron";
+import type { AvailableUpdate, UpdateState, UpdateStatus } from "../shared/types";
+import { fetchAvailableUpdate, UpdateManager } from "./update-manager";
+
+// One state snapshot serves Settings and the titlebar, including events received while hidden.
 export class Updates {
    state: UpdateState = { state: "idle", version: "", progress: 0, message: "" };
-   private updater: AppUpdater | null = null;
+   private available: AvailableUpdate | null = null;
+   private checked = false;
+   private lastChecked: number | undefined;
+   private readonly manager: UpdateManager;
    private readonly changed: () => void;
    constructor(changed: () => void) {
       this.changed = changed;
+      this.manager = new UpdateManager((status) => this.status(status));
    }
-   private set(value: UpdateState) {
-      this.state = value;
+   private set(state: UpdateState) {
+      this.state = { ...state, ...(this.lastChecked ? { lastChecked: this.lastChecked } : {}) };
       this.changed();
    }
-   async check(): Promise<void> {
-      if (this.state.state === "checking" || this.state.state === "downloading") return;
+   private status(status: UpdateStatus) {
+      if (this.available && status.version !== this.available.version) return;
+      this.set({
+         state: status.phase,
+         version: status.version,
+         progress: status.percent ?? 0,
+         indeterminate: status.percent === null,
+         message:
+            status.message ?? (status.phase === "ready" ? "Ready to restart" : status.phase === "downloaded" ? "Saved to Downloads" : "Downloading update"),
+         ...(this.available ? { mode: this.available.mode, url: this.available.url } : {}),
+         ...(status.path ? { path: status.path } : {}),
+      });
+   }
+   async check(manual = true): Promise<void> {
+      if (!manual && this.checked) return;
+      if (["checking", "downloading"].includes(this.state.state)) return;
+      this.checked = true;
+      const previous = this.state;
       this.set({ ...this.state, state: "checking", message: "Checking for updates" });
-      const automatic =
-         app.isPackaged &&
-         ((process.platform === "win32" && !process.env["PORTABLE_EXECUTABLE_FILE"]) || (process.platform === "linux" && !!process.env["APPIMAGE"]));
       try {
-         if (!automatic) {
-            const response = await fetch("https://api.github.com/repos/NoomStuff/AttaClip/releases/latest", { signal: AbortSignal.timeout(15000) });
-            if (response.status === 404) {
-               this.set({ state: "idle", version: "", progress: 0, message: "You're up to date" });
-               return;
-            }
-            if (!response.ok) throw new Error("Unable to reach releases");
-            const result: unknown = await response.json();
-            const tag =
-               typeof result === "object" && result !== null && "tag_name" in result && typeof result.tag_name === "string"
-                  ? result.tag_name.replace(/^v/, "")
-                  : "";
-            const newer = releaseIsNewer(tag, app.getVersion());
-            this.set({ state: newer ? "available" : "idle", version: tag, progress: 0, message: newer ? "An update is available" : "You're up to date" });
+         const update = await fetchAvailableUpdate(app.getVersion(), (url, init) => net.fetch(url, init));
+         this.lastChecked = Date.now();
+         if (!update) {
+            this.available = null;
+            this.set({ state: "idle", version: "", progress: 0, message: manual ? "You're up to date" : "" });
             return;
          }
-         if (!this.updater) {
-            const module = await import("electron-updater");
-            this.updater = module.autoUpdater ?? module.default.autoUpdater;
-            this.updater.autoInstallOnAppQuit = false;
-            this.updater.autoDownload = true;
-            this.updater.disableDifferentialDownload = true;
-            this.updater.on("download-progress", (p) =>
-               this.set({ state: "downloading", version: this.state.version, progress: p.percent, message: "Downloading update" })
-            );
-            this.updater.on("update-available", (p) => this.set({ state: "downloading", version: p.version, progress: 0, message: "Downloading update" }));
-            this.updater.on("update-downloaded", (p) => this.set({ state: "ready", version: p.version, progress: 100, message: "Ready to restart" }));
-            this.updater.on("update-not-available", () => this.set({ state: "idle", version: "", progress: 0, message: "You're up to date" }));
-            this.updater.on("error", () =>
-               this.set({
-                  state: "error",
-                  version: "",
-                  progress: 0,
-                  message:
-                     this.state.state === "ready" ? "Couldn't install the update. Try again later." : "Couldn't check or download updates. Try again later.",
-               })
-            );
+         this.available = update;
+         const offered = await this.manager.offer(update);
+         this.available = offered;
+         if (previous.version === offered.version && ((previous.state === "ready" && this.manager.isReady) || previous.state === "downloaded")) {
+            this.set({ ...previous, mode: offered.mode, url: offered.url });
+            return;
          }
-         await this.updater.checkForUpdates();
+         if (this.state.version === offered.version && ["downloading", "ready", "downloaded", "error"].includes(this.state.state))
+            this.set({ ...this.state, mode: offered.mode, url: offered.url });
+         else this.set({ state: "available", version: offered.version, progress: 0, message: "An update is available", mode: offered.mode, url: offered.url });
       } catch {
-         this.set({ state: "error", version: "", progress: 0, message: "Couldn't check for updates. Try again later." });
+         if (manual) this.set({ ...previous, state: "error", message: "Couldn't check for updates. Try again later." });
+         else this.set(previous);
       }
    }
-   async install(before: () => Promise<boolean>) {
-      if (this.state.state === "ready" && this.updater) {
-         if (await before()) this.updater.quitAndInstall();
-      } else if (this.state.state === "available") await shell.openExternal("https://github.com/NoomStuff/AttaClip/releases/latest");
+   async download(): Promise<void> {
+      if (!this.available) throw new Error("No update is available.");
+      if (this.state.state === "downloading") return;
+      this.set({ ...this.state, state: "downloading", progress: 0, indeterminate: true, message: "Downloading update" });
+      try {
+         await this.manager.downloadPortable(this.available.version);
+      } catch (error) {
+         if (this.state.state !== "error")
+            this.set({ ...this.state, state: "error", message: error instanceof Error ? error.message : "The download failed." });
+      }
+   }
+   async reveal(): Promise<void> {
+      if (!this.manager.downloadedPath) throw new Error("No verified update download is available.");
+      shell.showItemInFolder(this.manager.downloadedPath);
+   }
+   async release(): Promise<void> {
+      if (this.available) await shell.openExternal(this.available.url);
+   }
+   async install(before: () => Promise<boolean>): Promise<void> {
+      if (!this.manager.isReady) throw new Error("The update is not ready yet.");
+      if (!(await before())) return;
+      try {
+         this.manager.install();
+      } catch (error) {
+         this.set({
+            ...this.state,
+            state: "error",
+            message: error instanceof Error ? error.message : "Could not apply the update. Open the release to update manually.",
+         });
+      }
    }
 }

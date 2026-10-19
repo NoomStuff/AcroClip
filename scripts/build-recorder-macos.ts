@@ -14,7 +14,7 @@ const simde = path.join(cache, "simde-source");
 const mount = path.join(cache, "mounted-obs");
 const build = path.join(root, ".cache/macos-native/build");
 const archiveName = process.arch === "arm64" ? "OBS-Studio-32.2.2-macOS-Apple.dmg" : "OBS-Studio-32.2.2-macOS-Intel.dmg";
-const runtime = path.resolve(process.env["ATTACLIP_RECORDER_STAGE"] ?? "resources/recorder");
+const runtime = path.resolve(process.env["ACROCLIP_RECORDER_STAGE"] ?? "resources/recorder");
 if (runtime !== path.join(root, "resources/recorder") && !runtime.startsWith(path.join(root, ".cache") + path.sep))
    throw new Error("Recorder staging must remain inside resources/recorder or the workspace .cache directory.");
 const run = (command: string, args: string[]) => {
@@ -65,7 +65,7 @@ try {
       "-Xlinker",
       "native/macos/notifier-Info.plist",
       "-o",
-      path.relative(root, path.join(build, "attaclip-notifier")),
+      path.relative(root, path.join(build, "acroclip-notifier")),
    ];
    run("swiftc", notifierArguments);
    await rm(runtime, { recursive: true, force: true });
@@ -104,11 +104,11 @@ try {
          await dependencyClosure(resolved);
       }
    }
-   const executable = path.join(runtime, "attaclip-recorder");
-   await copyFile(path.join(build, "attaclip-recorder"), executable);
-   const notifier = path.join(runtime, "attaclip-notifier");
-   await copyFile(path.join(build, "attaclip-notifier"), notifier);
-   await dependencyClosure(path.join(build, "attaclip-recorder"));
+   const executable = path.join(runtime, "acroclip-recorder");
+   await copyFile(path.join(build, "acroclip-recorder"), executable);
+   const notifier = path.join(runtime, "acroclip-notifier");
+   await copyFile(path.join(build, "acroclip-notifier"), notifier);
+   await dependencyClosure(path.join(build, "acroclip-recorder"));
    const allFiles = await files(contents);
    const mux = allFiles.find((file) => path.basename(file) === "obs-ffmpeg-mux");
    if (!mux) throw new Error("The official macOS mux helper is missing.");
@@ -166,7 +166,7 @@ try {
             feedbackBuild: {
                compiler: run("swiftc", ["--version"]).trim(),
                arguments: notifierArguments,
-               output: { path: "attaclip-notifier", sha256: await hashFile(notifier) },
+               output: { path: "acroclip-notifier", sha256: await hashFile(notifier) },
             },
             providerFiles,
             sourceHashes: Object.fromEntries(await Promise.all(sourceFiles.map(async (file) => [file, await hashFile(path.join(root, file))]))),

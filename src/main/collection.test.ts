@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { resolve, join } from "node:path";
-import { mkdtemp, rm, writeFile, readFile, stat, utimes, realpath } from "node:fs/promises";
+import { mkdir, symlink, mkdtemp, rm, writeFile, readFile, stat, utimes, realpath, rename } from "node:fs/promises";
 import os from "node:os";
 import { CollectionService, withinRoot } from "./collection";
 import { previewFilename } from "../shared/filename";
@@ -41,7 +41,7 @@ vi.mock("./media", async (original) => {
 
 describe("damaged metadata action identity", () => {
    it("keeps verified shareables and categories accessible when their original disappears, then restores the same clip", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "attaclip-missing-original-"));
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-missing-original-"));
       try {
          const original = join(root, "Moment.mp4");
          await writeFile(original, "original moment");
@@ -80,7 +80,7 @@ describe("damaged metadata action identity", () => {
       }
    });
    it("recovers duplicate IDs before displayed A can rename, delete or export B", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "attaclip-duplicate-ids-"));
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-duplicate-ids-"));
       try {
          const a = join(root, "A.mp4");
          const b = join(root, "B.mp4");
@@ -88,7 +88,7 @@ describe("damaged metadata action identity", () => {
          await writeFile(b, "original B");
          const collection = new CollectionService();
          await collection.open(root);
-         const metadata = join(root, ".attaclip", "collection.json");
+         const metadata = join(root, ".acroclip", "collection.json");
          const valid = await readFile(metadata, "utf8");
          const damaged = JSON.parse(valid) as { clips: { id: string; relativePath: string }[] };
          const recordA = damaged.clips.find((clip) => clip.relativePath === "A.mp4")!;
@@ -118,13 +118,13 @@ describe("damaged metadata action identity", () => {
       }
    });
    it("keeps duplicate metadata untouched when no recovery copy is valid", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "attaclip-duplicate-unrecoverable-"));
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-duplicate-unrecoverable-"));
       try {
          await writeFile(join(root, "A.mp4"), "original A");
          await writeFile(join(root, "B.mp4"), "original B");
          const collection = new CollectionService();
          await collection.open(root);
-         const metadata = join(root, ".attaclip", "collection.json");
+         const metadata = join(root, ".acroclip", "collection.json");
          const damaged = JSON.parse(await readFile(metadata, "utf8")) as { clips: { id: string }[] };
          damaged.clips[1]!.id = damaged.clips[0]!.id;
          const bytes = JSON.stringify(damaged);
@@ -162,7 +162,7 @@ describe("collection ownership boundaries", () => {
 
 describe("collection scan cost and fresh action checks", () => {
    it("shows completed custom saving names, hides native in-progress files, and honors verified completed metadata", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "attaclip-saving-names-"));
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-saving-names-"));
       try {
          const completed = join(
             root,
@@ -192,7 +192,7 @@ describe("collection scan cost and fresh action checks", () => {
       }
    });
    it("registers consecutive recordings after a watcher scan took an older directory snapshot", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "attaclip-registration-"));
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-registration-"));
       let release: (() => void) | undefined;
       try {
          const collection = new CollectionService();
@@ -235,7 +235,7 @@ describe("collection scan cost and fresh action checks", () => {
       }
    });
    it("keeps a warm 200-file scan free of sampled reads and metadata writes", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "attaclip-scan-cost-"));
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-scan-cost-"));
       try {
          await Promise.all(Array.from({ length: 200 }, (_, index) => writeFile(join(root, `clip-${index}.mp4`), `synthetic media ${index}`)));
          const collection = new CollectionService();
@@ -259,14 +259,14 @@ describe("collection scan cost and fresh action checks", () => {
       }
    });
    it("skips unchanged sampling and metadata writes, but rereads changed files and before deletion", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "attaclip-scan-"));
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-scan-"));
       try {
          const file = join(root, "clip.mp4");
          await writeFile(file, "synthetic media fixture");
          const collection = new CollectionService();
          await collection.open(root);
          const id = collection.clips[0]!.id;
-         const metadata = join(root, ".attaclip", "collection.json");
+         const metadata = join(root, ".acroclip", "collection.json");
          const firstMetadataTime = (await stat(metadata, { bigint: true })).mtimeNs;
          io.identities = io.writes = 0;
          await collection.scan();
@@ -289,6 +289,184 @@ describe("collection scan cost and fresh action checks", () => {
          await collection.scan();
          expect((await stat(metadata)).size).toBeGreaterThan(0);
       } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+});
+
+describe("portable category appearance", () => {
+   it("retains category identity, icon and memberships across edits and folder moves", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-category-appearance-")),
+         moved = `${root}-moved`;
+      try {
+         await writeFile(join(root, "Moment.mp4"), "controlled media");
+         const first = new CollectionService();
+         await first.open(root);
+         await first.createCategory("Games", "#77b9ef", "game");
+         const id = first.categories[0]!.id,
+            clipId = first.clips[0]!.id;
+         await first.assignCategories(clipId, [id]);
+         await first.updateCategory(id, "Highlights", "#73c6a1", "trophy");
+         await rename(root, moved);
+         const second = new CollectionService();
+         await second.open(moved);
+         expect(second.categories).toEqual([{ id, name: "Highlights", color: "#73c6a1", icon: "trophy" }]);
+         expect(second.clips[0]!.categories).toEqual([id]);
+         expect(second.clips[0]!.id).toBe(clipId);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+         await rm(moved, { recursive: true, force: true });
+      }
+   });
+});
+
+describe("collection folders", () => {
+   it("lists empty hierarchy and ignores directory links outside the collection", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-folders-")),
+         outside = await mkdtemp(join(os.tmpdir(), "acroclip-outside-"));
+      try {
+         await mkdir(join(root, "Games", "Empty"), { recursive: true });
+         await mkdir(join(root, "Other", "Empty"), { recursive: true });
+         await symlink(outside, join(root, "Outside"), process.platform === "win32" ? "junction" : "dir");
+         const service = new CollectionService();
+         await service.open(root);
+         expect(service.folders).toEqual(["Games", "Games/Empty", "Other", "Other/Empty"]);
+         expect(service.clips).toEqual([]);
+         await rm(join(root, "Games", "Empty"), { recursive: true });
+         await service.scan();
+         expect(service.folders).not.toContain("Games/Empty");
+      } finally {
+         await rm(root, { recursive: true, force: true });
+         await rm(outside, { recursive: true, force: true });
+      }
+   });
+});
+
+describe("saved application icons", () => {
+   it("keeps the captured app identity and local icon when the entire collection moves", async () => {
+      const parent = await mkdtemp(join(os.tmpdir(), "acroclip-portable-app-")),
+         root = join(parent, "clips"),
+         moved = join(parent, "moved");
+      await mkdir(root);
+      try {
+         const file = join(root, "Moment.mp4");
+         await writeFile(file, "isolated video");
+         const app = {
+            id: "a".repeat(64),
+            icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=",
+         };
+         const service = new CollectionService();
+         await service.open(root);
+         const clip = await service.registerRecording(file, "Captured app", app);
+         expect(clip.applicationId).toBe(app.id);
+         expect(service.applicationIcons[app.id]).toBe(app.icon);
+         await rename(root, moved);
+         const reopened = new CollectionService();
+         await reopened.open(moved);
+         expect(reopened.clips[0]).toMatchObject({ source: "Captured app", applicationId: app.id });
+         expect(reopened.applicationIcons[app.id]).toBe(app.icon);
+      } finally {
+         await rm(parent, { recursive: true, force: true });
+      }
+   });
+});
+
+describe("collection loading snapshots", () => {
+   it("retains a completed snapshot while refreshing, reports failure, and clears it for a different folder", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-loading-"));
+      const moved = `${root}-offline`;
+      let release = () => {};
+      try {
+         await writeFile(join(root, "First.mp4"), "first");
+         await writeFile(join(root, "Notes.txt"), "not a video");
+         await mkdir(join(root, "Empty folder"));
+         const collection = new CollectionService();
+         let probing = false;
+         io.beforeProbe = () =>
+            new Promise<void>((resolve) => {
+               probing = true;
+               release = resolve;
+            });
+         const opening = collection.open(root);
+         await expect.poll(() => probing).toBe(true);
+         expect(collection.phase).toBe("loading");
+         expect(collection.discovery).toEqual({ videos: 1, byFolder: { "": 1, "Empty folder": 0 }, complete: true });
+         expect(collection.clips).toEqual([]);
+         io.beforeProbe = undefined;
+         release();
+         await opening;
+         expect(collection.phase).toBe("ready");
+         await writeFile(join(root, "Second.mp4"), "second");
+         probing = false;
+         io.beforeProbe = () =>
+            new Promise<void>((resolve) => {
+               probing = true;
+               release = resolve;
+            });
+         const refresh = collection.scan();
+         expect(collection.scan()).toBe(refresh);
+         await expect.poll(() => probing).toBe(true);
+         expect(collection.phase).toBe("refreshing");
+         expect(collection.clips.map((clip) => clip.name)).toEqual(["First"]);
+         io.beforeProbe = undefined;
+         release();
+         await refresh;
+         expect(collection.clips).toHaveLength(2);
+         await rename(root, moved);
+         await expect(collection.scan()).rejects.toThrow();
+         expect(collection.phase).toBe("error");
+         expect(collection.scanError).not.toBe("");
+         expect(collection.clips).toHaveLength(2);
+         await rename(moved, root);
+         await collection.scan();
+         expect(collection.phase).toBe("ready");
+         const empty = join(root, "Empty");
+         await collection.open(empty);
+         expect(collection.phase).toBe("ready");
+         expect(collection.clips).toEqual([]);
+         expect(collection.root).toBe(await realpath(empty));
+      } finally {
+         io.beforeProbe = undefined;
+         release();
+         await rm(root, { recursive: true, force: true });
+         await rm(moved, { recursive: true, force: true });
+      }
+   });
+});
+
+describe("eager indexed previews", () => {
+   it("hydrates before file verification, reuses unchanged media info, and hides confirmed dead entries", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-eager-"));
+      try {
+         const source = join(root, "Moment.mp4");
+         await writeFile(source, "moment");
+         const first = new CollectionService();
+         await first.open(root);
+         const phases: { phase: string; unverified: boolean; count: number }[] = [];
+         const warm = new CollectionService({
+            onChange: () => phases.push({ phase: warm.phase, unverified: warm.clips[0]?.availability === "unverified", count: warm.clips.length }),
+         });
+         let probes = 0;
+         io.beforeProbe = async () => {
+            probes++;
+         };
+         await warm.open(root);
+         expect(phases.some((value) => value.phase === "loading" && value.unverified && value.count === 1)).toBe(true);
+         expect(probes).toBe(0);
+         expect(warm.clips[0]?.availability).toBeUndefined();
+         await rm(source);
+         await warm.scan();
+         expect(warm.clips).toEqual([]);
+         expect(warm.phase).toBe("ready");
+         const reopened = new CollectionService();
+         const ghosts: number[] = [];
+         const cleared = new CollectionService({ onChange: () => ghosts.push(cleared.clips.length) });
+         await cleared.open(root);
+         expect(ghosts.every((count) => count === 0)).toBe(true);
+         await reopened.open(root);
+         expect(reopened.clips).toEqual([]);
+      } finally {
+         io.beforeProbe = undefined;
          await rm(root, { recursive: true, force: true });
       }
    });

@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-namespace attaclip::windows {
+namespace acroclip::windows {
 class InputDelivery {
 public:
   using Clock = std::chrono::steady_clock;

@@ -28,17 +28,20 @@ describe("additional audio bindings", () => {
       expect(resolveAudioSources([{ ...source, enabled: false }], [])).toEqual([{ ...source, enabled: false }]);
    });
    it("permits live gain and mute but requires stopping to change track layout or master inclusion", () => {
-      const original = { ...defaultPreferences, audioSources: [source] };
+      const original = { ...defaultPreferences, collection: "test", audioSources: [source] };
       expect(requiresCaptureRestart(original, { ...original, audioSources: [{ ...source, volume: 0.5, muted: true }] })).toBe(false);
       expect(requiresCaptureRestart(original, { ...original, audioSources: [{ ...source, includeInMaster: true }] })).toBe(true);
       expect(requiresCaptureRestart(original, { ...original, audioSources: [] })).toBe(true);
    });
    it("limits isolated tracks and rejects duplicate or reserved source IDs at the IPC boundary", () => {
-      expect(preferencesSchema.safeParse({ ...defaultPreferences, audioSources: [source, source] }).success).toBe(false);
-      expect(preferencesSchema.safeParse({ ...defaultPreferences, audioSources: [{ ...source, id: "capture" }] }).success).toBe(false);
+      expect(preferencesSchema.safeParse({ ...defaultPreferences, collection: "test", audioSources: [source, source] }).success).toBe(false);
+      expect(preferencesSchema.safeParse({ ...defaultPreferences, collection: "test", audioSources: [{ ...source, id: "capture" }] }).success).toBe(false);
       expect(
-         preferencesSchema.safeParse({ ...defaultPreferences, audioSources: Array.from({ length: 4 }, (_, index) => ({ ...source, id: `source-${index}` })) })
-            .success
+         preferencesSchema.safeParse({
+            ...defaultPreferences,
+            collection: "test",
+            audioSources: Array.from({ length: 6 }, (_, index) => ({ ...source, id: `source-${index}` })),
+         }).success
       ).toBe(false);
    });
 });

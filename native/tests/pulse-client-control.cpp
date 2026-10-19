@@ -9,10 +9,10 @@ int main(int argc, char **argv) {
   const auto *configured = getenv("PULSE_SERVER");
   if (argc != 2 || !configured) return 2;
   const std::string server = configured;
-  if (server.rfind("unix:/tmp/attaclip-native-", 0) != 0 ||
+  if (server.rfind("unix:/tmp/acroclip-native-", 0) != 0 ||
       server.size() < 11 || server.substr(server.size() - 11) != "/audio.sock") return 2;
   auto *loop = pa_mainloop_new();
-  auto *context = pa_context_new(pa_mainloop_get_api(loop), "AttaClip private client termination");
+  auto *context = pa_context_new(pa_mainloop_get_api(loop), "AcroClip private client termination");
   if (pa_context_connect(context, nullptr, PA_CONTEXT_NOAUTOSPAWN, nullptr) < 0) return 3;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
   while (pa_context_get_state(context) != PA_CONTEXT_READY) {

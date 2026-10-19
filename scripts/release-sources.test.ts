@@ -18,7 +18,7 @@ import {
 
 describe("release source evidence", () => {
    it.each(["native/clip-writer.cpp", "native/clip-writer.hpp"])("rejects omitted or altered consumed clip-writer source %s", async (consumed) => {
-      const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-clip-writer-provenance-"));
+      const folder = await mkdtemp(path.join(os.tmpdir(), "acroclip-clip-writer-provenance-"));
       try {
          const inputs = ["native/recorder.cpp", "native/clip-writer.cpp", "native/clip-writer.hpp", "native/CMakeLists.txt", "scripts/build-native.ts"];
          const sourceHashes: Record<string, string> = {};
@@ -28,8 +28,8 @@ describe("release source evidence", () => {
             await writeFile(file, input);
             sourceHashes[input] = await hashFile(file);
          }
-         const provenance = { sourceHashes, binaryHashes: { "attaclip-recorder.exe": "actual-helper" } };
-         const staged = [{ path: "recorder/attaclip-recorder.exe", sha256: "actual-helper", size: 1 }];
+         const provenance = { sourceHashes, binaryHashes: { "acroclip-recorder.exe": "actual-helper" } };
+         const staged = [{ path: "recorder/acroclip-recorder.exe", sha256: "actual-helper", size: 1 }];
          expect(await validateRecorderBuild(provenance, staged, folder)).toEqual([]);
          const recorded = sourceHashes[consumed]!;
          delete sourceHashes[consumed];
@@ -42,7 +42,7 @@ describe("release source evidence", () => {
       }
    });
    it("requires current Windows health and module recipe fingerprints even when optional provenance fields are stripped", async () => {
-      const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-health-provenance-"));
+      const folder = await mkdtemp(path.join(os.tmpdir(), "acroclip-health-provenance-"));
       try {
          const inputs = [
             "native/recorder.cpp",
@@ -63,8 +63,8 @@ describe("release source evidence", () => {
             await writeFile(path.join(folder, input), input);
             sourceHashes[input] = await hashFile(path.join(folder, input));
          }
-         const staged = [{ path: "recorder/attaclip-recorder.exe", sha256: "actual-helper", size: 1 }];
-         const provenance = { sourceHashes, binaryHashes: { "attaclip-recorder.exe": "actual-helper" } };
+         const staged = [{ path: "recorder/acroclip-recorder.exe", sha256: "actual-helper", size: 1 }];
+         const provenance = { sourceHashes, binaryHashes: { "acroclip-recorder.exe": "actual-helper" } };
          expect(await validateRecorderBuild(provenance, staged, folder)).toEqual([]);
          for (const input of inputs.filter((item) => item.includes("windows/"))) delete sourceHashes[input];
          const blockers = await validateRecorderBuild(provenance, staged, folder);
@@ -75,7 +75,7 @@ describe("release source evidence", () => {
       }
    });
    it("requires matching native notifier source and binary before accepting an owned OBS runtime helper", async () => {
-      const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-native-provenance-"));
+      const folder = await mkdtemp(path.join(os.tmpdir(), "acroclip-native-provenance-"));
       try {
          const inputs = [
             "native/recorder.cpp",
@@ -94,27 +94,27 @@ describe("release source evidence", () => {
             sourceHashes[input] = await hashFile(absolute);
          }
          const staged = [
-            { path: "recorder/attaclip-recorder.exe", sha256: "recorder-build", size: 1 },
-            { path: "recorder/attaclip-notifier.exe", sha256: "notifier-build", size: 1 },
+            { path: "recorder/acroclip-recorder.exe", sha256: "recorder-build", size: 1 },
+            { path: "recorder/acroclip-notifier.exe", sha256: "notifier-build", size: 1 },
          ];
-         const provenance = { sourceHashes, binaryHashes: { "attaclip-recorder.exe": "recorder-build", "attaclip-notifier.exe": "notifier-build" } };
+         const provenance = { sourceHashes, binaryHashes: { "acroclip-recorder.exe": "recorder-build", "acroclip-notifier.exe": "notifier-build" } };
          expect(await validateRecorderBuild(provenance, staged, folder)).toEqual([]);
          staged[1]!.sha256 = "unrelated-binary";
-         expect(await validateRecorderBuild(provenance, staged, folder)).toContain("Recorder helper binary hash absent or stale: attaclip-notifier.exe");
+         expect(await validateRecorderBuild(provenance, staged, folder)).toContain("Recorder helper binary hash absent or stale: acroclip-notifier.exe");
          staged[1]!.sha256 = "notifier-build";
          await writeFile(path.join(folder, "native/notifications/windows.cpp"), "different source");
          expect(await validateRecorderBuild(provenance, staged, folder)).toContain(
             "Recorder build-input hash absent or stale: native/notifications/windows.cpp"
          );
          expect(await validateRecorderBuild(provenance, staged.slice(0, 1), folder)).toContain(
-            "Recorder helper binary hash absent or stale: attaclip-notifier.exe"
+            "Recorder helper binary hash absent or stale: acroclip-notifier.exe"
          );
       } finally {
          await rm(folder, { recursive: true, force: true });
       }
    });
    it("includes Electron's shared FFmpeg module in the release digest", async () => {
-      const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-electron-source-"));
+      const folder = await mkdtemp(path.join(os.tmpdir(), "acroclip-electron-source-"));
       try {
          const directory = path.join(folder, "node_modules/electron/dist");
          await mkdir(directory, { recursive: true });
@@ -129,7 +129,7 @@ describe("release source evidence", () => {
       }
    });
    it("pins source contents across gzip encoders and rejects damaged archives", async () => {
-      const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-source-content-"));
+      const folder = await mkdtemp(path.join(os.tmpdir(), "acroclip-source-content-"));
       try {
          const source = Buffer.from("captured source bytes\n".repeat(1000));
          const fast = gzipSync(source, { level: 1 });
@@ -158,7 +158,7 @@ describe("release source evidence", () => {
       expect(dependencyClosure(refs, new Set(["--enable-libjxl"])).map((ref) => ref.recipe)).toEqual(refs.slice(0, 3).map((ref) => ref.recipe));
    });
    it("allows complete technical records and does not require source for permissive licenses", async () => {
-      const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-source-kit-"));
+      const folder = await mkdtemp(path.join(os.tmpdir(), "acroclip-source-kit-"));
       try {
          const archive = path.join(folder, "source.tar.gz");
          await writeFile(archive, "fixture evidence");
@@ -172,13 +172,13 @@ describe("release source evidence", () => {
             publicInstallerReady: false,
             staged: [],
             blockers: [],
-            requiredEvidence: ["permissive-fixture", "attaclip-source"],
+            requiredEvidence: ["permissive-fixture", "acroclip-source"],
             sources: sourcePins.map((pin) => ({ ...file, repository: pin.repository, commit: pin.commit, url: "", licenses: [] })),
             evidence: {
                stagedDigest: createHash("sha256").update("[]").digest("hex"),
                components: [
                   { id: "permissive-fixture", version: "1", license: "MIT", sourceArchives: [], licenseFiles: [file], buildInstructions: [] },
-                  { id: "attaclip-source", version: "1", license: "GPL-3.0-or-later", sourceArchives: [file], licenseFiles: [file], buildInstructions: [file] },
+                  { id: "acroclip-source", version: "1", license: "GPL-3.0-or-later", sourceArchives: [file], licenseFiles: [file], buildInstructions: [file] },
                ],
             },
          };
@@ -190,7 +190,7 @@ describe("release source evidence", () => {
       }
    });
    it("rejects changed staged binaries and damaged archives, and cannot clear only core sources", async () => {
-      const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-source-kit-"));
+      const folder = await mkdtemp(path.join(os.tmpdir(), "acroclip-source-kit-"));
       try {
          await mkdir(path.join(folder, "resources", "media"), { recursive: true });
          const binary = path.join(folder, "resources", "media", "ffmpeg.exe");
@@ -219,7 +219,7 @@ describe("release source evidence", () => {
       }
    });
    it("rejects a manifest path outside the kit", async () => {
-      const folder = await mkdtemp(path.join(os.tmpdir(), "attaclip-source-kit-"));
+      const folder = await mkdtemp(path.join(os.tmpdir(), "acroclip-source-kit-"));
       try {
          const kit: SourceKit = {
             version: 1,

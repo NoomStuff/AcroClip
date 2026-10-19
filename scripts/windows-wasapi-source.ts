@@ -381,7 +381,7 @@ export async function validateWasapiBuildEvidence(unknownRecord: unknown, direct
    equalSet(tlogRoots(await trace("link.command.1.tlog")), compiledObjects, "WASAPI link object roots");
    if (!tlogReads(await trace("link.write.1.tlog")).includes(record.moduleOrigin)) throw new Error("WASAPI linker did not write the staged module path");
    const definitions = (await trace("CL.command.1.tlog")).toString("utf16le");
-   if (/ATTACLIP_WASAPI_(?:TEST|FAULT)/i.test(definitions)) throw new Error("Diagnostic flags in the production WASAPI command");
+   if (/ACROCLIP_WASAPI_(?:TEST|FAULT)/i.test(definitions)) throw new Error("Diagnostic flags in the production WASAPI command");
    for (const source of record.sources) {
       const input = record.inputs.find((item) => item.origin === source.origin);
       if (source.upstreamPath.endsWith(".hpp") && (!input || input.sha256 !== source.file.sha256 || input.size !== source.file.size))
@@ -430,7 +430,7 @@ export async function validateWasapiBuildEvidence(unknownRecord: unknown, direct
    if (def.shift() !== "LIBRARY obs" || def.shift() !== "EXPORTS") throw new Error("WASAPI OBS import definition is invalid");
    equalSet(def, peExportNames(await readFile(path.join(project, "resources/recorder/obs.dll"))), "WASAPI OBS import exports");
    const cache = (await trace("CMakeCache.txt")).toString("utf8");
-   if (!cache.includes("CMAKE_GENERATOR_PLATFORM:INTERNAL=x64") || !cache.includes("CMAKE_PROJECT_NAME:STATIC=attaclip_wasapi_health"))
+   if (!cache.includes("CMAKE_GENERATOR_PLATFORM:INTERNAL=x64") || !cache.includes("CMAKE_PROJECT_NAME:STATIC=acroclip_wasapi_health"))
       throw new Error("Unexpected WASAPI build configuration");
    return record;
 }

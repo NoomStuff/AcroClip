@@ -30,7 +30,7 @@ Folder layout and filename presets are independent settings. Single-folder stora
 
 Custom overlapping categories are in the first-version scope. They are metadata groupings, not physical folders. Application labels are independent. Removing a category does not remove its videos.
 
-The root `.attaclip` folder holds associations. A root `shareables` folder mirrors originals' relative folders. AttaClip verifies ownership before treating a pre-existing folder as its shareable output area. Relative paths take priority over absolute recovery hints. External recovery must be disclosed and must not grant deletion ownership.
+The root `.acroclip` folder holds associations. A root `shareables` folder mirrors originals' relative folders. AcroClip verifies ownership before treating a pre-existing folder as its shareable output area. Relative paths take priority over absolute recovery hints. External recovery must be disclosed and must not grant deletion ownership.
 
 Cards open the viewer. A hover/focus three-dot menu can create shareables directly without opening a video. The viewer has Original and Shareable switching, multiple-shareable selection, basic clip information, and actions at the bottom. Source playback controls follow AttaCut, including audio-track selection. Open in AttaCut launches the editing app.
 

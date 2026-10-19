@@ -4,7 +4,7 @@
 #include <iostream>
 
 int main() {
-  using attaclip::macos::InputHealth;
+  using acroclip::macos::InputHealth;
   InputHealth health;
   int permissionReads = 0, inventoryReads = 0;
   bool authorized = true;
@@ -42,7 +42,7 @@ int main() {
   devices.clear();
   assert(check("default", 3000).find("unavailable") != std::string::npos);
   auto at = [](int ms) { return InputHealth::Clock::time_point(std::chrono::milliseconds(ms)); };
-  attaclip::macos::InputDelivery delivery(at(0));
+  acroclip::macos::InputDelivery delivery(at(0));
   assert(delivery.error(at(0)).empty());
   assert(delivery.error(at(1999)).empty());
   assert(delivery.error(at(2000)).find("not started") != std::string::npos);

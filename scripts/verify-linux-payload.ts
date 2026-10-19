@@ -38,7 +38,7 @@ export async function verifyLinuxPayload(project: string, extracted: string): Pr
       count++;
    }
    const media = JSON.parse(await readFile(path.join(resources, "media/provenance.json"), "utf8")) as { controlledBuild?: ControlledLinuxMediaBuild };
-   if (media.controlledBuild?.producer !== "attaclip-controlled-linux" || media.controlledBuild.target !== "linux-x64")
+   if (media.controlledBuild?.producer !== "acroclip-controlled-linux" || media.controlledBuild.target !== "linux-x64")
       throw new Error("Linux package does not contain the controlled Linux media build");
    for (const name of ["ffmpeg", "ffprobe"] as const)
       if ((await hashFile(path.join(resources, "media", name))) !== media.controlledBuild.binaries[name].sha256)

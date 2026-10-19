@@ -1,15 +1,15 @@
 {
-   "name": "attaclip",
-   "version": "0.2.0",
+   "name": "acroclip",
+   "version": "0.3.0",
    "description": "Save the moment. Keep it yours.",
    "license": "GPL-3.0-or-later",
    "type": "module",
    "main": "out/main/index.js",
-   "desktopName": "dev.attaclip.app.desktop",
+   "desktopName": "dev.acroclip.app.desktop",
    "author": "NoomStuff",
    "scripts": {
-      "dev": "electron-vite dev",
-      "build": "bun run typecheck && electron-vite build",
+      "dev": "install-electron && bun run build:icons && bun scripts/dev.ts",
+      "build": "bun run build:icons && bun run typecheck && electron-vite build",
       "typecheck": "tsc --noEmit",
       "test": "vitest run",
       "format": "prettier --write .",
@@ -22,7 +22,7 @@
       "test:packaged": "bun tests/packaged.ts",
       "test:packaged:linux": "python3 scripts/test-linux-packaged.py",
       "test:native": "bun scripts/smoke-recorder.ts",
-      "test:native:lifecycle": "bun scripts/smoke-start-lifecycle.ts resources/recorder/attaclip-recorder.exe",
+      "test:native:lifecycle": "bun scripts/smoke-start-lifecycle.ts resources/recorder/acroclip-recorder.exe",
       "test:capture-loss": "bun scripts/smoke-capture-loss.ts",
       "test:fullscreen": "bun scripts/smoke-fullscreen.ts",
       "build:icons": "bun scripts/build-icons.ts",
@@ -34,8 +34,8 @@
       "test:portable": "bun scripts/test-portable.ts"
    },
    "build": {
-      "appId": "dev.attaclip.app",
-      "productName": "AttaClip",
+      "appId": "dev.acroclip.app",
+      "productName": "AcroClip",
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "directories": {
          "output": "release"
@@ -68,6 +68,10 @@
          {
             "to": "icons/icon.png",
             "from": "build/icon.png"
+         },
+         {
+            "to": "icons/icon.ico",
+            "from": "build/icon.ico"
          },
          {
             "to": "LICENSE-AttaCut",
@@ -111,7 +115,7 @@
          {
             "provider": "github",
             "owner": "NoomStuff",
-            "repo": "AttaClip"
+            "repo": "AcroClip"
          }
       ]
    },

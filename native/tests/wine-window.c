@@ -65,10 +65,10 @@ int main(void) {
   WNDCLASSA klass = {0};
   klass.lpfnWndProc = procedure;
   klass.hInstance = GetModuleHandleA(0);
-  klass.lpszClassName = "AttaClipWineProof";
+  klass.lpszClassName = "AcroClipWineProof";
   RegisterClassA(&klass);
   HWND window = CreateWindowA(
-      klass.lpszClassName, "AttaClip private Wine proof", WS_OVERLAPPEDWINDOW,
+      klass.lpszClassName, "AcroClip private Wine proof", WS_OVERLAPPEDWINDOW,
       30, 30, 340, 220, 0, 0, klass.hInstance, 0);
   CreateThread(0, 0, audio, 0, 0, 0);
   ShowWindow(window, SW_SHOW);

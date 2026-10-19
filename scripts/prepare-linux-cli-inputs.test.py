@@ -21,7 +21,7 @@ class RestoreSourceInputsTest(unittest.TestCase):
             relative = name + ".tar.gz"
             (packet / "controlled-cli/sources" / relative).write_bytes(data)
             archives.append({"path": relative, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)})
-        build = {"producer": "attaclip-controlled-linux", "target": "linux-x64", "sourceArchives": archives, "sourceCommits": {name: "a" * 40 for name in ["ffmpeg", "x264", "dav1d", "zlib"]}}
+        build = {"producer": "acroclip-controlled-linux", "target": "linux-x64", "sourceArchives": archives, "sourceCommits": {name: "a" * 40 for name in ["ffmpeg", "x264", "dav1d", "zlib"]}}
         (packet / "controlled-cli/build/build-manifest.json").write_text(json.dumps(build))
         return packet
 

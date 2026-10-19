@@ -1,4 +1,4 @@
-import type { CaptureSource, GameCandidate, RecordingCapabilities, SourceKind } from "./types";
+import type { CaptureSource, GameCandidate, RecordingCapabilities, SourceKind, Preferences } from "./types";
 
 export const portalScreenId = "portal:screen";
 export function portalSources(capabilities: RecordingCapabilities, candidates: GameCandidate[] = []): CaptureSource[] | null {
@@ -23,4 +23,12 @@ export function sourceChoices(
       { value: "app", label: "App", disabled: unavailable("app") },
       { value: "auto", label: "Auto", disabled: unavailable("auto") },
    ];
+}
+
+export function selectedCaptureSource(sources: CaptureSource[], preferences: Pick<Preferences, "sourceKind" | "sourceId">): CaptureSource | undefined {
+   if (preferences.sourceKind === "auto") return undefined;
+   return (
+      sources.find((source) => source.kind === preferences.sourceKind && source.id === preferences.sourceId) ??
+      (!preferences.sourceId && preferences.sourceKind === "screen" ? sources.find((source) => source.kind === "screen") : undefined)
+   );
 }

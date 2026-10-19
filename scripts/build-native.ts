@@ -56,7 +56,7 @@ if (
       .digest("hex") !== "aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63"
 )
    throw new Error("The JSON dependency did not match its pinned digest");
-let obs = process.env["ATTACLIP_OBS_ROOT"] ?? path.join(cache, "obs-runtime");
+let obs = process.env["ACROCLIP_OBS_ROOT"] ?? path.join(cache, "obs-runtime");
 if (!existsSync(path.join(obs, "bin", "64bit", "obs.dll"))) {
    obs = path.join(cache, "obs-runtime");
    const archive = path.join(cache, `OBS-Studio-${version}-Windows-x64.zip`);
@@ -77,7 +77,7 @@ const installedVersion = run("powershell", [
    `(Get-Item -LiteralPath ${psLiteral(path.join(bin, "obs64.exe"))}).VersionInfo.FileVersion`,
 ]).trim();
 if (installedVersion !== version)
-   throw new Error(`OBS runtime ${installedVersion} does not match pinned headers ${version}. Set ATTACLIP_OBS_ROOT to ${version}`);
+   throw new Error(`OBS runtime ${installedVersion} does not match pinned headers ${version}. Set ACROCLIP_OBS_ROOT to ${version}`);
 const vswhere = path.join(process.env["ProgramFiles(x86)"] ?? "C:/Program Files (x86)", "Microsoft Visual Studio", "Installer", "vswhere.exe");
 const installation = run(vswhere, [
    "-latest",
@@ -125,6 +125,7 @@ run("cmake", [
    generator,
    "-A",
    "x64",
+   `-DACROCLIP_VERSION=${(JSON.parse(await readFile(path.join(root, "package.json"), "utf8")) as { version: string }).version}`,
    `-DOBS_SOURCE_DIR=${source}`,
    `-DOBS_IMPORT_LIBRARY=${path.join(generated, "obs.lib")}`,
 ]);
@@ -134,8 +135,8 @@ const controlledWasapi = await buildWindowsWasapi({ project: root, upstream: sou
 if (path.resolve(runtime) !== path.join(path.resolve(root), "resources", "recorder")) throw new Error("Unexpected staging directory");
 await rm(runtime, { recursive: true, force: true });
 await mkdir(runtime, { recursive: true });
-await copyFile(path.join(output, "Release", "attaclip-recorder.exe"), path.join(runtime, "attaclip-recorder.exe"));
-await copyFile(path.join(output, "notifications", "Release", "attaclip-notifier.exe"), path.join(runtime, "attaclip-notifier.exe"));
+await copyFile(path.join(output, "Release", "acroclip-recorder.exe"), path.join(runtime, "acroclip-recorder.exe"));
+await copyFile(path.join(output, "notifications", "Release", "acroclip-notifier.exe"), path.join(runtime, "acroclip-notifier.exe"));
 const binaries = [
    "obs.dll",
    "libobs-d3d11.dll",
@@ -183,7 +184,7 @@ await writeFile(
          encoder: "Device-probed NVENC, AMD AMF or Intel QSV H.264; explicit x264 software fallback",
          format: "Matroska",
          platform: "Windows x64",
-         runtimeArchive: process.env["ATTACLIP_OBS_ROOT"]
+         runtimeArchive: process.env["ACROCLIP_OBS_ROOT"]
             ? null
             : {
                  url: `https://github.com/obsproject/obs-studio/releases/download/${version}/OBS-Studio-${version}-Windows-x64.zip`,
@@ -193,12 +194,16 @@ await writeFile(
             await Promise.all(
                [
                   "native/recorder.cpp",
+                  "native/recording-preset.hpp",
                   "native/clip-writer.cpp",
                   "native/clip-writer.hpp",
                   "native/CMakeLists.txt",
+                  "native/windows/product.rc.in",
                   "native/notifications/windows.cpp",
                   "native/notifications/CMakeLists.txt",
                   "native/windows/audio-health.hpp",
+                  "native/windows/capture-window.hpp",
+                  "native/windows/listen-safety.hpp",
                   "native/windows/audio-health-policy.hpp",
                   "native/windows/audio-health-test.cpp",
                   "native/windows/wasapi/CMakeLists.txt",
@@ -215,7 +220,7 @@ await writeFile(
          ),
          binaryHashes: Object.fromEntries(
             await Promise.all(
-               ["attaclip-recorder.exe", "attaclip-notifier.exe", "obs-plugins/64bit/win-wasapi.dll", ...binaries].map(async (file) => [
+               ["acroclip-recorder.exe", "acroclip-notifier.exe", "obs-plugins/64bit/win-wasapi.dll", ...binaries].map(async (file) => [
                   file,
                   createHash("sha256")
                      .update(await readFile(path.join(runtime, file)))
@@ -232,5 +237,5 @@ await writeFile(
 await cp(path.join(source, "COPYING"), path.join(runtime, "LICENSE-OBS"));
 await download("https://raw.githubusercontent.com/nlohmann/json/v3.12.0/LICENSE.MIT", path.join(runtime, "LICENSE-json"));
 console.log(
-   `Built real libOBS ${version} recorder and staged ${binaries.length} runtime files. Runtime ${await stat(path.join(runtime, "attaclip-recorder.exe")).then((s) => s.size)} bytes.`
+   `Built real libOBS ${version} recorder and staged ${binaries.length} runtime files. Runtime ${await stat(path.join(runtime, "acroclip-recorder.exe")).then((s) => s.size)} bytes.`
 );

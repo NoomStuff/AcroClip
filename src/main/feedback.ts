@@ -43,7 +43,7 @@ export class Feedback {
    private system(message: string): void {
       if (!Notification.isSupported()) return;
       this.notification?.close();
-      this.notification = new Notification({ title: "AttaClip", body: message, silent: true });
+      this.notification = new Notification({ title: "AcroClip", body: message, silent: true });
       this.notification.on("failed", (_event, reason) => this.onWarning(`System feedback failed: ${reason}`));
       this.notification.show();
    }

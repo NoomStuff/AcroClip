@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace attaclip::macos {
+namespace acroclip::macos {
 // Device presence and permission are not proof that an AudioUnit is producing
 // samples. They do let us report revocation and unplugging without treating a
 // quiet microphone as a failed input or polling the hardware for every packet.
@@ -23,7 +23,7 @@ public:
       nextPermission = now + std::chrono::milliseconds(100);
     }
     if (!authorized)
-      return "Microphone access was revoked. Allow AttaClip in System Settings";
+      return "Microphone access was revoked. Allow AcroClip in System Settings";
     if (now >= nextInventory) {
       devices = inventory();
       nextInventory = now + std::chrono::seconds(1);

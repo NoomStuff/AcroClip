@@ -13,7 +13,7 @@ import type { AdditionalAudioSource } from "../src/shared/types";
 
 if (process.platform !== "darwin") throw new Error("Packaged Mac recording requires an actual macOS host.");
 const run = promisify(execFile);
-const folder = await mkdtemp(path.join(tmpdir(), "attaclip-mac-packaged-"));
+const folder = await mkdtemp(path.join(tmpdir(), "acroclip-mac-packaged-"));
 const collection = path.join(folder, "clips");
 await mkdir(collection);
 const evidence = path.resolve(".cache/macos-packaged");
@@ -55,7 +55,7 @@ const decoyContents = path.join(folder, "Decoy.app", "Contents");
 await mkdir(path.join(decoyContents, "MacOS"), { recursive: true });
 await writeFile(
    path.join(decoyContents, "Info.plist"),
-   (await readFile(path.resolve("native/macos/fixture-Info.plist"), "utf8")).replace("dev.attaclip.capture-fixture", "dev.attaclip.capture-decoy")
+   (await readFile(path.resolve("native/macos/fixture-Info.plist"), "utf8")).replace("dev.acroclip.capture-fixture", "dev.acroclip.capture-decoy")
 );
 await copyFile(binary, path.join(decoyContents, "MacOS", "fixture"));
 const decoyOutput = path.join(folder, "decoy-output.jsonl");
@@ -98,7 +98,7 @@ await writeFile(
    })
 );
 const executable =
-   process.env["ATTACLIP_MAC_PACKAGED_EXE"] ?? path.resolve(`release/mac${process.arch === "arm64" ? "-arm64" : ""}/AttaClip.app/Contents/MacOS/AttaClip`);
+   process.env["ACROCLIP_MAC_PACKAGED_EXE"] ?? path.resolve(`release/mac${process.arch === "arm64" ? "-arm64" : ""}/AcroClip.app/Contents/MacOS/AcroClip`);
 let desktop: Awaited<ReturnType<typeof electron.launch>> | undefined;
 const ffmpeg = path.resolve("resources/media/ffmpeg");
 const ffprobe = path.resolve("resources/media/ffprobe");
@@ -128,12 +128,12 @@ try {
    desktop = await electron.launch({
       executablePath: executable,
       args: ["--disable-gpu-sandbox"],
-      env: { ...process.env, ATTACLIP_TEST: "1", ATTACLIP_PROFILE: folder },
+      env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: folder },
       timeout: 60000,
    });
    const page = await desktop.firstWindow();
    await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeVisible();
-   const selected = (await page.evaluate(() => window.attaClip.games())).find((candidate) => candidate.pid === identity.pid);
+   const selected = (await page.evaluate(() => window.acroClip.games())).find((candidate) => candidate.pid === identity.pid);
    expect(selected).toBeDefined();
    const audioSources: AdditionalAudioSource[] = [
       {
@@ -162,32 +162,32 @@ try {
       },
    ];
    await page.evaluate(async (sources) => {
-      const current = await window.attaClip.state();
-      await window.attaClip.savePreferences({ ...current.preferences, audioSources: sources });
+      const current = await window.acroClip.state();
+      await window.acroClip.savePreferences({ ...current.preferences, audioSources: sources });
    }, audioSources);
-   expect(await page.evaluate(() => window.attaClip.audioDevices("output"))).toEqual([{ id: "system", name: "System audio" }]);
+   expect(await page.evaluate(() => window.acroClip.audioDevices("output"))).toEqual([{ id: "system", name: "System audio" }]);
    await page.getByRole("button", { name: "Start recording", exact: true }).click();
-   await expect.poll(() => page.evaluate(async () => (await window.attaClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
+   await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
    await expect
-      .poll(() => page.evaluate(async () => (await window.attaClip.state()).recorder.availableSeconds), { timeout: 30000 })
+      .poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.availableSeconds), { timeout: 30000 })
       .toBeGreaterThanOrEqual(4.9);
    await page.getByRole("button", { name: "Library", exact: true }).click();
-   expect((await page.evaluate(() => window.attaClip.state())).recorder.state).toBe("recording");
-   await page.evaluate(() => window.attaClip.window("minimize"));
-   expect((await page.evaluate(() => window.attaClip.state())).recorder.state).toBe("recording");
+   expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
+   await page.evaluate(() => window.acroClip.window("minimize"));
+   expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
    await desktop.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows()[0];
       window?.restore();
       window?.show();
    });
-   await page.evaluate(() => window.attaClip.window("close"));
-   expect((await page.evaluate(() => window.attaClip.state())).recorder.state).toBe("recording");
-   await page.evaluate(() => window.attaClip.saveClip());
+   await page.evaluate(() => window.acroClip.window("close"));
+   expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
+   await page.evaluate(() => window.acroClip.saveClip());
    await page.waitForTimeout(100);
-   await page.evaluate(() => window.attaClip.saveClip());
-   await page.evaluate(() => window.attaClip.stopRecording());
-   await expect.poll(() => page.evaluate(async () => (await window.attaClip.state()).clips.length), { timeout: 60000 }).toBe(2);
-   const state = await page.evaluate(() => window.attaClip.state());
+   await page.evaluate(() => window.acroClip.saveClip());
+   await page.evaluate(() => window.acroClip.stopRecording());
+   await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).clips.length), { timeout: 60000 }).toBe(2);
+   const state = await page.evaluate(() => window.acroClip.state());
    const original = state.clips[0]!;
    expect(original.width).toBe(640);
    expect(original.height).toBe(360);
@@ -238,10 +238,10 @@ try {
       }
       expect([...classes].sort()).toEqual([0, 1]);
    }
-   await page.evaluate((id) => window.attaClip.createShareable(id, 1), original.id);
-   await expect.poll(() => page.evaluate(async () => (await window.attaClip.state()).clips[0]?.shareables.length), { timeout: 90000 }).toBe(1);
+   await page.evaluate((id) => window.acroClip.createShareable(id, 1), original.id);
+   await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).clips[0]?.shareables.length), { timeout: 90000 }).toBe(1);
    expect(digest(await readFile(original.path))).toBe(hash);
-   const copy = (await page.evaluate(() => window.attaClip.state())).clips[0]!.shareables[0]!;
+   const copy = (await page.evaluate(() => window.acroClip.state())).clips[0]!.shareables[0]!;
    expect((await stat(copy.path)).size).toBeLessThanOrEqual(1000000);
    await run(ffmpeg, ["-v", "error", "-i", copy.path, "-map", "0", "-f", "null", "-"]);
    await writeFile(

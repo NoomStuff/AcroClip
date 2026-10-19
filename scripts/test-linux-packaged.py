@@ -24,12 +24,12 @@ if not bun:
 root = pathlib.Path.cwd()
 evidence = root / ".cache/linux-packaged" / str(uuid.uuid4())
 evidence.mkdir(parents=True)
-private = pathlib.Path(tempfile.mkdtemp(prefix="attaclip-packaged-x11-"))
+private = pathlib.Path(tempfile.mkdtemp(prefix="acroclip-packaged-x11-"))
 env = dict(os.environ, XDG_RUNTIME_DIR=str(private),
            PULSE_SERVER="unix:" + str(private / "audio.sock"),
            DBUS_SESSION_BUS_ADDRESS="unix:path=" + str(private / "dbus.sock"),
            WAYLAND_DISPLAY="", XDG_SESSION_TYPE="x11",
-           ATTACLIP_NATIVE_TEST_SOFTWARE="1", ATTACLIP_PACKAGED_PRIVATE_X11="1",
+           ACROCLIP_NATIVE_TEST_SOFTWARE="1", ACROCLIP_PACKAGED_PRIVATE_X11="1",
            LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe")
 processes = []
 logs = []
@@ -56,14 +56,14 @@ try:
         subprocess.run([str(artifact), "--appimage-extract"], cwd=evidence,
                        stdout=log, stderr=log, check=True, timeout=90)
     package = evidence / "squashfs-root"
-    executable = package / "attaclip"
+    executable = package / "acroclip"
     if not executable.is_file():
-        raise RuntimeError("The AppImage does not contain the AttaClip executable")
-    for binary in [package / "resources/recorder/attaclip-recorder",
+        raise RuntimeError("The AppImage does not contain the AcroClip executable")
+    for binary in [package / "resources/recorder/acroclip-recorder",
                    package / "resources/media/ffmpeg", package / "resources/media/ffprobe"]:
         if not binary.is_file():
             raise RuntimeError(f"Missing packaged executable: {binary}")
-    env["ATTACLIP_PACKAGED_EXE"] = str(executable)
+    env["ACROCLIP_PACKAGED_EXE"] = str(executable)
 
     # Reserve an actual TCP display port. Existing desktop displays stay alone.
     display = None
@@ -94,7 +94,7 @@ try:
     launch(["pulseaudio", "-n", "--daemonize=no", "--exit-idle-time=-1",
             "--use-pid-file=no", "--disable-shm=true",
             "--load=module-native-protocol-unix socket=" + str(private / "audio.sock") + " auth-anonymous=1",
-            "--load=module-null-sink sink_name=attaclip-test rate=48000 channels=2"], "pulse")
+            "--load=module-null-sink sink_name=acroclip-test rate=48000 channels=2"], "pulse")
     deadline = time.monotonic() + 10
     while not (private / "audio.sock").exists():
         if time.monotonic() >= deadline:
@@ -105,7 +105,7 @@ try:
     subprocess.run([str(package / "resources/media/ffmpeg"), "-v", "error", "-f", "lavfi",
                     "-i", "sine=frequency=997:sample_rate=48000:duration=120",
                     "-ac", "2", str(tone)], check=True, timeout=20)
-    launch(["paplay", "--device=attaclip-test", str(tone)], "tone")
+    launch(["paplay", "--device=acroclip-test", str(tone)], "tone")
     test = launch([bun, "tests/packaged.ts"], "application")
     result = test.wait(timeout=240)
     if result != 0:

@@ -11,7 +11,7 @@ describe("controlled media notices in the runtime package", () => {
       await Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true })));
    });
    it("retains a compiled dependency's full copyright and license in the installer notices", async () => {
-      const project = await mkdtemp(path.join(os.tmpdir(), "attaclip-source-notices-"));
+      const project = await mkdtemp(path.join(os.tmpdir(), "acroclip-source-notices-"));
       folders.push(project);
       const directory = path.join(project, "work/release-sources");
       const licensePath = "evidence/controlled-media/licenses/dav1d/COPYING";
@@ -26,7 +26,7 @@ describe("controlled media notices in the runtime package", () => {
       expect(await readFile(source)).toEqual(license);
    });
    it("rejects changed license text and paths outside the source kit", async () => {
-      const project = await mkdtemp(path.join(os.tmpdir(), "attaclip-source-notices-"));
+      const project = await mkdtemp(path.join(os.tmpdir(), "acroclip-source-notices-"));
       folders.push(project);
       const directory = path.join(project, "work/release-sources");
       await mkdir(directory, { recursive: true });

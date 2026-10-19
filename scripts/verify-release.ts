@@ -144,7 +144,7 @@ export async function verifyPackagedResources(project: string, unpacked: string,
 }
 
 async function findExtractor(project: string): Promise<string> {
-   const explicit = process.env["ATTACLIP_7ZIP"];
+   const explicit = process.env["ACROCLIP_7ZIP"];
    if (explicit) return path.resolve(explicit);
    const cache = path.join(process.env["LOCALAPPDATA"] || project, "electron-builder/Cache");
    if (existsSync(cache)) {
@@ -152,7 +152,7 @@ async function findExtractor(project: string): Promise<string> {
       const candidates = files.filter((file) => file.endsWith("7za.exe") && file.includes("7zip") && file.includes("win-x64"));
       if (candidates[0]) return path.join(cache, candidates[0]);
    }
-   throw new Error("Set ATTACLIP_7ZIP to 7za.exe from electron-builder's cache before verifying installer payloads.");
+   throw new Error("Set ACROCLIP_7ZIP to 7za.exe from electron-builder's cache before verifying installer payloads.");
 }
 
 async function extractChecked(extractor: string, archive: string, destination: string): Promise<void> {
@@ -203,7 +203,7 @@ export async function verifyRelease(project: string, sourceArchive: string): Pro
    const version = (JSON.parse(await readFile(path.join(project, "package.json"), "utf8")) as { version: string }).version;
    if (!/^[\w.-]+$/.test(version)) throw new Error("Invalid release version.");
    const assets: FileRecord[] = [];
-   for (const name of [`AttaClip-${version}-win-x64-Installer.exe`, `AttaClip-${version}-win-x64.exe`]) {
+   for (const name of [`AcroClip-${version}-win-x64-Installer.exe`, `AcroClip-${version}-win-x64.exe`]) {
       const file = path.join(project, "release", name);
       const folder = path.join(scratch, name.replace(/\.exe$/, ""));
       await mkdir(folder);
@@ -215,14 +215,14 @@ export async function verifyRelease(project: string, sourceArchive: string): Pro
    if (git("rev-parse", "HEAD") !== appCommit || git("status", "--porcelain")) throw new Error("Release source changed during verification.");
    const after = await validateKit(kit, kitDirectory, project);
    if (after.length) throw new Error(`Release staging changed during verification:\n${after.join("\n")}`);
-   const output = path.join(project, "release", `AttaClip-${version}-windows-x64-release.json`);
+   const output = path.join(project, "release", `AcroClip-${version}-windows-x64-release.json`);
    await writeFile(
       output,
       `${JSON.stringify({ version: 1, createdAt: new Date().toISOString(), appCommit, source: companion, assets, appFiles, payload }, null, 2)}\n`
    );
    const sums = [...assets, { path: path.basename(source), sha256: companion.sha256 }, await fileRecord(output, path.basename(output))];
    await writeFile(
-      path.join(project, "release", `AttaClip-${version}-windows-x64-SHA256SUMS.txt`),
+      path.join(project, "release", `AcroClip-${version}-windows-x64-SHA256SUMS.txt`),
       sums.map((file) => `${file.sha256}  ${file.path}`).join("\n") + "\n"
    );
    console.log(`Verified both Windows installer payloads and source correspondence: ${output}`);

@@ -12,7 +12,7 @@ export async function closeTestApplication(application: ElectronApplication): Pr
       const page = application.windows().find((window) => !window.isClosed());
       if (page) {
          const status = await page.evaluate(async () => {
-            const state = await window.attaClip.state();
+            const state = await window.acroClip.state();
             return {
                recorder: state.recorder.state,
                pendingSaves: state.recorder.pendingSaves,

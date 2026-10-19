@@ -193,7 +193,7 @@ bool x11CompatibilityAvailable(uintptr_t window) {
 }
 void registerX11CompatibilitySource() {
   obs_source_info info{};
-  info.id = "attaclip_x11_window";
+  info.id = "acroclip_x11_window";
   info.type = OBS_SOURCE_TYPE_INPUT;
   info.output_flags = OBS_SOURCE_ASYNC_VIDEO;
   info.get_name = [](void *) {

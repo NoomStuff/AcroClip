@@ -6,11 +6,11 @@ export function desktopExec(executable: string, args: string[]): string {
    const quote = (value: string) => `"${value.replaceAll("%", "%%").replace(/[\\"`$]/g, "\\$&")}"`;
    return [executable, ...args].map(quote).join(" ");
 }
-export const linuxDesktopName = "dev.attaclip.app.desktop";
+export const linuxDesktopName = "dev.acroclip.app.desktop";
 export async function linuxDesktopIdentity(dataDirectory: string, executable: string, icon: string): Promise<void> {
    const directory = join(dataDirectory, "applications");
    const file = join(directory, linuxDesktopName);
-   const marker = "X-AttaClip-Managed=true";
+   const marker = "X-AcroClip-Managed=true";
    try {
       const existing = await readFile(file, "utf8");
       if (!existing.split(/\r?\n/).includes(marker)) return;
@@ -21,12 +21,12 @@ export async function linuxDesktopIdentity(dataDirectory: string, executable: st
    await mkdir(directory, { recursive: true });
    const icons = join(dataDirectory, "icons", "hicolor", "256x256", "apps");
    await mkdir(icons, { recursive: true });
-   await copyFile(icon, join(icons, "dev.attaclip.app.png"));
+   await copyFile(icon, join(icons, "dev.acroclip.app.png"));
    const temporary = join(directory, `.${linuxDesktopName}.${randomUUID()}.tmp`);
    try {
       await writeFile(
          temporary,
-         `[Desktop Entry]\nType=Application\nName=AttaClip\nExec=${desktopExec(executable, [])}\nIcon=dev.attaclip.app\nTerminal=false\nCategories=AudioVideo;\nStartupWMClass=dev.attaclip.app\n${marker}\n`,
+         `[Desktop Entry]\nType=Application\nName=AcroClip\nExec=${desktopExec(executable, [])}\nIcon=dev.acroclip.app\nTerminal=false\nCategories=AudioVideo;\nStartupWMClass=dev.acroclip.app\n${marker}\n`,
          { flag: "wx" }
       );
       await rename(temporary, file);
@@ -36,7 +36,7 @@ export async function linuxDesktopIdentity(dataDirectory: string, executable: st
 }
 export async function linuxStartup(enabled: boolean, configDirectory: string, executable: string, args: string[]): Promise<void> {
    const directory = join(configDirectory, "autostart");
-   const path = join(directory, "attaclip.desktop");
+   const path = join(directory, "acroclip.desktop");
    if (!enabled) {
       await rm(path, { force: true });
       return;
@@ -44,6 +44,6 @@ export async function linuxStartup(enabled: boolean, configDirectory: string, ex
    await mkdir(directory, { recursive: true });
    await writeFile(
       path,
-      `[Desktop Entry]\nType=Application\nName=AttaClip\nExec=${desktopExec(executable, args)}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n`
+      `[Desktop Entry]\nType=Application\nName=AcroClip\nExec=${desktopExec(executable, args)}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n`
    );
 }

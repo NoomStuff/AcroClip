@@ -1,8 +1,13 @@
+import { defaultAudioSources } from "./audio-model";
 import type { Preferences, RecorderState } from "./types";
 export const defaultPreferences: Preferences = {
    collection: "",
+   shortcuts: {},
    clipSeconds: 60,
    shortcut: "CommandOrControl+Shift+F8",
+   recordingPresetVersion: 1,
+   recordingSizeVersion: 2,
+   resolutionLimit: 1080,
    quality: "standard",
    customWidth: 1920,
    customHeight: 1080,
@@ -20,9 +25,11 @@ export const defaultPreferences: Preferences = {
    microphoneMuted: false,
    desktopFallback: false,
    customGames: [],
-   audioSources: [],
+   audioSourcesVersion: 2,
+   audioSources: defaultAudioSources(),
    shareSizeMB: 20,
    autoShare: false,
+   updateCheck: true,
    startWithOS: false,
    autoRecord: false,
    notifications: "everywhere",

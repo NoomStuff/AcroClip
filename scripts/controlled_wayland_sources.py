@@ -42,7 +42,7 @@ def replay_sources(archive, patch, original, patched):
             name = line[4:].split("\t", 1)[0].split(" ", 1)[0]
             if not name.startswith(("a/plugins/linux-pipewire/", "b/plugins/linux-pipewire/")) or ".." in PurePosixPath(name).parts:
                 raise ValueError("Patch touches a file outside the pinned module")
-    with tempfile.TemporaryDirectory(prefix="attaclip-wayland-replay-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="acroclip-wayland-replay-") as temporary:
         root = Path(temporary)
         found = {}
         with tarfile.open(archive) as source:

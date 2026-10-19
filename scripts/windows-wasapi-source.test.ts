@@ -45,7 +45,7 @@ function obsPe(): Buffer {
 }
 
 async function fixture(): Promise<{ project: string; packet: string; record: WasapiRecord; staged: FileRecord[]; canonical: Map<string, Buffer> }> {
-   const project = await mkdtemp(path.join(os.tmpdir(), "attaclip-wasapi-source-"));
+   const project = await mkdtemp(path.join(os.tmpdir(), "acroclip-wasapi-source-"));
    temporary.push(project);
    const packet = path.join(project, "packet");
    await mkdir(path.join(project, ".cache"));
@@ -135,7 +135,7 @@ async function fixture(): Promise<{ project: string; packet: string; record: Was
    const evidence: FileRecord[] = [];
    for (const [name, text] of Object.entries(traces)) evidence.push(await file(`controlled-wasapi/build/${name}`, Buffer.from("\uFEFF" + text, "utf16le")));
    evidence.push(
-      await file("controlled-wasapi/build/CMakeCache.txt", "CMAKE_GENERATOR_PLATFORM:INTERNAL=x64\nCMAKE_PROJECT_NAME:STATIC=attaclip_wasapi_health\n")
+      await file("controlled-wasapi/build/CMakeCache.txt", "CMAKE_GENERATOR_PLATFORM:INTERNAL=x64\nCMAKE_PROJECT_NAME:STATIC=acroclip_wasapi_health\n")
    );
    evidence.push(
       await file("controlled-wasapi/build/CMakeCXXCompiler.cmake", `set(CMAKE_CXX_COMPILER "${compilerPrograms[0]!.origin.replaceAll("\\", "/")}")\n`)
@@ -206,7 +206,7 @@ describe("controlled WASAPI source boundaries", () => {
    it("rejects diagnostic compile macros while accepting ordinary MSVC diagnostics flags", async () => {
       const f = await fixture();
       const command = f.record.evidence.find((item) => item.path.endsWith("CL.command.1.tlog"))!;
-      const bytes = Buffer.concat([await readFile(path.join(f.packet, command.path)), Buffer.from("\n/D ATTACLIP_WASAPI_TEST_FAULTS", "utf16le")]);
+      const bytes = Buffer.concat([await readFile(path.join(f.packet, command.path)), Buffer.from("\n/D ACROCLIP_WASAPI_TEST_FAULTS", "utf16le")]);
       await writeFile(path.join(f.packet, command.path), bytes);
       command.size = bytes.length;
       command.sha256 = sha(bytes);

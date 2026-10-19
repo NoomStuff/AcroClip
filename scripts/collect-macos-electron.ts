@@ -6,7 +6,7 @@ if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("
 const directory = path.join(process.cwd(), "work/macos-release-sources");
 const actualModule = path.join(
    process.cwd(),
-   "release/mac-arm64/AttaClip.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libffmpeg.dylib"
+   "release/mac-arm64/AcroClip.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libffmpeg.dylib"
 );
 const referenceOnly = process.argv.includes("--prepare");
 const component = await collectElectronFfmpeg(process.cwd(), directory, { platform: "darwin", arch: "arm64", actualModule, referenceOnly });

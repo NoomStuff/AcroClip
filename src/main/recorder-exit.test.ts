@@ -13,7 +13,7 @@ afterEach(async () => {
    for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 async function fixture(mode: "crash" | "pending" | "normal" | "fatal", invalidExecutable = false) {
-   const root = await mkdtemp(join(tmpdir(), "attaclip-protocol-exit-"));
+   const root = await mkdtemp(join(tmpdir(), "acroclip-protocol-exit-"));
    roots.push(root);
    const executable = join(root, process.platform === "win32" ? "node.exe" : "node");
    if (invalidExecutable) await mkdir(executable);
@@ -61,50 +61,72 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
    return { child, states, errors, root, executable, start };
 }
 
+// Real process startup can exceed five seconds on Windows, especially with two fixtures.
+const helperTestTimeout = process.platform === "win32" ? 15000 : 5000;
 describe("recorder helper termination", () => {
-   it.each([false, true])("releases an actual failed launch, allows close with cancel=%s, and retries after repair", async (cancel) => {
-      const { child, errors, executable, start } = await fixture("normal", true);
-      await expect(start()).rejects.toThrow(/spawn/);
-      expect(child.status).toMatchObject({ state: "error", pendingSaves: 0 });
-      expect(errors).toHaveLength(1);
-      await child.close({ cancel });
-      await rm(executable, { recursive: true });
-      await link(process.execPath, executable).catch(() => copyFile(process.execPath, executable));
-      await start();
-      expect(child.status.state).toBe("recording");
-      await child.close();
-      expect(child.status.state).toBe("stopped");
-      expect(errors).toHaveLength(1);
-   });
-   it("keeps unexpected termination visible after its notification", async () => {
-      const { child, errors } = await fixture("crash");
-      await expect.poll(() => child.status.state).toBe("error");
-      expect(errors).toEqual(["Recording stopped unexpectedly with exit code 17"]);
-      expect(child.status).toMatchObject({ message: errors[0], availableSeconds: 0, startedAt: null, pendingSaves: 0 });
-   });
-   it("reports lost pending footage even if capture was deliberately stopped first", async () => {
-      const { child, errors, root } = await fixture("pending");
-      await child.save(join(root, "unsaved.mkv"));
-      await child.stop();
-      await child.close();
-      expect(errors).toEqual(["Recording stopped unexpectedly with exit code 19"]);
-      expect(child.status).toMatchObject({ state: "error", pendingSaves: 0 });
-   });
-   it("retains a more useful native fatal reason after the helper exits", async () => {
-      const { child, errors } = await fixture("fatal");
-      await expect.poll(() => child.status.availableSeconds === 0 && child.status.startedAt === null).toBe(true);
-      expect(child.status).toMatchObject({ state: "error", message: "Video driver stopped responding" });
-      expect(errors).toEqual(["Video driver stopped responding"]);
-   });
-   it("does not warn for a clean exit or informed cancellation", async () => {
-      const clean = await fixture("normal");
-      await clean.child.close();
-      expect(clean.child.status.state).toBe("stopped");
-      expect(clean.errors).toEqual([]);
-      const cancelled = await fixture("normal");
-      await cancelled.child.save(join(cancelled.root, "discarded.mkv"));
-      await cancelled.child.close({ cancel: true });
-      expect(cancelled.child.status).toMatchObject({ state: "stopped", pendingSaves: 0, message: "" });
-      expect(cancelled.errors).toEqual([]);
-   });
+   it.each([false, true])(
+      "releases an actual failed launch, allows close with cancel=%s, and retries after repair",
+      async (cancel) => {
+         const { child, errors, executable, start } = await fixture("normal", true);
+         await expect(start()).rejects.toThrow(/spawn/);
+         expect(child.status).toMatchObject({ state: "error", pendingSaves: 0 });
+         expect(errors).toHaveLength(1);
+         await child.close({ cancel });
+         await rm(executable, { recursive: true });
+         await link(process.execPath, executable).catch(() => copyFile(process.execPath, executable));
+         await start();
+         expect(child.status.state).toBe("recording");
+         await child.close();
+         expect(child.status.state).toBe("stopped");
+         expect(errors).toHaveLength(1);
+      },
+      helperTestTimeout
+   );
+   it(
+      "keeps unexpected termination visible after its notification",
+      async () => {
+         const { child, errors } = await fixture("crash");
+         await expect.poll(() => child.status.state).toBe("error");
+         expect(errors).toEqual(["Recording stopped unexpectedly with exit code 17"]);
+         expect(child.status).toMatchObject({ message: errors[0], availableSeconds: 0, startedAt: null, pendingSaves: 0 });
+      },
+      helperTestTimeout
+   );
+   it(
+      "reports lost pending footage even if capture was deliberately stopped first",
+      async () => {
+         const { child, errors, root } = await fixture("pending");
+         await child.save(join(root, "unsaved.mkv"));
+         await child.stop();
+         await child.close();
+         expect(errors).toEqual(["Recording stopped unexpectedly with exit code 19"]);
+         expect(child.status).toMatchObject({ state: "error", pendingSaves: 0 });
+      },
+      helperTestTimeout
+   );
+   it(
+      "retains a more useful native fatal reason after the helper exits",
+      async () => {
+         const { child, errors } = await fixture("fatal");
+         await expect.poll(() => child.status.availableSeconds === 0 && child.status.startedAt === null).toBe(true);
+         expect(child.status).toMatchObject({ state: "error", message: "Video driver stopped responding" });
+         expect(errors).toEqual(["Video driver stopped responding"]);
+      },
+      helperTestTimeout
+   );
+   it(
+      "does not warn for a clean exit or informed cancellation",
+      async () => {
+         const clean = await fixture("normal");
+         await clean.child.close();
+         expect(clean.child.status.state).toBe("stopped");
+         expect(clean.errors).toEqual([]);
+         const cancelled = await fixture("normal");
+         await cancelled.child.save(join(cancelled.root, "discarded.mkv"));
+         await cancelled.child.close({ cancel: true });
+         expect(cancelled.child.status).toMatchObject({ state: "stopped", pendingSaves: 0, message: "" });
+         expect(cancelled.errors).toEqual([]);
+      },
+      helperTestTimeout
+   );
 });
