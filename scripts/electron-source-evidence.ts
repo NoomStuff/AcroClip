@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile, readdir, stat, copyFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, readdir, stat, copyFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { hashFile, type SourceKit } from "./release-sources";
 
@@ -63,17 +63,37 @@ export async function collectElectronFfmpeg(
       // Reuse pinned source responses only. Release archives still need their official checksum.
       if (!existsSync(file) && options.sourceCache && existsSync(path.join(options.sourceCache, name)))
          await copyFile(path.join(options.sourceCache, name), file);
-      if (!existsSync(file)) {
-         for (let attempt = 0; attempt < 4; attempt++) {
+      const validate = (candidate: string): void => {
+         if (name.endsWith(".tar.gz")) execFileSync("tar", ["-tf", candidate], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+      };
+      if (existsSync(file)) {
+         try {
+            validate(file);
+            return file;
+         } catch {
+            await rm(file);
+         }
+      }
+      const partial = `${file}.partial`;
+      for (let attempt = 0; attempt < 4; attempt++) {
+         try {
             const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
-            if (response.ok) {
-               await writeFile(file, new Uint8Array(await response.arrayBuffer()));
-               break;
-            }
-            await response.body?.cancel();
-            if ((response.status !== 429 && response.status < 500) || attempt === 3)
+            if (!response.ok) {
+               await response.body?.cancel();
                throw new Error(`Electron source download failed: ${url}: HTTP ${response.status}`);
-            console.warn(`Retrying pinned Electron source after HTTP ${response.status}: ${url}`);
+            }
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            const length = response.headers.get("content-length");
+            if (length && !response.headers.get("content-encoding") && bytes.length !== Number(length))
+               throw new Error("Electron source response was truncated.");
+            await writeFile(partial, bytes);
+            validate(partial);
+            await rename(partial, file);
+            return file;
+         } catch (error) {
+            await rm(partial, { force: true });
+            if (attempt === 3) throw error;
+            console.warn(`Retrying incomplete Electron source download: ${url}`);
             await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
          }
       }
