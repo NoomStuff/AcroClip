@@ -31,7 +31,9 @@
       "build:native": "bun scripts/build-native.ts",
       "dist": "bun run build:icons && bun run build:notices && bun run build && electron-builder",
       "package": "bun run build:icons && bun run build:notices && bun run build && electron-builder --dir",
-      "test:portable": "bun scripts/test-portable.ts"
+      "test:portable": "bun scripts/test-portable.ts",
+      "release:downloads": "bun scripts/release-downloads.ts",
+      "release:feeds": "bun scripts/prepare-update-feed.ts"
    },
    "build": {
       "appId": "dev.acroclip.app",

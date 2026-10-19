@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 import shutil
 import stat
 import urllib.request
+import urllib.error
 import zipfile
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -21,9 +22,18 @@ if root.exists() and any(root.iterdir()):
 headers = {"User-Agent": "AcroClip-source-inputs", "Accept": "application/vnd.github+json"}
 if os.environ.get("GITHUB_TOKEN"):
     headers["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
-request = urllib.request.Request("https://api.github.com/repos/NoomStuff/AcroClip/releases/tags/" + args.release, headers=headers)
-with urllib.request.urlopen(request, timeout=60) as response:
-    release = json.load(response)
+release = None
+for repository in ("NoomStuff/AcroClip-sources", "NoomStuff/AcroClip"):
+    request = urllib.request.Request("https://api.github.com/repos/" + repository + "/releases/tags/" + args.release, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            release = json.load(response)
+        break
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise
+if release is None:
+    raise ValueError("No corresponding source release was found")
 assets = [asset for asset in release["assets"] if "-" + args.platform + "-sources-" in asset["name"] and asset["name"].endswith(".zip")]
 if len(assets) != 1 or not assets[0].get("digest", "").startswith("sha256:"):
     raise ValueError("Published source packet has no unique verified digest")

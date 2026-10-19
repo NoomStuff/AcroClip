@@ -25,3 +25,5 @@ Source and build instructions: https://ffmpeg.org/ and https://github.com/BtbN/F
 Electron, React, electron-updater, Lucide, Zod, and the development toolchain retain their upstream licenses. The lockfile identifies the exact dependency versions. Lucide icons are ISC licensed. Electron includes Chromium and Node.js and their notices.
 
 Release bundles must preserve upstream licenses and provide corresponding source for GPL components. A source archive of AcroClip alone does not include all bundled dependency sources.
+
+Corresponding application and dependency source archives are available at https://github.com/NoomStuff/AcroClip-sources/releases. App releases contain only application downloads. Verification reports stay with the CI build artifacts.
