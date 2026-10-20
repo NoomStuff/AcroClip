@@ -25,6 +25,39 @@ class RestoreSourceInputsTest(unittest.TestCase):
         (packet / "controlled-cli/build/build-manifest.json").write_text(json.dumps(build))
         return packet
 
+    def mac_fixture(self, root):
+        packet = self.fixture(root)
+        old = packet / "controlled-cli/build/build-manifest.json"
+        build = json.loads(old.read_text())
+        build.update(producer="acroclip-controlled-macos", target="macos-arm64")
+        (packet / "controlled-cli/build-manifest.json").write_text(json.dumps(build))
+        old.unlink()
+        records = []
+        for name in ["obs.tar.gz", "obs-license.txt"]:
+            data = (name + " exact bytes").encode()
+            (packet / name).write_bytes(data)
+            records.append({"path": name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)})
+        (packet / "obs-inputs.json").write_text(json.dumps({"sources": [{**records[0], "licenses": [records[1]]}], "dependencySources": []}))
+        return packet
+
+    def test_restore_mac_obs_sources_and_licenses_with_controlled_cli_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            packet = self.mac_fixture(root)
+            inputs.prepare(packet, root / "app")
+            target = root / "app/work/release-sources"
+            self.assertEqual((target / "obs-license.txt").read_bytes(), b"obs-license.txt exact bytes")
+            self.assertEqual((target / "ffmpeg.tar.gz").read_bytes(), b"ffmpeg exact source")
+            self.assertEqual(len(json.loads((target / "manifest.json").read_text())["sources"]), 2)
+
+    def test_reject_changed_mac_obs_license(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            packet = self.mac_fixture(root)
+            (packet / "obs-license.txt").write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "Mac OBS source input changed"):
+                inputs.prepare(packet, root / "app")
+
     def test_restore_then_reject_overwrite(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -53,8 +53,14 @@ jobs:
               "$taskReference/ffmpeg" -version > work/reference-media/ffmpeg-version.txt
               "$taskReference/ffprobe" -version > work/reference-media/ffprobe-version.txt
               shasum -a 256 "$taskReference/ffmpeg" "$taskReference/ffprobe" > work/reference-media/SHA256SUMS.txt
-         - name: Collect immutable media source inputs
-           run: bun scripts/release-sources.ts --controlled-inputs --collect-only
+         - name: Recover verified immutable Mac source inputs
+           env:
+              GITHUB_TOKEN: ${{ github.token }}
+           run: |
+              python3 scripts/recover-release-inputs.py --platform darwin-arm64 --release v0.3.0 --destination .cache/macos-published-source-inputs
+              echo "ACROCLIP_ELECTRON_SOURCE_CACHE=$PWD/.cache/macos-published-source-inputs/evidence/electron-ffmpeg-darwin-arm64" >> "$GITHUB_ENV"
+         - name: Prepare hash-verified CLI and OBS source inputs
+           run: python3 scripts/prepare-linux-cli-inputs.py .cache/macos-published-source-inputs .
          - name: Restore verified media for this architecture
            id: media_cache
            uses: actions/cache/restore@v6.1.0
@@ -91,12 +97,6 @@ jobs:
            run: |
               bun scripts/macos-obs-sources.ts
               bun scripts/macos-source-validation.ts
-         - name: Recover verified immutable Electron source inputs
-           env:
-              GITHUB_TOKEN: ${{ github.token }}
-           run: |
-              python3 scripts/recover-release-inputs.py --platform darwin-arm64 --release v0.3.0 --destination .cache/macos-published-source-inputs
-              echo "ACROCLIP_ELECTRON_SOURCE_CACHE=$PWD/.cache/macos-published-source-inputs/evidence/electron-ffmpeg-darwin-arm64" >> "$GITHUB_ENV"
          - name: Prepare Electron corresponding sources and full licenses before packaging
            run: bun scripts/collect-macos-electron.ts --prepare
          - name: Verify actual screen and window recording with generated audio
