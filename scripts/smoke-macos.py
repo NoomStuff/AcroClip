@@ -21,6 +21,10 @@ logs = []
 env = dict(os.environ, DYLD_LIBRARY_PATH=str(runtime / "Frameworks"), DYLD_FRAMEWORK_PATH=str(runtime / "Frameworks"))
 ffmpeg = str(root / "resources/media/ffmpeg")
 ffprobe = str(root / "resources/media/ffprobe")
+# GitHub's Intel VM has Apple's software OpenGL renderer. Keep a native
+# downscaling test within its pixel budget; Apple Silicon retains 640x360.
+intel_ci = os.environ.get("GITHUB_ACTIONS") == "true" and os.uname().machine == "x86_64"
+width, height = (320, 180) if intel_ci else (640, 360)
 
 def launch(args, name, pipe=False):
     log = open(folder / (name + ".log"), "w")
@@ -53,7 +57,7 @@ def validate(file, audio_expected):
     result = subprocess.run([ffprobe, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(file)], capture_output=True, text=True, check=True)
     info = json.loads(result.stdout)
     video = next(stream for stream in info["streams"] if stream["codec_type"] == "video")
-    assert (video["width"], video["height"]) == (640, 360), video
+    assert (video["width"], video["height"]) == (width, height), video
     assert float(info["format"]["duration"]) >= 1.5, info["format"]
     audio = [stream for stream in info["streams"] if stream["codec_type"] == "audio"]
     assert len(audio) == 2, audio
@@ -146,7 +150,7 @@ try:
         source_id = f"window:{identity['windowId']}:0" if kind == "app" else f"screen:{identity['displayId']}:0"
         start_index = len(events)
         command(dict(action="start", sourceKind=kind, sourceId=source_id, displayId=str(identity["displayId"]), sourceName="Synthetic Mac fixture", quality="custom",
-                     customWidth=640, customHeight=360, customFPS=15, customCQ=28, clipSeconds=2, captureAudio=True,
+                     customWidth=width, customHeight=height, customFPS=15, customCQ=28, clipSeconds=2, captureAudio=True,
                      microphone=False, allowSoftwareEncoder=True))
         recording = wait(lambda event: event in events[start_index:] and event["event"] == "recording")
         assert recording["encoder"] == "obs_x264" or "videotoolbox" in recording["encoder"], recording
@@ -179,7 +183,7 @@ try:
     helper.stdin.flush()
     helper.wait(timeout=15)
     assert helper.returncode == 0, helper.returncode
-    proof = dict(schema=1, platform=sys.platform, fixture=identity, captureTested=True, screenTested=True, windowTested=True,
+    proof = dict(schema=1, platform=sys.platform, fixture=identity, captureSize=dict(width=width, height=height), intelCISoftwareRendererWorkload=intel_ci, captureTested=True, screenTested=True, windowTested=True,
                  generatedApplicationAudioTested=identity["audioStarted"], physicalMicrophoneTested=False,
                  permissionPromptsTested=False, captures=media)
     (folder / "proof.json").write_text(json.dumps(proof, indent=2))

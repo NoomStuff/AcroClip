@@ -152,7 +152,7 @@ try:
     system = dict(id="system", name="System audio", kind="output", deviceId="system", enabled=True, volume=1, muted=False, includeInMaster=False)
     # This proof exercises four audio tracks. Keep its synthetic video small
     # enough for Intel CI's software OpenGL renderer; smoke-macos.py separately
-    # verifies screen/window capture at 640x360 from the full display fixture.
+    # verifies full-display and window inputs with its own capture profile.
     configuration = dict(action="start", sourceKind="app", sourceId=f"window:{selected['windowId']}:0", sourceName="Selected fixture", quality="custom", customWidth=320, customHeight=180, customFPS=15, customCQ=28, clipSeconds=2, microphone=False, captureAudio=True, allowSoftwareEncoder=True, audioSources=[application, system])
     rejected = command(dict(configuration, audioSources=[dict(system, deviceId="unavailable-physical-output")]), "error")
     assert "System audio" in rejected["message"], rejected
