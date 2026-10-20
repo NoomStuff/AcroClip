@@ -171,7 +171,11 @@ test("AttaCut update chip and verified portable lifecycle share state with Setti
       await expect(chip).toHaveAttribute("aria-label", "Apply and restart");
       await page.screenshot({ path: "test-results/update-chip-ready.png" });
       await chip.click();
-      await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { updateFixture: { installs: number } }).updateFixture.installs)).toBe(1);
+      // The production shutdown callback waits for the native helper to exit
+      // before invoking the installer. CI teardown can exceed the default 5s.
+      await expect
+         .poll(() => app.evaluate(() => (globalThis as typeof globalThis & { updateFixture: { installs: number } }).updateFixture.installs), { timeout: 20000 })
+         .toBe(1);
    } finally {
       await app.close();
    }
