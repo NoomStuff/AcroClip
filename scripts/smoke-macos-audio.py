@@ -76,6 +76,10 @@ def wait(predicate, timeout=30, after=0):
             helper.stdin.flush()
             next_status = time.monotonic() + 0.5
         time.sleep(0.02)
+    # Capture the live blocked operation before cleanup terminates the helper.
+    children = subprocess.run(["pgrep", "-P", str(helper.pid)], capture_output=True, text=True).stdout.split()
+    for pid in [str(helper.pid), *children]:
+        subprocess.run(["sample", pid, "1", "1", "-file", str(folder / f"hang-{pid}.log")], capture_output=True, text=True, timeout=15)
     raise RuntimeError(f"Timed out. Events: {events[after:]}")
 
 
