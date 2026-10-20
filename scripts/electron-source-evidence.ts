@@ -63,6 +63,15 @@ export async function collectElectronFfmpeg(
       // Reuse pinned source responses only. Release archives still need their official checksum.
       if (!existsSync(file) && options.sourceCache && existsSync(path.join(options.sourceCache, name)))
          await copyFile(path.join(options.sourceCache, name), file);
+      const decodedNames: Record<string, string> = {
+         "chromium-DEPS.base64": "chromium-DEPS.txt",
+         "chromium-root.gn.base64": "chromium-root.gn",
+         "chromium-root-BUILD.gn.base64": "chromium-root-BUILD.gn",
+         "chromium-LICENSE.txt.base64": "chromium-LICENSE.txt",
+      };
+      const decodedName = decodedNames[name];
+      if (!existsSync(file) && options.sourceCache && decodedName && existsSync(path.join(options.sourceCache, decodedName)))
+         await writeFile(file, (await readFile(path.join(options.sourceCache, decodedName))).toString("base64"));
       const validate = (candidate: string): void => {
          if (name.endsWith(".tar.gz")) execFileSync("tar", ["-tf", candidate], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
       };

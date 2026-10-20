@@ -29,19 +29,27 @@ required = {
 def selected_builds(root):
     native = json.loads((root / "manifest.json").read_text())
     selected = {}
+    expected = set()
     for package in native["packages"]:
         source = package["sourcePackage"]
         if source not in required:
             continue
         identity = source, package["sourceVersion"]
+        expected.add(identity)
         if identity in selected:
             continue
         identifier = hashlib.sha256((package["binaryPackage"] + "=" + package["binaryVersion"]).encode()).hexdigest()[:16]
         buildinfo = root / "history" / identifier / "binary.buildinfo"
+        # Several runtime/development packages share one source build. Only
+        # the actual captured build publication supplies its build-info.
+        if not buildinfo.is_file():
+            continue
         record = next(record for record in collector.paragraphs(buildinfo.read_text()) if "Installed-Build-Depends" in record)
         if (record["Source"], record["Version"]) != identity:
             raise ValueError("Static inputs refer to another actual source build")
         selected[identity] = identifier, required[source], buildinfo
+    if expected != set(selected):
+        raise ValueError(f"Missing actual build evidence for static source inputs: {sorted(expected - set(selected))}")
     if not {"ffmpeg", "obs-studio"}.issubset({source for source, _ in selected}):
         raise ValueError("The staged native packages lack required OBS/FFmpeg build evidence")
     return list(selected.values())
