@@ -19,7 +19,10 @@ let evidenceOutput: FileHandle = try {
 final class PatternView: NSView {
     var count = 0
     override func draw(_ dirtyRect: NSRect) {
-        let color = count % 2 == 0
+        // A two-frame repeating pattern can alias when a software renderer
+        // drops frames. Irregular color changes still expose a frozen capture.
+        let phase = UInt32(truncatingIfNeeded: count) &* 0x9e3779b9
+        let color = (phase & 0x80000000) == 0
             ? NSColor(srgbRed: 228.0 / 255, green: 76.0 / 255, blue: 102.0 / 255, alpha: 1)
             : NSColor(srgbRed: 65.0 / 255, green: 184.0 / 255, blue: 170.0 / 255, alpha: 1)
         color.setFill()
