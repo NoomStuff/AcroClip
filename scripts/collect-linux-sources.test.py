@@ -76,6 +76,14 @@ class SourceEvidenceTest(unittest.TestCase):
         expected = hashlib.sha256(content).hexdigest()
         self.assertEqual(collector.match_member(data.getvalue(), "libfoo.so.1", expected), "./usr/lib/libfoo.so.1.2")
         self.assertIsNone(collector.match_member(data.getvalue(), "libfoo.so.1", "0" * 64))
+        # Packaging can rename the versioned member to an unversioned loader name.
+        # Collection uses the resolved installed name, then verification binds
+        # the staged bytes to that exact recorded package member.
+        member = collector.match_member(data.getvalue(), "libfoo.so.1.2", expected)
+        self.assertEqual(member, "./usr/lib/libfoo.so.1.2")
+        self.assertEqual(collector.match_member(data.getvalue(), member, expected, exact=True), member)
+        self.assertIsNone(collector.match_member(data.getvalue(), "./elsewhere/libfoo.so.1.2", expected, exact=True))
+        self.assertIsNone(collector.match_member(data.getvalue(), member, "0" * 64, exact=True))
 
     def test_package_default_source_is_exact_binary_version(self):
         self.assertEqual(collector.source_identity({"Package": "foo", "Version": "1.2+dfsg-1"}), ("foo", "1.2+dfsg-1"))

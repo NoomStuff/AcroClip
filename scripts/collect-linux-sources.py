@@ -180,6 +180,8 @@ def deb_data(archive):
 
 
 def match_member(data, filename, expected, exact=False):
+    if exact:
+        filename = filename.removeprefix("./")
     with tarfile.open(fileobj=io.BytesIO(data)) as archive:
         members = {member.name.removeprefix("./"): member for member in archive.getmembers()}
         for name, member in members.items():
@@ -299,7 +301,7 @@ def check(args):
             data = deb_data(archive)
             for file in package["files"]:
                 actual = staged.get(file["path"]) if staged is not None else digest(evidence_path(stage, file["path"]))
-                if actual != file["sha256"] or not match_member(data, PurePosixPath(file["path"]).name, file["sha256"]):
+                if actual != file["sha256"] or not match_member(data, file["debMember"], file["sha256"], exact=True):
                     raise ValueError(f"Staged ELF no longer matches official package: {file['path']}")
                 if file["path"] in proven:
                     raise ValueError("Duplicate staged ELF evidence")
@@ -461,7 +463,7 @@ def collect(args):
                 raise ValueError("Downloaded binary/source control identity disagrees")
             data = deb_data(archive)
             for file in files:
-                member = match_member(data, Path(file["path"]).name, file["sha256"])
+                member = match_member(data, Path(file["installedPath"]).name, file["sha256"])
                 if not member:
                     raise ValueError(f"Official .deb does not contain staged bytes for {file['path']}")
                 file["debMember"] = member

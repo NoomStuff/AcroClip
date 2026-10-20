@@ -62,12 +62,19 @@ def fixture(name, frequency, compact=False):
 
 def wait(predicate, timeout=30, after=0):
     deadline = time.monotonic() + timeout
+    next_status = time.monotonic() + 0.5
     while time.monotonic() < deadline:
         for event in events[after:]:
             if predicate(event):
                 return event
         if helper.poll() is not None:
             raise RuntimeError(f"Recorder exited {helper.returncode}. Inspect {folder}")
+        if time.monotonic() >= next_status and any(event["event"] == "recording" for event in events):
+            # The application polls status while recording. This also flushes
+            # accepted saves if frame delivery stops and records the reason.
+            helper.stdin.write(json.dumps(dict(action="status", id=str(uuid.uuid4()))) + "\n")
+            helper.stdin.flush()
+            next_status = time.monotonic() + 0.5
         time.sleep(0.02)
     raise RuntimeError(f"Timed out. Events: {events[after:]}")
 
