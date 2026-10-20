@@ -14,6 +14,7 @@ const component = await collectElectronFfmpeg(process.cwd(), directory, {
    platform: "darwin",
    arch: process.arch === "arm64" ? "arm64" : "x64",
    actualModule,
+   ...(process.env["ACROCLIP_ELECTRON_SOURCE_CACHE"] ? { sourceCache: process.env["ACROCLIP_ELECTRON_SOURCE_CACHE"] } : {}),
    referenceOnly,
 });
 await writeFile(path.join(directory, "electron-component.json"), `${JSON.stringify(component, null, 2)}\n`);

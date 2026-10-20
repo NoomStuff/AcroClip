@@ -91,6 +91,12 @@ jobs:
            run: |
               bun scripts/macos-obs-sources.ts
               bun scripts/macos-source-validation.ts
+         - name: Recover verified immutable Electron source inputs
+           env:
+              GITHUB_TOKEN: ${{ github.token }}
+           run: |
+              python3 scripts/recover-release-inputs.py --platform darwin-arm64 --release v0.3.0 --destination .cache/macos-published-source-inputs
+              echo "ACROCLIP_ELECTRON_SOURCE_CACHE=$PWD/.cache/macos-published-source-inputs/evidence/electron-ffmpeg-darwin-arm64" >> "$GITHUB_ENV"
          - name: Prepare Electron corresponding sources and full licenses before packaging
            run: bun scripts/collect-macos-electron.ts --prepare
          - name: Verify actual screen and window recording with generated audio
