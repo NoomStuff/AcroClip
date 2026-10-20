@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Capture exact apt binary/source inputs without changing system apt or executing recipes."""
 import argparse
+import copy
+from functools import lru_cache
 import hashlib
 import io
 import json
@@ -12,6 +14,8 @@ import re
 import shutil
 import subprocess
 import tarfile
+import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -20,14 +24,27 @@ from controlled_wayland_sources import MODULE, copy_inputs, verify_inputs, check
 
 
 def source_response(request, timeout=120):
+    url = request.full_url if isinstance(request, urllib.request.Request) else request
+    origin = urllib.parse.urlsplit(url)
+    label = origin.netloc + origin.path
     for attempt in range(4):
+        started = time.monotonic()
+        print(f"Source request {label}, attempt {attempt + 1}/4", flush=True)
         try:
-            return urllib.request.urlopen(request, timeout=timeout)
+            response = urllib.request.urlopen(request, timeout=timeout)
+            elapsed = time.monotonic() - started
+            if elapsed >= 2:
+                print(f"Source response {label}, {elapsed:.1f}s", flush=True)
+            return response
         except urllib.error.HTTPError as error:
+            print(f"Source HTTP {error.code} after {time.monotonic() - started:.1f}s, attempt {attempt + 1}/4: {label}", flush=True)
             if error.code not in {429, 500, 502, 503, 504} or attempt == 3:
-                url = request.full_url if isinstance(request, urllib.request.Request) else request
-                raise RuntimeError(f"Source request failed for {url}: HTTP {error.code}") from error
-            time.sleep(2 ** attempt)
+                raise RuntimeError(f"Source request failed for {label}: HTTP {error.code}") from error
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            print(f"Source connection failed after {time.monotonic() - started:.1f}s, attempt {attempt + 1}/4: {label}", flush=True)
+            if attempt == 3:
+                raise RuntimeError(f"Source request failed for {label} after four attempts") from error
+        time.sleep(2 ** attempt)
 
 
 def concrete_repository_sources(sources):
@@ -86,20 +103,58 @@ def source_identity(record):
     return match[1], match[2] or record["Version"]
 
 
-def download(url, target, expected):
-    if target.exists() and expected and digest(target) == expected:
-        return
-    temporary = target.with_name(target.name + ".pending")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    # Keep apt's authoritative path and digest, while avoiding plaintext transport.
-    url = url.replace("http://archive.ubuntu.com/", "https://archive.ubuntu.com/").replace("http://security.ubuntu.com/", "https://security.ubuntu.com/")
-    request = urllib.request.Request(url, headers={"User-Agent": "AcroClip-source-collector/1"})
-    with source_response(request) as response, open(temporary, "wb") as stream:
-        shutil.copyfileobj(response, stream)
-    if expected and digest(temporary) != expected:
-        temporary.unlink()
-        raise ValueError(f"Checksum mismatch for {url}")
-    temporary.replace(target)
+_download_locks = {}
+_download_guard = threading.Lock()
+
+
+def download(url, target, expected, expected_size=None):
+    """Reuse only bytes matching the caller's authoritative digest and size."""
+    if expected is not None and not re.fullmatch(r"[a-f0-9]{64}", expected):
+        raise ValueError("Invalid expected source checksum")
+    cache_root = os.environ.get("ACROCLIP_SOURCE_DOWNLOAD_CACHE")
+    cached = Path(cache_root) / expected[:2] / expected if cache_root and expected else None
+    with _download_guard:
+        lock = _download_locks.setdefault(str(cached or target.resolve()), threading.Lock())
+    def valid(file):
+        return file.is_file() and not file.is_symlink() and (expected_size is None or file.stat().st_size == expected_size) and digest(file) == expected
+    with lock:
+        if expected and valid(target):
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, name = tempfile.mkstemp(prefix=target.name + ".", suffix=".pending", dir=target.parent)
+        os.close(descriptor)
+        temporary = Path(name)
+        try:
+            if cached and valid(cached):
+                shutil.copyfile(cached, temporary)
+                print(f"Verified source cache hit: {target.name}", flush=True)
+            else:
+                if cached and cached.exists():
+                    print(f"Reject changed source cache entry: {expected}", flush=True)
+                # Keep apt's authoritative path and digest, while avoiding plaintext transport.
+                url = url.replace("http://archive.ubuntu.com/", "https://archive.ubuntu.com/").replace("http://security.ubuntu.com/", "https://security.ubuntu.com/")
+                request = urllib.request.Request(url, headers={"User-Agent": "AcroClip-source-collector/1"})
+                with source_response(request) as response, temporary.open("wb") as stream:
+                    shutil.copyfileobj(response, stream)
+            if expected and digest(temporary) != expected:
+                raise ValueError(f"Checksum mismatch for {url}")
+            if expected_size is not None and temporary.stat().st_size != expected_size:
+                raise ValueError(f"Source archive size mismatch for {target.name}")
+            temporary.replace(target)
+            if cached and not valid(cached):
+                cached.parent.mkdir(parents=True, exist_ok=True)
+                descriptor, name = tempfile.mkstemp(prefix=expected + ".", dir=cached.parent)
+                os.close(descriptor)
+                pending = Path(name)
+                try:
+                    shutil.copyfile(target, pending)
+                    if not valid(pending):
+                        raise ValueError("Source changed while writing verified cache")
+                    pending.replace(cached)
+                finally:
+                    pending.unlink(missing_ok=True)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def archive_name(name):
@@ -108,11 +163,18 @@ def archive_name(name):
     return name
 
 
-def official_json(url):
+@lru_cache(maxsize=512)
+def _official_json(url):
     if not url.startswith("https://api.launchpad.net/1.0/"):
         raise ValueError("Unexpected Launchpad API origin")
     with source_response(url, timeout=60) as response:
         return json.load(response)
+
+
+def official_json(url):
+    # Only memoize responses fetched from Launchpad during this process.
+    # Never accept mutable publication metadata from a cross-job cache.
+    return copy.deepcopy(_official_json(url))
 
 
 def ubuntu_architecture():
@@ -152,7 +214,7 @@ def historical_inputs(root, owner, version, series="noble"):
     binary_files = [line.split() for line in changes["Checksums-Sha256"].splitlines() if line.strip() and line.split()[-1].startswith(binary_name + "_") and re.search(r"_(?:" + ubuntu_architecture() + r"|all)\.deb$", line.split()[-1])]
     if len(binary_files) != 1:
         raise ValueError("Official build changes do not identify one exact binary archive")
-    binary_sha, _, binary_file = binary_files[0]
+    binary_sha, binary_size, binary_file = binary_files[0]
     if not binary_file.endswith("_all.deb") and build["arch_tag"] != ubuntu_architecture():
         raise ValueError("Official build architecture disagrees with binary archive")
     binary_url = build["changesfile_url"].rsplit("/", 1)[0] + "/" + binary_file
@@ -170,7 +232,7 @@ def historical_inputs(root, owner, version, series="noble"):
     source_record["Checksums-Sha256"] += f"\n{digest(dsc_file)} {dsc_file.stat().st_size} {dsc_file.name}"
     if build.get("buildinfo_url"):
         download(build["buildinfo_url"], folder / "binary.buildinfo", None)
-    binary = {"Package": binary_name, "Version": version, "Source": f"{source} ({source_version})", "Filename": binary_file, "SHA256": binary_sha}
+    binary = {"Package": binary_name, "Version": version, "Source": f"{source} ({source_version})", "Filename": binary_file, "SHA256": binary_sha, "Size": int(binary_size)}
     return binary, source_record, binary_url, urls
 
 
@@ -231,7 +293,7 @@ def collect_common_licenses(args):
             folder = root / "packages" / f"{source}-{hashlib.sha256(f'{source} {source_version}'.encode()).hexdigest()[:16]}"
             folder.mkdir(parents=True, exist_ok=True)
             archive = folder / archive_name(Path(binary["Filename"]).name)
-            download(binary_url, archive, binary["SHA256"])
+            download(binary_url, archive, binary["SHA256"], int(binary["Size"]))
             control = paragraphs(run(["dpkg-deb", "-f", str(archive)]))[0]
             if source_identity(control) != (source, source_version) or control["Version"] != version:
                 raise ValueError("Common-license package source identity disagrees")
@@ -240,7 +302,7 @@ def collect_common_licenses(args):
                 if line.strip():
                     sha256, size, name = line.split()
                     archive_name(name)
-                    download(urls[name], folder / name, sha256)
+                    download(urls[name], folder / name, sha256, int(size))
                     if (folder / name).stat().st_size != int(size):
                         raise ValueError("Common-license package source size changed")
                     captured.append({"path": str((folder / name).relative_to(root)), "sha256": sha256, "size": int(size), "url": urls[name]})
@@ -429,8 +491,9 @@ def collect(args):
                 notice_fields = paragraphs(run(["dpkg-query", "-s", notice_owner]))[0]
                 groups.setdefault((notice_owner, notice_fields["Version"]), [])
     include_copyright_owners(groups)
-    for (owner, version), files in sorted(groups.items()):
-        print(f"Capture {owner}={version}, {len(files)} files", flush=True)
+    for completed, ((owner, version), files) in enumerate(sorted(groups.items()), 1):
+        started = time.monotonic()
+        print(f"Capture {completed}/{len(groups)} {owner}={version}, {len(files)} files", flush=True)
         try:
             try:
                 binary = next(record for record in paragraphs(run(["apt-cache", *options, "show", f"{owner}={version}"])) if record.get("Version") == version and "Filename" in record)
@@ -457,7 +520,7 @@ def collect(args):
             if cache_file.exists() and digest(cache_file) == binary["SHA256"]:
                 shutil.copyfile(cache_file, archive)
             else:
-                download(binary_url, archive, binary["SHA256"])
+                download(binary_url, archive, binary["SHA256"], int(binary["Size"]))
             control = paragraphs(run(["dpkg-deb", "-f", str(archive)]))[0]
             if source_identity(control) != (source, source_version) or control["Version"] != version:
                 raise ValueError("Downloaded binary/source control identity disagrees")
@@ -474,7 +537,7 @@ def collect(args):
                     continue
                 sha256, size, name = line.split()
                 archive_name(name)
-                download(urls[name], folder / name, sha256)
+                download(urls[name], folder / name, sha256, int(size))
                 if (folder / name).stat().st_size != int(size):
                     raise ValueError(f"Wrong source size for {name}")
                 captured.append({"path": str((folder / name).relative_to(root)), "sha256": sha256, "size": int(size), "url": urls[name]})
@@ -491,6 +554,7 @@ def collect(args):
         except Exception as error:
             manifest["blockers"].append(f"{owner}={version}: {error}")
         (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        print(f"Capture done {completed}/{len(groups)} {owner}={version}, {time.monotonic() - started:.1f}s, {len(manifest['blockers'])} blockers", flush=True)
     common = root / "common-licenses"
     common.mkdir(exist_ok=True)
     manifest["commonLicenses"] = []

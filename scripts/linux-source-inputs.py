@@ -173,13 +173,16 @@ if __name__ == "__main__":
     parser.add_argument("--sources", required=True)
     parser.add_argument("--notices")
     parser.add_argument("--collect", action="store_true", help="Capture static sources for the actual staged architecture and package versions")
+    parser.add_argument("--collect-only", action="store_true", help="Capture static inputs as a separately timed CI stage")
     parser.add_argument("--no-write", action="store_true", help="Validate an archived packet without changing its evidence")
     args = parser.parse_args()
     root = Path(args.sources).resolve()
-    if args.collect:
+    if args.collect or args.collect_only:
         if args.no_write:
             raise ValueError("Cannot collect sources in read-only verification mode")
         collect_static(root)
+    if args.collect_only:
+        raise SystemExit(0)
     records, archives = verify_static(root)
     report = {"version": 1, "staticInputs": records, "packages": sum(record["packages"] for record in records), "uniqueArchives": len(archives)}
     if args.notices:

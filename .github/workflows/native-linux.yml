@@ -20,7 +20,9 @@ permissions:
 jobs:
    actual-capture:
       runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
-      timeout-minutes: 120
+      timeout-minutes: 180
+      env:
+         ACROCLIP_SOURCE_DOWNLOAD_CACHE: ${{ github.workspace }}/.cache/linux-source-downloads
       steps:
          - uses: actions/checkout@v7
          - uses: oven-sh/setup-bun@v2
@@ -45,6 +47,8 @@ jobs:
          - name: Verify source exception rejects tampered module evidence
            run: |
               python3 scripts/collect-linux-sources.test.py
+              python3 scripts/collect-linux-source-cache.test.py
+              python3 scripts/collect-linux-static-sources.test.py
               python3 scripts/linux-source-inputs.test.py
               python3 scripts/controlled_wayland_sources.test.py
          - name: Build isolated application audio fixtures
@@ -118,17 +122,39 @@ jobs:
            run: bunx electron-builder --linux AppImage --publish never
          - name: Verify actual AppImage capture, playback and sharing
            run: bun run test:packaged:linux release/*.AppImage
+         - name: Restore verified source download cache
+           if: inputs.release_candidate == true
+           uses: actions/cache/restore@v6.1.0
+           with:
+              path: .cache/linux-source-downloads
+              key: linux-source-downloads-v1-${{ inputs.architecture || 'x64' }}-${{ github.run_id }}-${{ github.run_attempt }}
+              restore-keys: linux-source-downloads-v1-${{ inputs.architecture || 'x64' }}-
          - name: Recover immutable corresponding-source inputs
            if: inputs.release_candidate == true
+           timeout-minutes: 10
            env:
               GITHUB_TOKEN: ${{ github.token }}
+           run: python3 scripts/recover-release-inputs.py --platform linux-x64 --destination work/linux-release-sources
+         - name: Collect and verify native runtime package sources
+           if: inputs.release_candidate == true
+           timeout-minutes: 30
+           run: python3 -u scripts/collect-linux-sources.py --stage resources/recorder --output work/linux-release-sources
+         - name: Collect exact static and header sources with four workers
+           if: inputs.release_candidate == true
+           timeout-minutes: 90
+           run: python3 -u scripts/linux-source-inputs.py --collect-only --sources work/linux-release-sources
+         - name: Verify static source closure and assemble full notices
+           if: inputs.release_candidate == true
+           timeout-minutes: 15
+           run: python3 -u scripts/linux-source-inputs.py --sources work/linux-release-sources --notices work/linux-release-notices
+         - name: Verify Electron sources and actual module bytes
+           if: inputs.release_candidate == true
+           timeout-minutes: 15
            run: |
-              python3 scripts/recover-release-inputs.py --platform linux-x64 --destination work/linux-release-sources
-              python3 scripts/collect-linux-sources.py --stage resources/recorder --output work/linux-release-sources
-              python3 scripts/linux-source-inputs.py --collect --sources work/linux-release-sources --notices work/linux-release-notices
               bun -e 'import {collectElectronFfmpeg} from "./scripts/electron-source-evidence"; const root="work/linux-release-sources"; const component=await collectElectronFfmpeg(process.cwd(),root,{platform:"linux",sourceCache:root+"/evidence/electron-ffmpeg-linux",arch:process.arch === "arm64" ? "arm64" : "x64"}); await Bun.write(root+"/electron-component.json",JSON.stringify(component,null,2));'
          - name: Stage full notices and bind the final AppImage to its source packet
            if: inputs.release_candidate == true
+           timeout-minutes: 20
            run: |
               if [ "$(uname -m)" = aarch64 ]; then
                  mkdir -p work/appimage-toolset
@@ -157,6 +183,12 @@ jobs:
                  work/AcroClip-*-linux-${{ inputs.architecture || 'x64' }}-sources-*.zip.json
               if-no-files-found: error
               retention-days: 14
+         - name: Checkpoint verified source downloads, including after a failed stage
+           if: always() && inputs.release_candidate == true
+           uses: actions/cache/save@v6.1.0
+           with:
+              path: .cache/linux-source-downloads
+              key: linux-source-downloads-v1-${{ inputs.architecture || 'x64' }}-${{ github.run_id }}-${{ github.run_attempt }}
          - name: Keep synthetic capture evidence
            if: always()
            run: |
@@ -197,4 +229,7 @@ jobs:
                  work/linux-release-sources/manifest.json
                  work/linux-release-sources/apt/update.log
                  work/linux-release-sources/controlled-modules/**/*.json
+                 work/linux-release-sources/static/**/manifest.json
+                 work/linux-release-sources/history/**/*.json
+                 work/linux-release-sources/static-input-verification.json
               if-no-files-found: ignore
