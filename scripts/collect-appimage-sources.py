@@ -58,14 +58,14 @@ def collect(args):
     if Path(args.archive).resolve() != archived:
         shutil.copyfile(args.archive, archived)
     manifest["toolset"].update(record(root, archived))
-    runtime = toolset / "runtime-" + architecture
+    runtime = toolset / ("runtime-" + architecture)
     sevenzip = find_sevenzip(args)
     for relative in ["runtime-" + architecture, *["lib/" + architecture + "/" + name for name in libraries]]:
         official = subprocess.check_output([sevenzip, "x", "-so", str(archived), relative])
         if (toolset / relative).read_bytes() != official:
             raise ValueError("Extracted AppImage tool differs from the hash-pinned archive member: " + relative)
     # Execute only the hash-pinned official launcher, in an isolated copy with no payload.
-    runtime_copy = root / "runtime-" + architecture
+    runtime_copy = root / ("runtime-" + architecture)
     shutil.copyfile(runtime, runtime_copy)
     runtime_copy.chmod(0o755)
     version = collector.run([str(runtime_copy), "--appimage-version"]).strip()
