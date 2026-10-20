@@ -33,6 +33,23 @@ class StaticBuildSelectionTest(unittest.TestCase):
             files = self.fixture(root)
             self.assertEqual([record[2] for record in inputs.selected_builds(root)], files)
 
+    def test_follows_static_library_builds_only_from_the_selected_runtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.fixture(root)
+            package = {"binaryPackage": "spirv-tools", "binaryVersion": "3", "sourcePackage": "spirv-tools", "sourceVersion": "3"}
+            identifier = hashlib.sha256(b"spirv-tools=3").hexdigest()[:16]
+            transitive = root / "history" / identifier / "binary.buildinfo"
+            transitive.parent.mkdir(parents=True)
+            transitive.write_text("Source: spirv-tools\nVersion: 3\nInstalled-Build-Depends: spirv-headers (= 4)\n")
+            static = root / "static" / files[1].parent.name / "manifest.json"
+            static.parent.mkdir(parents=True)
+            static.write_text(json.dumps({"buildinfo": {"sha256": hashlib.sha256(files[1].read_bytes()).hexdigest()}, "blockers": [], "packages": [package]}))
+            self.assertEqual([record[2] for record in inputs.selected_builds(root)], [*files, transitive])
+            transitive.unlink()
+            with self.assertRaisesRegex(ValueError, "Missing actual build evidence"):
+                inputs.selected_builds(root)
+
     def test_rejects_missing_build_for_a_required_source_family(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

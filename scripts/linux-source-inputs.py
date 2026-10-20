@@ -30,7 +30,8 @@ def selected_builds(root):
     native = json.loads((root / "manifest.json").read_text())
     selected = {}
     expected = set()
-    for package in native["packages"]:
+    packages = list(native["packages"])
+    for package in packages:
         source = package["sourcePackage"]
         if source not in required:
             continue
@@ -48,6 +49,11 @@ def selected_builds(root):
         if (record["Source"], record["Version"]) != identity:
             raise ValueError("Static inputs refer to another actual source build")
         selected[identity] = identifier, required[source], buildinfo
+        static = root / "static" / identifier / "manifest.json"
+        if static.is_file():
+            captured = json.loads(static.read_text())
+            if captured["buildinfo"]["sha256"] == collector.digest(buildinfo) and not captured["blockers"]:
+                packages.extend(captured["packages"])
     if expected != set(selected):
         raise ValueError(f"Missing actual build evidence for static source inputs: {sorted(expected - set(selected))}")
     if not {"ffmpeg", "obs-studio"}.issubset({source for source, _ in selected}):
@@ -56,13 +62,20 @@ def selected_builds(root):
 
 
 def collect_static(root):
-    for identifier, pattern, buildinfo in selected_builds(root):
-        existing = root / "static" / identifier / "manifest.json"
-        if existing.exists():
-            manifest = json.loads(existing.read_text())
-            if manifest["buildinfo"]["sha256"] == collector.digest(buildinfo) and not manifest["blockers"]:
-                continue
-        subprocess.run([sys.executable, str(Path(__file__).with_name("collect-linux-static-sources.py")), "--output", str(root), "--buildinfo", str(buildinfo), "--packages", pattern], check=True)
+    while True:
+        collected = False
+        for identifier, pattern, buildinfo in selected_builds(root):
+            existing = root / "static" / identifier / "manifest.json"
+            if existing.exists():
+                manifest = json.loads(existing.read_text())
+                if manifest["buildinfo"]["sha256"] == collector.digest(buildinfo) and not manifest["blockers"]:
+                    continue
+            subprocess.run([sys.executable, str(Path(__file__).with_name("collect-linux-static-sources.py")), "--output", str(root), "--buildinfo", str(buildinfo), "--packages", pattern], check=True)
+            collected = True
+        # A newly captured static library can itself use reviewed static/header
+        # inputs. Discover those from its actual build-info on the next pass.
+        if not collected:
+            return
 
 
 
