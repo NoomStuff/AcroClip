@@ -150,6 +150,7 @@ jobs:
               name: macOS-verified-release-candidate-${{ inputs.architecture || 'arm64' }}
               path: |
                  release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.dmg
+                 release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.dmg.verification.json
                  release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip
                  release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip.blockmap
                  release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip.release.json
