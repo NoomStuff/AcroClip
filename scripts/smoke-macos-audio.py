@@ -48,7 +48,7 @@ def fixture(name, frequency, compact=False):
         subprocess.run(["swiftc", str(root / "native/macos/fixture.swift"), "-o", str(binary)], check=True)
     output = folder / (name + ".jsonl")
     fixtures.append(dict(output=output, binary=binary))
-    launch(["open", "-n", "-W", str(contents.parent), "--args", str(output), str(frequency), "compact" if compact else "full"], name)
+    launch(["open", "-n", "-W", str(contents.parent), "--args", str(output), str(frequency), "compact" if compact else "bounded"], name)
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         if output.exists() and "\n" in output.read_text():
@@ -118,7 +118,7 @@ def save(name, verify_frames=True):
     assert float(info["format"]["duration"]) >= 1.5, info
     subprocess.run([ffmpeg, "-v", "error", "-i", str(file), "-map", "0", "-f", "null", "-"], check=True)
     video = next(stream for stream in info["streams"] if stream["codec_type"] == "video")
-    assert (video["width"], video["height"]) == (640, 360), video
+    assert (video["width"], video["height"]) == (320, 180), video
     pixels = subprocess.run([ffmpeg, "-v", "error", "-i", str(file), "-vf", "crop=2:2:iw/2:ih/2,scale=1:1", "-fps_mode", "passthrough", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
     colors = ((228, 76, 102), (65, 184, 170))
     classes = [next((color for color, values in enumerate(colors) if all(abs(pixels[offset + index] - values[index]) <= 22 for index in range(3))), None) for offset in range(0, len(pixels), 3)]
@@ -150,7 +150,10 @@ try:
     assert wait(lambda event: event["event"] == "audio-devices", after=begin)["devices"] == [dict(id="system", name="System audio")]
     application = dict(id="selected", name="Selected app", kind="application", sourceId=f"window:{selected['windowId']}:0", pid=selected["pid"], enabled=True, volume=1, muted=False, includeInMaster=False)
     system = dict(id="system", name="System audio", kind="output", deviceId="system", enabled=True, volume=1, muted=False, includeInMaster=False)
-    configuration = dict(action="start", sourceKind="app", sourceId=f"window:{selected['windowId']}:0", sourceName="Selected fixture", quality="custom", customWidth=640, customHeight=360, customFPS=15, customCQ=28, clipSeconds=2, microphone=False, captureAudio=True, allowSoftwareEncoder=True, audioSources=[application, system])
+    # This proof exercises four audio tracks. Keep its synthetic video small
+    # enough for Intel CI's software OpenGL renderer; smoke-macos.py separately
+    # verifies screen/window capture at 640x360 from the full display fixture.
+    configuration = dict(action="start", sourceKind="app", sourceId=f"window:{selected['windowId']}:0", sourceName="Selected fixture", quality="custom", customWidth=320, customHeight=180, customFPS=15, customCQ=28, clipSeconds=2, microphone=False, captureAudio=True, allowSoftwareEncoder=True, audioSources=[application, system])
     rejected = command(dict(configuration, audioSources=[dict(system, deviceId="unavailable-physical-output")]), "error")
     assert "System audio" in rejected["message"], rejected
     command(dict(action="stop"))
