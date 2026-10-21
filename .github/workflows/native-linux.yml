@@ -106,6 +106,13 @@ jobs:
            with:
               path: work/controlled-media/linux-${{ inputs.architecture || 'x64' }}
               key: controlled-linux-${{ inputs.architecture || 'x64' }}-${{ hashFiles('scripts/build-media-linux.sh', 'scripts/controlled-media-linux.ts', 'scripts/controlled-media.ts') }}
+         - name: Recover hash-verified controlled media source inputs
+           if: inputs.release_candidate == true
+           env:
+              GITHUB_TOKEN: ${{ github.token }}
+           # Both build recipes pin the same four source archives. Rebuild the
+           # Linux binaries from those sources, even when upstream is unavailable.
+           run: python3 scripts/recover-release-inputs.py --platform windows-x64 --release v0.3.0 --destination work/release-sources
          - name: Build controlled release media
            if: inputs.release_candidate == true
            env:
