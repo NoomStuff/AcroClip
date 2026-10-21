@@ -20,5 +20,5 @@ function run(command: string, args: string[]): void {
    if (result.error) throw result.error;
    if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed with ${result.status}`);
 }
-for (const script of ["bundle:media", "build:native", "build:icons", "build:notices", "build"]) run("bun", ["run", script]);
+for (const script of ["build:icons", "bundle:media", "build:native", "build:notices", "build"]) run("bun", ["run", script]);
 run("bunx", ["--no-install", "electron-builder", ...(mode === "dir" ? ["--dir"] : []), ...extra, "--publish", "never"]);

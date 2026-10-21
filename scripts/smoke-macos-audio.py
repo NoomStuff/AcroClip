@@ -20,7 +20,7 @@ folder.mkdir(parents=True)
 env = dict(os.environ, DYLD_LIBRARY_PATH=str(runtime / "Frameworks"), DYLD_FRAMEWORK_PATH=str(runtime / "Frameworks"))
 ffmpeg = str(root / "resources/media/ffmpeg")
 ffprobe = str(root / "resources/media/ffprobe")
-processes, logs, events, fixtures, media = [], [], [], [], []
+processes, logs, events, fixtures, media, audio_diagnostics = [], [], [], [], [], []
 
 
 def launch(args, name, pipe=False):
@@ -102,6 +102,24 @@ def amplitudes(file, track):
         sine = sum(value * math.sin(2 * math.pi * frequency * index / 48000) for index, value in enumerate(samples))
         cosine = sum(value * math.cos(2 * math.pi * frequency * index / 48000) for index, value in enumerate(samples))
         result[str(frequency)] = 2 * math.hypot(sine, cosine) / len(samples)
+    # Keep the original assertions unchanged. Record whether a failed nominal
+    # tone measurement came from silence, amplitude loss or clock/frequency drift.
+    peaks = {}
+    for nominal in (997, 1613):
+        candidates = []
+        for offset in range(-8, 9):
+            frequency = nominal + offset * 0.5
+            coefficient = 2 * math.cos(2 * math.pi * frequency / 48000)
+            previous, older = 0.0, 0.0
+            for value in samples:
+                current = value + coefficient * previous - older
+                older, previous = previous, current
+            power = max(0.0, previous * previous + older * older - coefficient * previous * older)
+            candidates.append(dict(frequency=frequency, amplitude=2 * math.sqrt(power) / len(samples)))
+        peaks[str(nominal)] = max(candidates, key=lambda candidate: candidate["amplitude"])
+    audio_diagnostics.append(dict(file=file.name, track=track, samples=len(samples),
+                                 rms=math.sqrt(sum(value * value for value in samples) / len(samples)),
+                                 silenceFraction=sum(abs(value) < 1e-7 for value in samples) / len(samples), peaks=peaks))
     return result
 
 
@@ -127,7 +145,8 @@ def save(name, verify_frames=True):
         assert None not in classes and set(classes) == {0, 1}, "The saved video did not contain both changing fixture colors"
     result = dict(name=name, tracks=[amplitudes(file, index) for index in range(4)])
     media.append(result)
-    (folder / "partial-proof.json").write_text(json.dumps(dict(captures=media), indent=2))
+    (folder / "partial-proof.json").write_text(json.dumps(dict(captures=media, audioDiagnostics=audio_diagnostics), indent=2))
+    print(json.dumps(dict(audioMeasurement=name, tracks=result["tracks"], diagnostics=audio_diagnostics[-4:])), flush=True)
     return result["tracks"]
 
 

@@ -45,6 +45,7 @@
   ; The builder's directory page also appends a product folder to custom paths.
   ; This page preserves an existing path exactly, including older custom names.
   !macro customPageAfterChangeDir
+    !include StrContains.nsh
     Function acroclipDirectoryPre
       ${if} $acroclipUpgrade == "1"
       ${orif} ${isUpdated}
@@ -53,5 +54,19 @@
     FunctionEnd
     !define MUI_PAGE_CUSTOMFUNCTION_PRE acroclipDirectoryPre
     !insertmacro MUI_PAGE_DIRECTORY
+
+    ; Keep the builder's first-install folder protection without rewriting an
+    ; established custom directory during an upgrade.
+    Function acroclipInstallFilesPre
+      ${if} $acroclipUpgrade != "1"
+      ${andifNot} ${isUpdated}
+      ${andifNot} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+        ${StrContains} $0 "${APP_FILENAME}" $INSTDIR
+        ${if} $0 == ""
+          StrCpy $INSTDIR "$INSTDIR\${APP_FILENAME}"
+        ${endif}
+      ${endif}
+    FunctionEnd
+    !define MUI_PAGE_CUSTOMFUNCTION_PRE acroclipInstallFilesPre
   !macroend
 !endif
