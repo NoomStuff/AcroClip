@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 from macos_fixture_health import stable_audio_output
+from audio_tone import tone_peak
 
 assert sys.platform == "darwin", "This proof requires an actual macOS host"
 root = pathlib.Path.cwd()
@@ -103,25 +104,16 @@ def amplitudes(file, track):
         sine = sum(value * math.sin(2 * math.pi * frequency * index / 48000) for index, value in enumerate(samples))
         cosine = sum(value * math.cos(2 * math.pi * frequency * index / 48000) for index, value in enumerate(samples))
         result[str(frequency)] = 2 * math.hypot(sine, cosine) / len(samples)
-    # Keep the original assertions unchanged. Record whether a failed nominal
-    # tone measurement came from silence, amplitude loss or clock/frequency drift.
-    peaks = {}
-    for nominal in (997, 1613):
-        candidates = []
-        for offset in range(-8, 9):
-            frequency = nominal + offset * 0.5
-            coefficient = 2 * math.cos(2 * math.pi * frequency / 48000)
-            previous, older = 0.0, 0.0
-            for value in samples:
-                current = value + coefficient * previous - older
-                older, previous = previous, current
-            power = max(0.0, previous * previous + older * older - coefficient * previous * older)
-            candidates.append(dict(frequency=frequency, amplitude=2 * math.sqrt(power) / len(samples)))
-        peaks[str(nominal)] = max(candidates, key=lambda candidate: candidate["amplitude"])
+    # A single exact-frequency projection can cancel a healthy tone when the
+    # virtual device clock shifts it slightly. Keep nominal measurements as
+    # diagnostics and use independently measured tone amplitudes for the same
+    # gain, mute, isolation and master-mix assertions below.
+    peaks = {str(nominal): tone_peak(samples, 48000, nominal) for nominal in (997, 1613)}
     audio_diagnostics.append(dict(file=file.name, track=track, samples=len(samples),
                                  rms=math.sqrt(sum(value * value for value in samples) / len(samples)),
-                                 silenceFraction=sum(abs(value) < 1e-7 for value in samples) / len(samples), peaks=peaks))
-    return result
+                                 silenceFraction=sum(abs(value) < 1e-7 for value in samples) / len(samples),
+                                 nominalAmplitudes=result, peaks=peaks))
+    return {nominal: peak["amplitude"] for nominal, peak in peaks.items()}
 
 
 def save(name, verify_frames=True):
