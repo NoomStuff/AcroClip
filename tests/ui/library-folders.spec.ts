@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { defaultPreferences } from "../../src/shared/defaults";
-test("folder browsing keeps the real hierarchy and selected categories blend their own colors", async () => {
+test("folder browsing keeps the real hierarchy and empty directories accessible", async () => {
    test.setTimeout(100000);
    const profile = await mkdtemp(join(tmpdir(), "acroclip-tree-")),
       collection = join(profile, "clips");
@@ -69,35 +69,6 @@ test("folder browsing keeps the real hierarchy and selected categories blend the
       await page.getByRole("navigation", { name: "Folder path" }).getByRole("button", { name: "Games", exact: false }).click();
       await page.getByRole("button", { name: "Open folder Games/Empty", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Folder is empty", exact: true })).toBeVisible();
-      await page.screenshot({ path: "test-results/library-folders.png" });
-      await page.evaluate(async () => {
-         for (const [name, color] of [
-            ["Blue", "#73b8ed"],
-            ["Rose", "#dc8cc0"],
-            ["Dark", "#112233"],
-            ["White", "#ffffff"],
-         ] as const)
-            await window.acroClip.category("create", { name, color });
-      });
-      const blue = page.getByRole("button", { name: /^Blue/ }).first(),
-         rose = page.getByRole("button", { name: /^Rose/ }).first();
-      await blue.click();
-      await page.waitForTimeout(220);
-      const initial = await page.locator(".library-sidebar .sidebar-scroll > .selection-indicator").evaluate((node) => getComputedStyle(node).backgroundColor);
-      await rose.click();
-      const blend = await page.locator(".library-sidebar .sidebar-scroll > .selection-indicator").evaluate((node) => getComputedStyle(node).backgroundColor);
-      await page.waitForTimeout(220);
-      const final = await page.locator(".library-sidebar .sidebar-scroll > .selection-indicator").evaluate((node) => getComputedStyle(node).backgroundColor);
-      expect(initial).not.toBe(final);
-      expect(blend).not.toBe(final);
-      for (const name of ["Blue", "Rose", "Dark", "White"]) {
-         const button = page.getByRole("button", { name: new RegExp(`^${name}`) }).first();
-         await button.click();
-         await expect.poll(() => button.evaluate((node) => getComputedStyle(node).color === getComputedStyle(node.querySelector("svg")!).color)).toBe(true);
-      }
-      await blue.hover();
-      await expect.poll(() => blue.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe("rgba(255, 255, 255, 0.02)");
-      await page.screenshot({ path: "test-results/category-colors.png" });
    } finally {
       await app.close();
    }

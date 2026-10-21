@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { Preferences } from "../../shared/types";
 import { preferencesSchema } from "../../shared/validation";
-import { api, describeError } from "./ui";
+import { api, describeError } from "./desktop";
 type Status = "idle" | "saving" | "saved" | "error";
 export function useSettingsAutosave(preferences: Preferences) {
    const [draft, setDraft] = useState(preferences);
    const [status, setStatus] = useState<Status>("idle");
    const [error, setError] = useState("");
    const current = useRef(preferences);
-   const base = useRef(preferences);
    const edits = useRef(new Map<keyof Preferences, number>());
    const revision = useRef(0);
    const running = useRef(false);
@@ -22,7 +21,6 @@ export function useSettingsAutosave(preferences: Preferences) {
    };
    useEffect(() => {
       const next = JSON.parse(serialized) as Preferences;
-      base.current = next;
       const merged = { ...next };
       for (const key of edits.current.keys()) Object.assign(merged, { [key]: current.current[key] });
       publish(merged);
@@ -53,7 +51,6 @@ export function useSettingsAutosave(preferences: Preferences) {
             const valid = preferencesSchema.safeParse(candidate);
             if (!valid.success) throw new Error(valid.error.issues[0]?.message ?? "Check your settings.");
             const result = await api.savePreferences(valid.data);
-            base.current = result.preferences;
             for (const [key, version] of snapshot) if (edits.current.get(key) === version) edits.current.delete(key);
             const merged = { ...result.preferences };
             for (const key of edits.current.keys()) Object.assign(merged, { [key]: current.current[key] });

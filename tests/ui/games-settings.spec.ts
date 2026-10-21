@@ -76,7 +76,6 @@ test("Auto game management searches the saved catalogue and persists application
       await search.fill("My local game");
       await expect(page.locator(".game-list>li")).toHaveCount(1);
       await expect(page.locator(".game-added")).toHaveText("Added");
-      await page.screenshot({ path: "test-results/games-settings.png" });
       await page.reload();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page.locator(".settings-sidebar").getByRole("button", { name: "Games", exact: true }).click();
@@ -103,7 +102,6 @@ test("Auto game management searches the saved catalogue and persists application
          await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.desktopFallback).toBe(false);
       }
       await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
-      await page.screenshot({ path: "test-results/auto-no-game-small.png" });
       await page.getByRole("button", { name: "Add game", exact: true }).click();
       await expect(page.getByRole("textbox", { name: "Search games", exact: true })).toBeFocused();
       await page.getByRole("button", { name: "Add game", exact: true }).click();

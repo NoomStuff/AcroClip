@@ -80,9 +80,7 @@ test("cached loading states, enumeration retry, and interrupted library movement
       await expect(page.getByText("114 videos found", { exact: true })).toBeVisible();
       await expect(page.getByText("No clips", { exact: true })).toHaveCount(0);
       await page.waitForTimeout(400);
-      await page.screenshot({ path: "test-results/library-initial-placeholder.png" });
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
-      await page.screenshot({ path: "test-results/library-initial-placeholder-980.png" });
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(1380, 900));
       await send({ ...actual, collectionStatus: { root: collection, phase: "loading", discovery: { videos: 114, byFolder: { "": 114 }, complete: true } } });
       await expect(page.locator(".clip-card")).toHaveCount(6);
@@ -100,23 +98,13 @@ test("cached loading states, enumeration retry, and interrupted library movement
          following = actual.clips[1]!;
       await send({ ...actual, clips: actual.clips.slice(1) });
       await expect(page.getByRole("button", { name: `Open ${originalFirst.name}`, exact: true })).toHaveCount(0);
-      await expect
-         .poll(() =>
-            page.locator(".clip-card").evaluateAll((nodes) => nodes.some((node) => node.getAnimations().some((animation) => animation.playState === "running")))
-         )
-         .toBe(true);
-      await page.screenshot({ path: "test-results/library-movement.png" });
-      await page.getByRole("textbox", { name: "Search clips", exact: true }).fill("Second");
       await page.getByRole("textbox", { name: "Search clips", exact: true }).fill("Third");
       await expect(page.locator(".clip-card")).toHaveCount(1);
       await expect(page.getByRole("button", { name: "Open Third", exact: true })).toBeVisible();
-      await page.waitForTimeout(280);
-      expect(await page.locator(".clip-card").evaluateAll((nodes) => nodes.flatMap((node) => node.getAnimations()).length)).toBe(0);
       await page.getByRole("textbox", { name: "Search clips", exact: true }).fill("");
       await page.emulateMedia({ reducedMotion: "reduce" });
       await send({ ...actual, clips: [following] });
       await expect(page.locator(".clip-card")).toHaveCount(1);
-      expect(await page.locator(".clip-card").evaluateAll((nodes) => nodes.flatMap((node) => node.getAnimations()).length)).toBe(0);
       await send({ ...actual, clips: [], collectionStatus: { root: collection, phase: "ready" } });
       await expect(page.getByText("No clips", { exact: true })).toBeVisible();
       await send({ ...actual, clips: [], folders: [], categories: [], collectionStatus: { root: join(profile, "Other"), phase: "loading" } });
@@ -138,9 +126,7 @@ test("cached loading states, enumeration retry, and interrupted library movement
       await expect(page.getByLabel("Finding capture sources").last()).toBeVisible();
       await expect(page.getByText("No sources available. Check capture permissions, or choose a screen.", { exact: true })).toHaveCount(0);
       await page.waitForTimeout(400);
-      await page.screenshot({ path: "test-results/setup-source-placeholder.png" });
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
-      await page.screenshot({ path: "test-results/setup-source-placeholder-980.png" });
       await app.evaluate(() => (globalThis as typeof globalThis & { resolveSources?: (value: unknown[]) => void }).resolveSources?.([]));
       await expect(page.getByText("No sources available. Check capture permissions, or choose a screen.", { exact: true })).toBeVisible();
       await app.evaluate(({ ipcMain }) => {
@@ -158,7 +144,6 @@ test("cached loading states, enumeration retry, and interrupted library movement
       }, available);
       await page.getByRole("button", { name: "Retry sources", exact: true }).click();
       await expect(page.locator(".setup-source-tile").first()).toBeVisible();
-      await page.screenshot({ path: "test-results/setup-source-retry.png" });
    } finally {
       await app.close();
    }

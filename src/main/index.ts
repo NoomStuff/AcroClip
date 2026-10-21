@@ -1,42 +1,28 @@
 import { isPackagedApp, registerWindowsIdentity } from "./identity";
-import type { DesktopCapturerSource } from "electron";
-import {
-   app,
-   BrowserWindow,
-   desktopCapturer,
-   dialog,
-   globalShortcut,
-   ipcMain,
-   Menu,
-   nativeImage,
-   protocol,
-   shell,
-   Tray,
-   session,
-   systemPreferences,
-} from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, protocol, shell, Tray, session, systemPreferences } from "electron";
 import { mkdirSync, realpathSync } from "node:fs";
 import { appendFile, mkdir, realpath, stat, rename as renameFile, rm } from "node:fs/promises";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { ApplicationArtwork, AppEvent, AppState, CaptureSource, Preferences } from "../shared/types";
+import type { ApplicationArtwork, AppEvent, AppState, Preferences } from "../shared/types";
 import { categoryRequest, idSchema, preferencesSchema } from "../shared/validation";
 import { assertDistinctAudioSources } from "./audio-sources";
-import { synchronizeLegacyAudio, monitoringPreferences } from "../shared/audio-model";
+import { audioTopology, synchronizeLegacyAudio, monitoringPreferences } from "../shared/audio-model";
 import { readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
 import { CollectionService, withinRoot } from "./collection";
 import { isValidShortcut, recordingDestination, recordingSourceLabel, samePath } from "./safety";
 import { bindingFor, shortcutRegistry, shortcutConflict } from "../shared/shortcuts";
 import type { ShortcutAction } from "../shared/shortcuts";
 import { Recorder } from "./recorder";
+import { CaptureSources } from "./capture-sources";
 import { serveMedia } from "./serve";
 import { Updates } from "./updates";
 import { linuxDesktopIdentity, linuxStartup } from "./startup";
 import { pendingExitDecision } from "./lifecycle";
 import { Feedback } from "./feedback";
-import { portalScreenId, portalSources, selectedCaptureSource } from "../shared/capture-policy";
+import { portalScreenId, selectedCaptureSource } from "../shared/capture-policy";
 import { findAttaCut, rememberAttaCut } from "./attacut";
 import { needsMicrophonePermission } from "../shared/audio-policy";
 import { StorageMonitor } from "./storage";
@@ -55,10 +41,6 @@ let preferences: Preferences;
 let preferencePath = "";
 let refreshBusy = false;
 let closingRequested = false;
-let cachedSources: CaptureSource[] = [];
-let previewSources = new Map<string, DesktopCapturerSource>();
-let previewPids = new Map<string, number>();
-let sourceDisplayLayout = "";
 let preferenceWrites: Promise<unknown> = Promise.resolve();
 let collectionReady: Promise<void> = Promise.resolve();
 let startingCapture: Promise<void> | null = null;
@@ -104,7 +86,7 @@ const recorder = new Recorder({
       : resolve(here, "../../resources/recorder", process.platform === "win32" ? "acroclip-recorder.exe" : "acroclip-recorder"),
    onState: (current) => {
       if (current.state === "recording" && current.sourceKind === "app") {
-         const actual = cachedSources.find((source) => source.kind === "app" && source.id.split(":")[1] === current.sourceId?.split(":")[1]);
+         const actual = captureSources.cached.find((source) => source.kind === "app" && source.id.split(":")[1] === current.sourceId?.split(":")[1]);
          lastRecordingArtwork = actual?.applicationId ? { id: actual.applicationId, icon: actual.appIcon ?? "" } : undefined;
       } else if (current.state === "recording" && current.sourceKind === "screen") lastRecordingArtwork = undefined;
       emitState();
@@ -120,6 +102,9 @@ const recorder = new Recorder({
       }
    },
 });
+const captureSources = new CaptureSources(recorder, () =>
+   process.platform === "win32" && mainWindow ? mainWindow.getNativeWindowHandle().readBigUInt64LE().toString() : ""
+);
 function errorMessage(error: unknown): string {
    return error instanceof Error ? error.message : "Something went wrong. Try again.";
 }
@@ -175,7 +160,7 @@ async function log(message: string) {
       const directory = join(app.getPath("userData"), "logs");
       await mkdir(directory, { recursive: true });
       const file = join(directory, "app.log");
-      if ((await stat(file).catch(() => null))?.size && (await stat(file)).size > 2 * 1024 * 1024) {
+      if (((await stat(file).catch(() => null))?.size ?? 0) > 2 * 1024 * 1024) {
          await rm(`${file}.previous`, { force: true });
          await renameFile(file, `${file}.previous`);
       }
@@ -195,103 +180,7 @@ async function showFeedback(message: string, error: boolean, saving: boolean) {
    if (preferences.notifications === "outside-fullscreen" && (await recorder.foregroundFullscreen())) return;
    feedback.show(message, error, saving);
 }
-import { screen } from "electron";
 let lastRecordingArtwork: ApplicationArtwork | undefined;
-let sourceQuery: Promise<CaptureSource[]> | null = null;
-let sourcesLoadedAt = 0;
-async function sources(): Promise<CaptureSource[]> {
-   if (sourceQuery) return sourceQuery;
-   if (Date.now() - sourcesLoadedAt < 750) return cachedSources;
-   sourceQuery = loadSources()
-      .then((result) => {
-         sourcesLoadedAt = Date.now();
-         return result;
-      })
-      .finally(() => {
-         sourceQuery = null;
-      });
-   return sourceQuery;
-}
-async function loadSources(): Promise<CaptureSource[]> {
-   if (process.platform === "linux") {
-      const capabilities = await recorder.capabilities();
-      const candidates = capabilities.applicationBackend === "xwayland" ? await recorder.applicationCandidates() : [];
-      const choices = portalSources(capabilities, candidates);
-      if (choices !== null) return (cachedSources = choices);
-      // Electron's independent portal session would ask twice and cannot name the native selection.
-      if (process.env["WAYLAND_DISPLAY"]) return (cachedSources = []);
-   }
-   const nativeWindows = process.platform === "win32" ? await recorder.capturableApplications() : [];
-   const displayLayout = JSON.stringify([
-      screen.getPrimaryDisplay().id,
-      screen.getAllDisplays().map((display) => [display.id, display.bounds, display.scaleFactor]),
-   ]);
-   const sameWindows = nativeWindows.length === previewPids.size && nativeWindows.every((source) => previewPids.get(source.id.split(":")[1]!) === source.pid);
-   if (process.platform === "win32" && cachedSources.length && sameWindows && displayLayout === sourceDisplayLayout) {
-      cachedSources = cachedSources.map((source) => {
-         const candidate = source.kind === "app" ? nativeWindows.find((candidate) => candidate.id.split(":")[1] === source.id.split(":")[1]) : undefined;
-         return candidate
-            ? { ...source, name: candidate.name, processId: candidate.pid, ...(candidate.pixelSize ? { pixelSize: candidate.pixelSize } : {}) }
-            : source;
-      });
-      return cachedSources;
-   }
-   const list = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true });
-   sourceDisplayLayout = displayLayout;
-   const allowedWindows = process.platform === "win32" ? new Set(nativeWindows.map((item) => item.id.split(":")[1])) : null;
-   previewSources = new Map(list.map((source) => [source.id, { ...source, thumbnail: nativeImage.createEmpty() }]));
-   previewPids = new Map(nativeWindows.map((source) => [source.id.split(":")[1]!, source.pid]));
-   cachedSources = list
-      .filter(
-         (s) =>
-            s.id.split(":")[1] !== (process.platform === "win32" && mainWindow ? mainWindow.getNativeWindowHandle().readBigUInt64LE().toString() : "") &&
-            (!allowedWindows || s.id.startsWith("screen:") || allowedWindows.has(s.id.split(":")[1] ?? ""))
-      )
-      .map((s) => {
-         const display = screen.getAllDisplays().find((item) => String(item.id) === s.display_id);
-         const bounds = display ? (process.platform === "win32" ? screen.dipToScreenRect(null, display.bounds) : display.bounds) : undefined;
-         const candidate = nativeWindows.find((item) => item.id.split(":")[1] === s.id.split(":")[1]);
-         let appIcon: string | undefined;
-         try {
-            if (s.appIcon && !s.appIcon.isEmpty()) {
-               const value = s.appIcon.resize({ width: 32, height: 32 }).toDataURL();
-               if (value.length <= 45000) appIcon = value;
-            }
-         } catch {
-            /* A missing app icon must not make its capture source unavailable. */
-         }
-         const applicationId = s.id.startsWith("window:")
-            ? createHash("sha256")
-                 .update(
-                    candidate?.executable
-                       ? process.platform === "win32"
-                          ? candidate.executable.toLowerCase()
-                          : candidate.executable
-                       : `window:${s.id}:${randomUUID()}`
-                 )
-                 .digest("hex")
-            : undefined;
-         return {
-            ...(applicationId ? { applicationId } : {}),
-            ...(appIcon ? { appIcon } : {}),
-            id: s.id,
-            name: s.name,
-            kind: s.id.startsWith("screen:") ? "screen" : "app",
-            thumbnail: s.thumbnail.toDataURL(),
-            ...(nativeWindows.find((item) => item.id.split(":")[1] === s.id.split(":")[1])
-               ? { processId: nativeWindows.find((item) => item.id.split(":")[1] === s.id.split(":")[1])!.pid }
-               : {}),
-            ...(bounds ? { bounds } : {}),
-            ...(display
-               ? { pixelSize: { width: Math.round(display.size.width * display.scaleFactor), height: Math.round(display.size.height * display.scaleFactor) } }
-               : nativeWindows.find((item) => item.id.split(":")[1] === s.id.split(":")[1])?.pixelSize
-                 ? { pixelSize: nativeWindows.find((item) => item.id.split(":")[1] === s.id.split(":")[1])!.pixelSize! }
-                 : {}),
-            ...(s.display_id ? { displayId: s.display_id } : {}),
-         };
-      });
-   return cachedSources;
-}
 function createWindow() {
    mainWindow = new BrowserWindow({
       width: 1380,
@@ -399,7 +288,7 @@ async function startRecording() {
          if (!(await systemPreferences.askForMediaAccess("microphone")))
             throw new Error("Allow microphone access in System Settings, or turn off microphone sources.");
       }
-      const available = await sources();
+      const available = await captureSources.list();
       if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to record.");
       await recorder.start(preferences, available);
    })();
@@ -420,7 +309,7 @@ async function saveClip() {
    send({ type: "clip-action" });
    const destination = recordingDestination(
       { ...preferences, collection: collections.root },
-      preferences.sourceKind === "auto" ? (recorder.status.sourceName ?? "Game") : recordingSourceLabel(preferences, cachedSources),
+      preferences.sourceKind === "auto" ? (recorder.status.sourceName ?? "Game") : recordingSourceLabel(preferences, captureSources.cached),
       randomUUID().slice(0, 8),
       new Date(requestedAt)
    );
@@ -430,7 +319,7 @@ async function saveClip() {
    void storage.check(collections.root);
    const actual =
       recorder.status.sourceKind === "app"
-         ? cachedSources.find((source) => source.kind === "app" && source.id.split(":")[1] === recorder.status.sourceId?.split(":")[1])
+         ? captureSources.cached.find((source) => source.kind === "app" && source.id.split(":")[1] === recorder.status.sourceId?.split(":")[1])
          : undefined;
    if (actual?.applicationId) lastRecordingArtwork = { id: actual.applicationId, icon: actual.appIcon ?? "" };
    if (recorder.status.sourceKind === "screen") lastRecordingArtwork = undefined;
@@ -438,7 +327,7 @@ async function saveClip() {
    notice("Saving clip…", false, "saving");
 }
 function pendingJobs() {
-   return collections.jobs.filter((j) => j.state === "running" || j.state === "queued");
+   return collections.pendingJobs;
 }
 async function applyStartup(enabled: boolean) {
    if (process.env["ACROCLIP_TEST"] === "1") return;
@@ -609,7 +498,7 @@ function registerIPC() {
    handle("capture-shortcut", (enabled) => suspendShortcuts(z.boolean().parse(enabled) && !!mainWindow?.isVisible() && !mainWindow.isMinimized()));
    handle("recording-capabilities", () => recorder.capabilities());
    handle("state", () => state());
-   handle("sources", () => sources());
+   handle("sources", () => captureSources.list());
    handle("games", () => recorder.games(preferences.customGames));
    handle("game-catalog", () => recorder.gameCatalog());
    handle("preview-source", async (id, token) => {
@@ -628,14 +517,14 @@ function registerIPC() {
       const selected =
          preferences.sourceKind === "auto"
             ? ["recording", "waiting"].includes(recorder.status.state) && (recorder.status.sourceKind === "app" || preferences.desktopFallback)
-               ? cachedSources.find(
+               ? captureSources.cached.find(
                     (source) =>
                        source.id === recorder.status.sourceId ||
                        (source.id.startsWith("window:") && source.id.split(":")[1] === recorder.status.sourceId?.split(":")[1])
                  )
                : undefined
-            : (cachedSources.find((source) => source.id === preferences.sourceId && source.kind === preferences.sourceKind) ??
-              (!preferences.sourceId && preferences.sourceKind === "screen" ? cachedSources.find((source) => source.kind === "screen") : undefined));
+            : (captureSources.cached.find((source) => source.id === preferences.sourceId && source.kind === preferences.sourceKind) ??
+              (!preferences.sourceId && preferences.sourceKind === "screen" ? captureSources.cached.find((source) => source.kind === "screen") : undefined));
       if (!selected || selected.id !== requested) throw new Error("The selected preview source is unavailable.");
       previewSourceId = requested;
       previewOwner = owner ?? null;
@@ -649,7 +538,7 @@ function registerIPC() {
    handle("monitor-audio", (enabled) =>
       recorder.monitorAudio(
          z.boolean().parse(enabled) && preferences.setupComplete && mainWindow?.isVisible() && !mainWindow.isMinimized()
-            ? monitoringPreferences(preferences, preferences.sourceKind === "auto" || !!selectedCaptureSource(cachedSources, preferences))
+            ? monitoringPreferences(preferences, preferences.sourceKind === "auto" || !!selectedCaptureSource(captureSources.cached, preferences))
             : null
       )
    );
@@ -664,9 +553,8 @@ function registerIPC() {
          .then(async () => {
             if (startingCapture) throw new Error("Recording is starting. Wait before applying settings.");
             const next = synchronizeLegacyAudio(preferences, preferencesSchema.parse(value));
-            const audioTopology = (value: Preferences) => JSON.stringify(value.audioSources.map((source) => ({ ...source, volume: 1, muted: false })));
             if (audioTopology(next) !== audioTopology(preferences) || next.sourceKind !== preferences.sourceKind || next.sourceId !== preferences.sourceId)
-               assertDistinctAudioSources(next, cachedSources);
+               assertDistinctAudioSources(next, captureSources.cached);
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
             if (!isValidShortcut(next.shortcut)) throw new Error("That key combination is not supported. Try a letter, number, or function key.");
             if (recorder.status.state !== "stopped" && recorder.status.state !== "error" && requiresCaptureRestart(preferences, next))
@@ -689,13 +577,9 @@ function registerIPC() {
                      next.desktopFallback !== preferences.desktopFallback ||
                      JSON.stringify(next.customGames) !== JSON.stringify(preferences.customGames))
                )
-                  await recorder.switchSource(next, await sources());
+                  await recorder.switchSource(next, await captureSources.list());
                if (next.startWithOS !== preferences.startWithOS) await applyStartup(next.startWithOS);
                if (["recording", "waiting"].includes(recorder.status.state)) {
-                  if (next.audioSourcesVersion !== 2) {
-                     await recorder.setAudio({ source: "capture", volume: next.captureVolume, muted: next.captureMuted });
-                     await recorder.setAudio({ source: "microphone", volume: next.microphoneVolume, muted: next.microphoneMuted });
-                  }
                   for (const source of next.audioSources.filter((source) => source.enabled))
                      await recorder.setAudio({ source: source.id, volume: source.volume, muted: source.muted });
                }
@@ -711,16 +595,10 @@ function registerIPC() {
                      next.desktopFallback !== preferences.desktopFallback ||
                      JSON.stringify(next.customGames) !== JSON.stringify(preferences.customGames))
                )
-                  await recorder.switchSource(preferences, cachedSources).catch((error: unknown) => notice(errorMessage(error), true));
+                  await recorder.switchSource(preferences, captureSources.cached).catch((error: unknown) => notice(errorMessage(error), true));
                if (next.startWithOS !== preferences.startWithOS)
                   await applyStartup(preferences.startWithOS).catch((error: unknown) => notice(errorMessage(error), true));
                if (["recording", "waiting"].includes(recorder.status.state)) {
-                  if (preferences.audioSourcesVersion !== 2) {
-                     await recorder.setAudio({ source: "capture", volume: preferences.captureVolume, muted: preferences.captureMuted }).catch(() => undefined);
-                     await recorder
-                        .setAudio({ source: "microphone", volume: preferences.microphoneVolume, muted: preferences.microphoneMuted })
-                        .catch(() => undefined);
-                  }
                   for (const source of preferences.audioSources.filter((source) => source.enabled))
                      await recorder.setAudio({ source: source.id, volume: source.volume, muted: source.muted }).catch(() => undefined);
                }
@@ -911,22 +789,8 @@ else {
                const owner = previewOwner;
                const sourceKind = preferences.sourceKind;
                const sourceId = preferences.sourceId;
-               const enumerate = async (): Promise<DesktopCapturerSource[]> => {
-                  const cached = previewSources.get(requested!);
-                  if (process.platform === "win32" && cached) {
-                     if (requested!.startsWith("window:")) {
-                        const handle = requested!.split(":")[1];
-                        const candidate = (await recorder.capturableApplications()).find((item) => item.id.split(":")[1] === handle);
-                        if (!candidate || candidate.pid !== previewPids.get(handle!)) return [];
-                     } else if (!screen.getAllDisplays().some((display) => String(display.id) === cached.display_id)) return [];
-                     return [cached];
-                  }
-                  return desktopCapturer.getSources({
-                     types: [requested!.startsWith("screen:") ? "screen" : "window"],
-                     thumbnailSize: { width: 0, height: 0 },
-                  });
-               };
-               void enumerate()
+               void captureSources
+                  .preview(requested!)
                   .then((available) => {
                      if (
                         !previewAllowed() ||

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import os from "node:os";
 import type { AudioTrack } from "../shared/types";
 
-export function binaryPath(name: "ffmpeg" | "ffprobe"): string {
+function binaryPath(name: "ffmpeg" | "ffprobe"): string {
    const suffix = process.platform === "win32" ? ".exe" : "";
    const configured = process.env[name === "ffmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH"];
    if (configured) return configured;

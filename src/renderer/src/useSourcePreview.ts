@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, describeError } from "./ui";
+import { api, describeError } from "./desktop";
 
 type PreviewStatus = "idle" | "connecting" | "live" | "error";
 

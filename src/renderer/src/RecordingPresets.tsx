@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
-import type { CaptureSource, Preferences, RecordingCapabilities } from "../../shared/types";
+import type { Preferences, RecordingCapabilities } from "../../shared/types";
 import { applyRecordingPreset } from "../../shared/recording-presets";
-import { api, Field, Select, Slider, Toggle } from "./ui";
-export function QualityPicker({
+import { api } from "./desktop";
+import { Field, Select, Toggle } from "./ui";
+import { Slider } from "./Slider";
+function QualityPicker({
    value,
    onChange,
    recommended,
@@ -41,7 +43,7 @@ export function customQualityError(value: Preferences): string {
    if (!Number.isInteger(value.customFPS) || value.customFPS < 1 || value.customFPS > 120) return "Frame rate must be between 1 and 120 fps.";
    return "";
 }
-export function CustomQualityControls({ value, onChange }: { value: Preferences; onChange: (patch: Partial<Preferences>) => void }) {
+function CustomQualityControls({ value, onChange }: { value: Preferences; onChange: (patch: Partial<Preferences>) => void }) {
    return (
       <div className="custom-quality">
          <Field label="Resolution limit">
@@ -105,7 +107,6 @@ export function RecordingPresets({
 }: {
    value: Preferences;
    onChange: (value: Preferences) => void;
-   sources?: CaptureSource[];
    capabilities?: RecordingCapabilities | null;
 }) {
    const [capabilities, setCapabilities] = useState<RecordingCapabilities | null>(providedCapabilities ?? null);

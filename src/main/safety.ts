@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import type { Preferences } from "../shared/types";
 import { previewFilename, safeFileStem } from "../shared/filename";
-export { safeFileStem } from "../shared/filename";
 
 export function recordingDestination(preferences: Preferences, source: string, unique: string, now = new Date()): string {
    const label = safeFileStem(source);
@@ -62,18 +61,6 @@ export function isValidShortcut(value: string): boolean {
          "`",
       ]).has(key)
    );
-}
-export function releaseIsNewer(candidate: string, current: string): boolean {
-   const parse = (value: string) => /^v?(\d+)\.(\d+)\.(\d+)(?:\+[\w.-]+)?$/.exec(value)?.slice(1, 4).map(Number);
-   const next = parse(candidate),
-      previous = parse(current);
-   if (!next || !previous) return false;
-   for (let index = 0; index < 3; index++) {
-      const a = next[index] ?? 0,
-         b = previous[index] ?? 0;
-      if (a !== b) return a > b;
-   }
-   return false;
 }
 export function recordingSourceLabel(preferences: Preferences, sources: Array<{ id: string; name: string }>): string {
    return sources.find((source) => source.id === preferences.sourceId)?.name ?? (preferences.sourceKind === "screen" ? "Screen" : "Application");

@@ -143,16 +143,6 @@
    padding: 17px calc(18px - var(--scrollbar-size)) 13px 18px;
 }
 
-.mic-select {
-   width: 100%;
-   margin-top: 4px;
-}
-.mic-select .select-trigger {
-   min-height: 30px;
-   padding: 4px 9px;
-   font-size: 12px;
-}
-
 .capture-actions {
    grid-column: 3;
    grid-row: 3;
@@ -421,13 +411,6 @@
    overflow: hidden;
    text-overflow: ellipsis;
    white-space: nowrap;
-}
-.mixer-channel-header .mic-select {
-   width: min(220px, 52%);
-   margin: 0;
-}
-.mixer-channel-header .mic-select > span {
-   display: none;
 }
 .mixer-channel-gain {
    display: flex;

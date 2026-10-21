@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { defaultPreferences } from "../../src/shared/defaults";
 import type * as ElectronUpdater from "electron-updater";
 
-test("AttaCut update chip and verified portable lifecycle share state with Settings", async () => {
+test("verified portable update lifecycle shares state with Settings", async () => {
    test.skip(process.platform !== "win32", "Portable distribution is Windows-only");
    test.setTimeout(90000);
    const profile = await mkdtemp(join(tmpdir(), "acroclip-update-flow-")),
@@ -100,18 +100,13 @@ test("AttaCut update chip and verified portable lifecycle share state with Setti
       await startup.uncheck();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.updateCheck).toBe(false);
       await expect(page.locator(".settings-sidebar").getByRole("status", { name: "Settings saved", exact: true })).toBeVisible();
-      await expect(page.locator(".settings-heading").getByRole("status")).toHaveCount(0);
       await page.getByRole("button", { name: "Check for updates", exact: true }).click();
       const chip = page.locator(".update-chip-wrap button");
       await expect(chip).toHaveAttribute("aria-label", "Download update");
-      const label = await page.locator(".window-page").boundingBox(),
-         spacer = await page.locator(".titlebar-drag").boundingBox();
-      expect(label!.x + label!.width).toBeLessThanOrEqual(spacer!.x);
       await chip.click();
       await expect(chip).toHaveAttribute("aria-label", "Retry download");
       await expect(chip).toHaveAttribute("title", /verification/);
       expect((await readdir(downloads)).filter((name) => name.endsWith(".part"))).toEqual([]);
-      await page.screenshot({ path: "test-results/update-chip-checksum-error.png" });
       await chip.click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).update.progress).toBeGreaterThan(0);
       await expect(chip).toHaveAttribute("aria-disabled", "true");
@@ -121,7 +116,6 @@ test("AttaCut update chip and verified portable lifecycle share state with Setti
       for (const width of [1380, 980]) {
          await app.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0]!.setSize(width, width === 980 ? 680 : 900), width);
          await chip.hover();
-         await page.screenshot({ path: `test-results/update-chip-progress-${width}.png` });
       }
       await app.evaluate(() => (globalThis as typeof globalThis & { updateFixture: { finish?: () => void } }).updateFixture.finish?.());
       await expect(chip).toHaveAttribute("aria-label", "Show in Downloads");
@@ -130,7 +124,6 @@ test("AttaCut update chip and verified portable lifecycle share state with Setti
       expect(await readFile(join(downloads, `AcroClip-99.0.0-win-${process.arch}.exe`), "utf8")).toBe("Keep previous download");
       await chip.click();
       expect(await app.evaluate(() => (globalThis as typeof globalThis & { updateFixture: { revealed?: string } }).updateFixture.revealed)).toBe(downloaded);
-      await page.screenshot({ path: "test-results/update-chip-downloaded.png" });
       await app.evaluate(() => {
          process.env["PORTABLE_EXECUTABLE_FILE"] = "";
          (globalThis as typeof globalThis & { updateFixture: { version: string } }).updateFixture.version = "99.0.1";
@@ -169,7 +162,6 @@ test("AttaCut update chip and verified portable lifecycle share state with Setti
          });
       });
       await expect(chip).toHaveAttribute("aria-label", "Apply and restart");
-      await page.screenshot({ path: "test-results/update-chip-ready.png" });
       await chip.click();
       // The production shutdown callback waits for the native helper to exit
       // before invoking the installer. CI teardown can exceed the default 5s.

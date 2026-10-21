@@ -35,7 +35,7 @@ it("dispatches the actual saveClip body without waiting for a stuck free-space r
          storage,
          collections: { root },
          preferences: { ...defaultPreferences, collection: root },
-         cachedSources: [],
+         captureSources: { cached: [] },
          lastRecordingArtwork: undefined,
          send: () => undefined,
          notice: () => undefined,

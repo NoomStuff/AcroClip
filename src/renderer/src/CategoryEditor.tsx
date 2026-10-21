@@ -30,13 +30,14 @@ import {
    Users,
    Video,
    Zap,
-   X,
    ChevronDown,
    Pipette,
 } from "lucide-react";
 import type { Category } from "../../shared/types";
-import { Button, IconButton, Menu, api } from "./ui";
-import type { Run } from "./ui";
+import { Button, Menu } from "./ui";
+import { DialogPanel } from "./Dialog";
+import { api } from "./desktop";
+import type { Run } from "./desktop";
 const icons = {
    tag: Tag,
    game: Gamepad2,
@@ -86,25 +87,13 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
       setBusy(false);
    };
    return (
-      <div className="modal-backdrop" onClick={close}>
+      <DialogPanel title={category ? "Edit category" : "New category"} close={close} className="category-editor" closeLabel="Close category editor">
          <form
-            className="dialog category-editor"
-            role="dialog"
-            aria-modal="true"
-            aria-label={category ? "Edit category" : "New category"}
-            onClick={(event) => event.stopPropagation()}
             onSubmit={(event) => {
                event.preventDefault();
                void save();
             }}
-            onKeyDown={(event) => {
-               if (event.key === "Escape") close();
-            }}
          >
-            <IconButton label="Close category editor" className="dialog-close" onClick={close} type="button">
-               <X size={17} />
-            </IconButton>
-            <h2>{category ? "Edit category" : "New category"}</h2>
             <label className="category-name-input">
                <CategoryMark category={{ color, icon }} size={20} />
                <input autoFocus aria-label="Category name" maxLength={80} value={name} onChange={(event) => setName(event.target.value)} required />
@@ -151,6 +140,6 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
                </Button>
             </div>
          </form>
-      </div>
+      </DialogPanel>
    );
 }

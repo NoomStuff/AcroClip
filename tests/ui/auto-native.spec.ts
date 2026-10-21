@@ -87,6 +87,7 @@ $form.Dispose()
          })
          .not.toBe("");
       const page = await desktop.firstWindow();
+      await expect(page.locator(".recording-page")).toBeVisible({ timeout: 15000 });
       console.log("Auto fixture and app opened");
       await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeEnabled();
       await page.getByRole("button", { name: "Start recording", exact: true }).click();

@@ -17,10 +17,7 @@ export function AudioMixerRow({
    onEnable,
    onMute,
    onVolume,
-   children,
    options,
-   status,
-   className = "",
 }: {
    name: string;
    sourceId: string;
@@ -34,38 +31,32 @@ export function AudioMixerRow({
    onEnable: (enabled: boolean) => void;
    onMute: () => void;
    onVolume: (volume: number) => void | Promise<void>;
-   children?: ReactNode;
-   options?: ReactNode;
-   status?: string;
-   className?: string;
+   options: ReactNode;
 }) {
    const listening = useIsListening(sourceId);
-   const controlName = name;
+   const muteLabel = ["Source audio", "Desktop audio", "App audio", "Microphone"].includes(name) ? name.toLowerCase() : name;
    return (
-      <div className={`mixer-channel ${className}`} data-disabled={!enabled || undefined}>
+      <div className="mixer-channel" data-disabled={!enabled || undefined}>
          <div className="mixer-channel-header">
             <span className="mixer-channel-name">{name}</span>
-            {children}
-            {status && <span className="mixer-channel-status">{status}</span>}
-            {options && (
-               <Menu label={`${name} options`} trigger={<MoreHorizontal size={16} />}>
-                  {options}
-               </Menu>
-            )}
+            {!enabled && <span className="mixer-channel-status">Not recorded</span>}
+            <Menu label={`${name} options`} trigger={<MoreHorizontal size={16} />}>
+               {options}
+            </Menu>
          </div>
          <div className="mixer-channel-gain">
             <IconButton
-               label={`${!enabled || muted ? "Unmute" : "Mute"} ${controlName === "Source audio" ? "source audio" : controlName === "Desktop audio" ? "desktop audio" : controlName === "App audio" ? "app audio" : controlName === "Microphone" ? "microphone" : controlName}`}
+               label={`${!enabled || muted ? "Unmute" : "Mute"} ${muteLabel}`}
                disabled={!enabled && active}
                onClick={() => (enabled ? onMute() : onEnable(true))}
             >
                {muted || !enabled ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </IconButton>
-            <MixerFader label={`${controlName} level`} value={volume} disabled={!enabled} onCommit={onVolume} />
+            <MixerFader label={`${name} level`} value={volume} disabled={!enabled} onCommit={onVolume} />
          </div>
          <div className="audio-meter-controls">
-            <ListenButton id={sourceId} name={controlName} enabled={enabled && listenAvailable} />
-            <AudioMeter name={controlName} level={level} muted={muted && !listening} enabled={enabled} visible={visible} />
+            <ListenButton id={sourceId} name={name} enabled={enabled && listenAvailable} />
+            <AudioMeter name={name} level={level} muted={muted && !listening} enabled={enabled} visible={visible} />
          </div>
       </div>
    );

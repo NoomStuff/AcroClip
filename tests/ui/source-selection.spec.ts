@@ -90,7 +90,6 @@ test("mismatched and stale sources stay unselected without preview or capture fa
       await expect(page.getByRole("button", { name: "Another application", exact: true })).toBeVisible();
       await expect(start).toBeDisabled();
       await expect(page.getByText("Choose what to capture", { exact: true })).toBeVisible();
-      await page.screenshot({ path: "test-results/source-selection-stale.png" });
       expect(await app.evaluate(() => (globalThis as typeof globalThis & { previewIds: string[] }).previewIds)).toEqual(["screen:selection-fixture"]);
       const log = await readFile(join(profile, "logs", "app.log"), "utf8").catch(() => "");
       expect(log).not.toContain("Capture audio source unavailable");

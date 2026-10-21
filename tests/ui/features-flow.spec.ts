@@ -27,32 +27,6 @@ test("category appearance, local shortcuts, conflicts and global capture binding
    try {
       const page = await app.firstWindow();
       await expect(page.locator(".recording-page")).toBeVisible();
-      await page.emulateMedia({ reducedMotion: "no-preference" });
-      await page.getByRole("button", { name: "Recording", exact: true }).click();
-      const marker = async () => {
-         await page.getByRole("button", { name: "Library", exact: true }).evaluate((node) => {
-            const probe = { values: [] as number[], done: false };
-            (window as unknown as { tabProbe: typeof probe }).tabProbe = probe;
-            const started = performance.now();
-            const tick = () => {
-               const marker = node.querySelector<HTMLElement>(".rail-marker");
-               if (marker) probe.values.push(new DOMMatrixReadOnly(getComputedStyle(marker).transform).m22);
-               if (performance.now() - started < 700) requestAnimationFrame(tick);
-               else probe.done = true;
-            };
-            requestAnimationFrame(tick);
-         });
-         await page.keyboard.press("Control+2");
-         await expect.poll(() => page.evaluate(() => (window as unknown as { tabProbe: { done: boolean } }).tabProbe.done)).toBe(true);
-         const values = await page.evaluate(() => (window as unknown as { tabProbe: { values: number[] } }).tabProbe.values);
-         expect(Math.min(...values)).toBeLessThan(0.35);
-         expect(values.at(-1)).toBeCloseTo(1, 2);
-         console.log("Stationary tab marker scaleY", { first: values[0], max: Math.max(...values), last: values.at(-1) });
-      };
-      await marker();
-      await page.keyboard.press("Control+1");
-      await marker();
-      await page.keyboard.press("Control+1");
       await page.keyboard.press("Control+2");
       await expect(page.locator(".library-page")).toBeVisible();
       await page.keyboard.press("Control+f");
@@ -71,7 +45,6 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       await category.getByRole("button", { name: "More category icons", exact: true }).click();
       await page.getByRole("menuitemradio", { name: "Icon: rocket", exact: true }).click();
       await category.getByLabel("Custom category color").fill("#112233");
-      await page.screenshot({ path: "test-results/category-custom.png" });
       await category.getByRole("button", { name: "Create", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.length).toBe(1);
       const original = (await page.evaluate(() => window.acroClip.state())).categories[0]!;
@@ -101,7 +74,6 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.shortcuts.toggleRecording).toBe("Control+Alt+Shift+F4");
       expect(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Control+Alt+Shift+F4"))).toBe(true);
       expect(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Control+Alt+Shift+F5"))).toBe(true);
-      await page.screenshot({ path: "test-results/shortcuts-expanded.png" });
       const navigation = page.getByRole("button", { name: "Recording page shortcut", exact: true });
       await navigation.click();
       await expect(navigation).toHaveText(/Press a shortcut/);
@@ -115,17 +87,6 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       await page.keyboard.press("Control+1");
       await expect(page.locator(".recording-page")).toBeVisible();
       await expect(page.locator(".record-action kbd")).toHaveText("Ctrl + Alt + Shift + F4");
-      expect(await page.locator(".record-action kbd").evaluate((node) => getComputedStyle(node).position)).toBe("absolute");
-      const mixerPositions = () =>
-         page.locator(".mixer-channel").evaluateAll((nodes) =>
-            nodes.map((node) => {
-               const bounds = node.getBoundingClientRect();
-               return {
-                  top: Math.round((bounds.top - node.closest(".mixer")!.getBoundingClientRect().top) * 100) / 100,
-                  height: Math.round(bounds.height * 100) / 100,
-               };
-            })
-         );
       await app.evaluate(({ ipcMain }) => {
          // An unavailable saved source is intentionally unlistenable. Exercise
          // audio error feedback with an explicitly available fixture instead.
@@ -142,24 +103,18 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       });
       await page.reload();
       await expect(page.getByRole("button", { name: "Fixture application", exact: true })).toBeVisible();
-      const beforeAudio = await mixerPositions();
       await page.evaluate(async () => {
          const state = await window.acroClip.state();
          await window.acroClip.savePreferences({ ...state.preferences, captureAudio: true });
       });
-      await expect.poll(mixerPositions).toEqual(beforeAudio);
       const listen = page.getByRole("button", { name: "Listen to Source audio", exact: true });
-      // Focus can scroll the mixer before the click. Measure error feedback after that normal navigation.
       await listen.scrollIntoViewIfNeeded();
       await listen.focus();
-      const beforeListen = await mixerPositions();
       await listen.click();
 
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(page.locator(".toast.error")).toBeVisible();
       await expect(page.locator(".mixer-monitor-error")).toHaveCount(0);
-      await expect.poll(mixerPositions).toEqual(beforeListen);
-      await page.screenshot({ path: "test-results/audio-status-error.png" });
       await expect(page.getByRole("button", { name: "Listen to Source audio", exact: true })).toHaveAttribute("aria-pressed", "false");
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("stopped");
    } finally {

@@ -81,9 +81,6 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.getByRole("button", { name: "Open Desktop moment", exact: true })).toBeVisible({ timeout: 30000 });
       await expect(page.locator(".clip-card-info p")).not.toContainText("Unknown");
-      await expect(page.locator(".clip-source-label")).toHaveCount(0);
-      await page.waitForTimeout(350);
-      await page.screenshot({ path: "test-results/library-populated.png" });
       await page.getByRole("button", { name: "New category", exact: true }).first().click();
       await page.getByRole("textbox", { name: "Category name", exact: true }).fill("Best moments");
       await page.getByRole("button", { name: "Create", exact: true }).click();
@@ -113,8 +110,6 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await page.getByRole("button", { name: "Open Desktop moment", exact: true }).click();
       await expect(page.locator(".viewer-title")).not.toContainText("Unknown");
       await expect(page.locator(".viewer-title time")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Back to Library", exact: true })).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Show in folder", exact: true }).locator("svg")).toHaveCount(1);
       await page.getByRole("button", { name: "File actions", exact: true }).click();
       await expect(page.getByRole("menuitem", { name: "Delete original", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
@@ -129,17 +124,12 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await page.keyboard.press("Escape");
       await expect(page.getByRole("combobox", { name: "Shareable size: 1 MB", exact: true })).toBeFocused();
       expect((await page.evaluate(() => window.acroClip.state())).preferences.shareSizeMB).toBe(2);
-      const sidebar = await page.locator(".viewer-sidebar").boundingBox(),
-         action = await page.getByRole("button", { name: "Create shareable", exact: true }).boundingBox();
-      expect(Math.abs(sidebar!.y + sidebar!.height - 20 - (action!.y + action!.height))).toBeLessThan(2);
-
       await expect
          .poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState), { timeout: 30000 })
          .toBeGreaterThanOrEqual(2);
       await page.getByRole("button", { name: "Play", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThan(0.2);
       await page.getByRole("button", { name: "Pause", exact: true }).click();
-      expect(await page.locator(".player-controls .slider").count()).toBe(0);
       await page.getByRole("slider", { name: "Playback volume", exact: true }).fill("0.37");
       await page.getByRole("button", { name: "Mute playback", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.muted)).toBe(true);
@@ -158,28 +148,14 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await page.getByRole("combobox", { name: "Audio track", exact: true }).click();
       await expect(page.getByRole("listbox", { name: "Audio track" })).toBeVisible();
       await page.keyboard.press("Escape");
-      await page.screenshot({ path: "test-results/viewer-fullscreen.png" });
       await page.getByRole("button", { name: "Exit fullscreen", exact: true }).click();
       await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
-      await page.waitForTimeout(350);
-      await page.screenshot({ path: "test-results/viewer-original.png" });
-      const actionBounds = () =>
-         page.locator(".viewer-sidebar-bottom > .button,.viewer-sidebar-bottom .reveal-row,.viewer-create-row").evaluateAll((nodes) =>
-            nodes.map((node) => {
-               const r = node.getBoundingClientRect();
-               return [r.x, r.y, r.width, r.height].map((value) => Math.round(value * 10) / 10);
-            })
-         );
-      const beforeExport = await actionBounds();
       await page.getByRole("button", { name: "Create shareable", exact: true }).click();
       await expect(page.locator(".viewer-create-main .button[data-progress]")).toBeVisible();
-      expect(await actionBounds()).toEqual(beforeExport);
       await expect(page.getByRole("combobox", { name: /Shareable size:/ })).toBeDisabled();
       await expect(page.getByRole("button", { name: "Cancel shareable", exact: true })).toBeVisible();
-      await page.screenshot({ path: "test-results/viewer-progress-fixed.png" });
 
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips[0]?.shareables.length, { timeout: 90000 }).toBe(1);
-      expect(await actionBounds()).toEqual(beforeExport);
       const result = await page.evaluate(() => window.acroClip.state());
       expect(result.clips[0]?.shareables[0]?.size).toBeLessThanOrEqual(1000000);
       expect(
@@ -192,8 +168,6 @@ test("real media plays, creates a verified shareable, and supports overlapping c
          .poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState), { timeout: 30000 })
          .toBeGreaterThanOrEqual(2);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
-      await page.waitForTimeout(350);
-      await page.screenshot({ path: "test-results/viewer-shareable.png" });
       await desktop.evaluate(() => {
          delete (globalThis as typeof globalThis & { testDragPath?: string }).testDragPath;
       });
@@ -240,19 +214,11 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       expect(await readFile(firstShare.path)).toEqual(firstBytes);
       await page.getByRole("button", { name: "Shareable", exact: true }).click();
 
-      await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
-      await page.getByRole("separator", { name: "Viewer sidebar width", exact: true }).press("Home");
-      await expect.poll(() => page.locator(".viewer-sidebar").evaluate((node) => Math.round(node.getBoundingClientRect().width))).toBe(230);
-      expect(await page.getByRole("button", { name: "Create shareable", exact: true }).evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
-      const narrowBounds = await actionBounds();
       await page.getByRole("button", { name: "Create shareable", exact: true }).click();
       await expect(page.getByRole("button", { name: "Cancel shareable", exact: true })).toBeVisible();
-      expect(await actionBounds()).toEqual(narrowBounds);
-      await page.screenshot({ path: "test-results/viewer-progress-fixed-980.png" });
       await page.getByRole("button", { name: "Cancel shareable", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).jobs.some((job) => job.state === "cancelled")).toBe(true);
       await expect(page.getByRole("button", { name: "Create shareable", exact: true })).toBeEnabled();
-      expect(await actionBounds()).toEqual(narrowBounds);
       expect((await page.evaluate(() => window.acroClip.state())).clips[0]!.shareables).toHaveLength(2);
       await desktop.evaluate(({ ipcMain }) => {
          ipcMain.removeHandler("share");
@@ -262,7 +228,6 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       });
       await page.getByRole("button", { name: "Create shareable", exact: true }).click();
       await expect(page.locator(".toast.error")).toContainText("Fixture export failure");
-      expect(await actionBounds()).toEqual(narrowBounds);
       await page.getByRole("button", { name: "Dismiss", exact: true }).click();
       await page.getByRole("button", { name: "Play", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);

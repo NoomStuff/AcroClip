@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Headphones } from "lucide-react";
-import { api, IconButton, describeError, reportFeedback } from "./ui";
+import { api, describeError, reportFeedback } from "./desktop";
+import { IconButton } from "./ui";
 import type { Preferences } from "../../shared/types";
 const Context = createContext<{ listening: string | null; disabled: boolean; busy: boolean; reason: string; toggle: (id: string) => void }>({
    listening: null,
@@ -62,10 +63,10 @@ export function AudioListening({
       invalidate();
       setListening(null);
       setBusy(false);
-      void api.listenAudio?.(null).catch(() => undefined);
+      void api.listenAudio(null).catch(() => undefined);
       return () => {
          invalidate();
-         void api.listenAudio?.(null).catch(() => undefined);
+         void api.listenAudio(null).catch(() => undefined);
       };
    }, [active, visible, identity, invalidate]);
    useEffect(
@@ -76,7 +77,7 @@ export function AudioListening({
                if (current.current) reportFeedback({ kind: "notice", error: true, message: `Listening stopped. ${event.listeningError}` });
                setListening(null);
                setBusy(false);
-               void api.listenAudio?.(null).catch(() => undefined);
+               void api.listenAudio(null).catch(() => undefined);
             }
          }),
       [invalidate]
@@ -87,7 +88,6 @@ export function AudioListening({
       const next = listening === id ? null : id;
       setBusy(true);
       try {
-         if (!api.listenAudio) throw new Error("Restart AcroClip to enable source listening.");
          await api.listenAudio(next);
          if (token === generation.current) setListening(next);
       } catch (reason) {

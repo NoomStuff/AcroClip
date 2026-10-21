@@ -19,10 +19,6 @@
    margin-right: auto;
 }
 
-.extra-audio .menu-wrap {
-   margin-top: 3px;
-}
-
 .dialog-panel {
    max-height: calc(100vh - 64px);
    overflow: auto;

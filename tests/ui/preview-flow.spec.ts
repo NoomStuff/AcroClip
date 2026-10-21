@@ -161,7 +161,6 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await expect(preview).toHaveAttribute("aria-label", "Live preview of Preview fixture B");
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       await page.waitForTimeout(300);
-      await page.screenshot({ path: "test-results/recording-live-preview.png" });
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();
       });

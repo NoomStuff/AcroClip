@@ -26,13 +26,6 @@
    animation: page-in 220ms var(--ease);
 }
 
-.page-heading {
-   display: flex;
-   align-items: center;
-   justify-content: space-between;
-   margin-bottom: 22px;
-}
-
 .button {
    display: inline-flex;
    align-items: center;
@@ -165,18 +158,6 @@
    margin-top: 6px;
 }
 
-.section-top {
-   display: flex;
-   justify-content: space-between;
-   align-items: center;
-   margin-bottom: 15px;
-   color: var(--muted);
-}
-
-.section-top h2 {
-   color: var(--text);
-}
-
 .preview-dot.live {
    background: var(--green);
 }
@@ -193,18 +174,6 @@
 .preview-dot.active,
 .status-dot.recording {
    background: var(--red);
-}
-
-.level-slider {
-   display: flex;
-   align-items: center;
-   gap: 12px;
-   min-width: 0;
-}
-
-.level-slider .slider {
-   flex: 1;
-   min-width: 0;
 }
 
 .toggle-row {
@@ -512,12 +481,6 @@
    position: absolute;
    top: 13px;
    right: 13px;
-}
-
-@media (max-height: 740px) {
-   .page-heading {
-      margin-bottom: 15px;
-   }
 }
 
 .button:active:not(:disabled) {

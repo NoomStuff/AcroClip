@@ -28,10 +28,6 @@
    margin: -4px;
 }
 
-.new-category {
-   color: var(--muted);
-}
-
 .category-item {
    position: relative;
 }

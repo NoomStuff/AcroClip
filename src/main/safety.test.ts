@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { defaultPreferences } from "../shared/defaults";
-import { isValidShortcut, recordingDestination, releaseIsNewer, safeFileStem } from "./safety";
+import { isValidShortcut, recordingDestination } from "./safety";
+import { safeFileStem } from "../shared/filename";
 import { desktopExec } from "./startup";
 
 describe("recording destination safety", () => {
@@ -18,20 +19,13 @@ describe("recording destination safety", () => {
       expect(recordingDestination(prefs, "Game", "first", date)).not.toBe(recordingDestination(prefs, "Game", "second", date));
    });
 });
-describe("shortcut and update validation", () => {
+describe("shortcut and startup validation", () => {
    it("rejects malformed accelerators before Electron receives them", () => {
       expect(isValidShortcut("CommandOrControl+Shift+F8")).toBe(true);
       expect(isValidShortcut("Control+Shift+K")).toBe(true);
       expect(isValidShortcut("Control++")).toBe(false);
       expect(isValidShortcut("Control+Control+K")).toBe(false);
       expect(isValidShortcut("Meta+UnknownKey")).toBe(false);
-   });
-   it("compares stable version components, without offering malformed or prerelease tags", () => {
-      expect(releaseIsNewer("v0.2.0", "0.1.9")).toBe(true);
-      expect(releaseIsNewer("0.1.10", "0.1.9")).toBe(true);
-      expect(releaseIsNewer("0.1.9", "0.2.0")).toBe(false);
-      expect(releaseIsNewer("0.2.0-beta.1", "0.1.0")).toBe(false);
-      expect(releaseIsNewer("nonsense", "0.1.0")).toBe(false);
    });
    it("quotes Linux executable paths and escapes desktop entry interpolation", () => {
       expect(desktopExec("/home/user/My App%/AcroClip", ["/project/path"])).toBe('"/home/user/My App%%/AcroClip" "/project/path"');

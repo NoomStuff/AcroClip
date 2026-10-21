@@ -3,12 +3,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, Download, TriangleAlert } from "lucide-react";
 import type { CSSProperties } from "react";
-import type { AvailableUpdate, UpdateStatus } from "../../shared/types";
+import type { UpdateState } from "../../shared/types";
 import "./UpdateChip.css";
 
 interface Props {
-   update: AvailableUpdate;
-   status: UpdateStatus | null;
+   state: UpdateState;
    onDownload: () => void;
    onRestart: () => void;
    onRelease: () => void;
@@ -17,14 +16,14 @@ interface Props {
 
 const ringLength = 53.4;
 
-export function UpdateChip({ update, status, onDownload, onRestart, onRelease, onReveal }: Props) {
+export function UpdateChip({ state, onDownload, onRestart, onRelease, onReveal }: Props) {
    const [announce, setAnnounce] = useState(true);
    const [expandedWidth, setExpandedWidth] = useState(160);
    const labelRef = useRef<HTMLSpanElement>(null);
    const downloadWidthRef = useRef<HTMLSpanElement>(null);
-   const phase = status?.version === update.version ? status.phase : null;
-   const downloading = phase === "downloading" || (update.mode === "automatic" && !phase);
-   const percent = status?.version === update.version ? status.percent : null;
+   const phase = state.state;
+   const downloading = phase === "downloading" || (state.mode === "automatic" && phase === "available");
+   const percent = state.indeterminate ? null : state.progress;
    const label = downloading
       ? percent == null
          ? "Downloading update"
@@ -34,10 +33,10 @@ export function UpdateChip({ update, status, onDownload, onRestart, onRelease, o
         : phase === "downloaded"
           ? "Show in Downloads"
           : phase === "error"
-            ? update.mode === "download"
+            ? state.mode === "download"
                ? "Retry download"
                : "View release"
-            : update.mode === "releases"
+            : state.mode === "releases"
               ? "View release"
               : "Download update";
    const Icon = phase === "ready" || phase === "downloaded" ? Check : phase === "error" ? TriangleAlert : Download;
@@ -48,10 +47,10 @@ export function UpdateChip({ update, status, onDownload, onRestart, onRelease, o
         : phase === "downloaded"
           ? onReveal
           : phase === "error"
-            ? update.mode === "download"
+            ? state.mode === "download"
                ? onDownload
                : onRelease
-            : update.mode === "releases"
+            : state.mode === "releases"
               ? onRelease
               : onDownload;
 
@@ -59,7 +58,7 @@ export function UpdateChip({ update, status, onDownload, onRestart, onRelease, o
       setAnnounce(true);
       const timer = window.setTimeout(() => setAnnounce(false), 3400);
       return () => window.clearTimeout(timer);
-   }, [update.version, phase]);
+   }, [state.version, phase]);
 
    useLayoutEffect(() => {
       const labelWidth = labelRef.current?.scrollWidth ?? 0;
@@ -74,7 +73,7 @@ export function UpdateChip({ update, status, onDownload, onRestart, onRelease, o
             className={`update-chip-trigger${phase ? ` ${phase}` : ""}`}
             aria-label={label}
             aria-disabled={!action}
-            title={phase === "error" && status?.message ? status.message : `AcroClip ${update.version} · ${label}`}
+            title={phase === "error" && state.message ? state.message : `AcroClip ${state.version} · ${label}`}
             onClick={action}
             style={{ "--update-expanded-width": `${expandedWidth}px` } as CSSProperties}
          >

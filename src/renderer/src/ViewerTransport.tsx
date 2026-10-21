@@ -6,7 +6,8 @@ import { Headphones, Maximize, Minimize, Pause, Play, Volume2, VolumeX } from "l
 import type { CSSProperties } from "react";
 import type { AudioTrack } from "../../shared/types";
 import { DropdownSelect } from "./DropdownSelect";
-import { formatTime, IconButton } from "./ui";
+import { formatTime } from "./format";
+import { IconButton } from "./ui";
 export function ViewerTransport({
    time,
    duration,

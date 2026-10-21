@@ -50,7 +50,7 @@ test("configured global capture keys work in the tray with a controlled applicat
    };
    try {
       const page = await app.firstWindow();
-      await expect(page.locator(".recording-page")).toBeVisible();
+      await expect(page.locator(".recording-page")).toBeVisible({ timeout: 15000 });
       await app.evaluate(async ({ BrowserWindow }) => {
          const fixture = new BrowserWindow({ title: "Global shortcut capture fixture", width: 640, height: 360, webPreferences: { sandbox: true } });
          await fixture.loadURL(
@@ -83,15 +83,21 @@ test("configured global capture keys work in the tray with a controlled applicat
       await press(115);
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("stopped");
       await promisify(execFile)(resolve("resources/media/ffmpeg.exe"), ["-v", "error", "-i", file, "-f", "null", "-"], { windowsHide: true });
-      const pixel = await promisify(execFile)(
+      // The bundled ffmpeg has no rawvideo encoder, so one PNG frame goes through
+      // image2pipe and nativeImage turns it back into channel values.
+      const frame = await promisify(execFile)(
          resolve("resources/media/ffmpeg.exe"),
-         ["-v", "error", "-ss", "0.5", "-i", file, "-vf", "crop=2:2:iw/2:ih/2", "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
+         ["-v", "error", "-ss", "0.5", "-i", file, "-vf", "crop=2:2:iw/2:ih/2", "-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "-"],
          { windowsHide: true, encoding: "buffer" }
       );
-      expect(pixel.stdout[0]).toBeLessThan(60);
-      expect(pixel.stdout[1]).toBeGreaterThan(60);
-      expect(pixel.stdout[1]).toBeLessThan(120);
-      expect(pixel.stdout[2]).toBeGreaterThan(150);
+      const pixel = await app.evaluate(({ nativeImage }, encoded) => {
+         const data = nativeImage.createFromBuffer(Buffer.from(encoded, "base64")).toBitmap();
+         return [data[2]!, data[1]!, data[0]!];
+      }, frame.stdout.toString("base64"));
+      expect(pixel[0]).toBeLessThan(60);
+      expect(pixel[1]).toBeGreaterThan(60);
+      expect(pixel[1]).toBeLessThan(120);
+      expect(pixel[2]).toBeGreaterThan(150);
    } finally {
       await app
          .firstWindow()

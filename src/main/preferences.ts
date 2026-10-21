@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Preferences } from "../shared/types";
 import { defaultPreferences } from "../shared/defaults";
-import { migrateAudioSources } from "../shared/audio-model";
+import { audioTopology, migrateAudioSources } from "../shared/audio-model";
 import type { AdditionalAudioSource } from "../shared/types";
 import { applyRecordingPreset } from "../shared/recording-presets";
 import { preferencesSchema } from "../shared/validation";
@@ -79,7 +79,6 @@ export function requiresCaptureRestart(a: Preferences, b: Preferences): boolean 
       a.microphoneDevice !== b.microphoneDevice ||
       a.captureAudio !== b.captureAudio ||
       a.avoidOverlap !== b.avoidOverlap ||
-      JSON.stringify(a.audioSources.map((source) => ({ ...source, volume: 1, muted: false }))) !==
-         JSON.stringify(b.audioSources.map((source) => ({ ...source, volume: 1, muted: false })))
+      audioTopology(a) !== audioTopology(b)
    );
 }

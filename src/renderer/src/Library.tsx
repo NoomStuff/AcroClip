@@ -17,24 +17,13 @@ import {
    X,
 } from "lucide-react";
 import type { AppState, Category, Clip } from "../../shared/types";
-import type { Ask } from "./App";
-import {
-   SelectionIndicator,
-   ContextHeader,
-   fileDragProps,
-   age,
-   api,
-   Button,
-   Empty,
-   folderName,
-   formatSize,
-   formatTime,
-   IconButton,
-   Menu,
-   MenuItem,
-   Select,
-} from "./ui";
-import type { Run } from "./ui";
+import { DialogPanel } from "./Dialog";
+import type { Ask } from "./Dialog";
+import { SelectionIndicator } from "./SelectionIndicator";
+import { ContextHeader, Button, Empty, IconButton, Menu, MenuItem, Select } from "./ui";
+import { fileDragProps, api } from "./desktop";
+import { age, folderName, formatSize, formatTime } from "./format";
+import type { Run } from "./desktop";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { FolderTree } from "./FolderTree";
 import { categoryColors, categoryStyle } from "./category-color";
@@ -74,10 +63,10 @@ export function Library({
       return () => observer.disconnect();
    }, [visible]);
    const sidebar = usePaneSize(layout, { key: "library.sidebar", initial: 245, min: 200, max: 380, reserve: 440, axis: "x" });
-   const pending = state.collectionStatus?.phase === "loading" || state.collectionStatus?.phase === "refreshing";
-   const unavailable = state.collectionStatus?.phase === "error";
-   const initial = state.collectionStatus?.phase === "loading" && !state.clips.length;
-   const collectionRoot = state.collectionStatus?.root || state.preferences.collection;
+   const pending = state.collectionStatus.phase === "loading" || state.collectionStatus.phase === "refreshing";
+   const unavailable = state.collectionStatus.phase === "error";
+   const initial = state.collectionStatus.phase === "loading" && !state.clips.length;
+   const collectionRoot = state.collectionStatus.root || state.preferences.collection;
    const [query, setQuery] = useState("");
    const [filter, setFilter] = useState("all");
    const [order, setOrder] = useState("newest");
@@ -100,13 +89,13 @@ export function Library({
       for (const clip of state.clips)
          if (clip.source) {
             const id = clip.applicationId ?? `label:${clip.source}`;
-            if (!apps.has(id)) apps.set(id, { id, name: clip.source, icon: clip.applicationId ? state.applicationIcons?.[clip.applicationId] : undefined });
+            if (!apps.has(id)) apps.set(id, { id, name: clip.source, icon: clip.applicationId ? state.applicationIcons[clip.applicationId] : undefined });
          }
       return [...apps.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
    }, [state.clips, state.applicationIcons]);
    const folderPath = filter.startsWith("folder:") ? filter.slice(7) : null;
    const folders = useMemo(() => {
-      const found = new Set(state.folders ?? []);
+      const found = new Set(state.folders);
       for (const clip of state.clips) {
          const parts = clip.relativePath.replaceAll("\\", "/").split("/");
          for (let i = 1; i < parts.length; i++) found.add(parts.slice(0, i).join("/"));
@@ -167,8 +156,8 @@ export function Library({
       [state.clips, query, filter, folderPath, order]
    );
    const selectedCategory = state.categories.find((item) => `category:${item.id}` === filter);
-   const discovering = state.collectionStatus?.phase === "loading";
-   const discovery = state.collectionStatus?.discovery;
+   const discovering = state.collectionStatus.phase === "loading";
+   const discovery = state.collectionStatus.discovery;
    const discoveredCount =
       query || (filter !== "all" && folderPath === null)
          ? undefined
@@ -353,7 +342,7 @@ export function Library({
                <div className="library-tools">
                   <span className="library-refresh-status">
                      {unavailable && (
-                        <IconButton label={`Collection refresh failed: ${state.collectionStatus?.error}. Retry`} onClick={() => void run(() => api.refresh())}>
+                        <IconButton label={`Collection refresh failed: ${state.collectionStatus.error}. Retry`} onClick={() => void run(() => api.refresh())}>
                            <AlertCircle size={16} />
                         </IconButton>
                      )}
@@ -458,7 +447,7 @@ export function Library({
                                        {clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown" && (
                                           <>
                                              <span className="clip-source-label">
-                                                {clip.applicationId && <ApplicationIcon src={state.applicationIcons?.[clip.applicationId]} size={12} />}
+                                                {clip.applicationId && <ApplicationIcon src={state.applicationIcons[clip.applicationId]} size={12} />}
                                                 {clip.source}
                                              </span>
                                              <span aria-hidden="true">&middot;</span>
@@ -563,41 +552,29 @@ export function Library({
             <CategoryEditor category={editingCategory === "new" ? undefined : editingCategory} close={() => setEditingCategory(null)} run={run} />
          )}
          {categoryClip && (
-            <div className="modal-backdrop" onClick={closeCategories}>
-               <div
-                  className="dialog category-dialog"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-label="Clip categories"
-                  onClick={(event) => event.stopPropagation()}
-               >
-                  <IconButton label="Close categories" className="dialog-close" onClick={closeCategories}>
-                     <X size={17} />
-                  </IconButton>
-                  <h2>Categories</h2>
-                  <p>{categoryClip.name}</p>
-                  {state.categories.length ? (
-                     state.categories.map((item) => (
-                        <button
-                           key={item.id}
-                           className="category-option"
-                           aria-pressed={categoryClip.categories.includes(item.id)}
-                           style={categoryStyle(item.color)}
-                           onClick={() => void assign(item.id)}
-                        >
-                           <CategoryMark category={item} size={17} />
-                           {item.name}
-                           {categoryClip.categories.includes(item.id) && <Check size={17} />}
-                        </button>
-                     ))
-                  ) : (
-                     <p>Create a category in the Library sidebar first.</p>
-                  )}
-                  <Button className="primary" onClick={closeCategories}>
-                     Done
-                  </Button>
-               </div>
-            </div>
+            <DialogPanel title="Categories" label="Clip categories" close={closeCategories} className="category-dialog" closeLabel="Close categories">
+               <p>{categoryClip.name}</p>
+               {state.categories.length ? (
+                  state.categories.map((item) => (
+                     <button
+                        key={item.id}
+                        className="category-option"
+                        aria-pressed={categoryClip.categories.includes(item.id)}
+                        style={categoryStyle(item.color)}
+                        onClick={() => void assign(item.id)}
+                     >
+                        <CategoryMark category={item} size={17} />
+                        {item.name}
+                        {categoryClip.categories.includes(item.id) && <Check size={17} />}
+                     </button>
+                  ))
+               ) : (
+                  <p>Create a category in the Library sidebar first.</p>
+               )}
+               <Button className="primary" onClick={closeCategories}>
+                  Done
+               </Button>
+            </DialogPanel>
          )}
       </div>
    );

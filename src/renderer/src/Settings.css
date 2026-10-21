@@ -1,8 +1,3 @@
-.settings-body .level-slider {
-   max-width: 100%;
-   width: 280px;
-}
-
 .settings-sidebar {
    padding: 20px 0 14px;
 }
@@ -66,12 +61,6 @@
    font-size: 12px;
    margin: 9px 0 22px;
    max-width: 550px;
-}
-
-.settings-divider {
-   height: 1px;
-   background: var(--line);
-   margin: 29px 0;
 }
 
 .quality-options {
@@ -150,16 +139,6 @@
    cursor: pointer;
    padding: 12px 0;
    font-size: 12px;
-}
-
-.custom-dimensions {
-   display: flex;
-   align-items: center;
-   gap: 9px;
-}
-
-.custom-dimensions input {
-   width: 85px;
 }
 
 .compression-slider {
@@ -449,9 +428,6 @@
 }
 .settings-body .quality-options {
    margin: 12px 0;
-}
-.settings-body .settings-divider {
-   display: none;
 }
 .settings-body .filename-editor {
    margin-top: 16px;

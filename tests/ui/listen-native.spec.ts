@@ -51,10 +51,10 @@ test("Listen is one direct default-output toggle and survives gain changes witho
                events.push({
                   at: performance.now(),
                   type: event.type,
-                  visible: event.visible,
-                  monitorError: event.monitorError,
-                  listeningError: event.listeningError,
-                  recorder: event.state?.recorder,
+                  visible: event.type === "visibility" ? event.visible : undefined,
+                  monitorError: event.type === "audio-monitor" ? event.monitorError : undefined,
+                  listeningError: event.type === "audio-monitor" ? event.listeningError : undefined,
+                  recorder: event.type === "state" ? event.state.recorder : undefined,
                });
          });
       });

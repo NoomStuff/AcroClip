@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Clapperboard, Folder, LoaderCircle, Mic, Monitor, Share2, Video } from "lucide-react";
 import type { AppState, CaptureSource, Preferences, RecordingCapabilities } from "../../shared/types";
-import { api, Button, Field, Segmented, Select, Toggle, reportFeedback, describeError } from "./ui";
-import type { Run } from "./ui";
-import { ShortcutInput } from "./Settings";
+import { api, reportFeedback, describeError } from "./desktop";
+import { Button, Field, Segmented, Select, Toggle } from "./ui";
+import type { Run } from "./desktop";
+import { ShortcutInput } from "./ShortcutInput";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
 import { applyRecordingPreset } from "../../shared/recording-presets";
 import { portalScreenId, sourceChoices } from "../../shared/capture-policy";
@@ -278,7 +279,6 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                         <h2 tabIndex={-1}>Recording presets</h2>
                         <RecordingPresets
                            value={draft}
-                           sources={sources}
                            capabilities={capabilities}
                            onChange={(next) => {
                               qualityChosen.current = true;

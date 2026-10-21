@@ -3,11 +3,13 @@ import { AlertCircle, Bell, Check, Download, Folder, ExternalLink, Gamepad2, Key
 import type { AppState, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
 import { previewFilename, validFilenameTemplate } from "../../shared/filename";
-import type { Ask } from "./App";
-import { SelectionIndicator, HeaderActions, IconButton, api, Button, Field, Select, Toggle } from "./ui";
-import type { Run } from "./ui";
+import { SelectionIndicator } from "./SelectionIndicator";
+import { HeaderActions, IconButton, Button, Field, Select, Toggle } from "./ui";
+import { api } from "./desktop";
+import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
 import { shortcutRegistry, bindingFor } from "../../shared/shortcuts";
+import { ShortcutInput } from "./ShortcutInput";
 import { GameManagement } from "./GameManagement";
 import { PaneDivider, usePaneSize } from "./layout";
 
@@ -82,63 +84,11 @@ function FilenameEditor({
       </div>
    );
 }
-export function ShortcutInput({ value, onChange, label = "Clip shortcut" }: { value: string; onChange: (value: string) => void; label?: string }) {
-   const [editing, setEditing] = useState(false);
-   return (
-      <button
-         className={`shortcut-input ${editing ? "editing" : ""}`}
-         onClick={() => {
-            void (api.captureShortcut?.(true) ?? Promise.resolve()).then(() => setEditing(true));
-         }}
-         onBlur={() => {
-            setEditing(false);
-            void api.captureShortcut?.(false);
-         }}
-         onKeyDown={(event) => {
-            if (!editing) return;
-            event.preventDefault();
-            if (event.key === "Escape") {
-               setEditing(false);
-               void api.captureShortcut?.(false);
-               return;
-            }
-            if (["Control", "Shift", "Alt", "Meta"].includes(event.key)) return;
-            if (event.key === "Backspace" && label !== "Clip shortcut") {
-               onChange("");
-               setEditing(false);
-               void api.captureShortcut?.(false);
-               return;
-            }
-            const parts = [
-               event.ctrlKey && "Control",
-               event.metaKey && "Command",
-               event.altKey && "Alt",
-               event.shiftKey && "Shift",
-               event.code.startsWith("Key")
-                  ? event.code.slice(3)
-                  : event.code.startsWith("Digit")
-                    ? event.code.slice(5)
-                    : event.key === " "
-                      ? "Space"
-                      : event.key.replace("Arrow", ""),
-            ].filter(Boolean);
-            onChange(parts.join("+"));
-            setEditing(false);
-            void api.captureShortcut?.(false);
-         }}
-         aria-label={label}
-      >
-         {editing
-            ? "Press a shortcut…"
-            : (value || "Unassigned").replace("CommandOrControl", navigator.platform.includes("Mac") ? "⌘" : "Ctrl").replaceAll("+", " + ")}
-      </button>
-   );
-}
 export interface SettingsTarget {
    section: "collection" | "games";
    request: number;
 }
-export function Settings({ state, run, target }: { state: AppState; run: Run; ask: Ask; target: SettingsTarget | null }) {
+export function Settings({ state, run, target }: { state: AppState; run: Run; target: SettingsTarget | null }) {
    const layout = useRef<HTMLDivElement>(null);
    const sidebar = usePaneSize(layout, { key: "settings.sidebar", initial: 245, min: 210, max: 380, reserve: 520, axis: "x" });
    const [section, setSection] = useState<Section>("recording");

@@ -45,7 +45,6 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await selectOption(page, "Recording frame rate", "30");
       await page.getByRole("slider", { name: "Recording compression" }).fill("19");
       await page.waitForTimeout(300);
-      await page.screenshot({ path: "test-results/onboarding-quality.png" });
       await page.getByRole("button", { name: "Continue", exact: true }).click();
       await page.getByRole("button", { name: "10 MB", exact: true }).click();
       await expect(page.getByRole("checkbox", { name: /Automatically create shareables/ })).not.toBeChecked();
@@ -53,13 +52,11 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect(page.getByRole("checkbox", { name: "Start with your computer", exact: true })).not.toBeChecked();
       await expect(page.getByRole("checkbox", { name: /Start recording when AcroClip opens/ })).not.toBeChecked();
       await page.waitForTimeout(300);
-      await page.screenshot({ path: "test-results/onboarding-ready.png" });
       await page.getByRole("button", { name: "Open AcroClip", exact: true }).click();
       await expect(page.locator(".onboarding"), "Setup should close after saving")
          .toHaveCount(0)
          .catch(async (error: unknown) => {
             console.log("Setup feedback", await page.locator(".toast").allTextContents());
-            await page.screenshot({ path: "test-results/setup-save-failure.png" });
             throw error;
          });
       const state = await page.evaluate(() => window.acroClip.state());
@@ -98,7 +95,6 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).not.toBeChecked();
       await page.getByRole("checkbox", { name: /Allow software encoding/ }).check();
       await page.waitForTimeout(300);
-      await page.screenshot({ path: "test-results/settings-custom-quality.png" });
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences)
          .toMatchObject({ resolutionLimit: 1440, customFPS: 60, customCQ: 25, allowSoftwareEncoder: true });
@@ -121,7 +117,6 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await pattern.fill("Moment {source} {date} {time}");
       await expect(page.locator(".filename-preview")).toContainText("Moment Desktop 2026-10-08 19-42-10-a1b2c3d4.mkv");
       await page.waitForTimeout(300);
-      await page.screenshot({ path: "test-results/settings-filename.png" });
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences)
          .toMatchObject({ filenamePreset: "custom", filenameTemplate: "Moment {source} {date} {time}", folderLayout: "flat" });

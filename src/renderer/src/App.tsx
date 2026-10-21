@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, Check, Clapperboard, Film, Folder, LoaderCircle, Minus, Monitor, Settings2, Square, Video, X } from "lucide-react";
+import { AlertCircle, Check, Clapperboard, Film, Folder, LoaderCircle, Minus, Settings2, Square, Video, X } from "lucide-react";
 import type { AppState, Clip } from "../../shared/types";
-import { SelectionIndicator, TabMarker, api, describeError, Dialog, formatTime, IconButton, reportFeedback } from "./ui";
-import type { DialogRequest, RendererFeedback, Run } from "./ui";
+import { SelectionIndicator, TabMarker } from "./SelectionIndicator";
+import { api, describeError } from "./desktop";
+import { Dialog } from "./Dialog";
+import { RecordingStatus } from "./RecordingStatus";
+import { IconButton } from "./ui";
+import type { DialogRequest } from "./Dialog";
+import type { RendererFeedback, Run } from "./desktop";
 import { shortcutRegistry, bindingFor, eventBinding, normalizeBinding } from "../../shared/shortcuts";
 import { Recording } from "./Recording";
 import { Library } from "./Library";
 import { Viewer } from "./Viewer";
 import { Settings } from "./Settings";
 import type { SettingsTarget } from "./Settings";
-import { AppUpdate } from "./AppUpdate";
+import { UpdateChip } from "./UpdateChip";
 import { Onboarding } from "./Onboarding";
 
 type Page = "recording" | "library" | "viewer" | "settings";
-export type Ask = (request: Omit<DialogRequest, "resolve">) => Promise<string | boolean | null>;
+import type { Ask } from "./Dialog";
 export function App() {
    const [state, setState] = useState<AppState | null>(null);
    const [page, setPage] = useState<Page>("recording");
@@ -53,14 +58,14 @@ export function App() {
          setWindowVisible(loaded.windowVisible);
       });
       const unsubscribe = api.onEvent((event) => {
-         if (event.state) {
+         if (event.type === "state") {
             receivedState = true;
             setState(event.state);
             setWindowVisible(event.state.windowVisible);
          }
-         if (event.type === "visibility" && event.visible !== undefined) setWindowVisible(event.visible);
+         if (event.type === "visibility") setWindowVisible(event.visible);
          if (event.type === "clip-action") setClipPulse((value) => value + 1);
-         if (event.message) setNotice({ message: event.message, error: event.error ?? false });
+         if (event.type === "notice" && event.message) setNotice({ message: event.message, error: event.error });
       });
       const feedback = (event: Event) => {
          const value = (event as CustomEvent<RendererFeedback>).detail;
@@ -140,7 +145,15 @@ export function App() {
                {page === "viewer" ? "" : page.slice(1)}
             </span>
             <div className="titlebar-drag" />
-            {state && <AppUpdate state={state.update} run={run} />}
+            {state?.update.version && state.update.mode && !["idle", "checking"].includes(state.update.state) && (
+               <UpdateChip
+                  state={state.update}
+                  onDownload={() => void run(() => api.downloadUpdate())}
+                  onRestart={() => void run(() => api.installUpdate())}
+                  onRelease={() => void run(() => api.openUpdateRelease())}
+                  onReveal={() => void run(() => api.revealUpdate())}
+               />
+            )}
             {state?.platform !== "darwin" && (
                <div className="window-controls">
                   <IconButton label="Minimize" onClick={() => api.window("minimize")}>
@@ -214,7 +227,7 @@ export function App() {
                      <Viewer state={state} clip={clip} visible={page === "viewer" && windowVisible} run={run} openLibrary={() => setPage("library")} />
                   </section>
                   <section className="page" hidden={page !== "settings"}>
-                     <Settings state={state} run={run} ask={ask} target={settingsTarget} />
+                     <Settings state={state} run={run} target={settingsTarget} />
                   </section>
                </>
             ) : (
@@ -237,86 +250,5 @@ export function App() {
          {dialog && <Dialog key={dialog.title} request={dialog} close={() => setDialog(null)} />}
          {state && !state.preferences.setupComplete && <Onboarding state={state} run={run} />}
       </div>
-   );
-}
-
-export function RecordingStatus({ state, elapsed, audioMessage = "" }: { state: AppState | null; elapsed: number; audioMessage?: string }) {
-   const recorder = state?.recorder;
-   const active = recorder?.state === "recording";
-   const status = active
-      ? recorder?.message || "Recording"
-      : recorder?.state === "waiting"
-        ? recorder?.message || "Waiting for application"
-        : recorder?.state === "starting"
-          ? "Starting recording"
-          : recorder?.state === "error"
-            ? "Recording stopped"
-            : "Not recording";
-   const captureName =
-      recorder?.sourceName || (state?.preferences.sourceKind === "screen" ? "Screen" : state?.preferences.sourceKind === "auto" ? "Auto" : "Application");
-   return (
-      <footer className={`status-strip ${recorder?.state === "error" ? "has-error" : ""}`}>
-         <div className="status-primary">
-            {recorder?.state === "starting" ? (
-               <LoaderCircle size={12} className="spin" />
-            ) : recorder?.state === "error" ? (
-               <AlertCircle size={13} />
-            ) : (
-               <span className={`status-dot ${active ? "recording" : ""}`} />
-            )}
-            <span className="status-summary" title={status}>
-               {status}
-            </span>
-            {active && (
-               <>
-                  <span className="status-divider" />
-                  <span className="tabular">{formatTime(elapsed)}</span>
-                  <span className="status-secondary">{Math.floor(recorder.availableSeconds)}s available</span>
-               </>
-            )}
-         </div>
-         <div className="status-right">
-            {audioMessage && (
-               <button
-                  className="status-audio"
-                  title={audioMessage}
-                  aria-label={`Audio status: ${audioMessage}`}
-                  onClick={() => reportFeedback({ kind: "notice", message: audioMessage, error: true })}
-               >
-                  <AlertCircle size={13} />
-                  Audio unavailable
-               </button>
-            )}
-            {state?.storageWarning && (
-               <span className="storage-warning" role="status" title={state.storageWarning}>
-                  <AlertCircle size={13} />
-                  {state.storageWarning}
-               </span>
-            )}
-            {recorder && !active && recorder.message && recorder.message !== status && (
-               <span className="status-message" title={recorder.message}>
-                  {recorder.message}
-               </span>
-            )}
-            {active && (
-               <span className="status-secondary">
-                  <Monitor size={12} />
-                  {captureName}
-               </span>
-            )}
-            {recorder && recorder.pendingSaves > 0 && (
-               <span>
-                  <LoaderCircle size={12} className="spin" />
-                  Saving {recorder.pendingSaves > 1 ? `${recorder.pendingSaves} clips` : "clip"}
-               </span>
-            )}
-            {state?.jobs.some((job) => job.kind === "shareable" && ["running", "queued"].includes(job.state)) && (
-               <span>
-                  <LoaderCircle size={12} className="spin" />
-                  Creating shareable
-               </span>
-            )}
-         </div>
-      </footer>
    );
 }

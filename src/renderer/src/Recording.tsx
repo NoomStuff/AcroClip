@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Clapperboard, Circle, CircleStop, Gamepad2, Monitor, RefreshCw } from "lucide-react";
 import type { AppState, AudioLevels, CaptureSource, GameCandidate, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
-import { api, Button, ContextHeader, Empty, Field, reportFeedback, Segmented, Select } from "./ui";
-import type { Run } from "./ui";
+import { api, reportFeedback } from "./desktop";
+import { Button, ContextHeader, Empty, Field, Segmented, Select } from "./ui";
+import type { Run } from "./desktop";
 import { PaneDivider, usePaneSize } from "./layout";
 import { useSourcePreview } from "./useSourcePreview";
 import { bindingFor, formatBinding } from "../../shared/shortcuts";
@@ -39,10 +40,10 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
       }
       return api.onEvent((event) => {
          if (event.type === "audio-monitor") {
-            setMonitorError(event.monitorError ?? "");
+            setMonitorError(event.monitorError);
             if (event.monitorError) setNativeLevels({ capture: 0, microphone: 0 });
          }
-         if (event.type === "audio-levels" && event.levels) {
+         if (event.type === "audio-levels") {
             const levels = event.levels;
             setNativeLevels((previous) => {
                const additional = { ...previous.additional, ...levels.additional };
@@ -102,9 +103,6 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
       };
    }, [visible, state.preferences.sourceKind, state.preferences.customGames, state.recorder.supported]);
    useEffect(() => {
-      if (!visible || !state.preferences.microphone) return;
-   }, [visible, state.preferences.microphone, run]);
-   useEffect(() => {
       if (!visible) return;
       let gone = false;
       let fetching = false;
@@ -158,7 +156,7 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
    useEffect(() => {
       if (!visible) return;
       return () => {
-         void api.monitorAudio?.(false).catch(() => undefined);
+         void api.monitorAudio(false).catch(() => undefined);
       };
    }, [visible]);
    const monitorConfiguration = JSON.stringify([
@@ -179,7 +177,7 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
       let disposed = false;
       setMonitorSetupError("");
       void api
-         .monitorAudio?.(true)
+         .monitorAudio(true)
          .then(() => {
             if (!disposed) setMonitorSetupError("");
          })

@@ -27,7 +27,6 @@ export function migrateAudioSources(value: Preferences, extras: AdditionalAudioS
    ];
 }
 export function nativeAudioPreferences(value: Preferences) {
-   if (value.audioSourcesVersion !== 2) return { ...value, automaticMaster: false, sourceAudioPresent: true };
    const source = value.audioSources.find((source) => source.kind === "source");
    return {
       ...value,
@@ -42,7 +41,6 @@ export function nativeAudioPreferences(value: Preferences) {
    };
 }
 export function synchronizeLegacyAudio(previous: Preferences, next: Preferences): Preferences {
-   if (next.audioSourcesVersion !== 2) return next;
    let sources = next.audioSources;
    if (JSON.stringify(previous.audioSources) === JSON.stringify(next.audioSources)) {
       if (previous.captureAudio !== next.captureAudio || previous.captureVolume !== next.captureVolume || previous.captureMuted !== next.captureMuted)
@@ -84,4 +82,8 @@ export function monitoringPreferences(preferences: Preferences, captureAvailable
       captureAudio: false,
       audioSources: preferences.audioSources.map((source) => (source.kind === "source" ? { ...source, enabled: false } : source)),
    };
+}
+
+export function audioTopology(preferences: Preferences): string {
+   return JSON.stringify(preferences.audioSources.map((source) => ({ ...source, volume: 1, muted: false })));
 }

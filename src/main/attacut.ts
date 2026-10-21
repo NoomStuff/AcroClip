@@ -10,7 +10,7 @@ export interface AttaCutLocations {
    searchPath: string;
 }
 
-export function attaCutCandidates(locations: AttaCutLocations): string[] {
+function attaCutCandidates(locations: AttaCutLocations): string[] {
    const { platform, home, appData, searchPath } = locations;
    if (platform === "win32")
       return [path.join(appData, "../Local/Programs/AttaCut/AttaCut.exe"), path.join(home, "AppData/Local/Programs/attacut/AttaCut.exe")];
@@ -21,7 +21,7 @@ export function attaCutCandidates(locations: AttaCutLocations): string[] {
       .flatMap((directory) => [path.join(directory, "attacut"), path.join(directory, "AttaCut")]);
 }
 
-export function attaCutExecutable(selection: string, platform: NodeJS.Platform): string {
+function attaCutExecutable(selection: string, platform: NodeJS.Platform): string {
    if (!path.isAbsolute(selection)) throw new Error("Choose an absolute AttaCut application path.");
    return platform === "darwin" && selection.endsWith(".app") ? path.join(selection, "Contents/MacOS/AttaCut") : selection;
 }

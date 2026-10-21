@@ -2,14 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Gamepad2, Plus, Search, Trash2 } from "lucide-react";
 import type { RefObject } from "react";
 import type { CaptureSource, CustomGame, GameCandidate, GameCatalogSnapshot, Preferences } from "../../shared/types";
-import { api, Button, describeError, DialogPanel, IconButton, Select } from "./ui";
+import { api, describeError } from "./desktop";
+import { Button, IconButton, Select } from "./ui";
+import { DialogPanel } from "./Dialog";
 import { ApplicationIcon } from "./ApplicationIcon";
 const executableKey = (value: string) => value.replaceAll("\\", "/").toLowerCase();
-export const withAddedGame = (games: CustomGame[], game: CustomGame): CustomGame[] => [
+const withAddedGame = (games: CustomGame[], game: CustomGame): CustomGame[] => [
    ...games.filter((item) => executableKey(item.executable) !== executableKey(game.executable)),
    game,
 ];
-export function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add: (game: CustomGame) => void | Promise<void>; close: () => void }) {
+function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add: (game: CustomGame) => void | Promise<void>; close: () => void }) {
    const [candidates, setCandidates] = useState<GameCandidate[]>([]),
       [sources, setSources] = useState<CaptureSource[]>([]);
    const [selected, setSelected] = useState(""),

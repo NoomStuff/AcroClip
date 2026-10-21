@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Clapperboard, Film, FolderOpen, LoaderCircle, MoreHorizontal, Share2, SlidersHorizontal, Trash2, X } from "lucide-react";
 import type { AppState, Clip } from "../../shared/types";
-import { api, Button, describeError, Empty, fileDragProps, formatSize, formatTime, HeaderActions, IconButton, Menu, MenuItem, Segmented, Select } from "./ui";
-import type { Run } from "./ui";
+import { api, describeError, fileDragProps } from "./desktop";
+import { Button, Empty, HeaderActions, IconButton, Menu, MenuItem, Segmented, Select } from "./ui";
+import { formatSize, formatTime } from "./format";
+import type { Run } from "./desktop";
 import { DropdownSelect } from "./DropdownSelect";
 import { ViewerTransport } from "./ViewerTransport";
 import { PaneDivider, usePaneSize } from "./layout";

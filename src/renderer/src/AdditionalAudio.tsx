@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import type { AdditionalAudioSource, GameCandidate, Preferences } from "../../shared/types";
-import { api, Button, DialogPanel, describeError, MenuItem, reportFeedback, Select } from "./ui";
+import { api, describeError, reportFeedback } from "./desktop";
+import { Button, MenuItem, Select } from "./ui";
+import { DialogPanel } from "./Dialog";
 import { AudioMixerRow } from "./AudioMixerRow";
 export function AdditionalAudio({
    preferences,
@@ -117,7 +119,6 @@ export function AdditionalAudio({
                onEnable={(enabled) => update(source.id, { enabled, muted: false })}
                onMute={() => update(source.id, { muted: !source.muted })}
                onVolume={(volume) => update(source.id, { volume })}
-               {...(!source.enabled ? { status: "Not recorded" } : {})}
                options={
                   <>
                      <MenuItem disabled={active} onClick={() => show(source)}>

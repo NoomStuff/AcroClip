@@ -2,20 +2,8 @@ import js from "@eslint/js";
 import ts from "typescript-eslint";
 import hooks from "eslint-plugin-react-hooks";
 export default ts.config(
-   // after-pack.cjs stays CommonJS because electron-builder loads hooks with require().
    {
-      ignores: [
-         "out/**",
-         "release/**",
-         "resources/**",
-         "work/**",
-         "test-results/**",
-         ".cache/**",
-         "native/**",
-         "build/**",
-         "playwright-report/**",
-         "scripts/after-pack.cjs",
-      ],
+      ignores: ["out/**", "release/**", "resources/**", "work/**", "test-results/**", ".cache/**", "native/**", "build/**", "playwright-report/**"],
    },
    js.configs.recommended,
    ...ts.configs.recommended,
@@ -66,9 +54,5 @@ export default ts.config(
             },
          ],
       },
-   },
-   {
-      files: ["tests/ui/*.mjs"],
-      languageOptions: { globals: { console: "readonly", process: "readonly", setTimeout: "readonly", document: "readonly" } },
    }
 );

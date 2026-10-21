@@ -59,7 +59,6 @@ test("Source audio and default microphone migrate, edit, remove and readd withou
       sources = (await page.evaluate(() => window.acroClip.state())).preferences.audioSources;
       expect(sources[0]?.kind).toBe("source");
       expect(sources.some((item) => item.kind === "input")).toBe(false);
-      await page.screenshot({ path: "test-results/unified-audio.png" });
    } finally {
       await app.close();
    }

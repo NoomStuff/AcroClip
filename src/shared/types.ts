@@ -192,14 +192,14 @@ export interface AppState {
    windowVisible: boolean;
    preferences: Preferences;
    clips: Clip[];
-   collectionStatus?: {
+   collectionStatus: {
       root: string;
       phase: "loading" | "refreshing" | "ready" | "error";
       error?: string;
       discovery?: { videos: number; byFolder: Record<string, number>; complete: boolean };
    };
-   folders?: string[];
-   applicationIcons?: Record<string, string>;
+   folders: string[];
+   applicationIcons: Record<string, string>;
    categories: Category[];
    jobs: Job[];
    recorder: RecorderState;
@@ -207,16 +207,13 @@ export interface AppState {
    version: string;
    platform: string;
 }
-export interface AppEvent {
-   type: "state" | "notice" | "clip-action" | "audio-levels" | "audio-monitor" | "visibility";
-   state?: AppState;
-   message?: string;
-   error?: boolean;
-   levels?: AudioLevels;
-   monitorError?: string;
-   listeningError?: string;
-   visible?: boolean;
-}
+export type AppEvent =
+   | { type: "state"; state: AppState }
+   | { type: "notice"; message: string; error: boolean }
+   | { type: "clip-action" }
+   | { type: "audio-levels"; levels: AudioLevels }
+   | { type: "audio-monitor"; monitorError: string; listeningError?: string }
+   | { type: "visibility"; visible: boolean };
 export interface DesktopAPI {
    state(): Promise<AppState>;
    sources(): Promise<CaptureSource[]>;

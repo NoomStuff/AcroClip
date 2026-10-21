@@ -78,7 +78,6 @@ test("settings autosave retains drafts, merges external changes and retries fail
       await page.getByRole("button", { name: "Retry save", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.collection).toBe(broken);
       await expect(page.getByRole("status", { name: "Settings saved", exact: true })).toBeVisible();
-      await page.screenshot({ path: "test-results/settings-autosave.png" });
       await page.locator(".settings-sidebar").getByRole("button", { name: "Sharing", exact: true }).click();
       const shareSize = page.getByRole("spinbutton", { name: "Default shareable size in MB", exact: true });
       await shareSize.fill("");
@@ -117,7 +116,6 @@ test("settings autosave retains drafts, merges external changes and retries fail
          expect(Math.abs(labelBounds!.y + labelBounds!.height / 2 - (presetBounds!.y + presetBounds!.height / 2))).toBeLessThan(1);
          expect(patternBounds!.y).toBeGreaterThanOrEqual(presetBounds!.y + presetBounds!.height);
          expect(patternBounds!.width).toBeGreaterThan(presetBounds!.width);
-         await page.screenshot({ path: `test-results/collection-filename-${narrow ? 980 : 1380}.png` });
 
          await page.locator(".settings-sidebar").getByRole("button", { name: "Sharing", exact: true }).click();
          await expect(shareSize).toHaveValue("");
