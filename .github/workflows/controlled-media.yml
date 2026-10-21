@@ -16,7 +16,11 @@ jobs:
            run: |
               sudo apt-get update
               sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64 make nasm meson ninja-build pkg-config
-         - name: Collect immutable media inputs
+         - name: Recover hash-verified immutable source inputs
+           env:
+              GITHUB_TOKEN: ${{ github.token }}
+           run: python3 scripts/recover-release-inputs.py --platform windows-x64 --release v0.3.0 --destination work/release-sources
+         - name: Refresh current source inventory and verify controlled input hashes
            run: bun scripts/release-sources.ts --controlled-inputs --collect-only
          - name: Compile Windows media
            run: bash scripts/build-media-windows.sh
