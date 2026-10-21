@@ -2,6 +2,7 @@
 import Cocoa
 import AVFoundation
 import CoreGraphics
+import Darwin
 
 let evidencePath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : nil
 let frequency = CommandLine.arguments.count > 2 ? Double(CommandLine.arguments[2])! : 997
@@ -52,9 +53,12 @@ if fullscreenSpace {
 }
 let engine = AVAudioEngine()
 var phase = 0.0
-let renderLock = NSLock()
-var renderedFrames: UInt64 = 0
-let source = AVAudioSourceNode { _, _, frames, buffers in
+// The callback must never wait for the main thread to read its health counter.
+// OSAtomic remains available on the older macOS versions used for local proofs.
+let renderedFrames = UnsafeMutablePointer<Int64>.allocate(capacity: 1)
+renderedFrames.initialize(to: 0)
+let source = AVAudioSourceNode { isSilence, _, frames, buffers in
+    isSilence.pointee = false
     let list = UnsafeMutableAudioBufferListPointer(buffers)
     for frame in 0..<Int(frames) {
         let value = Float(sin(phase) * 0.2)
@@ -66,9 +70,7 @@ let source = AVAudioSourceNode { _, _, frames, buffers in
             for channel in 0..<channels { samples[frame * channels + channel] = value }
         }
     }
-    renderLock.lock()
-    renderedFrames += UInt64(frames)
-    renderLock.unlock()
+    _ = OSAtomicAdd64(Int64(frames), renderedFrames)
     return noErr
 }
 engine.attach(source)
@@ -99,9 +101,7 @@ let timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
     view.displayIfNeeded()
 }
 let healthTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-    renderLock.lock()
-    let frames = renderedFrames
-    renderLock.unlock()
+    let frames = OSAtomicAdd64(0, renderedFrames)
     let health: [String: Any] = ["event": "audio-health", "engineRunning": engine.isRunning, "renderedFrames": frames,
         "visualCount": view.count, "bundleIdentifier": Bundle.main.bundleIdentifier ?? "", "foreground": app.isActive,
         "fullscreenSpace": window.styleMask.contains(.fullScreen)]

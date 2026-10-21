@@ -51,13 +51,18 @@ module.exports = async function publish({ github, context, core, directory = "ca
       if (release.body !== body) throw Error(`Public release ${releaseTag} has another candidate identity`);
       const expected = new Map(files.map((file) => [file.path.split("/").at(-1), file]));
       const existing = await github.paginate(github.rest.repos.listReleaseAssets, { ...repo, release_id: release.id });
+      const verifiedExisting = new Set();
       for (const asset of existing) {
          const file = expected.get(asset.name);
-         if (!file || asset.state !== "uploaded" || asset.size !== file.size || asset.digest !== `sha256:${file.sha256}`)
-            throw Error(`Existing release asset differs: ${asset.name}`);
+         if (!file || asset.state !== "uploaded" || asset.size !== file.size || asset.digest !== `sha256:${file.sha256}`) {
+            if (!release.draft) throw Error(`Existing release asset differs: ${asset.name}`);
+            await github.rest.repos.deleteReleaseAsset({ ...repo, asset_id: asset.id });
+            continue;
+         }
+         verifiedExisting.add(asset.name);
       }
       for (const [name, file] of expected) {
-         if (existing.some((asset) => asset.name === name)) continue;
+         if (verifiedExisting.has(name)) continue;
          if (!release.draft) throw Error("Public release assets cannot be added or replaced");
          const bytes = await fs.readFile(`${directory}/${file.path}`);
          if (bytes.length !== file.size || crypto.createHash("sha256").update(bytes).digest("hex") !== file.sha256) throw Error("Upload bytes changed");

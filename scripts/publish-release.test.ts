@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 interface Asset {
+   id?: number;
    name: string;
    size: number;
    digest: string;
@@ -89,6 +90,12 @@ async function fixture() {
          );
       }),
       listReleaseAssets: vi.fn(async ({ release_id }: { release_id: number }) => ({ data: assets.get(release_id)! })),
+      deleteReleaseAsset: vi.fn(async ({ asset_id }: { asset_id: number }) => {
+         for (const items of assets.values()) {
+            const index = items.findIndex((asset) => asset.id === asset_id);
+            if (index !== -1) items.splice(index, 1);
+         }
+      }),
       uploadReleaseAsset: vi.fn(async ({ release_id, name, data }: { release_id: number; name: string; data: Buffer }) => {
          assets.get(release_id)!.push({ name, state: "uploaded", size: data.length, digest: `sha256:${createHash("sha256").update(data).digest("hex")}` });
       }),
@@ -150,6 +157,19 @@ it("refuses local bytes changed between sealing and upload", async () => {
    await writeFile(path.join(directory, "downloads/app.exe"), "tampered");
    await expect(publish(args)).rejects.toThrow("Upload bytes changed");
    expect(repos.updateRelease).not.toHaveBeenCalled();
+});
+
+it("repairs an interrupted private upload without consuming another version or replacing public files", async () => {
+   const { args, assets, repos } = await fixture();
+   repos.uploadReleaseAsset.mockImplementationOnce(async ({ release_id, name }) => {
+      assets.get(release_id)!.push({ id: 99, name, state: "starter", size: 0, digest: "" });
+      throw new Error("Upload interrupted");
+   });
+   await expect(publish(args)).rejects.toThrow("Upload interrupted");
+   await publish(args);
+   expect(repos.createRelease).toHaveBeenCalledTimes(1);
+   expect(repos.deleteReleaseAsset).toHaveBeenCalledWith(expect.objectContaining({ asset_id: 99 }));
+   expect(repos.updateRelease).toHaveBeenCalledTimes(1);
 });
 
 it("refuses missing or changed separately hosted source packets before app publication", async () => {
