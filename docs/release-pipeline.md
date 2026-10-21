@@ -1,0 +1,19 @@
+# Release candidates and publication
+
+Push a stable version change to `main` to request a release. `Release candidate` also retries every subsequent main commit while that version is unpublished. Manual dispatch verifies current main again. A failed private build does not need a version bump or a tag. Every changed commit runs the required checks again.
+
+The candidate workflow requires Windows checks and packaged media tests, installed upgrade verification, and native capture, packaged behavior and corresponding source verification on Linux x64/arm64 and macOS x64/arm64. It retains the existing platform source checks. A successful run seals eight downloads, five source packets, verification reports and Windows/Linux feeds into `sealed-release-candidate`. Its manifest identifies the full commit, run ID, attempt and every file's size and SHA-256.
+
+Review all five source packets and their binary correspondence reports before publication. Technical completeness alone does not establish correspondence. Download the sealed artifact from the successful run and inspect the source records, captured configurations, licenses, build recipes and exact package hashes. The existing platform source documentation describes those requirements.
+
+After review, publish the five unchanged source packets from the sealed artifact in the separate `NoomStuff/AcroClip-sources` repository. Keep their filenames and bytes unchanged. The repository variable `SOURCE_REPOSITORY` can configure another separate source destination. CI does not have a cross-repository publishing credential, so source hosting remains an explicit step. Never put source archives on AcroClip release pages.
+
+Run `Publish reviewed release` on main with the successful candidate's run ID, attempt, full commit and the published source release URL. Select the correspondence review confirmation only after completing that review. The `release` GitHub environment can add required reviewers. The explicit dispatch and review confirmation remain required even if the environment has no reviewer rule.
+
+Publication refuses a failed, superseded or stale candidate. It downloads the sealed artifact from that exact run, checks its hashes, checks the five already-published source assets in the configured separate repository against the sealed sizes, SHA-256 digests and download URLs, and links that source release from the app release. Missing source hosting blocks app publication. It verifies remote asset sizes and SHA-256 digests before publishing. The app release contains only eight downloads. It creates `v<version>` against the verified commit during publication, then updates the separate `updates` branch with Windows and Linux feeds pointing to those downloads. Unsigned macOS builds retain manual updates.
+
+Publication never rebuilds packages. Concurrent publication runs serialize. A retry can finish a partial private upload or repair feed publication using the same sealed candidate. It never overwrites public release assets or moves a tag. A stale private draft can be replaced. Any change after public publication requires a new version.
+
+`bun run dist` and `bun run package` stage host media and the recorder, build the app, and always pass `--publish never`. Windows needs the controlled media build prepared first. Platform CI supplies the matching controlled media and source evidence. Local packaging does not establish release readiness.
+
+The isolated Windows upgrade test uses another app ID, executable name, shortcuts and uninstall registration. It installs an older fixture at a custom path, runs a newer installer interactively without scope/path arguments, rejects redundant first-install pages, verifies registry scope/path and runs packaged media checks against the installed executable. It does not use the real AcroClip install or collection. Elevated per-machine upgrade behavior still needs a separate isolated administrator test.

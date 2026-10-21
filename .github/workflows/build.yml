@@ -1,26 +1,67 @@
-name: Desktop builds
+name: Release candidate
 on:
-   workflow_dispatch:
    push:
-      tags: ["v*"]
+      branches: [main]
+   workflow_dispatch:
 permissions:
    contents: read
+concurrency:
+   group: release-candidate
+   cancel-in-progress: true
 jobs:
-   controlled-media:
-      uses: ./.github/workflows/controlled-media.yml
-   package:
-      needs: controlled-media
+   select:
+      runs-on: ubuntu-24.04
+      outputs:
+         build: ${{ steps.select.outputs.build }}
+      steps:
+         - uses: actions/github-script@v9
+           id: select
+           with:
+              script: |
+                 const pkg = (await github.rest.repos.getContent({...context.repo, path: 'package.json', ref: context.sha})).data;
+                 const version = JSON.parse(Buffer.from(pkg.content, 'base64')).version;
+                 if (!/^\d+\.\d+\.\d+$/.test(version)) throw Error('Stable package version required');
+                 if (context.ref !== 'refs/heads/main') throw Error('Release candidates must run on main');
+                 try {
+                   const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag: `v${version}`})).data;
+                   core.setOutput('build', release.draft ? 'true' : 'false');
+                   core.info(release.draft ? `Retrying private ${version} at ${context.sha}` : `v${version} is public and immutable; bump the version for further changes.`);
+                 } catch (error) {
+                   if (error.status !== 404) throw error;
+                   core.setOutput('build', 'true');
+                   core.info(`Verifying unpublished ${version} at ${context.sha}, run ${context.runId}, attempt ${process.env.GITHUB_RUN_ATTEMPT}`);
+                 }
+   checks:
+      needs: select
+      if: needs.select.outputs.build == 'true'
+      uses: ./.github/workflows/checks.yml
+   linux:
+      needs: select
+      if: needs.select.outputs.build == 'true'
       strategy:
          fail-fast: false
          matrix:
-            include:
-               - { os: windows-2025, target: win-x64 }
-               - { os: macos-15-intel, target: mac-x64 }
-               - { os: macos-15, target: mac-arm64 }
-               - { os: ubuntu-24.04, target: linux-x64 }
-               - { os: ubuntu-24.04-arm, target: linux-arm64 }
-      runs-on: ${{ matrix.os }}
-      timeout-minutes: 45
+            architecture: [x64, arm64]
+      uses: ./.github/workflows/native-linux.yml
+      with:
+         architecture: ${{ matrix.architecture }}
+         release_candidate: true
+   mac:
+      needs: select
+      if: needs.select.outputs.build == 'true'
+      strategy:
+         fail-fast: false
+         matrix:
+            architecture: [x64, arm64]
+      uses: ./.github/workflows/native-macos.yml
+      with:
+         architecture: ${{ matrix.architecture }}
+   windows:
+      needs: checks
+      runs-on: windows-2025
+      timeout-minutes: 120
+      env:
+         ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
       steps:
          - uses: actions/checkout@v7
          - uses: oven-sh/setup-bun@v2
@@ -28,76 +69,67 @@ jobs:
               bun-version: "1.4.2"
          - run: bun install --frozen-lockfile
          - uses: actions/download-artifact@v8
-           if: runner.os == 'Windows'
            with:
               name: controlled-windows-media
               path: work/
-         - name: Verify and record the cross build on Windows
-           if: runner.os == 'Windows'
-           run: bun scripts/controlled-media.ts
+         - run: bun scripts/controlled-media.ts
          - run: bun scripts/provision-media.ts
-           if: runner.os != 'macOS'
-         - name: Build controlled macOS media
-           if: runner.os == 'macOS'
-           run: |
-              brew install ffmpeg-full meson ninja pkg-config nasm
-              taskReference="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
-              bun scripts/release-sources.ts --controlled-inputs --collect-only
-              bash scripts/build-media-macos.sh
-              ACROCLIP_REFERENCE_FFMPEG="$taskReference" python3 scripts/smoke-controlled-media-macos.py
-              bun scripts/controlled-media-macos.ts
-              echo "FFMPEG_PATH=$PWD/work/controlled-media/macos-$(bun -p process.arch)/ffmpeg" >> "$GITHUB_ENV"
-              echo "FFPROBE_PATH=$PWD/work/controlled-media/macos-$(bun -p process.arch)/ffprobe" >> "$GITHUB_ENV"
          - run: bun run bundle:media
+         - run: bun run build:native
          - run: bun run build:icons
          - run: bun run build:notices
-         - name: Build application
-           run: bun run build
-         - name: Install matching Linux recorder dependencies
-           if: runner.os == 'Linux'
+         - run: bun run build
+         - name: Assemble exact Windows sources and native notices
            run: |
-              if [ "$(uname -m)" = aarch64 ]; then
-                 echo 'deb http://ports.ubuntu.com/ubuntu-ports noble-backports main universe' | sudo tee /etc/apt/sources.list.d/acroclip-backports.list
-              else
-                 sudo add-apt-repository -y ppa:obsproject/obs-studio
-              fi
-              sudo apt-get update
-              if [ "$(uname -m)" = aarch64 ]; then
-                 sudo apt-get install -y obs-studio=30.2.3+dfsg-3~bpo24.04.1 libobs-dev=30.2.3+dfsg-3~bpo24.04.1 libobs0t64=30.2.3+dfsg-3~bpo24.04.1 obs-plugins=30.2.3+dfsg-3~bpo24.04.1
-              else
-                 sudo apt-get install -y obs-studio=32.2.0-0obsproject1~noble
-              fi
-              sudo apt-get install -y cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev
-         - name: Build recorder
-           run: bun run build:native
-         - name: Package without automatic publishing
-           run: bunx electron-builder --publish never
-           env:
-              CSC_IDENTITY_AUTO_DISCOVERY: "false"
-         - name: Record build details
-           shell: bash
+              bun scripts/release-sources.ts --collect-only
+              bun scripts/assemble-source-evidence.ts
+              bun scripts/release-sources.ts --check
+              bun scripts/package-source-kit.ts
+         - name: Package without publishing
+           run: bunx electron-builder --win --x64 --publish never
+         - name: Verify installer payloads and source correspondence
+           shell: pwsh
            run: |
-              mkdir -p build-report
-              cp resources/media/provenance.json build-report/media-provenance.json
-              cp resources/recorder/provenance.json build-report/recorder-provenance.json 2>/dev/null || cp resources/recorder/UNAVAILABLE.txt build-report/recorder-status.txt
-              find release -maxdepth 1 -type f -print > build-report/artifacts.txt
+              $source = @(Get-ChildItem work/AcroClip-*-windows-x64-sources-*.zip)
+              if ($source.Count -ne 1) { throw 'Expected one Windows source packet' }
+              bun scripts/verify-release.ts $source[0].FullName
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+         - run: bun run test:packaged
+         - run: bun run test:portable
+         - name: Verify installed upgrade in an isolated installer identity
+           run: pwsh -File scripts/test-installer-upgrade.ps1
          - uses: actions/upload-artifact@v7
            with:
-              name: build-report-${{ matrix.target }}
-              path: build-report/
-              retention-days: 14
-
-         - name: Keep private release candidates for verification
-           uses: actions/upload-artifact@v7
-           with:
-              name: desktop-candidate-${{ matrix.target }}
+              name: Windows-verified-release-candidate-x64
               path: |
                  release/AcroClip-*.exe
                  release/AcroClip-*.exe.blockmap
-                 release/AcroClip-*.AppImage
-                 release/AcroClip-*.dmg
-                 release/AcroClip-*.zip
-                 release/AcroClip-*.zip.blockmap
-                 release/latest*.yml
+                 release/latest.yml
+                 release/*-windows-x64-release.json
+                 work/AcroClip-*-windows-x64-sources-*.zip
+                 work/AcroClip-*-windows-x64-sources-*.zip.json
               if-no-files-found: error
-              retention-days: 7
+              retention-days: 30
+   seal:
+      needs: [checks, windows, linux, mac]
+      runs-on: ubuntu-24.04
+      steps:
+         - uses: actions/checkout@v7
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: "1.4.2"
+         - run: bun install --frozen-lockfile
+         - uses: actions/download-artifact@v8
+           with:
+              pattern: "*-verified-release-candidate-*"
+              path: candidates
+         - run: bun scripts/release-candidate.ts candidates candidate
+         - uses: actions/upload-artifact@v7
+           with:
+              name: sealed-release-candidate
+              path: candidate/
+              if-no-files-found: error
+              retention-days: 30
+         - name: Review instructions
+           run: |
+              echo 'Review the five source packets and correspondence reports in sealed-release-candidate. Publish with publish.yml using this exact run ID, attempt and commit. No tag has been created.' >> "$GITHUB_STEP_SUMMARY"

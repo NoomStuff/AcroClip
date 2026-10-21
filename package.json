@@ -1,6 +1,6 @@
 {
    "name": "acroclip",
-   "version": "0.3.0",
+   "version": "0.3.1",
    "description": "Save the moment. Keep it yours.",
    "license": "GPL-3.0-or-later",
    "type": "module",
@@ -29,8 +29,8 @@
       "build:notices": "bun scripts/generate-notices.ts",
       "bundle:media": "bun scripts/bundle-media.ts",
       "build:native": "bun scripts/build-native.ts",
-      "dist": "bun run build:icons && bun run build:notices && bun run build && electron-builder",
-      "package": "bun run build:icons && bun run build:notices && bun run build && electron-builder --dir",
+      "dist": "bun scripts/package.ts dist",
+      "package": "bun scripts/package.ts dir",
       "test:portable": "bun scripts/test-portable.ts",
       "release:downloads": "bun scripts/release-downloads.ts",
       "release:feeds": "bun scripts/prepare-update-feed.ts"
@@ -91,7 +91,8 @@
       "nsis": {
          "oneClick": false,
          "allowToChangeInstallationDirectory": true,
-         "artifactName": "${productName}-${version}-${os}-${arch}-Installer.${ext}"
+         "artifactName": "${productName}-${version}-${os}-${arch}-Installer.${ext}",
+         "include": "build/installer.nsh"
       },
       "mac": {
          "icon": "build/icon.icns",

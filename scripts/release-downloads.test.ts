@@ -58,3 +58,16 @@ it("writes branch-hosted update feeds pointing at verified public app downloads 
    await writeFile(path.join(root, name), Buffer.alloc(bytes.length));
    await expect(prepareUpdateFeed(root, output, "v0.3.0", "latest.yml")).rejects.toThrow("checksum differs");
 });
+
+it("rejects a valid ARM package in the x64 update channel", async () => {
+   const root = await fixture();
+   const name = "AcroClip-0.3.0-linux-arm64.AppImage";
+   const bytes = Buffer.from("ARM image");
+   const sha512 = createHash("sha512").update(bytes).digest("base64");
+   await writeFile(path.join(root, name), bytes);
+   await writeFile(
+      path.join(root, "latest-linux.yml"),
+      `version: 0.3.0\npath: ${name}\nsha512: ${sha512}\nfiles:\n  - url: ${name}\n    size: ${bytes.length}\n    sha512: ${sha512}\n`
+   );
+   await expect(prepareUpdateFeed(root, path.join(root, "feed"), "v0.3.0", "latest-linux.yml")).rejects.toThrow("does not name");
+});

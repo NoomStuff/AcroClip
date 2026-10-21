@@ -31,7 +31,7 @@ await writeFile(
       shortcut: "Control+Alt+Shift+F12",
       notifications: "off",
       sound: false,
-      allowSoftwareEncoder: linux,
+      allowSoftwareEncoder: linux || process.env["ACROCLIP_PACKAGED_TEST_SOFTWARE"] === "1",
    })
 );
 const portable = process.env["ACROCLIP_PACKAGED_PORTABLE"] === "1";

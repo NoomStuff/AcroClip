@@ -26,15 +26,13 @@ export async function prepareUpdateFeed(directory: string, output: string, tag: 
    const feed = feedSchema.parse(yaml.load(await readFile(path.join(directory, channel), "utf8"), { schema: yaml.JSON_SCHEMA }));
    const file = feed.files[0]!;
    const name = file.url;
-   const extension = channel === "latest.yml" ? "-Installer.exe" : channel === "latest-mac.yml" ? ".zip" : ".AppImage";
-   if (
-      feed.version !== tag.slice(1) ||
-      path.basename(name) !== name ||
-      /[\\/:]/.test(name) ||
-      !name.startsWith(`AcroClip-${feed.version}-`) ||
-      !name.endsWith(extension) ||
-      feed.path !== name
-   )
+   const expectedName = {
+      "latest.yml": `AcroClip-${tag.slice(1)}-win-x64-Installer.exe`,
+      "latest-linux.yml": `AcroClip-${tag.slice(1)}-linux-x86_64.AppImage`,
+      "latest-linux-arm64.yml": `AcroClip-${tag.slice(1)}-linux-arm64.AppImage`,
+      "latest-mac.yml": `AcroClip-${tag.slice(1)}-mac-${process.arch}.zip`,
+   }[channel];
+   if (feed.version !== tag.slice(1) || path.basename(name) !== name || /[\\/:]/.test(name) || name !== expectedName || feed.path !== name)
       throw new Error("Update feed does not name the release's app package.");
    const packagePath = path.join(directory, name);
    if ((await stat(packagePath)).size !== file.size) throw new Error("Update package size differs.");

@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { createPackage } from "@electron/asar";
+import { finished } from "node:stream/promises";
 import { createHash } from "node:crypto";
 import { buildBlockMap } from "app-builder-lib/out/targets/blockmap/blockmap";
 import { describe, expect, it } from "vitest";
@@ -64,7 +65,7 @@ describe("final release correspondence", () => {
          await mkdir(path.join(input, "out/main"), { recursive: true });
          await writeFile(path.join(input, "out/main/index.js"), "original app");
          await writeFile(path.join(input, "package.json"), JSON.stringify(packageJson));
-         await createPackage(input, archive);
+         await finished(await createPackage(input, archive));
          expect(await verifyAsar(root, archive)).toHaveLength(1);
          await writeFile(path.join(root, "out/main/index.js"), "new app code");
          await expect(verifyAsar(root, archive)).rejects.toThrow("missing or changed out/main/index.js");
