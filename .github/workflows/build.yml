@@ -81,12 +81,14 @@ jobs:
          - run: bun run build:native
          - run: bun run build:notices
          - run: bun run build
+         - name: Collect Windows runtime dependency sources
+           run: bun scripts/release-sources.ts --collect-only --dependencies --controlled-inputs
          - name: Assemble exact Windows sources and native notices
-           run: |
-              bun scripts/release-sources.ts --collect-only
-              bun scripts/assemble-source-evidence.ts
-              bun scripts/release-sources.ts --check
-              bun scripts/package-source-kit.ts
+           run: bun scripts/assemble-source-evidence.ts
+         - name: Check Windows source closure
+           run: bun scripts/release-sources.ts --check
+         - name: Package the frozen Windows source packet
+           run: bun scripts/package-source-kit.ts
          - name: Package without publishing
            run: bunx electron-builder --win --x64 --publish never
          - name: Verify installer payloads and source correspondence
