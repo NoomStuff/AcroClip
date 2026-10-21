@@ -19,6 +19,8 @@ let evidenceOutput: FileHandle = try {
 
 final class PatternView: NSView {
     var count = 0
+    var paintedFrames = 0
+    var paintedColorMask = 0
     override func draw(_ dirtyRect: NSRect) {
         // A two-frame repeating pattern can alias when a software renderer
         // drops frames. Irregular color changes still expose a frozen capture.
@@ -30,6 +32,8 @@ final class PatternView: NSView {
         bounds.fill()
         let attributes: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 36)]
         "AcroClip synthetic Mac capture \(count)".draw(at: NSPoint(x: 32, y: 32), withAttributes: attributes)
+        paintedFrames += 1
+        paintedColorMask |= (phase & 0x80000000) == 0 ? 1 : 2
     }
 }
 
@@ -110,6 +114,7 @@ let healthTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ i
     let toneFrames = OSAtomicAdd64(0, renderedToneFrames)
     let health: [String: Any] = ["event": "audio-health", "engineRunning": engine.isRunning, "renderedFrames": frames,
         "renderedToneFrames": toneFrames, "monotonicSeconds": ProcessInfo.processInfo.systemUptime,
+        "paintedFrames": view.paintedFrames, "paintedColorMask": view.paintedColorMask,
         "visualCount": view.count, "bundleIdentifier": Bundle.main.bundleIdentifier ?? "", "foreground": app.isActive,
         "fullscreenSpace": window.styleMask.contains(.fullScreen)]
     if let data = try? JSONSerialization.data(withJSONObject: health, options: [.sortedKeys]) {

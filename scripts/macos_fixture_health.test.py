@@ -1,5 +1,5 @@
 import unittest
-from macos_fixture_health import stable_audio_output
+from macos_fixture_health import stable_audio_output, stable_visual_output
 
 
 class ReadinessTests(unittest.TestCase):
@@ -31,6 +31,20 @@ class ReadinessTests(unittest.TestCase):
             records = self.records()
             records[-1][key] = value
             self.assertFalse(stable_audio_output(records))
+
+    def test_requires_actual_continued_painting_of_both_colors(self):
+        records = self.records()
+        for index, record in enumerate(records):
+            record.update(paintedFrames=5 * index, paintedColorMask=3)
+        self.assertTrue(stable_visual_output(records))
+        records[-1]["paintedColorMask"] = 1
+        self.assertFalse(stable_visual_output(records))
+
+    def test_rejects_a_timer_advancing_without_painting(self):
+        records = self.records()
+        for index, record in enumerate(records):
+            record.update(visualCount=index * 5, paintedFrames=5, paintedColorMask=3)
+        self.assertFalse(stable_visual_output(records))
 
 
 if __name__ == "__main__":

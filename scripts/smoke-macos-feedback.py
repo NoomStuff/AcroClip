@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 import uuid
+from macos_fixture_health import stable_visual_output
 
 assert sys.platform == "darwin", "Native feedback proof needs a real Mac host"
 root = Path.cwd()
@@ -125,7 +126,14 @@ def fixture(name, mode=""):
             raise RuntimeError("Synthetic focus fixture did not start")
         time.sleep(0.05)
     identity = json.loads(output.read_text().splitlines()[0])
-    return process, output, identity
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        health = [json.loads(line) for line in output.read_text().splitlines(keepends=True) if line.endswith("\n")]
+        if stable_visual_output(health):
+            (folder / (name + "-fixture-readiness.json")).write_text(json.dumps(health, indent=2))
+            return process, output, identity
+        time.sleep(0.1)
+    raise RuntimeError("Synthetic feedback fixture did not establish changing painted output")
 
 
 def start_capture(identity, kind):
@@ -209,6 +217,10 @@ def capture_evidence(output, identity, shown):
     middle = pixels(output, width // 2, height // 2)
     colors = ((228, 76, 102), (65, 184, 170))
     classes = [next((index for index, color in enumerate(colors) if all(abs(pixel[channel] - color[channel]) <= 22 for channel in range(3))), None) for pixel in middle]
+    if None in classes or set(classes) != {0, 1}:
+        diagnostic = dict(path=str(output.relative_to(root)), fixtureColorClasses=classes, middlePixels=middle)
+        output.with_suffix(".fixture-samples.json").write_text(json.dumps(diagnostic, indent=2))
+        print(json.dumps(diagnostic), flush=True)
     assert None not in classes and set(classes) == {0, 1}, "Capture did not contain the actual changing selected fixture"
     return dict(path=str(output.relative_to(root)), panelPoint=dict(x=x, y=y),
                 panelPixels=sampled, darkPanelFrames=dark, fixtureColorClasses=classes)

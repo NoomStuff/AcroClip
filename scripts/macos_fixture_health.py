@@ -23,3 +23,20 @@ def stable_audio_output(events: Sequence[Mapping[str, object]]) -> bool:
         if not 0.9 <= tone / frames <= 1.02:
             return False
     return True
+
+
+def stable_visual_output(events: Sequence[Mapping[str, object]]) -> bool:
+    health = [event for event in events if event.get("event") == "audio-health"][-3:]
+    if len(health) != 3 or health[-1].get("paintedColorMask") != 3:
+        return False
+    for event in health:
+        for field in ("monotonicSeconds", "paintedFrames"):
+            value = event.get(field)
+            if type(value) not in (int, float) or not math.isfinite(float(cast(int | float, value))):
+                return False
+    for previous, current in zip(health, health[1:]):
+        elapsed = float(cast(float, current["monotonicSeconds"])) - float(cast(float, previous["monotonicSeconds"]))
+        painted = int(cast(int, current["paintedFrames"])) - int(cast(int, previous["paintedFrames"]))
+        if elapsed < 0.5 or elapsed > 2.5 or painted < 2:
+            return False
+    return True
