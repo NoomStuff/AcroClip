@@ -57,11 +57,15 @@ var phase = 0.0
 // OSAtomic remains available on the older macOS versions used for local proofs.
 let renderedFrames = UnsafeMutablePointer<Int64>.allocate(capacity: 1)
 renderedFrames.initialize(to: 0)
+let renderedToneFrames = UnsafeMutablePointer<Int64>.allocate(capacity: 1)
+renderedToneFrames.initialize(to: 0)
 let source = AVAudioSourceNode { isSilence, _, frames, buffers in
     isSilence.pointee = false
     let list = UnsafeMutableAudioBufferListPointer(buffers)
+    var toneFrames: Int64 = 0
     for frame in 0..<Int(frames) {
         let value = Float(sin(phase) * 0.2)
+        if abs(value) > 0.01 { toneFrames += 1 }
         phase += 2 * Double.pi * frequency / 48000
         if phase > 2 * Double.pi { phase -= 2 * Double.pi }
         for buffer in list {
@@ -71,6 +75,7 @@ let source = AVAudioSourceNode { isSilence, _, frames, buffers in
         }
     }
     _ = OSAtomicAdd64(Int64(frames), renderedFrames)
+    _ = OSAtomicAdd64(toneFrames, renderedToneFrames)
     return noErr
 }
 engine.attach(source)
@@ -102,7 +107,9 @@ let timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
 }
 let healthTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
     let frames = OSAtomicAdd64(0, renderedFrames)
+    let toneFrames = OSAtomicAdd64(0, renderedToneFrames)
     let health: [String: Any] = ["event": "audio-health", "engineRunning": engine.isRunning, "renderedFrames": frames,
+        "renderedToneFrames": toneFrames, "monotonicSeconds": ProcessInfo.processInfo.systemUptime,
         "visualCount": view.count, "bundleIdentifier": Bundle.main.bundleIdentifier ?? "", "foreground": app.isActive,
         "fullscreenSpace": window.styleMask.contains(.fullScreen)]
     if let data = try? JSONSerialization.data(withJSONObject: health, options: [.sortedKeys]) {

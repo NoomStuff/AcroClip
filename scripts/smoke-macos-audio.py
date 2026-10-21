@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import uuid
+from macos_fixture_health import stable_audio_output
 
 assert sys.platform == "darwin", "This proof requires an actual macOS host"
 root = pathlib.Path.cwd()
@@ -158,6 +159,21 @@ def only_main(track):
 try:
     selected = fixture("Selected", 997)
     decoy = fixture("Decoy", 1613, True)
+    # Establish producer readiness before starting the recorder. This does not
+    # discard, delay or retry any captured clip or relax its audio assertions.
+    readiness_deadline = time.monotonic() + 20
+    while True:
+        fixture_health = [
+            [json.loads(line) for line in item["output"].read_text().splitlines(keepends=True) if line.endswith("\n")]
+            for item in fixtures
+        ]
+        if all(stable_audio_output(health) for health in fixture_health):
+            (folder / "fixture-readiness.json").write_text(json.dumps(fixture_health, indent=2))
+            print("Both independent tone producers passed sustained output readiness before recorder startup", flush=True)
+            break
+        if time.monotonic() >= readiness_deadline:
+            raise RuntimeError(f"Synthetic tone producers did not establish sustained output: {fixture_health}")
+        time.sleep(0.1)
     helper = launch([str(runtime / "acroclip-recorder"), str(runtime)], "native", True)
     def read():
         for line in helper.stdout:

@@ -107,7 +107,9 @@ jobs:
          - name: Verify actual screen and window recording with generated audio
            run: caffeinate -di python3 scripts/smoke-macos.py
          - name: Verify extra application and system audio
-           run: caffeinate -di python3 scripts/smoke-macos-audio.py
+           run: |
+              python3 scripts/macos_fixture_health.test.py
+              caffeinate -di python3 scripts/smoke-macos-audio.py
          - name: Verify native feedback focus, animation and capture behavior
            run: caffeinate -di python3 scripts/smoke-macos-feedback.py --ci-motion-matrix
          - name: Record native crash diagnostics
