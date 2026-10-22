@@ -31,7 +31,7 @@ elseif(UNIX AND NOT APPLE)
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/AcroClipWineGame.exe"
       COMMAND "${MINGW_C_COMPILER}" -O2 -static "${CMAKE_CURRENT_SOURCE_DIR}/wine-window.c"
         -o "${CMAKE_CURRENT_BINARY_DIR}/AcroClipWineGame.exe" -luser32 -lgdi32 -lwinmm
-      DEPENDS wine-window.c VERBATIM)
+      DEPENDS wine-window.c isolation.h VERBATIM)
     add_custom_target(acroclip-wine-fixture ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/AcroClipWineGame.exe")
   endif()
 else()

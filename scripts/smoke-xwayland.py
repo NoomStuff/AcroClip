@@ -20,7 +20,7 @@ folder = root / ".cache/linux-smoke" / str(uuid.uuid4())
 folder.mkdir(parents=True)
 private = pathlib.Path(tempfile.mkdtemp(prefix="acroclip-wayland-"))
 private.chmod(0o700)
-env = dict(os.environ, XDG_RUNTIME_DIR=str(private), XDG_CONFIG_HOME=str(private / "config"), XDG_DATA_HOME=str(private / "data"), XDG_CACHE_HOME=str(private / "cache"), XDG_CURRENT_DESKTOP="sway", XDG_SESSION_TYPE="wayland", WLR_BACKENDS="headless", WLR_LIBINPUT_NO_DEVICES="1", WLR_RENDERER="pixman", WLR_RENDERER_ALLOW_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe", ACROCLIP_NATIVE_TEST_SOFTWARE="1", ACROCLIP_NATIVE_TEST_PORTAL="1", PULSE_SERVER="unix:" + str(private / "audio.sock"))
+env = dict(os.environ, ACROCLIP_ISOLATED_TEST_RUNNER="private-linux", XDG_RUNTIME_DIR=str(private), XDG_CONFIG_HOME=str(private / "config"), XDG_DATA_HOME=str(private / "data"), XDG_CACHE_HOME=str(private / "cache"), XDG_CURRENT_DESKTOP="sway", XDG_SESSION_TYPE="wayland", WLR_BACKENDS="headless", WLR_LIBINPUT_NO_DEVICES="1", WLR_RENDERER="pixman", WLR_RENDERER_ALLOW_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe", ACROCLIP_NATIVE_TEST_SOFTWARE="1", ACROCLIP_NATIVE_TEST_PORTAL="1", PULSE_SERVER="unix:" + str(private / "audio.sock"))
 for key in ["DISPLAY", "WAYLAND_DISPLAY", "SWAYSOCK", "DBUS_SESSION_BUS_ADDRESS"]:
     env.pop(key, None)
 env["LD_LIBRARY_PATH"] = str(runtime / "lib")

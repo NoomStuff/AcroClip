@@ -1,4 +1,6 @@
 """Actual ScreenCaptureKit audio isolation proof with two independent fixture apps."""
+from test_isolation import require_isolated_runner
+require_isolated_runner()
 import array
 import json
 import math

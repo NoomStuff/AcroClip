@@ -1,3 +1,4 @@
+import "./interactive-test-guard";
 import { _electron as electron, expect } from "@playwright/test";
 import { closeTestApplication } from "./close-test-application";
 import { spawn, execFile } from "node:child_process";

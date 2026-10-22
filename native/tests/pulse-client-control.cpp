@@ -1,3 +1,4 @@
+#include "isolation.h"
 // Private fixture controls only the isolated server specified by PULSE_SERVER.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <pulse/pulseaudio.h>
@@ -6,6 +7,7 @@
 #include <cstdlib>
 #include <string>
 int main(int argc, char **argv) {
+  if (!acroclip_fixture_isolated()) return 2;
   const auto *configured = getenv("PULSE_SERVER");
   if (argc != 2 || !configured) return 2;
   const std::string server = configured;

@@ -1,6 +1,8 @@
 #include "../windows/capture-window.hpp"
+#include "isolation.h"
 #include <cassert>
 int main() {
+  if (!acroclip_fixture_isolated()) return 2;
   const auto normal = CreateWindowExW(WS_EX_APPWINDOW, L"STATIC", L"AcroClip normal fixture", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 640, 360, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
   assert(normal); assert(acroclip::windows::userCaptureWindow(normal));
   ShowWindow(normal, SW_MINIMIZE); assert(acroclip::windows::userCaptureWindow(normal)); ShowWindow(normal, SW_RESTORE);

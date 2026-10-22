@@ -1,4 +1,6 @@
 """Real ScreenCaptureKit capture of a synthetic window and its generated tone."""
+from test_isolation import require_isolated_runner
+require_isolated_runner()
 import json
 import os
 import pathlib

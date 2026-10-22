@@ -1,3 +1,4 @@
+#include "isolation.h"
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Private window and three real PulseAudio inputs. No user audio is read.
 #include <X11/Xatom.h>
@@ -37,6 +38,7 @@ void tone(int frequency) {
   pa_simple_free(stream);
 }
 int main(int argc, char **argv) {
+  if (!acroclip_fixture_isolated()) return 2;
   signal(SIGTERM, stop);
   signal(SIGINT, stop);
   int base = argc > 2 ? atoi(argv[2]) : 997;

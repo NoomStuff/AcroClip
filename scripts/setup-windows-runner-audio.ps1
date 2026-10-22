@@ -1,4 +1,4 @@
-param([switch]$PlayTone, [string]$TonePath)
+param([switch]$PlayTone, [string]$TonePath, [switch]$EndpointOnly)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:ACROCLIP_HOSTED_WINDOWS_FIXTURE -ne 'github-hosted') {
     throw 'This audio fixture may run only in a disposable GitHub-hosted Windows job'
@@ -56,6 +56,8 @@ do {
 } while ([DateTime]::UtcNow -lt $deadline)
 if ($endpoints.Count -eq 0) { throw 'The signed virtual audio output did not become active; capture verification remains blocked' }
 $endpoints | Format-Table Status, Name, PNPDeviceID
+"ACROCLIP_TEST_RENDER_ENDPOINT_ID=$identity" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+if ($EndpointOnly) { exit 0 }
 
 # One second of independent 997 Hz PCM. Keep it playing through the actual
 # Windows render endpoint throughout unpacked, portable and installed tests.

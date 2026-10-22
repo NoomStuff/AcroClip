@@ -1,3 +1,4 @@
+import "./interactive-test-guard";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";

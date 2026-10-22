@@ -1,3 +1,4 @@
+#include "isolation.h"
 // SPDX-License-Identifier: MIT
 // Isolated, animated Direct3D surface for verifying real OBS game hooks.
 #include <algorithm>
@@ -18,6 +19,7 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
   return DefWindowProcW(window, message, w, l);
 }
 int main(int argc, char **argv) {
+  if (!acroclip_fixture_isolated()) return 2;
   SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
   HWND originalForeground = GetForegroundWindow();
   bool fullscreenRequested = false;

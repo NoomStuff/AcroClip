@@ -1,3 +1,4 @@
+import "./interactive-test-guard";
 import { spawnSync } from "node:child_process";
 
 if (process.platform !== "win32") throw new Error("Native UI verification currently requires Windows with a working hardware encoder.");

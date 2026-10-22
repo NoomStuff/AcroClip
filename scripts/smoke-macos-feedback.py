@@ -1,4 +1,6 @@
 """Actual Cocoa feedback over synthetic content, including fullscreen Spaces.
+from test_isolation import require_isolated_runner
+require_isolated_runner()
 
 Only generated fixture media is opened. Proof images contain the helper's own
 panel, not the desktop. Capture inclusion is measured, never assumed.

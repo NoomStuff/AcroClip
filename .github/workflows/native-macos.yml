@@ -40,6 +40,8 @@ jobs:
    capture:
       runs-on: ${{ inputs.architecture == 'x64' && 'macos-15-intel' || 'macos-15' }}
       timeout-minutes: 120
+      env:
+         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
       steps:
          - uses: actions/checkout@v7
          - uses: oven-sh/setup-bun@v2

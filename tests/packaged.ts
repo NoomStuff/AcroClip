@@ -1,3 +1,4 @@
+import "../scripts/interactive-test-guard";
 import { _electron as electron, chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

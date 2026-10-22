@@ -4,6 +4,12 @@ import AVFoundation
 import CoreGraphics
 import Darwin
 
+guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+      ProcessInfo.processInfo.environment["ACROCLIP_ISOLATED_TEST_RUNNER"] == "github-hosted" else {
+    FileHandle.standardError.write(Data("Interactive fixture did not run. Use an isolated CI desktop and audio device.\n".utf8))
+    exit(2)
+}
+
 let evidencePath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : nil
 let frequency = CommandLine.arguments.count > 2 ? Double(CommandLine.arguments[2])! : 997
 precondition(frequency >= 100 && frequency <= 20000)

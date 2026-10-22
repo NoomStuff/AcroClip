@@ -1,3 +1,4 @@
+#include "isolation.h"
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Private Pulse playback and X11 marker. The marker follows the actual
 // playback position, not the time samples entered the playback queue.
@@ -12,6 +13,7 @@
 volatile sig_atomic_t quitting = 0;
 void stop(int) { quitting = 1; }
 int main() {
+  if (!acroclip_fixture_isolated()) return 2;
   if (!std::getenv("PULSE_SERVER") || !std::getenv("DISPLAY")) return 2;
   signal(SIGTERM, stop);
   signal(SIGINT, stop);

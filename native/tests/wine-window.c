@@ -1,3 +1,4 @@
+#include "isolation.h"
 // SPDX-License-Identifier: MIT
 // Private Win32 pixels for actual Wine executable and capture verification.
 #include <windows.h>
@@ -62,6 +63,7 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
   return DefWindowProcA(window, message, w, l);
 }
 int main(void) {
+  if (!acroclip_fixture_isolated()) return 2;
   WNDCLASSA klass = {0};
   klass.lpfnWndProc = procedure;
   klass.hInstance = GetModuleHandleA(0);

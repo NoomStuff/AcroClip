@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'test-isolation.ps1')
 Set-StrictMode -Version Latest
 
 # A different app ID, executable name, shortcuts and uninstall key are required.

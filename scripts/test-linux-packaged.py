@@ -25,7 +25,7 @@ root = pathlib.Path.cwd()
 evidence = root / ".cache/linux-packaged" / str(uuid.uuid4())
 evidence.mkdir(parents=True)
 private = pathlib.Path(tempfile.mkdtemp(prefix="acroclip-packaged-x11-"))
-env = dict(os.environ, XDG_RUNTIME_DIR=str(private),
+env = dict(os.environ, ACROCLIP_ISOLATED_TEST_RUNNER="private-linux", XDG_RUNTIME_DIR=str(private),
            PULSE_SERVER="unix:" + str(private / "audio.sock"),
            DBUS_SESSION_BUS_ADDRESS="unix:path=" + str(private / "dbus.sock"),
            WAYLAND_DISPLAY="", XDG_SESSION_TYPE="x11",

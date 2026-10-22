@@ -62,6 +62,7 @@ jobs:
       timeout-minutes: 120
       env:
          ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
+         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
       steps:
          - uses: actions/checkout@v7
          - uses: oven-sh/setup-bun@v2
