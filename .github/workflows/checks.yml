@@ -7,12 +7,12 @@ jobs:
    audio:
       runs-on: windows-2025
       timeout-minutes: 15
-      env:
-         ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
       steps:
          - uses: actions/checkout@v7
          - run: dotnet build scripts/windows-audio-proof/AudioProof.csproj
          - name: Original signed fixture installation
+           env:
+              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
            continue-on-error: true
            run: pwsh -File scripts/setup-windows-runner-audio.ps1
          - name: Original installation state
