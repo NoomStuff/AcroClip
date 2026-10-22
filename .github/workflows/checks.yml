@@ -1,12 +1,50 @@
-name: Push delivery probe
+name: Focused Windows package verification
 on:
-   push:
-      branches: [codex/windows-audio-fixture]
    workflow_dispatch:
 permissions:
    contents: read
+   actions: read
 jobs:
-   event:
-      runs-on: ubuntu-24.04
+   windows:
+      runs-on: windows-2025
+      timeout-minutes: 45
+      env:
+         ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
       steps:
-         - run: echo "Event=$GITHUB_EVENT_NAME Ref=$GITHUB_REF SHA=$GITHUB_SHA"
+         - uses: actions/checkout@v7
+           with:
+              ref: a5dca95d5e111da53eac3501eb552ed74f058c85
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: "1.4.2"
+         - run: bun install --frozen-lockfile
+         - run: node node_modules/electron/install.js
+         - uses: actions/download-artifact@v8
+           with:
+              run-id: 39828752566
+              github-token: ${{ github.token }}
+              name: controlled-windows-media
+              path: work/
+         - run: bun scripts/controlled-media.ts
+         - run: bun scripts/provision-media.ts
+         - run: bun run bundle:media
+         - run: bun run build:icons
+         - run: bun run build:native
+         - run: bun run build:notices
+         - run: bun run build
+         - run: bunx electron-builder --win --x64 --publish never
+         - name: Prepare the proven audio fixture
+           env:
+              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
+           run: pwsh -File scripts/setup-windows-runner-audio.ps1
+         - run: bun run test:packaged
+         - run: bun run test:portable
+         - run: pwsh -File scripts/test-installer-upgrade.ps1
+         - name: Stop the fixture producer
+           if: always()
+           shell: pwsh
+           run: |
+              if ($env:ACROCLIP_AUDIO_FIXTURE_PID) {
+                 $fixtureProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $env:ACROCLIP_AUDIO_FIXTURE_PID"
+                 if ($fixtureProcess.CommandLine -like '*setup-windows-runner-audio.ps1*' -and $fixtureProcess.CommandLine -like '*-PlayTone*') { Stop-Process -Id $fixtureProcess.ProcessId -ErrorAction SilentlyContinue }
+              }
