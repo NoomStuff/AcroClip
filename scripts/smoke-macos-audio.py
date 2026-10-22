@@ -21,10 +21,11 @@ root = pathlib.Path.cwd()
 runtime = (root / "resources/recorder").resolve()
 folder = root / ".cache/macos-audio" / str(uuid.uuid4())
 folder.mkdir(parents=True)
-env = dict(os.environ, DYLD_LIBRARY_PATH=str(runtime / "Frameworks"), DYLD_FRAMEWORK_PATH=str(runtime / "Frameworks"))
+env = dict(os.environ, DYLD_LIBRARY_PATH=str(runtime / "Frameworks"), DYLD_FRAMEWORK_PATH=str(runtime / "Frameworks"), ACROCLIP_NATIVE_TEST_AUDIO_TIMING="1")
 ffmpeg = str(root / "resources/media/ffmpeg")
 ffprobe = str(root / "resources/media/ffprobe")
 processes, logs, events, fixtures, media, audio_diagnostics = [], [], [], [], [], []
+timed_events = []
 
 
 def launch(args, name, pipe=False):
@@ -49,7 +50,7 @@ def fixture(name, frequency, compact=False):
     if fixtures:
         shutil.copy2(fixtures[0]["binary"], binary)
     else:
-        subprocess.run(["swiftc", str(root / "native/macos/fixture.swift"), "-o", str(binary)], check=True)
+        subprocess.run(["swiftc", "-O", str(root / "native/macos/fixture.swift"), "-o", str(binary)], check=True)
     output = folder / (name + ".jsonl")
     fixtures.append(dict(output=output, binary=binary))
     launch(["open", "-n", "-W", str(contents.parent), "--args", str(output), str(frequency), "compact" if compact else "bounded"], name)
@@ -125,6 +126,9 @@ def save(name, verify_frames=True):
     result = wait(lambda event: event.get("requestId") == request and event["event"] in ("saved", "error"), 45)
     assert result["event"] == "saved", result
     info = json.loads(subprocess.run([ffprobe, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(file)], capture_output=True, text=True, check=True).stdout)
+    (folder / (name + ".media.json")).write_text(json.dumps(info, indent=2))
+    packets = json.loads(subprocess.run([ffprobe, "-v", "error", "-show_packets", "-of", "json", str(file)], capture_output=True, text=True, check=True).stdout)
+    (folder / (name + ".packets.json")).write_text(json.dumps(packets, indent=2))
     tracks = [stream for stream in info["streams"] if stream["codec_type"] == "audio"]
     assert len(tracks) == 4, tracks
     assert [stream.get("tags", {}).get("title") for stream in tracks] == ["Master", "Capture audio", "Selected app", "System audio"], tracks
@@ -171,7 +175,9 @@ try:
     helper = launch([str(runtime / "acroclip-recorder"), str(runtime)], "native", True)
     def read():
         for line in helper.stdout:
-            events.append(json.loads(line))
+            event = json.loads(line)
+            events.append(event)
+            timed_events.append(dict(monotonicSeconds=time.monotonic(), unixSeconds=time.time(), event=event))
     threading.Thread(target=read, daemon=True).start()
     assert wait(lambda event: event["event"] == "ready")["version"] == "32.2.2"
     begin = len(events)
@@ -238,6 +244,7 @@ finally:
     for item in fixtures:
         pathlib.Path(str(item["output"]) + ".stop").touch()
     (folder / "native-events.json").write_text(json.dumps(events, indent=2))
+    (folder / "timed-native-events.json").write_text(json.dumps(timed_events, indent=2))
     for child in reversed(processes):
         if child.poll() is None:
             child.terminate()

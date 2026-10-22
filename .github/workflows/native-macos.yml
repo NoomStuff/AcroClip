@@ -196,6 +196,7 @@ jobs:
                  .cache/macos-audio/**/*.json
                  .cache/macos-audio/**/*.jsonl
                  .cache/macos-audio/**/*.log
+                 .cache/macos-audio/**/*.mkv
                  .cache/macos-feedback/**/*.json
                  .cache/macos-feedback/**/*.jsonl
                  .cache/macos-feedback/**/*.log

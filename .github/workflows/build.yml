@@ -117,6 +117,20 @@ jobs:
                     Stop-Process -Id $fixtureProcess.ProcessId -ErrorAction SilentlyContinue
                  }
               }
+         - name: Preserve isolated installer evidence
+           if: always()
+           shell: pwsh
+           run: |
+              New-Item -ItemType Directory -Path work/installer-evidence -Force | Out-Null
+              if ($env:ACROCLIP_INSTALLER_EVIDENCE) {
+                 Get-ChildItem -LiteralPath $env:ACROCLIP_INSTALLER_EVIDENCE -Filter 'upgrade-*.json*' | Copy-Item -Destination work/installer-evidence
+              }
+         - uses: actions/upload-artifact@v7
+           if: always()
+           with:
+              name: windows-isolated-installer-evidence
+              path: work/installer-evidence/
+              retention-days: 30
          - uses: actions/upload-artifact@v7
            with:
               name: Windows-verified-release-candidate-x64

@@ -6,6 +6,7 @@ Set-StrictMode -Version Latest
 # Never run the production installer against the developer's registry entries.
 $testId = [guid]::NewGuid().ToString('N')
 $root = Join-Path ([IO.Path]::GetTempPath()) "acroclip-upgrade-$testId"
+"ACROCLIP_INSTALLER_EVIDENCE=$root" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
 $project = Join-Path $root 'project'
 $stage = Join-Path $root 'stage'
 $install = Join-Path $root 'custom folder'
@@ -94,13 +95,21 @@ function Install-Test([string] $file, [string] $arguments) {
 }
 
 function Upgrade-Interactive([string] $file) {
-    $process = Start-Process -FilePath $file -PassThru -WindowStyle Hidden
+    $process = Start-Process -FilePath $file -PassThru -WindowStyle Normal
     $deadline = [DateTime]::UtcNow.AddMinutes(4)
     $finished = $false
+    $previousText = $null
     try {
         while (-not $process.HasExited -and [DateTime]::UtcNow -lt $deadline) {
             $controls = @([InstallerProbe]::Read($process.Id))
             $text = ($controls | ForEach-Object Text) -join "`n"
+            if ($text -ne $previousText) {
+                $descriptions = @($controls | ForEach-Object { @{handle=$_.Handle.ToInt64();text=$_.Text;className=$_.ClassName} })
+                @{unixMilliseconds=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds();processId=$process.Id;controls=$descriptions} |
+                    ConvertTo-Json -Depth 5 -Compress | Out-File -LiteralPath (Join-Path $root 'upgrade-windows.jsonl') -Append -Encoding utf8
+                Write-Output "Interactive upgrade state: $text"
+                $previousText = $text
+            }
             if ($text -match 'Choose Install Location|Choose Installation Options|Choose Components|Choose Users|License Agreement|Browse\.\.\.') {
                 throw "Upgrade repeated a first-install page: $text"
             }
@@ -112,7 +121,12 @@ function Upgrade-Interactive([string] $file) {
             Start-Sleep -Milliseconds 200
             $process.Refresh()
         }
-        if (-not $process.HasExited) { throw 'Interactive isolated upgrade timed out' }
+        if (-not $process.HasExited) {
+            Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) } |
+                Select-Object ProcessId, ParentProcessId, ExecutablePath, CommandLine |
+                ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $root 'upgrade-processes.json')
+            throw 'Interactive isolated upgrade timed out'
+        }
         if ($process.ExitCode -ne 0 -or -not $finished) { throw 'Interactive upgrade did not reach the finish page' }
     } finally {
         if (-not $process.HasExited) { $process.Kill() }

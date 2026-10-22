@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <util/platform.h>
 #include <csignal>
 #include <mutex>
 #include <memory>
@@ -29,8 +31,40 @@ std::unordered_map<CGWindowID, pid_t> selectedOwners;
 std::chrono::steady_clock::time_point checkedAt{};
 uintptr_t checkedWindow = 0;
 bool checkedAvailable = false;
-struct CaptureHealth { std::atomic<bool> failed{false}; };
+struct CaptureHealth {
+  std::atomic<bool> failed{false};
+  std::string timingName;
+  uint64_t observerAttachedNs = 0;
+  std::atomic<uint64_t> firstSampleNs{0}, firstReceiptNs{0}, lastSampleNs{0}, lastReceiptNs{0};
+  std::atomic<uint64_t> frames{0}, blocks{0}, maxSampleIntervalNs{0}, maxReceiptIntervalNs{0};
+};
 std::vector<std::unique_ptr<CaptureHealth>> sourceHealth;
+void timingSamples(void *value, obs_source_t *, const struct audio_data *audio, bool) {
+  if (!audio || !audio->frames) return;
+  auto &state = *static_cast<CaptureHealth *>(value);
+  const auto received = os_gettime_ns();
+  if (!state.firstReceiptNs.load()) {
+    state.firstSampleNs = audio->timestamp;
+    state.firstReceiptNs = received;
+  }
+  const auto previousSample = state.lastSampleNs.exchange(audio->timestamp);
+  const auto previousReceipt = state.lastReceiptNs.exchange(received);
+  auto maximum = [](std::atomic<uint64_t> &target, uint64_t amount) {
+    auto previous = target.load();
+    while (previous < amount && !target.compare_exchange_weak(previous, amount)) {}
+  };
+  if (previousSample && audio->timestamp > previousSample) maximum(state.maxSampleIntervalNs, audio->timestamp - previousSample);
+  if (previousReceipt && received > previousReceipt) maximum(state.maxReceiptIntervalNs, received - previousReceipt);
+  state.frames += audio->frames;
+  state.blocks++;
+}
+void watchTiming(obs_source_t *source, CaptureHealth *state) {
+  const char *enabled = std::getenv("ACROCLIP_NATIVE_TEST_AUDIO_TIMING");
+  if (!enabled || std::string(enabled) != "1") return;
+  state->timingName = obs_source_get_name(source);
+  state->observerAttachedNs = os_gettime_ns();
+  obs_source_add_audio_capture_callback(source, timingSamples, state);
+}
 std::atomic<CaptureHealth *> currentHealth{nullptr};
 struct AudioTarget {
   CGWindowID window; pid_t pid; std::string bundle;
@@ -118,6 +152,17 @@ CGDirectDisplayID displayFor(const nlohmann::json &configuration) {
 }
 }
 
+nlohmann::json audioTiming() {
+  auto result = nlohmann::json::array();
+  for (const auto &state : sourceHealth) if (!state->timingName.empty())
+    result.push_back({{"source",state->timingName},{"observerAttachedNs",state->observerAttachedNs},
+      {"firstSampleNs",state->firstSampleNs.load()},{"firstReceiptNs",state->firstReceiptNs.load()},
+      {"lastSampleNs",state->lastSampleNs.load()},{"lastReceiptNs",state->lastReceiptNs.load()},
+      {"frames",state->frames.load()},{"blocks",state->blocks.load()},
+      {"maxSampleIntervalNs",state->maxSampleIntervalNs.load()},{"maxReceiptIntervalNs",state->maxReceiptIntervalNs.load()}});
+  return result;
+}
+
 void prepareProcess(const std::filesystem::path &root) {
   if (@available(macOS 13.0, *)) {} else
     throw std::runtime_error("Recording with application audio requires macOS 13 or later");
@@ -186,17 +231,19 @@ obs_source_t *createCapture(const nlohmann::json &configuration) {
   auto *source = obs_source_create_private("screen_capture", "Capture", settings);
   obs_data_release(settings);
   if (!source) throw std::runtime_error("ScreenCaptureKit could not open the selected source");
+  auto health = std::make_unique<CaptureHealth>();
+  auto *healthState = health.get();
+  watchTiming(source, healthState);
   // SCK can return a source object with a failed or missing stream. Require an
   // actual frame before calling this a successful acquisition.
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
   while ((!obs_source_get_width(source) || !obs_source_get_height(source)) && std::chrono::steady_clock::now() < deadline)
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   if (!obs_source_get_width(source) || !obs_source_get_height(source)) {
+    if (!health->timingName.empty()) obs_source_remove_audio_capture_callback(source, timingSamples, healthState);
     obs_source_release(source);
     throw std::runtime_error("No frames arrived from the selected source. Check Screen Recording permission and select it again");
   }
-  auto health = std::make_unique<CaptureHealth>();
-  auto *healthState = health.get();
   // In the pinned SCK module, this signal follows didStopWithError. The source
   // can retain its last IOSurface after failure, which must not count as capture.
   signal_handler_connect(obs_source_get_signal_handler(source), "update_properties",
@@ -311,6 +358,7 @@ obs_source_t *audioSource(obs_data_t *settings, const std::string &name) {
   if (!source) throw std::runtime_error("ScreenCaptureKit could not open the selected audio source");
   auto health = std::make_unique<CaptureHealth>();
   auto *state = health.get();
+  watchTiming(source, state);
   signal_handler_connect(obs_source_get_signal_handler(source), "update_properties",
       [](void *value, calldata_t *) { static_cast<CaptureHealth *>(value)->failed = true; }, state);
   sourceHealth.push_back(std::move(health));

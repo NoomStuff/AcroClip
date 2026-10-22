@@ -2270,6 +2270,10 @@ private:
     if (!active || encoderFailed)
       throw std::runtime_error("The recording encoder stopped during startup");
     emit({{"event", "recording"}, {"encoder", encoder}});
+#ifdef __APPLE__
+    if (std::getenv("ACROCLIP_NATIVE_TEST_AUDIO_TIMING"))
+      emit({{"event","audio-timing"},{"phase","recording"},{"reportedNs",os_gettime_ns()},{"sources",acroclip::macos::audioTiming()}});
+#endif
   }
 public:
   // The command channel reads a state snapshot, not the recorder's mutexes,
@@ -2372,6 +2376,10 @@ public:
     if (captureError.empty() && active && screenCapture &&
         !targetAvailable())
       captureError = "The selected screen is unavailable";
+#ifdef __APPLE__
+    if (std::getenv("ACROCLIP_NATIVE_TEST_AUDIO_TIMING"))
+      emit({{"event","audio-timing"},{"phase","status"},{"reportedNs",os_gettime_ns()},{"firstVideoUs",firstVideo},{"lastVideoUs",lastVideo},{"sources",acroclip::macos::audioTiming()}});
+#endif
     return {{"event", "status"},
           {"fullscreen", fullscreen},
           {"active", active.load()},

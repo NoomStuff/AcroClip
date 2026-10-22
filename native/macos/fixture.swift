@@ -69,7 +69,25 @@ let renderedFrames = UnsafeMutablePointer<Int64>.allocate(capacity: 1)
 renderedFrames.initialize(to: 0)
 let renderedToneFrames = UnsafeMutablePointer<Int64>.allocate(capacity: 1)
 renderedToneFrames.initialize(to: 0)
-let source = AVAudioSourceNode { isSilence, _, frames, buffers in
+let lastRenderHost = UnsafeMutablePointer<Int64>.allocate(capacity: 1)
+lastRenderHost.initialize(to: 0)
+let lastRenderArrival = UnsafeMutablePointer<Int64>.allocate(capacity: 1)
+lastRenderArrival.initialize(to: 0)
+let maximumRenderInterval = UnsafeMutablePointer<Int64>.allocate(capacity: 1)
+maximumRenderInterval.initialize(to: 0)
+let source = AVAudioSourceNode { isSilence, timestamp, frames, buffers in
+    let now = Int64(truncatingIfNeeded: mach_absolute_time())
+    let previousArrival = OSAtomicAdd64(0, lastRenderArrival)
+    _ = OSAtomicAdd64(now - previousArrival, lastRenderArrival)
+    let host = Int64(truncatingIfNeeded: timestamp.pointee.mHostTime)
+    _ = OSAtomicAdd64(host - OSAtomicAdd64(0, lastRenderHost), lastRenderHost)
+    if previousArrival > 0 {
+        let interval = now - previousArrival
+        var maximum = OSAtomicAdd64(0, maximumRenderInterval)
+        while interval > maximum && !OSAtomicCompareAndSwap64(maximum, interval, maximumRenderInterval) {
+            maximum = OSAtomicAdd64(0, maximumRenderInterval)
+        }
+    }
     isSilence.pointee = false
     let list = UnsafeMutableAudioBufferListPointer(buffers)
     var toneFrames: Int64 = 0
@@ -102,6 +120,8 @@ let result: [String: Any] = ["pid": ProcessInfo.processInfo.processIdentifier, "
     "windowPixels": ["width": Int(windowPixels.width), "height": Int(windowPixels.height)],
     "screenPermission": CGPreflightScreenCaptureAccess(), "microphoneAuthorization": AVCaptureDevice.authorizationStatus(for: .audio).rawValue,
     "frequency": frequency, "bundleIdentifier": Bundle.main.bundleIdentifier ?? "",
+    "monotonicSeconds": ProcessInfo.processInfo.systemUptime, "unixSeconds": Date().timeIntervalSince1970,
+    "outputSampleRate": engine.outputNode.inputFormat(forBus: 0).sampleRate,
     "screenFrame": ["x": screen.minX, "y": screen.minY, "width": screen.width, "height": screen.height],
     "displayPixels": ["width": CGDisplayPixelsWide(CGMainDisplayID()), "height": CGDisplayPixelsHigh(CGMainDisplayID())]]
 let json = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
@@ -120,6 +140,10 @@ let healthTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ i
     let toneFrames = OSAtomicAdd64(0, renderedToneFrames)
     let health: [String: Any] = ["event": "audio-health", "engineRunning": engine.isRunning, "renderedFrames": frames,
         "renderedToneFrames": toneFrames, "monotonicSeconds": ProcessInfo.processInfo.systemUptime,
+        "unixSeconds": Date().timeIntervalSince1970,
+        "lastRenderHostSeconds": AVAudioTime.seconds(forHostTime: UInt64(max(0, OSAtomicAdd64(0, lastRenderHost)))),
+        "lastRenderArrivalSeconds": AVAudioTime.seconds(forHostTime: UInt64(max(0, OSAtomicAdd64(0, lastRenderArrival)))),
+        "maximumRenderIntervalSeconds": AVAudioTime.seconds(forHostTime: UInt64(max(0, OSAtomicAdd64(0, maximumRenderInterval)))),
         "paintedFrames": view.paintedFrames, "paintedColorMask": view.paintedColorMask,
         "visualCount": view.count, "bundleIdentifier": Bundle.main.bundleIdentifier ?? "", "foreground": app.isActive,
         "fullscreenSpace": window.styleMask.contains(.fullScreen)]

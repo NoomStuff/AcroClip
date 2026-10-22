@@ -171,7 +171,7 @@ try {
    const url = await page.evaluate((file) => window.acroClip.playback(file), clip.path);
    await page.evaluate(async (url) => {
       const video = document.createElement("video");
-      video.muted = true;
+      video.dataset["packagedPlayback"] = "original";
       document.body.appendChild(video);
       await new Promise<void>((resolve, reject) => {
          video.onloadeddata = () => resolve();
@@ -179,8 +179,19 @@ try {
          video.src = url;
       });
       if (video.videoWidth === 0) throw new Error("Playback did not decode a video frame");
-      video.remove();
+      await video.play();
+      if (video.muted || video.paused) throw new Error("Original playback did not start with audio enabled");
    }, url);
+   await expect
+      .poll(() => page.evaluate(() => document.querySelector<HTMLVideoElement>('video[data-packaged-playback="original"]')?.currentTime ?? 0), {
+         timeout: 10000,
+      })
+      .toBeGreaterThan(0.25);
+   await page.evaluate(() => {
+      const video = document.querySelector<HTMLVideoElement>('video[data-packaged-playback="original"]');
+      video?.pause();
+      video?.remove();
+   });
    console.log(
       `Packaged capture, repeated saves followed by stop, separate audio, full decoding, playback, and size-limited sharing passed. Isolated files: ${profile}`
    );

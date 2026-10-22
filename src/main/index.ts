@@ -172,11 +172,10 @@ async function log(message: string) {
 function notice(message: string, error = false, kind: "info" | "saving" | "saved" = "info") {
    send({ type: "notice", message, error });
    void log(message);
-   if (preferences?.sound && process.env["ACROCLIP_TEST"] !== "1" && (error || kind === "saved")) shell.beep();
+   if (preferences?.sound && (error || kind === "saved")) shell.beep();
    if (preferences?.notifications !== "off") void showFeedback(message, error, kind === "saving").catch(() => undefined);
 }
 async function showFeedback(message: string, error: boolean, saving: boolean) {
-   if (process.env["ACROCLIP_TEST"] === "1") return;
    if (preferences.notifications === "outside-fullscreen" && (await recorder.foregroundFullscreen())) return;
    feedback.show(message, error, saving);
 }
