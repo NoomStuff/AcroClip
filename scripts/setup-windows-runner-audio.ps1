@@ -15,6 +15,7 @@ if ($PlayTone) {
 # Download the unchanged package into the disposable runner, never the app payload.
 $fixture = Join-Path $env:RUNNER_TEMP ('acroclip-audio-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture | Out-Null
+"ACROCLIP_AUDIO_FIXTURE_ROOT=$fixture" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
 $archive = Join-Path $fixture 'VBCABLE_Driver_Pack45.zip'
 Invoke-WebRequest -Uri 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip' -OutFile $archive -TimeoutSec 60
 if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'B950E39F01AF1D04EA623C8F6D8EB9B6EA5C477C637295FABF20631C85116BFB') {
@@ -38,14 +39,23 @@ Start-Service Audiosrv
 $installation = Start-Process -FilePath $installer -ArgumentList '-i', '-h' -WorkingDirectory $driver -WindowStyle Hidden -PassThru
 if (-not $installation.WaitForExit(60000)) { $installation.Kill(); throw 'Audio fixture installation timed out' }
 Write-Output "Audio fixture installer exited $($installation.ExitCode)"
+Add-Type -Path (Join-Path $PSScriptRoot 'windows-audio-endpoint.cs')
 $deadline = [DateTime]::UtcNow.AddSeconds(30)
 do {
-    $endpoints = @(Get-PnpDevice -Class AudioEndpoint -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'OK' -and $_.FriendlyName -like '*CABLE Input*' })
+    $endpoints = @()
+    try {
+        $identity = [AudioFixtureEndpoint]::DefaultRenderIdentity()
+        # PnP calls this endpoint "Speakers"; its Core Audio friendly name is
+        # "CABLE Input". Match its actual identity instead of either label.
+        $endpoints = @(Get-CimInstance Win32_PnPEntity | Where-Object {
+            $_.PNPDeviceID -eq "SWD\MMDEVAPI\$identity" -and $_.Name -like '*VB-Audio Virtual Cable*' -and $_.ConfigManagerErrorCode -eq 0
+        })
+    } catch { Write-Output "Waiting for the default render endpoint: $($_.Exception.Message)" }
     if ($endpoints.Count -gt 0) { break }
     Start-Sleep -Milliseconds 500
 } while ([DateTime]::UtcNow -lt $deadline)
 if ($endpoints.Count -eq 0) { throw 'The signed virtual audio output did not become active; capture verification remains blocked' }
-$endpoints | Format-Table Status, FriendlyName, InstanceId
+$endpoints | Format-Table Status, Name, PNPDeviceID
 
 # One second of independent 997 Hz PCM. Keep it playing through the actual
 # Windows render endpoint throughout unpacked, portable and installed tests.
