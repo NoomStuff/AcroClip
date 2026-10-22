@@ -93,7 +93,7 @@ try:
     (fixture_contents / "MacOS").mkdir(parents=True)
     shutil.copyfile(root / "native/macos/fixture-Info.plist", fixture_contents / "Info.plist")
     fixture_binary = fixture_contents / "MacOS" / "fixture"
-    subprocess.run(["swiftc", str(root / "native/macos/fixture.swift"), "-o", str(fixture_binary)], check=True)
+    subprocess.run(["swiftc", "-O", str(root / "native/macos/fixture.swift"), "-o", str(fixture_binary)], check=True)
     # LaunchServices gives the fixture its own app attribution. Shell-launched
     # siblings can be grouped into the recorder's excluded process audio.
     fixture_output = folder / "fixture-output.jsonl"

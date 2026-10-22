@@ -74,15 +74,11 @@ jobs:
          - name: Establish capture permission with the existing screen proof
            continue-on-error: true
            run: caffeinate -di python3 scripts/smoke-macos.py
-         - name: Baseline unoptimized producer and real audio proof
-           continue-on-error: true
-           env:
-              ACROCLIP_FIXTURE_OPTIMIZED: "0"
-           run: caffeinate -di python3 scripts/smoke-macos-audio.py
-         - name: Optimized producer and the unchanged audio assertions
-           env:
-              ACROCLIP_FIXTURE_OPTIMIZED: "1"
-           run: caffeinate -di python3 scripts/smoke-macos-audio.py
+         - name: Repeat the real audio proof with optimized producer
+           run: |
+              for attempt in 1 2 3; do
+                 caffeinate -di python3 scripts/smoke-macos-audio.py || exit $?
+              done
          - uses: actions/upload-artifact@v7
            if: always()
            with:

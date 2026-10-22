@@ -15,9 +15,16 @@ const commands = {
    lifecycle: [["scripts/smoke-start-lifecycle.ts", "resources/recorder/acroclip-recorder.exe"]],
    "capture-loss": [["scripts/smoke-capture-loss.ts"]],
    fullscreen: [["scripts/smoke-fullscreen.ts"]],
+   feedback: [["scripts/smoke-feedback.ts"]],
+   audio: [["scripts/smoke-audio.ts"]],
+   "audio-monitor": [["scripts/smoke-audio-monitor.ts"]],
+   "additional-audio": [["scripts/smoke-additional-audio.ts"]],
+   "game-capture": [["scripts/smoke-game-capture.ts"]],
+   overlap: [["scripts/smoke-overlap.ts"]],
+   "resolution-limits": [["scripts/smoke-resolution-limits.ts"]],
 } satisfies Record<string, string[][]>;
 const requested = process.argv[2];
-if (!requested || !(requested in commands)) throw new Error(`Choose an isolated suite: ${Object.keys(commands).join(", ")}`);
+if (!requested || !Object.hasOwn(commands, requested)) throw new Error(`Choose an isolated suite: ${Object.keys(commands).join(", ")}`);
 const suite = requested as keyof typeof commands;
 const testArguments = process.env["ACROCLIP_INTERACTIVE_ARGUMENTS"]
    ? z.array(z.string()).parse(JSON.parse(process.env["ACROCLIP_INTERACTIVE_ARGUMENTS"]))
@@ -62,6 +69,16 @@ if (!hostedTestIsolation(process.env, process.platform)) {
    console.log(`Isolated ${suite} passed for exact commit ${commit}. No interactive test ran on this desktop.`);
 } else {
    requireTestIsolation();
+   if (!["ui", "ui-native", "packaged", "portable", "installer"].includes(suite)) {
+      for (const args of [
+         ["-S", "native/tests", "-B", ".cache/native-tests"],
+         ["--build", ".cache/native-tests", "--config", "Release"],
+      ]) {
+         const fixture = spawnSync("cmake", args, { stdio: "inherit", windowsHide: true });
+         if (fixture.error) throw fixture.error;
+         if (fixture.status !== 0) process.exit(fixture.status ?? 1);
+      }
+   }
    for (const [index, args] of commands[suite].entries()) {
       const installer = args[0] === "installer";
       const commandArguments = installer ? ["-File", "scripts/test-installer-upgrade.ps1"] : [...args];

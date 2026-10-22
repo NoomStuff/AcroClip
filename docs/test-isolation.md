@@ -8,7 +8,7 @@ Run `bun run test:isolated ui`, or the ordinary suite command such as `bun run t
 
 A dirty or unpushed working tree cannot run these checks on the personal desktop. The command reports that the tests did not run. Keep those edits local and use a separately provisioned isolated environment to test them. A remote main result does not cover different local source.
 
-Available suites are `ui`, `ui-native`, `packaged`, `portable`, `installer`, `native`, `lifecycle`, `capture-loss` and `fullscreen`. Direct Playwright, installer and native fixture entry points also reject the personal desktop. The CI marker is set by the hosted workflows after private audio setup. It is not a request to set environment variables on the personal desktop.
+Available suites are `ui`, `ui-native`, `packaged`, `portable`, `installer`, `native`, `lifecycle`, `capture-loss`, `fullscreen`, `feedback`, `audio`, `audio-monitor`, `additional-audio`, `game-capture`, `overlap` and `resolution-limits`. Direct Playwright, installer and native fixture entry points also reject the personal desktop. The CI marker is set by the hosted workflows after private audio setup. It is not a request to set environment variables on the personal desktop.
 
 Hardware encoder, game-hook and exclusive-fullscreen assertions remain unchanged. A standard hosted VM may lack a required GPU capability. Such a failure is not a pass or a skipped substitute. Configure the `ISOLATED_WINDOWS_RUNNER` repository variable with a suitable disposable GitHub-hosted GPU runner label for those suites. Self-hosted personal desktop runners are refused.
 

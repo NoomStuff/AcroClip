@@ -50,8 +50,7 @@ def fixture(name, frequency, compact=False):
     if fixtures:
         shutil.copy2(fixtures[0]["binary"], binary)
     else:
-        optimization = [] if os.environ.get("ACROCLIP_FIXTURE_OPTIMIZED") == "0" else ["-O"]
-        subprocess.run(["swiftc", *optimization, str(root / "native/macos/fixture.swift"), "-o", str(binary)], check=True)
+        subprocess.run(["swiftc", "-O", str(root / "native/macos/fixture.swift"), "-o", str(binary)], check=True)
     output = folder / (name + ".jsonl")
     fixtures.append(dict(output=output, binary=binary))
     launch(["open", "-n", "-W", str(contents.parent), "--args", str(output), str(frequency), "compact" if compact else "bounded"], name)

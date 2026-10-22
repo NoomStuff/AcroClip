@@ -234,7 +234,7 @@ try:
         motion_preferences.set(False)
     expected_motion = False if motion_preferences else None
     fixture_binary = folder / "fixture"
-    subprocess.run(["swiftc", str(root / "native/macos/fixture.swift"), "-o", str(fixture_binary)], check=True)
+    subprocess.run(["swiftc", "-O", str(root / "native/macos/fixture.swift"), "-o", str(fixture_binary)], check=True)
     normal, normal_output, identity = fixture("Normal")
     notifier = launch([str(runtime / "acroclip-notifier")], "notifier", True)
     notifier_identity = wait("notifier", lambda event: event["event"] == "ready")
