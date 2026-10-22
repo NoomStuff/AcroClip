@@ -39,14 +39,23 @@ Start-Service Audiosrv
 $installation = Start-Process -FilePath $installer -ArgumentList '-i', '-h' -WorkingDirectory $driver -WindowStyle Hidden -PassThru
 if (-not $installation.WaitForExit(60000)) { $installation.Kill(); throw 'Audio fixture installation timed out' }
 Write-Output "Audio fixture installer exited $($installation.ExitCode)"
+Add-Type -Path (Join-Path $PSScriptRoot 'windows-audio-endpoint.cs')
 $deadline = [DateTime]::UtcNow.AddSeconds(30)
 do {
-    $endpoints = @(Get-PnpDevice -Class AudioEndpoint -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'OK' -and $_.FriendlyName -like '*CABLE Input*' })
+    $endpoints = @()
+    try {
+        $identity = [AudioFixtureEndpoint]::DefaultRenderIdentity()
+        # PnP calls this endpoint "Speakers"; its Core Audio friendly name is
+        # "CABLE Input". Match its actual identity instead of either label.
+        $endpoints = @(Get-CimInstance Win32_PnPEntity | Where-Object {
+            $_.PNPDeviceID -eq "SWD\MMDEVAPI\$identity" -and $_.Name -like '*VB-Audio Virtual Cable*' -and $_.ConfigManagerErrorCode -eq 0
+        })
+    } catch { Write-Output "Waiting for the default render endpoint: $($_.Exception.Message)" }
     if ($endpoints.Count -gt 0) { break }
     Start-Sleep -Milliseconds 500
 } while ([DateTime]::UtcNow -lt $deadline)
 if ($endpoints.Count -eq 0) { throw 'The signed virtual audio output did not become active; capture verification remains blocked' }
-$endpoints | Format-Table Status, FriendlyName, InstanceId
+$endpoints | Format-Table Status, Name, PNPDeviceID
 
 # One second of independent 997 Hz PCM. Keep it playing through the actual
 # Windows render endpoint throughout unpacked, portable and installed tests.

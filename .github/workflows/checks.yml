@@ -1,4 +1,4 @@
-name: Windows audio fixture diagnostics
+name: Windows audio fixture verification
 on:
    workflow_dispatch:
 permissions:
@@ -6,51 +6,24 @@ permissions:
 jobs:
    audio:
       runs-on: windows-2025
-      timeout-minutes: 15
+      timeout-minutes: 10
       steps:
          - uses: actions/checkout@v7
          - run: dotnet build scripts/windows-audio-proof/AudioProof.csproj
-         - name: Original signed fixture installation
+         - name: Start the production CI audio fixture
            env:
               ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
-           continue-on-error: true
            run: pwsh -File scripts/setup-windows-runner-audio.ps1
-         - name: Original installation state
-           if: always()
-           run: pwsh -File scripts/windows-audio-diagnostics.ps1 -Checkpoint original
-         - name: Probe actual Core Audio endpoints
-           id: original_probe
-           continue-on-error: true
-           run: dotnet run --no-build --project scripts/windows-audio-proof/AudioProof.csproj -- --capture work/windows-audio-diagnostics/original.wav
-         - name: Bind the Microsoft-signed Windows 10 driver explicitly
-           if: steps.original_probe.outcome == 'failure'
-           shell: pwsh
+         - name: Capture the fixture producer through actual default-endpoint WASAPI
            run: |
-              pnputil /add-driver "$env:ACROCLIP_AUDIO_FIXTURE_ROOT/driver/vbMmeCable64_win10.inf" /install
-              pnputil /scan-devices
-         - name: Modern driver state
-           if: always()
-           run: pwsh -File scripts/windows-audio-diagnostics.ps1 -Checkpoint modern
-         - name: Probe after explicit driver binding
-           id: modern_probe
-           if: steps.original_probe.outcome == 'failure'
-           continue-on-error: true
-           run: dotnet run --no-build --project scripts/windows-audio-proof/AudioProof.csproj -- --capture work/windows-audio-diagnostics/modern.wav
-         - name: Restart endpoint services without rebooting
-           if: steps.modern_probe.outcome == 'failure'
-           run: |
-              Stop-Service Audiosrv
-              Restart-Service AudioEndpointBuilder -Force
-              Start-Service Audiosrv
-              pnputil /scan-devices
-         - name: Verify actual playback and WASAPI capture
-           run: dotnet run --no-build --project scripts/windows-audio-proof/AudioProof.csproj -- --capture work/windows-audio-diagnostics/final.wav
+              New-Item -ItemType Directory -Path work/windows-audio-diagnostics -Force | Out-Null
+              dotnet run --no-build --project scripts/windows-audio-proof/AudioProof.csproj -- --capture --capture-only work/windows-audio-diagnostics/fixture.wav
          - name: Final device state
            if: always()
            run: pwsh -File scripts/windows-audio-diagnostics.ps1 -Checkpoint final
          - uses: actions/upload-artifact@v7
            if: always()
            with:
-              name: windows-audio-diagnostics
+              name: windows-audio-fixture-proof
               path: work/windows-audio-diagnostics/
               retention-days: 7

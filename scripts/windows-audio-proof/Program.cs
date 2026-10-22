@@ -16,7 +16,8 @@ using (var writer = new WaveFileWriter(destination, capture.WaveFormat)) {
     var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     capture.DataAvailable += (_, data) => writer.Write(data.Buffer, 0, data.BytesRecorded);
     capture.RecordingStopped += (_, data) => { if (data.Exception is not null) stopped.SetException(data.Exception); else stopped.SetResult(); };
-    playback.Play(); capture.StartRecording(); await Task.Delay(3000); capture.StopRecording();
+    if (!args.Contains("--capture-only")) playback.Play();
+    capture.StartRecording(); await Task.Delay(3000); capture.StopRecording();
     await stopped.Task.WaitAsync(TimeSpan.FromSeconds(10)); playback.Stop();
 }
 using var reader = new AudioFileReader(destination);
