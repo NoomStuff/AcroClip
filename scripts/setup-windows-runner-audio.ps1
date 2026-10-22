@@ -15,6 +15,7 @@ if ($PlayTone) {
 # Download the unchanged package into the disposable runner, never the app payload.
 $fixture = Join-Path $env:RUNNER_TEMP ('acroclip-audio-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture | Out-Null
+"ACROCLIP_AUDIO_FIXTURE_ROOT=$fixture" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
 $archive = Join-Path $fixture 'VBCABLE_Driver_Pack45.zip'
 Invoke-WebRequest -Uri 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip' -OutFile $archive -TimeoutSec 60
 if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'B950E39F01AF1D04EA623C8F6D8EB9B6EA5C477C637295FABF20631C85116BFB') {
