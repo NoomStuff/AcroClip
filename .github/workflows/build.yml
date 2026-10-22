@@ -98,10 +98,24 @@ jobs:
               if ($source.Count -ne 1) { throw 'Expected one Windows source packet' }
               bun scripts/verify-release.ts $source[0].FullName
               if ($LASTEXITCODE) { exit $LASTEXITCODE }
+         - name: Prepare a signed virtual audio endpoint and independent tone
+           env:
+              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
+           run: pwsh -File scripts/setup-windows-runner-audio.ps1
          - run: bun run test:packaged
          - run: bun run test:portable
          - name: Verify installed upgrade in an isolated installer identity
            run: pwsh -File scripts/test-installer-upgrade.ps1
+         - name: Stop the private tone producer
+           if: always()
+           shell: pwsh
+           run: |
+              if ($env:ACROCLIP_AUDIO_FIXTURE_PID) {
+                 $fixtureProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $env:ACROCLIP_AUDIO_FIXTURE_PID"
+                 if ($fixtureProcess.CommandLine -like '*setup-windows-runner-audio.ps1*' -and $fixtureProcess.CommandLine -like '*-PlayTone*') {
+                    Stop-Process -Id $fixtureProcess.ProcessId -ErrorAction SilentlyContinue
+                 }
+              }
          - uses: actions/upload-artifact@v7
            with:
               name: Windows-verified-release-candidate-x64

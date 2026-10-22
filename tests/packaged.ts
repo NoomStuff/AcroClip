@@ -148,6 +148,8 @@ try {
       assert(pixels.length > 0, "The packaged capture must decode real pixels");
       const mean = pixels.reduce((sum, value) => sum + value, 0) / pixels.length;
       assert(mean > 10, "The packaged X11 fixture must appear in the captured frame");
+   }
+   if (linux || process.env["ACROCLIP_PACKAGED_PRIVATE_AUDIO"] === "1") {
       for (const track of [0, 1]) {
          const audio = await promisify(execFile)(ffmpeg, ["-hide_banner", "-i", clip.path, "-map", `0:a:${track}`, "-af", "volumedetect", "-f", "null", "-"]);
          const level = /mean_volume: (-?[\d.]+) dB/.exec(audio.stderr)?.[1];
