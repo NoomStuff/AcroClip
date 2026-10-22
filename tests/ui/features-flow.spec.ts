@@ -26,7 +26,20 @@ test("category appearance, local shortcuts, conflicts and global capture binding
    const app = await electron.launch({ args: [resolve("."), "--disable-gpu-sandbox"], env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile } });
    try {
       const page = await app.firstWindow();
+      const focusNavigation = async () => {
+         await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((window) => window.isVisible()))).toBe(true);
+         await app.evaluate(({ BrowserWindow }) => {
+            const window = BrowserWindow.getAllWindows().find((candidate) => candidate.isVisible());
+            if (!window) throw new Error("The test window is not visible");
+            window.focus();
+         });
+         const recording = page.getByRole("button", { name: "Recording", exact: true });
+         await recording.focus();
+         await expect(recording).toBeFocused();
+         await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+      };
       await expect(page.locator(".recording-page")).toBeVisible();
+      await focusNavigation();
       await page.keyboard.press("Control+2");
       await expect(page.locator(".library-page")).toBeVisible();
       await page.keyboard.press("Control+f");
@@ -61,6 +74,7 @@ test("category appearance, local shortcuts, conflicts and global capture binding
          .toEqual({ ...original, name: "Matches", color: "#73c6a1", icon: "game" });
       await page.reload();
       await expect(page.locator(".recording-page")).toBeVisible();
+      await focusNavigation();
       await page.keyboard.press("Control+2");
       await expect(page.getByRole("button", { name: /Matches/ }).first()).toBeVisible();
       await page.keyboard.press("Control+,");
