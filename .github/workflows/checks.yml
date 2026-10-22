@@ -1,29 +1,12 @@
-name: Windows audio fixture verification
+name: Push delivery probe
 on:
+   push:
+      branches: [codex/windows-audio-fixture]
    workflow_dispatch:
 permissions:
    contents: read
 jobs:
-   audio:
-      runs-on: windows-2025
-      timeout-minutes: 10
+   event:
+      runs-on: ubuntu-24.04
       steps:
-         - uses: actions/checkout@v7
-         - run: dotnet build scripts/windows-audio-proof/AudioProof.csproj
-         - name: Start the production CI audio fixture
-           env:
-              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
-           run: pwsh -File scripts/setup-windows-runner-audio.ps1
-         - name: Capture the fixture producer through actual default-endpoint WASAPI
-           run: |
-              New-Item -ItemType Directory -Path work/windows-audio-diagnostics -Force | Out-Null
-              dotnet run --no-build --project scripts/windows-audio-proof/AudioProof.csproj -- --capture --capture-only work/windows-audio-diagnostics/fixture.wav
-         - name: Final device state
-           if: always()
-           run: pwsh -File scripts/windows-audio-diagnostics.ps1 -Checkpoint final
-         - uses: actions/upload-artifact@v7
-           if: always()
-           with:
-              name: windows-audio-fixture-proof
-              path: work/windows-audio-diagnostics/
-              retention-days: 7
+         - run: echo "Event=$GITHUB_EVENT_NAME Ref=$GITHUB_REF SHA=$GITHUB_SHA"

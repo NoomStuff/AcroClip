@@ -9,7 +9,6 @@ on:
          release_candidate:
             type: boolean
             default: true
-   push:
    pull_request:
    workflow_dispatch:
       inputs:
