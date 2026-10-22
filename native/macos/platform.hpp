@@ -10,6 +10,7 @@
 namespace acroclip::macos {
 void prepareProcess(const std::filesystem::path &root);
 bool startup(const char *locale, const char *configuration);
+nlohmann::json audioTiming();
 const char *graphicsModule();
 const char *muxPath();
 void loadModules();

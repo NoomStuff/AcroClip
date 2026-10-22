@@ -1,43 +1,18 @@
-name: Checks
+name: Focused capture and installer evidence
 on:
-   push:
-      branches: [main]
-   pull_request:
    workflow_dispatch:
       inputs:
-         interactive_suite:
-            type: string
-            default: ""
-         expected_commit:
-            type: string
-            default: ""
-         interactive_arguments:
-            type: string
-            default: "[]"
-   workflow_call:
-      inputs:
-         interactive_suite:
-            type: string
-            default: ""
-         expected_commit:
-            type: string
-            default: ""
-         interactive_arguments:
-            type: string
-            default: "[]"
+         architecture:
+            type: choice
+            options: [x64]
+            default: x64
 permissions:
    contents: read
-concurrency:
-   group: checks-${{ github.workflow }}-${{ github.ref }}-${{ inputs.interactive_suite || 'verify' }}
-   cancel-in-progress: true
+   actions: read
 jobs:
-   controlled-media:
-      uses: ./.github/workflows/controlled-media.yml
-   verify:
-      if: inputs.interactive_suite == ''
-      needs: controlled-media
-      runs-on: windows-2025
-      timeout-minutes: 25
+   mac:
+      runs-on: macos-15-intel
+      timeout-minutes: 45
       env:
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
       steps:
@@ -46,57 +21,85 @@ jobs:
            with:
               bun-version: "1.4.2"
          - run: bun install --frozen-lockfile
-         - uses: actions/download-artifact@v8
-           with:
-              name: controlled-windows-media
-              path: work/
-         - name: Verify and record the cross build on Windows
-           run: bun scripts/controlled-media.ts
-         - run: bun scripts/provision-media.ts
-         - run: bun run bundle:media
-         - run: bun run build:icons
-         - run: bun run build:notices
-         - name: Stage the native helper used by real preview tests
-           run: bun run build:native
-         - run: bun run verify
-         - run: bun run test:media
-         - name: Prepare private playback output for UI checks
+         - name: Install build tools and independent fixture generator
+           run: |
+              brew install ffmpeg-full meson ninja pkg-config nasm
+              taskReference="$(brew --prefix ffmpeg-full)/bin"
+              echo "FFMPEG_PATH=$taskReference/ffmpeg" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$taskReference/ffprobe" >> "$GITHUB_ENV"
+              mkdir -p work/reference-media
+              brew info --json=v2 ffmpeg-full > work/reference-media/homebrew.json
+              "$taskReference/ffmpeg" -encoders > work/reference-media/encoders.txt
+              "$taskReference/ffmpeg" -version > work/reference-media/ffmpeg-version.txt
+              "$taskReference/ffprobe" -version > work/reference-media/ffprobe-version.txt
+              shasum -a 256 "$taskReference/ffmpeg" "$taskReference/ffprobe" > work/reference-media/SHA256SUMS.txt
+         - name: Recover verified immutable Mac source inputs
            env:
-              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
-           run: pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
-         - run: bun run test:ui
+              GITHUB_TOKEN: ${{ github.token }}
+           run: |
+              python3 scripts/recover-release-inputs.py --platform darwin-arm64 --release v0.3.0 --destination .cache/macos-published-source-inputs
+              echo "ACROCLIP_ELECTRON_SOURCE_CACHE=$PWD/.cache/macos-published-source-inputs/evidence/electron-ffmpeg-darwin-arm64" >> "$GITHUB_ENV"
+         - name: Prepare hash-verified CLI and OBS source inputs
+           run: python3 scripts/prepare-linux-cli-inputs.py .cache/macos-published-source-inputs .
+         - name: Restore verified media for this architecture
+           id: media_cache
+           uses: actions/cache/restore@v6.1.0
+           with:
+              path: work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}
+              key: controlled-macos-${{ inputs.architecture || 'arm64' }}-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts', 'scripts/smoke-controlled-media-macos.py') }}
+         - name: Verify the recorded media cache before executing it
+           if: steps.media_cache.outputs.cache-hit == 'true'
+           run: bun -e 'import {readControlledMacBuild} from "./scripts/controlled-media-macos"; await readControlledMacBuild("work/controlled-media/macos-" + process.arch);'
+         - name: Compile controlled macOS media
+           if: steps.media_cache.outputs.cache-hit != 'true'
+           env:
+              ACROCLIP_MEDIA_BUILD_JOBS: "3"
+           run: bash scripts/build-media-macos.sh
+         - name: Verify independent codec fixtures and record actual build
+           run: |
+              ACROCLIP_REFERENCE_FFMPEG="$FFMPEG_PATH" python3 scripts/smoke-controlled-media-macos.py
+              bun scripts/controlled-media-macos.ts
+              echo "FFMPEG_PATH=$PWD/work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/ffmpeg" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$PWD/work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}/ffprobe" >> "$GITHUB_ENV"
+         - name: Cache verified media for this architecture
+           if: steps.media_cache.outputs.cache-hit != 'true'
+           uses: actions/cache/save@v6.1.0
+           with:
+              path: work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}
+              key: controlled-macos-${{ inputs.architecture || 'arm64' }}-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts', 'scripts/smoke-controlled-media-macos.py') }}
+         - name: Stage verified media tools
+           run: bun run bundle:media
+         - name: Build and stage matching macOS recorder
+           run: bun scripts/build-recorder-macos.ts
+         - name: Establish capture permission with the existing screen proof
+           continue-on-error: true
+           run: caffeinate -di python3 scripts/smoke-macos.py
+         - name: Baseline unoptimized producer and real audio proof
+           continue-on-error: true
+           env:
+              ACROCLIP_FIXTURE_OPTIMIZED: "0"
+           run: caffeinate -di python3 scripts/smoke-macos-audio.py
+         - name: Optimized producer and the unchanged audio assertions
+           env:
+              ACROCLIP_FIXTURE_OPTIMIZED: "1"
+           run: caffeinate -di python3 scripts/smoke-macos-audio.py
          - uses: actions/upload-artifact@v7
            if: always()
            with:
-              name: ui-verification
-              path: test-results/
+              name: mac-audio-timing-evidence
+              path: |
+                 .cache/macos-audio/
+                 .cache/macos-capture/**/proof.json
+                 .cache/macos-capture/**/*.log
               retention-days: 7
-   interactive:
-      if: inputs.interactive_suite != ''
-      needs: controlled-media
-      runs-on: ${{ vars.ISOLATED_WINDOWS_RUNNER || 'windows-2025' }}
-      timeout-minutes: 60
+   windows:
+      runs-on: windows-2025
+      timeout-minutes: 45
       env:
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
          ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
-         ACROCLIP_INTERACTIVE_SUITE: ${{ inputs.interactive_suite }}
-         ACROCLIP_EXPECTED_COMMIT: ${{ inputs.expected_commit }}
-         ACROCLIP_INTERACTIVE_ARGUMENTS: ${{ inputs.interactive_arguments }}
       steps:
-         - name: Require a disposable hosted runner
-           env:
-              ACTUAL_RUNNER_ENVIRONMENT: ${{ runner.environment }}
-           run: |
-              if ($env:ACTUAL_RUNNER_ENVIRONMENT -ne 'github-hosted') {
-                 throw 'Interactive checks require a separately isolated disposable hosted runner, not a personal desktop runner'
-              }
          - uses: actions/checkout@v7
-         - name: Verify the exact requested revision
-           run: |
-              if ($env:ACROCLIP_EXPECTED_COMMIT -notmatch '^[0-9a-f]{40}$' -or (git rev-parse HEAD) -ne $env:ACROCLIP_EXPECTED_COMMIT) {
-                 throw 'The isolated test revision differs from the requested local commit'
-              }
-              Write-Output "Testing exact committed revision $env:ACROCLIP_EXPECTED_COMMIT in a disposable Windows runner"
          - uses: oven-sh/setup-bun@v2
            with:
               bun-version: "1.4.2"
@@ -104,6 +107,8 @@ jobs:
          - run: node node_modules/electron/install.js
          - uses: actions/download-artifact@v8
            with:
+              run-id: 39836865088
+              github-token: ${{ github.token }}
               name: controlled-windows-media
               path: work/
          - run: bun scripts/controlled-media.ts
@@ -113,35 +118,24 @@ jobs:
          - run: bun run build:native
          - run: bun run build:notices
          - run: bun run build
-         - name: Prepare private audio routing
+         - run: bunx electron-builder --win --x64 --publish never
+         - name: Prepare private playback endpoint
            env:
               ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
-           run: |
-              if ($env:ACROCLIP_INTERACTIVE_SUITE -in @('packaged','portable','installer')) {
-                 pwsh -File scripts/setup-windows-runner-audio.ps1
-              } else {
-                 pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
-              }
-         - name: Prepare executable packages when requested
-           if: contains(fromJSON('["packaged","portable","installer"]'), inputs.interactive_suite)
-           run: bunx electron-builder --win --x64 --publish never
-         - name: Run the unchanged interactive checks
-           run: bun scripts/run-interactive-tests.ts "$env:ACROCLIP_INTERACTIVE_SUITE"
-         - name: Stop the private tone producer
+           run: pwsh -File scripts/setup-windows-runner-audio.ps1
+         - run: bun run test:packaged
+         - run: bun run test:portable
+         - run: pwsh -File scripts/test-installer-upgrade.ps1
+         - name: Retain installer UI state
            if: always()
            run: |
-              if ($env:ACROCLIP_AUDIO_FIXTURE_PID) {
-                 $fixtureProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $env:ACROCLIP_AUDIO_FIXTURE_PID"
-                 if ($fixtureProcess.CommandLine -like '*setup-windows-runner-audio.ps1*' -and $fixtureProcess.CommandLine -like '*-PlayTone*') {
-                    Stop-Process -Id $fixtureProcess.ProcessId -ErrorAction SilentlyContinue
-                 }
+              New-Item -ItemType Directory -Path work/installer-evidence -Force | Out-Null
+              if ($env:ACROCLIP_INSTALLER_EVIDENCE) {
+                 Get-ChildItem -LiteralPath $env:ACROCLIP_INSTALLER_EVIDENCE -Filter 'upgrade-*.json*' | Copy-Item -Destination work/installer-evidence
               }
          - uses: actions/upload-artifact@v7
            if: always()
            with:
-              name: isolated-test-evidence
-              path: |
-                 test-results/
-                 .cache/native-*/
-              if-no-files-found: ignore
+              name: windows-installer-evidence
+              path: work/installer-evidence/
               retention-days: 7
