@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, copyFile, writeFile, readFile, rename, rm, stat, symlink, realpath } from "node:fs/promises";
+import { mkdtemp, mkdir, copyFile, writeFile, readFile, rename, rm, stat, symlink, realpath, readdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CollectionService, fileIdentity, withinRoot } from "../src/main/collection";
@@ -102,8 +103,18 @@ try {
    assert.ok(Math.abs(info.duration - clip.duration) < 0.25, "shareable retains full clip duration");
    assert.equal(await fileIdentity(original), before, "export does not modify original bytes");
    await runMedia("ffmpeg", [...ffmpegBase, "-i", share.path, "-f", "null", process.platform === "win32" ? "NUL" : "/dev/null"]);
-   const playback = await service.playback(original, clip.tracks[1]?.index);
+   const previews = await Promise.all(Array.from({ length: 4 }, () => service.playback(original, clip.tracks[1]?.index)));
+   const playback = previews[0]!;
+   assert.ok(
+      previews.every((url) => url === playback),
+      "concurrent track selections share a completed playback copy"
+   );
    assert.ok(playback.includes("playback"), "isolated-track preview uses a separate cached file");
+   assert.equal((await readdir(join(root, ".acroclip", "playback"))).length, 1, "concurrent preparation leaves one copy and no temporary files");
+   const playbackInfo = await probe(fileURLToPath(playback));
+   assert.equal(playbackInfo.tracks.length, 1, "track preview contains only the requested audio stream");
+   assert.ok(Math.abs(playbackInfo.duration - clip.duration) < 0.25, "track preview preserves clip duration");
+   await runMedia("ffmpeg", [...ffmpegBase, "-i", fileURLToPath(playback), "-f", "null", process.platform === "win32" ? "NUL" : "/dev/null"]);
    const collision = join(root, "Existing game", "Collision.mp4");
    await copyFile(original, collision);
    await assert.rejects(service.rename(clip.id, "Collision"), /already exists/);

@@ -12,7 +12,7 @@ afterEach(async () => {
    for (const child of children.splice(0)) await child.close({ cancel: true });
    for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
-async function fixture(mode: "crash" | "pending" | "normal" | "fatal", invalidExecutable = false) {
+async function fixture(mode: "crash" | "pending" | "normal" | "fatal" | "reject-save" | "devices-exit", invalidExecutable = false) {
    const root = await mkdtemp(join(tmpdir(), "acroclip-protocol-exit-"));
    roots.push(root);
    const executable = join(root, process.platform === "win32" ? "node.exe" : "node");
@@ -37,6 +37,8 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  if(v.action==='status') emit({event:'status',active,availableSeconds:active?10:0});
  if(v.action==='stop') {active=false;emit({event:'stopped'});}
  if(v.action==='save' && mode==='pending') setTimeout(()=>process.exit(19),80);
+ if(v.action==='save' && mode==='reject-save') {emit({event:'error',id:v.id,message:'Save was not accepted'});return;}
+ if(v.action==='audio-devices' && mode==='devices-exit') process.exit(0);
  if(v.action==='exit') process.exit(0);
  if(v.id) emit({event:'response',id:v.id});
 });`
@@ -64,6 +66,32 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
 // Real process startup can exceed five seconds on Windows, especially with two fixtures.
 const helperTestTimeout = process.platform === "win32" ? 15000 : 5000;
 describe("recorder helper termination", () => {
+   it(
+      "releases a rejected save so shutdown does not wait for footage the helper never accepted",
+      async () => {
+         const { child, root } = await fixture("reject-save");
+         await expect(child.save(join(root, "rejected.mkv"))).rejects.toThrow("Save was not accepted");
+         expect(child.status.pendingSaves).toBe(0);
+         await child.close();
+         expect(child.status.state).toBe("stopped");
+      },
+      helperTestTimeout
+   );
+
+   it(
+      "settles an outstanding device query when the helper exits",
+      async () => {
+         const { child } = await fixture("devices-exit");
+         let devices: Array<{ id: string; name: string }> | undefined;
+         const querying = child.audioDevices().then((result) => {
+            devices = result;
+         });
+         await expect.poll(() => devices, { timeout: 1500 }).toEqual([]);
+         await querying;
+      },
+      helperTestTimeout
+   );
+
    it.each([false, true])(
       "releases an actual failed launch, allows close with cancel=%s, and retries after repair",
       async (cancel) => {

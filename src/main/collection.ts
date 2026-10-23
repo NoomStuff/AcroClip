@@ -10,6 +10,7 @@ import type { ApplicationArtwork } from "../shared/types";
 import type { Category, Clip, Job, Shareable } from "../shared/types";
 import { encodeShareable, ffmpegBase, probe, runMedia } from "./media";
 import type { MediaInfo } from "./media";
+import { PlaybackCache } from "./playback";
 
 const categorySchema = z.object({ id: z.string(), name: z.string(), color: z.string(), icon: z.string().max(80).optional() });
 const fileSchema = z.object({ relativePath: z.string(), absolutePath: z.string(), identity: z.string() });
@@ -111,6 +112,7 @@ export class CollectionService {
    scanError = "";
    discovery: { videos: number; byFolder: Record<string, number>; complete: boolean } | undefined;
    private scanned = false;
+   private playbackCache = new PlaybackCache();
    private artworkCache = new Map<string, string>();
    clips: Clip[] = [];
    folders: string[] = [];
@@ -171,6 +173,7 @@ export class CollectionService {
       await mkdir(resolve(root), { recursive: true });
       this.root = await realpath(resolve(root));
       await this.safeDirectory(join(this.root, ".acroclip"));
+      this.playbackCache = new PlaybackCache();
       this.cache.clear();
       this.identities.clear();
       this.writtenMetadata = undefined;
@@ -497,6 +500,16 @@ export class CollectionService {
       const used = new Set<string>();
       const retainedPaths = new Set<string>();
       const currentRelativePaths = new Set(files.map((file) => relative(this.root, file)));
+      const byPath = new Map<string, StoredClip[]>();
+      const byIdentity = new Map<string, StoredClip[]>();
+      for (const clip of this.metadata.clips) {
+         const paths = byPath.get(clip.relativePath) ?? [];
+         paths.push(clip);
+         byPath.set(clip.relativePath, paths);
+         const identities = byIdentity.get(clip.identity) ?? [];
+         identities.push(clip);
+         byIdentity.set(clip.identity, identities);
+      }
       const prior = this.clips;
       let publishedAt = 0;
       const publishProgress = () => {
@@ -522,8 +535,8 @@ export class CollectionService {
                const identity = await this.scanIdentity(actual, fileStat);
                retainedPaths.add(actual);
                const rel = relative(this.root, actual);
-               let stored = this.metadata.clips.find((clip) => clip.relativePath === rel && clip.identity === identity && !used.has(clip.id));
-               stored ??= this.metadata.clips.find((clip) => clip.identity === identity && !used.has(clip.id) && !currentRelativePaths.has(clip.relativePath));
+               let stored = byPath.get(rel)?.find((clip) => clip.identity === identity && !used.has(clip.id));
+               stored ??= byIdentity.get(identity)?.find((clip) => !used.has(clip.id) && !currentRelativePaths.has(clip.relativePath));
                if (!stored) {
                   stored = {
                      id: randomUUID(),
@@ -917,70 +930,15 @@ export class CollectionService {
    }
 
    async playback(path: string, track?: number): Promise<string> {
+      const root = this.root;
       const actual = await realpath(path);
-      if (!withinRoot(this.root, actual)) throw new Error("The video is outside the current collection.");
+      if (root !== this.root || !withinRoot(root, actual)) throw new Error("The video is outside the current collection.");
       const allowed = this.clips.some((clip) => normal(clip.path) === normal(actual) || clip.shareables.some((share) => normal(share.path) === normal(actual)));
       if (!allowed) throw new Error("That video is not part of this collection.");
-      const info = await probe(actual);
-      if (track !== undefined && !info.tracks.some((entry) => entry.index === track)) throw new Error("That audio track is no longer available.");
-      const extension = extname(actual).toLowerCase();
-      const compatibleVideo = ["h264", "av1", "vp9", "vp8"].includes(info.videoCodec);
-      const compatibleAudio = info.tracks.every((entry) => ["aac", "opus", "vorbis", "mp3"].includes(entry.codec));
-      if (track === undefined && compatibleVideo && compatibleAudio && [".mp4", ".webm", ".m4v"].includes(extension)) return this.url(actual);
-      const stamp = await stat(actual);
-      const key = createHash("sha256")
-         .update(`${actual}:${stamp.size}:${stamp.mtimeMs}:${track ?? "master"}`)
-         .digest("hex");
-      const destination = join(this.root, ".acroclip", "playback", `${key}.mp4`);
-      await this.safeDirectory(dirname(destination));
-      try {
-         await stat(destination);
-         return this.url(destination);
-      } catch {
-         /* Build the missing playback copy. */
-      }
-      const temporary = `${destination}.${randomUUID()}.mp4`;
-      try {
-         const audio = track === undefined ? ["-map", "0:a:0?"] : ["-map", `0:${track}`];
-         try {
-            if (!compatibleVideo) throw new Error("This video needs a compatible playback copy.");
-            await runMedia(
-               "ffmpeg",
-               [...ffmpegBase, "-y", "-i", actual, "-map", "0:v:0", ...audio, "-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart", temporary],
-               { belowNormal: true }
-            );
-         } catch {
-            await runMedia(
-               "ffmpeg",
-               [
-                  ...ffmpegBase,
-                  "-y",
-                  "-i",
-                  actual,
-                  "-map",
-                  "0:v:0",
-                  ...audio,
-                  "-c:v",
-                  "libx264",
-                  "-preset",
-                  "veryfast",
-                  "-threads",
-                  "2",
-                  "-pix_fmt",
-                  "yuv420p",
-                  "-c:a",
-                  "aac",
-                  "-movflags",
-                  "+faststart",
-                  temporary,
-               ],
-               { belowNormal: true }
-            );
-         }
-         await rename(temporary, destination);
-         return this.url(destination);
-      } finally {
-         await rm(temporary, { force: true });
-      }
+      const directory = join(root, ".acroclip", "playback");
+      await this.safeDirectory(directory);
+      const result = await this.playbackCache.prepare(actual, directory, track);
+      if (root !== this.root) throw new Error("The collection changed while preparing playback.");
+      return this.url(result);
    }
 }

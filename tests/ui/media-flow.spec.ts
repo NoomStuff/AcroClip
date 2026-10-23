@@ -143,6 +143,14 @@ test("real media plays, creates a verified shareable, and supports overlapping c
          .poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState), { timeout: 30000 })
          .toBeGreaterThanOrEqual(2);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
+      await page.getByRole("button", { name: "Play", exact: true }).click();
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+      const isolatedTrackUrl = await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentSrc);
+      await selectOption(page, "Audio track", "-1");
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentSrc)).not.toBe(isolatedTrackUrl);
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+      await page.getByRole("button", { name: "Pause", exact: true }).click();
+      await page.getByRole("slider", { name: "Playback position", exact: true }).fill("2");
       await page.getByRole("button", { name: "Fullscreen", exact: true }).click();
       await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
       await page.getByRole("combobox", { name: "Audio track", exact: true }).click();

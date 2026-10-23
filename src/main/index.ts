@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { ApplicationArtwork, AppEvent, AppState, Preferences } from "../shared/types";
+import type { ApplicationArtwork, AppEvent, AppState, Preferences, RecorderState } from "../shared/types";
 import { categoryRequest, idSchema, preferencesSchema } from "../shared/validation";
 import { assertDistinctAudioSources } from "./audio-sources";
 import { audioTopology, synchronizeLegacyAudio, monitoringPreferences } from "../shared/audio-model";
@@ -89,7 +89,8 @@ const recorder = new Recorder({
          const actual = captureSources.cached.find((source) => source.kind === "app" && source.id.split(":")[1] === current.sourceId?.split(":")[1]);
          lastRecordingArtwork = actual?.applicationId ? { id: actual.applicationId, icon: actual.appIcon ?? "" } : undefined;
       } else if (current.state === "recording" && current.sourceKind === "screen") lastRecordingArtwork = undefined;
-      emitState();
+      updateStorageActivity();
+      send({ type: "recorder", recorder: recorderState() });
       updateTray();
    },
    onError: (message) => notice(message, true),
@@ -108,6 +109,10 @@ const captureSources = new CaptureSources(recorder, () =>
 function errorMessage(error: unknown): string {
    return error instanceof Error ? error.message : "Something went wrong. Try again.";
 }
+function recorderState(): RecorderState {
+   const current = recorder.status;
+   return startingCapture && current.state === "stopped" ? { ...current, state: "starting", message: "Starting recording" } : current;
+}
 function state(): AppState {
    return {
       windowVisible: !!mainWindow?.isVisible() && !mainWindow.isMinimized(),
@@ -124,8 +129,7 @@ function state(): AppState {
       applicationIcons: collections.applicationIcons,
       categories: collections.categories,
       jobs: collections.jobs,
-      recorder:
-         startingCapture && recorder.status.state === "stopped" ? { ...recorder.status, state: "starting", message: "Starting recording" } : recorder.status,
+      recorder: recorderState(),
       update: updates.state,
       version: app.getVersion(),
       platform: process.platform,
@@ -138,12 +142,15 @@ function send(event: AppEvent) {
 }
 function emitState() {
    if (preferences) {
-      storage.setActivity(
-         collections.root,
-         ["starting", "recording", "waiting"].includes(recorder.status.state) || recorder.status.pendingSaves > 0 || pendingJobs().length > 0
-      );
+      updateStorageActivity();
       send({ type: "state", state: state() });
    }
+}
+function updateStorageActivity() {
+   storage.setActivity(
+      collections.root,
+      ["starting", "recording", "waiting"].includes(recorder.status.state) || recorder.status.pendingSaves > 0 || pendingJobs().length > 0
+   );
 }
 function mediaUrl(path: string): string {
    const full = resolve(path);

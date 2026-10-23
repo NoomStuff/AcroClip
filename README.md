@@ -1,92 +1,35 @@
-# AcroClip
+<div align="center">
+    <img src="build/icon.png"
+        title="AcroClip" alt="AcroClip logo" width="120" />
+    <h1>AcroClip</h1>
+    <p>
+        Clip it. Watch it. Share It.
+        <br>
+        Managing your clips has never been easier.
+    </p>
+    <a href="https://github.com/noomstuff/acroclip/releases">
+        Download
+    </a>
+</div>
 
-Save the moment. Keep it yours.
+---
 
-AcroClip is a local-first desktop clipping app built with Electron and a separate native libOBS recorder. It keeps recent footage while recording, saves clips through a global shortcut, and creates smaller shareable copies without changing the original.
+AcroClip is a simple, lightweight clipping tool. Made because my friend wanted a Medal alternative that doesn't train AI on your clips or shove ads in your face.
 
-## The workflow
+Pick a screen, an application, or a game. Press a shortcut to clip. Manage your clips in the library, and watch them in the built-in video player.
 
-Choose a screen or application, start recording, and press the clip shortcut when something happens. Browse your collection, preview individual audio tracks, and create a copy under your chosen file-size limit. Nothing is uploaded by the app.
+You can create Sharables: smaller versions of the original clips that are easier to share with friends.
 
-The library is an ordinary folder. Existing supported videos appear automatically. Categories and original/shareable relationships live in `.acroclip`; compressed copies live under `shareables`, mirroring the source folders. Your videos remain usable without AcroClip.
+## Downloads
 
-AcroClip is for clips. Use OBS for full-session recording and AttaCut for cutting.
+If you just want to use the app you can grab the latest version from the [releases page](https://github.com/noomstuff/acroclip/releases).
 
-## Download
+Portable and installer versions are available.
 
-[Download the current AttaClip 0.2.0 release](https://github.com/NoomStuff/AttaClip/releases/tag/v0.2.0).
+---
 
-- Windows x64 has an installer and portable executable.
-- Linux x64 has an AppImage, verified on Ubuntu 24.04. Make it executable before opening it.
-- Apple Silicon macOS has an application ZIP. Intel Mac support is not established by this release.
+## For developers
 
-The release includes matching source archives, dependency notices, verification reports and SHA-256 checksums. These builds are unsigned. macOS requires screen recording permission and microphone permission when enabled.
+You can get started with the [CONTRIBUTING.md](CONTRIBUTING.md) guide to set up a development environment and build AcroClip from source.
 
-Actual packaged capture, audio, playback, sharing and shutdown passed. Auto uses a cached game catalog and games you add locally; Discord does not need to be installed. Linux X11 and XWayland application capture work, including tested Wine targets. Wayland screen capture uses the system picker. Native Wayland-only App and Auto capture remain unavailable.
-
-Physical sleep and device hotplug, hardware HDR, fresh Mac permission prompts and revocation, hardware-exclusive fullscreen notification visibility, and authenticated Steam-launched Linux Proton remain unverified. See the release notes and [development status](docs/development-status.md) for the tested scope. The earlier [Windows 0.1.0 preview](https://github.com/NoomStuff/AttaClip/releases/tag/v0.1.0) remains unchanged.
-
-## Development
-
-Use Bun 1.4.2 or later and a supported Node.js runtime. Windows recorder builds also need CMake and Visual Studio Build Tools with Desktop development with C++. The TypeScript build uses strict boundary validation and strict compiler checks.
-
-```sh
-bun install
-bun scripts/provision-media.ts
-bun run bundle:media
-bun run build:icons
-bun run build:native
-bun run dev
-```
-
-Windows uses AcroClip's controlled FFmpeg build. In Ubuntu 24.04, including WSL, install `gcc-mingw-w64-x86-64`, `g++-mingw-w64-x86-64`, `binutils-mingw-w64-x86-64`, `make`, `nasm`, `meson`, `ninja-build`, and `pkg-config`. Run `bun scripts/release-sources.ts --controlled-inputs --collect-only`, then `bash scripts/build-media-windows.sh` in Ubuntu. Back in Windows, run `bun scripts/controlled-media.ts` before the commands above. CI builds the same recipe and passes its captured inputs and binaries to Windows verification.
-
-On Linux and macOS, `provision-media.ts` downloads checksum-pinned provider builds. It exports binary paths to later GitHub Actions steps. For a local shell, set `FFMPEG_PATH` and `FFPROBE_PATH` to the printed paths before running `bundle:media`. You can also supply compatible binaries for development. `bundle:media` stages them and records their hashes and configuration. A development override does not establish release source correspondence. Development runs work without a native helper, but recording stays unavailable until it is built. The UI never simulates successful recording.
-
-Windows capture uses a pinned OBS runtime. On Ubuntu 24.04, install the official OBS PPA package `obs-studio=32.2.0-0obsproject1~noble`, CMake, g++, make, pkg-config, patch, Python 3, libx11-dev, libxcb-composite0-dev, libpulse-dev, libsimde-dev, libwayland-dev, libglib2.0-dev, libpipewire-0.3-dev and libdrm-dev before building the native recorder. X11 application capture can use an exact-window CPU compatibility method when OBS cannot import its window texture. Application audio monitors verified PulseAudio streams belonging to the selected process and its children. It never substitutes desktop audio. Wayland screen capture uses the system picker and a controlled OBS PipeWire module; its separate preview is unavailable. Mac staging builds a ScreenCaptureKit recorder with VideoToolbox encoding and a separate Cocoa feedback helper. The platform workflows test actual saved media before treating a build as functional.
-
-Auto mode matches running application windows against a locally cached game catalog and games you add yourself. Catalog refresh uses Discord's public detectable-applications endpoint without requiring Discord, an account or a token. It sends no running-process list or clips. The endpoint is undocumented, so cached entries, a small built-in list and local custom games remain available when refresh fails. Desktop fallback is off unless you enable it. Switching to an ordinary app retains the current game rather than switching capture to your desktop.
-
-On Wayland, global clip shortcuts depend on the desktop's GlobalShortcuts portal. Packaged AppImages create an owned launcher with the matching reverse-DNS identity and a persistent icon. Existing custom launchers are left alone. If your desktop cannot register the shortcut, bind the AppImage path followed by `--clip` in its own shortcut settings. That command saves through the running app without opening its window. [Electron's shortcut documentation](https://www.electronjs.org/docs/latest/api/global-shortcut) describes the portal identity requirement.
-
-## Verification
-
-```sh
-bun run verify
-bun run test:media
-bun run test:ui
-bun run test:native
-bun run test:capture-loss
-bun run test:ui:native
-bun run package
-bun run test:packaged
-bun run test:portable
-```
-
-`verify` checks formatting, lint, unit tests, strict types, and the application build. Media verification creates isolated real videos and checks full-duration size-limited exports, original preservation, cancellation, playback tracks, collection recovery, and safe file ownership. UI tests launch the actual Electron app against an isolated profile. Screenshots and traces land in `test-results`. The portable check connects to the launcher's child through a temporary localhost debugging port and runs the same recording and media assertions. Native and packaged capture tests record the selected screen on a supported Windows machine, check queued saves through source changes and stopping, and decode the actual outputs. Run those with test content visible on screen.
-
-`test:capture-loss` records an isolated application, loses its source for longer than the configured history, saves the retained footage, then verifies recovery and full decoding. `test:ui:native` verifies actual capture while preview streams end during navigation, minimize and close to tray. The regular UI suite tests moving preview pixels without requiring NVENC. Linux's Actions workflow records real X11 pixels and PulseAudio tones, then checks Wayland picker cancellation, actual frames and portal/PipeWire loss in an isolated Sway session. The private portal fixture does not replace the desktop's installed backend.
-
-`ACROCLIP_PROFILE`, `ACROCLIP_COLLECTION`, and `ACROCLIP_TEST=1` isolate manual or automated runs from your real preferences and library. The test flag suppresses notification windows and OS startup changes. Never point destructive tests at a real collection.
-
-## Recording guarantees and current limits
-
-Recording and clip requests belong to the native helper, not the library renderer. Source switches keep a stable output size. Clip requests retain their request boundaries while writing is queued. Stopping clears unsaved history but preserves accepted saves. If an application disappears, AcroClip preserves the last available footage and identifies it when saved. Capture recovery begins a fresh history to avoid a timestamp gap.
-
-Clips overlap by default. The optional overlap reduction starts near the previous successfully saved moment. A preceding video keyframe can leave a small overlap. Failed saves do not advance that boundary, and queued requests keep their original endpoints.
-
-Low, Standard, High, and Custom profiles expose the actual resolution and frame rate. Custom settings include encoder quality. Hardware encoding is preferred; software encoding requires an explicit opt-in. Microphone selection, gain and mute controls belong to the recorder. The moving preview captures only the selected source, without audio. Leaving the recording page, closing or minimizing the library releases that preview stream while recording continues.
-
-Originals currently use MKV for recoverable saving. Compatible MP4 playback copies are made on demand, without replacing the original. Shareables use H.264 video and the master audio mix in MP4. Their completed size and duration are checked before publication. A too-small budget produces an error rather than a truncated clip.
-
-Shareable encoding uses two decoder/encoder threads, one-worker filter pools and below-normal priority. It still consumes resources while recording. Windows NVENC and Linux software recording passed actual media checks. Physical microphone gain/mute and selected-application audio passed real tone checks on the development machine. On an RTX 3070, the full development app maintained about 142 fps in Portal2 capped at 144 fps during capture and a three-second concurrent compression sample. Both saved clips fully decoded and the shareable met its size target. An earlier uncapped test lost frame rate during compression. These results cover one game and do not establish low impact across hardware. Mac native feedback passed normal and reduced-motion animation checks and fullscreen Space tests. Hardware-exclusive fullscreen visibility remains unverified. HDR, physical device recovery and other hardware combinations still need verification. A successful installer build alone does not validate capture.
-
-## Builds and releases
-
-GitHub Actions runs the verification suite and has a separate manual/tagged desktop-build workflow. Public releases must include the corresponding sources and notices for the actual OBS and FFmpeg distributions used. Packaging does not automatically publish an installer.
-
-Installed Windows and Linux AppImage updates can download through electron-updater and restart only on an explicit action. Unsigned macOS and portable Windows builds use the releases page. Pending saves and exports use the same exit safeguards when updating.
-
-## License
-
-AcroClip is GPL-3.0-or-later. Reused AttaCut code retains its MIT notices. See [third-party notices](THIRD_PARTY_NOTICES.md). Commercial use is permitted by the GPL; recorded videos do not inherit the software license.
+PRs welcome. [GPL-3.0 licensed](LICENSE). Recorded videos never inherit the software license, and code reused from AttaCut keeps its MIT notice.

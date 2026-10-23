@@ -209,6 +209,7 @@ export interface AppState {
 }
 export type AppEvent =
    | { type: "state"; state: AppState }
+   | { type: "recorder"; recorder: RecorderState }
    | { type: "notice"; message: string; error: boolean }
    | { type: "clip-action" }
    | { type: "audio-levels"; levels: AudioLevels }

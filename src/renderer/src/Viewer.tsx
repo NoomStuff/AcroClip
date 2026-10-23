@@ -80,13 +80,17 @@ export function Viewer({
       }
       let disposed = false;
       switching.current = true;
+      video.current?.pause();
       setLoading(true);
       setMediaError("");
       void (async () => {
          try {
             const result = await api.playback(path, version === "original" && track >= 0 ? track : undefined);
             if (!disposed) {
-               if (currentUrl.current === result) switching.current = false;
+               if (currentUrl.current === result) {
+                  switching.current = false;
+                  if (resume.current) void video.current?.play().catch(() => undefined);
+               }
                currentUrl.current = result;
                setUrl(result);
             }
@@ -274,6 +278,7 @@ export function Viewer({
                                     value={shareable.id}
                                     onChange={(value) => {
                                        seek.current = video.current?.currentTime ?? time;
+                                       resume.current = !video.current?.paused;
                                        setShareId(value);
                                     }}
                                  >
@@ -388,6 +393,7 @@ export function Viewer({
                         const media = event.currentTarget;
                         setDuration(media.duration);
                         media.currentTime = Math.min(seek.current, media.duration || 0);
+                        setTime(media.currentTime);
                         switching.current = false;
                         media.volume = volume;
                         media.muted = muted;
@@ -400,6 +406,10 @@ export function Viewer({
                      }}
                      onPlay={() => setPlaying(true)}
                      onPause={() => setPlaying(false)}
+                     onEnded={() => {
+                        resume.current = false;
+                        setPlaying(false);
+                     }}
                      onError={() => setMediaError("This video could not be played. Try opening it in AttaCut or another player.")}
                      onClick={() => {
                         if (fullscreen && !controlsShown) wakeControls();

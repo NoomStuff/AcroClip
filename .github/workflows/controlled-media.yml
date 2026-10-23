@@ -12,18 +12,38 @@ jobs:
          - uses: oven-sh/setup-bun@v2
            with:
               bun-version: "1.4.2"
-         - name: Install cross compiler
-           run: |
-              sudo apt-get update
-              sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64 make nasm meson ninja-build pkg-config
          - name: Recover hash-verified immutable source inputs
            env:
               GITHUB_TOKEN: ${{ github.token }}
            run: python3 scripts/recover-release-inputs.py --platform windows-x64 --release v0.3.0 --destination work/release-sources
          - name: Refresh current source inventory and verify controlled input hashes
            run: bun scripts/release-sources.ts --controlled-inputs --collect-only
+         - name: Restore compiled Windows media and build evidence
+           id: media_cache
+           uses: actions/cache/restore@v6.1.0
+           with:
+              path: work/controlled-media/windows-x64
+              key: controlled-windows-x64-${{ hashFiles('scripts/build-media-windows.sh', 'scripts/controlled-media.ts', 'scripts/release-sources.ts', '.github/workflows/controlled-media.yml') }}
+         - name: Check cached binaries and the exact build recipe
+           if: steps.media_cache.outputs.cache-hit == 'true'
+           run: |
+              sha256sum --check work/controlled-media/windows-x64/binary-sha256.txt
+              sha256sum --check work/controlled-media/windows-x64/recipe-sha256.txt
+              cmp scripts/build-media-windows.sh work/controlled-media/windows-x64/build-media-windows.sh
+         - name: Install cross compiler
+           if: steps.media_cache.outputs.cache-hit != 'true'
+           run: |
+              sudo apt-get update
+              sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64 make nasm meson ninja-build pkg-config
          - name: Compile Windows media
+           if: steps.media_cache.outputs.cache-hit != 'true'
            run: bash scripts/build-media-windows.sh
+         - name: Cache compiled media with its source and toolchain evidence
+           if: steps.media_cache.outputs.cache-hit != 'true'
+           uses: actions/cache/save@v6.1.0
+           with:
+              path: work/controlled-media/windows-x64
+              key: ${{ steps.media_cache.outputs.cache-primary-key }}
          - name: Share binaries and captured inputs with Windows verification
            uses: actions/upload-artifact@v7
            with:

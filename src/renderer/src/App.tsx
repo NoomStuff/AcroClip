@@ -64,6 +64,7 @@ export function App() {
             setWindowVisible(event.state.windowVisible);
          }
          if (event.type === "visibility") setWindowVisible(event.visible);
+         if (event.type === "recorder") setState((current) => (current ? { ...current, recorder: event.recorder } : current));
          if (event.type === "clip-action") setClipPulse((value) => value + 1);
          if (event.type === "notice" && event.message) setNotice({ message: event.message, error: event.error });
       });

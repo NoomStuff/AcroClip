@@ -290,7 +290,7 @@ export class Recorder {
             if (generation === this.autoGeneration) this.autoKey = key;
          }
       } catch (error) {
-         this.update({ state: "waiting", message: error instanceof Error ? error.message : "Waiting for game" });
+         if (generation === this.autoGeneration) this.update({ state: "waiting", message: error instanceof Error ? error.message : "Waiting for game" });
       } finally {
          this.autoBusy = false;
       }
@@ -389,6 +389,14 @@ export class Recorder {
             this.autoGeneration++;
             this.candidatesResolve?.([]);
             this.candidatesResolve = null;
+            this.devicesResolve?.([]);
+            this.devicesResolve = null;
+            this.windowsResolve?.();
+            this.windowsResolve = null;
+            this.windows = [];
+            this.fullscreen = false;
+            this.monitorKey = "";
+            this.monitorGeneration++;
             const unexpected = !this.expectedExit && (this.current.state !== "stopped" || this.requests.size > 0);
             const message = unexpected
                ? this.current.state === "error" && this.current.message
@@ -739,7 +747,14 @@ export class Recorder {
       this.requests.add(requestId);
       if (application) this.requestArtwork.set(requestId, application);
       this.update({ pendingSaves: this.requests.size });
-      await this.command({ action: "save", path: file, requestId, requestedAt, requestAgeMs: Math.max(0, Date.now() - requestedAt) });
+      try {
+         await this.command({ action: "save", path: file, requestId, requestedAt, requestAgeMs: Math.max(0, Date.now() - requestedAt) });
+      } catch (error) {
+         this.requests.delete(requestId);
+         this.requestArtwork.delete(requestId);
+         this.update({ pendingSaves: this.requests.size });
+         throw error;
+      }
    }
    async close(options: { cancel?: boolean } = {}): Promise<void> {
       this.autoPreferences = null;
