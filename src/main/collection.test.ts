@@ -40,6 +40,32 @@ vi.mock("./media", async (original) => {
 });
 
 describe("damaged metadata action identity", () => {
+   it("retains separate identities for identical copies while recovering a moved original", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-identical-copies-"));
+      try {
+         const original = join(root, "original.mp4");
+         const copy = join(root, "copy.mp4");
+         await writeFile(original, "identical file content");
+         await writeFile(copy, "identical file content");
+         const collection = new CollectionService();
+         await collection.open(root);
+         const originalId = collection.clips.find((clip) => clip.path === original)!.id;
+         const copyId = collection.clips.find((clip) => clip.path === copy)!.id;
+         expect(copyId).not.toBe(originalId);
+         await collection.createCategory("Saved association");
+         const categoryId = collection.categories[0]!.id;
+         await collection.assignCategories(originalId, [categoryId]);
+         const moved = join(root, "moved.mp4");
+         await rename(original, moved);
+         await collection.scan();
+         expect(collection.clips.find((clip) => clip.path === moved)).toMatchObject({ id: originalId, categories: [categoryId] });
+         expect(collection.clips.find((clip) => clip.path === copy)).toMatchObject({ id: copyId, categories: [] });
+         expect(collection.clips).toHaveLength(2);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+
    it("keeps verified shareables and categories accessible when their original disappears, then restores the same clip", async () => {
       const root = await mkdtemp(join(os.tmpdir(), "acroclip-missing-original-"));
       try {

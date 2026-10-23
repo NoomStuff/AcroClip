@@ -48,6 +48,7 @@ $form.Dispose()
       join(profile, "preferences.json"),
       JSON.stringify({
          ...defaultPreferences,
+         allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1",
          shortcuts: { ...defaultPreferences.shortcuts, toggleRecording: "" },
          audioSourcesVersion: undefined,
          audioSources: [],

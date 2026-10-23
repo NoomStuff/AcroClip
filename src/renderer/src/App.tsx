@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Check, Clapperboard, Film, Folder, LoaderCircle, Minus, Settings2, Square, Video, X } from "lucide-react";
-import type { AppState, Clip } from "../../shared/types";
+import type { AppState, Clip, RecorderState } from "../../shared/types";
 import { SelectionIndicator, TabMarker } from "./SelectionIndicator";
 import { api, describeError } from "./desktop";
 import { Dialog } from "./Dialog";
@@ -51,10 +51,11 @@ export function App() {
    const ask: Ask = useCallback((request) => new Promise((resolve) => setDialog({ ...request, resolve })), []);
    useEffect(() => {
       let receivedState = false;
+      let recorder: RecorderState | undefined;
       void run(async () => {
          const loaded = await api.state();
          if (receivedState) return;
-         setState(loaded);
+         setState(recorder ? { ...loaded, recorder } : loaded);
          setWindowVisible(loaded.windowVisible);
       });
       const unsubscribe = api.onEvent((event) => {
@@ -64,7 +65,10 @@ export function App() {
             setWindowVisible(event.state.windowVisible);
          }
          if (event.type === "visibility") setWindowVisible(event.visible);
-         if (event.type === "recorder") setState((current) => (current ? { ...current, recorder: event.recorder } : current));
+         if (event.type === "recorder") {
+            recorder = event.recorder;
+            setState((current) => (current ? { ...current, recorder: event.recorder } : current));
+         }
          if (event.type === "clip-action") setClipPulse((value) => value + 1);
          if (event.type === "notice" && event.message) setNotice({ message: event.message, error: event.error });
       });

@@ -17,6 +17,7 @@ test("configured global capture keys work in the tray with a controlled applicat
       join(profile, "preferences.json"),
       JSON.stringify({
          ...defaultPreferences,
+         allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1",
          audioSourcesVersion: undefined,
          audioSources: [],
          collection,

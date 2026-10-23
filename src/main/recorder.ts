@@ -85,7 +85,10 @@ export class Recorder {
    private windowsResolve: (() => void) | null = null;
    private devicesResolve: ((devices: Array<{ id: string; name: string }>) => void) | null = null;
    private deviceQueries: Promise<unknown> = Promise.resolve();
-   private commands = new Map<string, { resolve: () => void; reject: (error: Error) => void; timeout: ReturnType<typeof setTimeout> }>();
+   private commands = new Map<
+      string,
+      { resolve: () => void; reject: (error: Error) => void; onNotAccepted: () => void; timeout: ReturnType<typeof setTimeout> }
+   >();
    private readonly catalog: GameCatalog;
    private candidatesPending: Promise<GameCandidate[]> | null = null;
    private candidatesResolve: ((items: GameCandidate[]) => void) | null = null;
@@ -309,19 +312,20 @@ export class Recorder {
       if (!this.process?.stdin.writable) throw new Error("The recording helper is not running");
       this.process.stdin.write(`${JSON.stringify(value)}\n`);
    }
-   private command(value: Record<string, unknown>): Promise<void> {
+   private command(value: Record<string, unknown>, onNotAccepted: () => void = () => undefined): Promise<void> {
       const id = randomUUID();
       return new Promise((resolve, reject) => {
          const timeout = setTimeout(() => {
             this.commands.delete(id);
             reject(new Error("The recording helper did not finish the requested action"));
          }, 20_000);
-         this.commands.set(id, { resolve, reject, timeout });
+         this.commands.set(id, { resolve, reject, timeout, onNotAccepted });
          try {
             this.send({ ...value, id });
          } catch (error) {
             clearTimeout(timeout);
             this.commands.delete(id);
+            onNotAccepted();
             reject(error instanceof Error ? error : new Error("The recording action failed"));
          }
       });
@@ -440,8 +444,10 @@ export class Recorder {
          if (command) {
             clearTimeout(command.timeout);
             this.commands.delete(value.id);
-            if (value.event === "error") command.reject(new Error(value.message ?? "Recording action failed"));
-            else command.resolve();
+            if (value.event === "error") {
+               command.onNotAccepted();
+               command.reject(new Error(value.message ?? "Recording action failed"));
+            } else command.resolve();
          }
       }
       if (value.event === "ready") {
@@ -747,14 +753,11 @@ export class Recorder {
       this.requests.add(requestId);
       if (application) this.requestArtwork.set(requestId, application);
       this.update({ pendingSaves: this.requests.size });
-      try {
-         await this.command({ action: "save", path: file, requestId, requestedAt, requestAgeMs: Math.max(0, Date.now() - requestedAt) });
-      } catch (error) {
+      await this.command({ action: "save", path: file, requestId, requestedAt, requestAgeMs: Math.max(0, Date.now() - requestedAt) }, () => {
          this.requests.delete(requestId);
          this.requestArtwork.delete(requestId);
          this.update({ pendingSaves: this.requests.size });
-         throw error;
-      }
+      });
    }
    async close(options: { cancel?: boolean } = {}): Promise<void> {
       this.autoPreferences = null;

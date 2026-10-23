@@ -88,6 +88,7 @@ jobs:
       env:
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
          ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
+         ACROCLIP_NATIVE_TEST_SOFTWARE: "1"
          ACROCLIP_INTERACTIVE_SUITE: ${{ inputs.interactive_suite }}
          ACROCLIP_EXPECTED_COMMIT: ${{ inputs.expected_commit }}
          ACROCLIP_INTERACTIVE_ARGUMENTS: ${{ inputs.interactive_arguments }}

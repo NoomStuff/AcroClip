@@ -115,6 +115,17 @@ try {
    assert.equal(playbackInfo.tracks.length, 1, "track preview contains only the requested audio stream");
    assert.ok(Math.abs(playbackInfo.duration - clip.duration) < 0.25, "track preview preserves clip duration");
    await runMedia("ffmpeg", [...ffmpegBase, "-i", fileURLToPath(playback), "-f", "null", process.platform === "win32" ? "NUL" : "/dev/null"]);
+   const previewAudio = join(workspace, "preview-audio.pcm");
+   await runMedia("ffmpeg", [...ffmpegBase, "-i", fileURLToPath(playback), "-vn", "-ac", "1", "-ar", "48000", "-f", "s16le", previewAudio]);
+   const samples = await readFile(previewAudio);
+   let crossings = 0;
+   const startSample = 12000;
+   const endSample = Math.floor(samples.length / 2) - 12000;
+   for (let sample = startSample; sample < endSample; sample++) {
+      if (samples.readInt16LE(sample * 2) <= 0 && samples.readInt16LE((sample + 1) * 2) > 0) crossings++;
+   }
+   const frequency = crossings / ((endSample - startSample) / 48000);
+   assert.ok(Math.abs(frequency - 880) < 3, `selected-track playback must contain the 880 Hz microphone tone, received ${frequency.toFixed(1)} Hz`);
    const collision = join(root, "Existing game", "Collision.mp4");
    await copyFile(original, collision);
    await assert.rejects(service.rename(clip.id, "Collision"), /already exists/);

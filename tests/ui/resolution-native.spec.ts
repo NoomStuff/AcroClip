@@ -15,6 +15,7 @@ test("screen resolution limits preserve the real source aspect without upscaling
       join(profile, "preferences.json"),
       JSON.stringify({
          ...defaultPreferences,
+         allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1",
          audioSourcesVersion: undefined,
          audioSources: [],
          collection,

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, link, copyFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ afterEach(async () => {
    for (const child of children.splice(0)) await child.close({ cancel: true });
    for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
-async function fixture(mode: "crash" | "pending" | "normal" | "fatal" | "reject-save" | "devices-exit", invalidExecutable = false) {
+async function fixture(mode: "crash" | "pending" | "normal" | "fatal" | "reject-save" | "unacknowledged-save" | "devices-exit", invalidExecutable = false) {
    const root = await mkdtemp(join(tmpdir(), "acroclip-protocol-exit-"));
    roots.push(root);
    const executable = join(root, process.platform === "win32" ? "node.exe" : "node");
@@ -38,6 +38,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  if(v.action==='stop') {active=false;emit({event:'stopped'});}
  if(v.action==='save' && mode==='pending') setTimeout(()=>process.exit(19),80);
  if(v.action==='save' && mode==='reject-save') {emit({event:'error',id:v.id,message:'Save was not accepted'});return;}
+ if(v.action==='save' && mode==='unacknowledged-save') return;
  if(v.action==='audio-devices' && mode==='devices-exit') process.exit(0);
  if(v.action==='exit') process.exit(0);
  if(v.id) emit({event:'response',id:v.id});
@@ -66,6 +67,24 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
 // Real process startup can exceed five seconds on Windows, especially with two fixtures.
 const helperTestTimeout = process.platform === "win32" ? 15000 : 5000;
 describe("recorder helper termination", () => {
+   it(
+      "keeps a save pending when its acknowledgement times out because acceptance is uncertain",
+      async () => {
+         const { child, root } = await fixture("unacknowledged-save");
+         vi.useFakeTimers();
+         try {
+            const saving = expect(child.save(join(root, "uncertain.mkv"))).rejects.toThrow("did not finish");
+            await vi.advanceTimersByTimeAsync(20_001);
+            await saving;
+            expect(child.status.pendingSaves).toBe(1);
+         } finally {
+            vi.useRealTimers();
+         }
+         await child.close({ cancel: true });
+      },
+      helperTestTimeout
+   );
+
    it(
       "releases a rejected save so shutdown does not wait for footage the helper never accepted",
       async () => {
