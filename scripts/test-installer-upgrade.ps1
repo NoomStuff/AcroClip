@@ -94,11 +94,44 @@ function Install-Test([string] $file, [string] $arguments) {
     if ($process.ExitCode -ne 0) { throw "Isolated installation failed: $($process.ExitCode)" }
 }
 
+function Assert-InstalledPayload([string] $phase) {
+    $verified = @(Get-ChildItem -LiteralPath $payload -Recurse -File | ForEach-Object {
+        $relative = [IO.Path]::GetRelativePath($payload, $_.FullName)
+        $destination = Join-Path $install $relative
+        if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) { throw "Installed payload is missing: $relative" }
+        if ((Get-Item -LiteralPath $destination).Length -ne $_.Length) { throw "Installed payload size differs: $relative" }
+        $expected = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+        if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne $expected) { throw "Installed payload bytes differ: $relative" }
+        @{path=$relative;size=$_.Length;sha256=$expected.ToLowerInvariant()}
+    })
+    @{phase=$phase;files=$verified} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root "upgrade-payload-$phase.json")
+    Write-Output "Verified every installed payload file after $phase. Files: $($verified.Count)."
+}
+
+function Write-UpgradeHealth([string] $phase) {
+    $files = @(Get-ChildItem -LiteralPath $payload -Recurse -File | ForEach-Object {
+        $relative = [IO.Path]::GetRelativePath($payload, $_.FullName)
+        $destination = Join-Path $install $relative
+        @{relative=$relative;source=$_.FullName;destination=$destination;destinationLength=$destination.Length;bytes=$_.Length;attributes=$_.Attributes.ToString();installed=(Test-Path -LiteralPath $destination)}
+    })
+    $state = @{
+        phase=$phase;unixMilliseconds=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds();install=$install
+        drives=@([IO.DriveInfo]::GetDrives() | Where-Object IsReady | ForEach-Object { @{root=$_.Name;free=$_.AvailableFreeSpace;total=$_.TotalSize} })
+        processes=@(Get-CimInstance Win32_Process | Where-Object { ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) -or $_.Name -in @('AcroClip.exe','acroclip-recorder.exe',"$product.exe") } | Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine)
+        longest=@($files | Sort-Object destinationLength -Descending | Select-Object -First 20)
+        pathsOver259=@($files | Where-Object destinationLength -gt 259)
+        totalBytes=($files | Measure-Object -Property bytes -Sum).Sum
+    }
+    $state | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $root "upgrade-health-$phase.json")
+    Write-Output "Installer evidence $phase. Long destination paths: $(@($state.pathsOver259).Count). Payload bytes: $($state.totalBytes)."
+}
+
 function Upgrade-Interactive([string] $file) {
     $process = Start-Process -FilePath $file -PassThru -WindowStyle Normal
     $deadline = [DateTime]::UtcNow.AddMinutes(4)
     $finished = $false
     $previousText = $null
+    $recordedRetry = $false
     try {
         while (-not $process.HasExited -and [DateTime]::UtcNow -lt $deadline) {
             $controls = @([InstallerProbe]::Read($process.Id))
@@ -112,6 +145,10 @@ function Upgrade-Interactive([string] $file) {
             }
             if ($text -match 'Choose Install Location|Choose Installation Options|Choose Components|Choose Users|License Agreement|Browse\.\.\.') {
                 throw "Upgrade repeated a first-install page: $text"
+            }
+            if (-not $recordedRetry -and $text -match 'cannot be closed') {
+                Write-UpgradeHealth 'retry-dialog'
+                $recordedRetry = $true
             }
             $finish = @($controls | Where-Object { $_.ClassName -eq 'Button' -and $_.Text.Replace('&', '') -eq 'Finish' })
             if ($finish.Count -eq 1) {
@@ -137,6 +174,7 @@ try {
     $first = Build-TestInstaller '0.0.1'
     Install-Test $first "/S /currentuser /D=$install"
     if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'First install did not use the custom path' }
+    Assert-InstalledPayload 'first-install'
     $executable = Join-Path $install "$product.exe"
     $before = (Get-FileHash -LiteralPath $executable).Hash
     # The external collection and profile represent user data, not installer output.
@@ -145,9 +183,11 @@ try {
     Set-Content -LiteralPath (Join-Path $profile 'preferences.json') -Value '{"setupComplete":true,"sentinel":"preserve-me"}'
     $settings = (Get-FileHash -LiteralPath (Join-Path $profile 'preferences.json')).Hash
     $second = Build-TestInstaller '0.0.2'
+    Write-UpgradeHealth 'before-upgrade'
     # No scope or directory switches. Registry detection must reuse the first install.
     Upgrade-Interactive $second
     if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'Upgrade moved the installation' }
+    Assert-InstalledPayload 'interactive-upgrade'
     if ((Get-FileHash -LiteralPath $executable).Hash -ne $before) { throw 'Upgrade changed the fixture executable unexpectedly' }
     $entries = @(Get-ChildItem 'HKCU:/Software/Microsoft/Windows/CurrentVersion/Uninstall' | Get-ItemProperty | Where-Object DisplayName -eq $product)
     if ($entries.Count -ne 1 -or $entries[0].DisplayVersion -ne '0.0.2') {

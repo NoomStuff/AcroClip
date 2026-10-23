@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { checkRuntimeVersions, copyNativeLicenses } from "./assemble-source-evidence";
@@ -22,8 +22,46 @@ describe("controlled media notices in the runtime package", () => {
       await mkdir(path.dirname(source), { recursive: true });
       await writeFile(source, license);
       await copyNativeLicenses(project, directory, [{ path: licensePath, sha256: createHash("sha256").update(license).digest("hex"), size: license.length }]);
-      expect(await readFile(path.join(project, "resources/notices/native", licensePath))).toEqual(license);
+      const digest = createHash("sha256").update(license).digest("hex");
+      expect(await readFile(path.join(project, "resources/notices/native", `${digest}.txt`))).toEqual(license);
+      expect(JSON.parse(await readFile(path.join(project, "resources/notices/native/index.json"), "utf8"))).toEqual({
+         version: 1,
+         licenses: [{ source: licensePath, path: `${digest}.txt`, sha256: digest, size: license.length }],
+      });
       expect(await readFile(source)).toEqual(license);
+   });
+   it("retains distinct same-named licenses with short installed paths and replaces the previous generated tree", async () => {
+      const project = await mkdtemp(path.join(os.tmpdir(), "acroclip-source-notices-"));
+      folders.push(project);
+      const directory = path.join(project, "work/release-sources");
+      const records: { path: string; sha256: string; size: number }[] = [];
+      for (const component of ["first", "second"]) {
+         const relative = `evidence/${component}/${"long-upstream-directory/".repeat(7)}COPYING`;
+         const bytes = Buffer.from(`Full original copyright and license for ${component}\n`);
+         const source = path.join(directory, relative);
+         await mkdir(path.dirname(source), { recursive: true });
+         await writeFile(source, bytes);
+         records.push({ path: relative, sha256: createHash("sha256").update(bytes).digest("hex"), size: bytes.length });
+      }
+      const old = path.join(project, "resources/notices/native/old/COPYING");
+      await mkdir(path.dirname(old), { recursive: true });
+      await writeFile(old, "Retain the old generated notice for diagnostics");
+      await copyNativeLicenses(project, directory, records);
+      const native = path.join(project, "resources/notices/native");
+      expect((await readdir(native)).sort()).toEqual([...records.map((r) => `${r.sha256}.txt`), "index.json"].sort());
+      for (const record of records) {
+         const installed = path.win32.join(
+            "C:/Users/runneradmin/AppData/Local/Temp",
+            `acroclip-upgrade-${"0".repeat(32)}`,
+            "custom folder",
+            "resources/notices/native",
+            `${record.sha256}.txt`
+         );
+         expect(installed.length).toBeLessThan(260);
+         expect(await readFile(path.join(native, `${record.sha256}.txt`))).toEqual(await readFile(path.join(directory, record.path)));
+      }
+      const backup = (await readdir(path.join(project, "work"))).find((name) => name.startsWith("native-notices-"))!;
+      expect(await readFile(path.join(project, "work", backup, "previous/old/COPYING"), "utf8")).toBe("Retain the old generated notice for diagnostics");
    });
    it("rejects changed license text and paths outside the source kit", async () => {
       const project = await mkdtemp(path.join(os.tmpdir(), "acroclip-source-notices-"));

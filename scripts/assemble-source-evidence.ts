@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { mkdir, readFile, writeFile, copyFile, stat, cp } from "node:fs/promises";
+import { mkdir, readFile, writeFile, copyFile, stat, cp, mkdtemp, rename, lstat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { collectKit, collectDependency, hashFile, releaseInventory, type SourceKit } from "./release-sources";
 import type { ControlledMediaBuild } from "./controlled-media";
@@ -12,16 +12,47 @@ type Source = SourceKit["sources"][number];
 type Dependency = NonNullable<SourceKit["dependencySources"]>[number];
 
 export async function copyNativeLicenses(project: string, directory: string, licenses: FileRecord[]): Promise<void> {
-   const nativeNotices = path.join(project, "resources/notices/native");
+   const root = path.resolve(project);
+   const work = path.join(root, "work");
+   const nativeNotices = path.join(root, "resources/notices/native");
+   await mkdir(work, { recursive: true });
+   const staging = await mkdtemp(path.join(work, "native-notices-"));
+   if (!nativeNotices.startsWith(`${root}${path.sep}`) || !staging.startsWith(`${work}${path.sep}`)) throw new Error("Unsafe native notice directory.");
+   const next = path.join(staging, "next");
+   const previous = path.join(staging, "previous");
+   await mkdir(next);
+   const records = new Map<string, FileRecord & { source: string }>();
    for (const license of licenses) {
       const source = path.resolve(directory, license.path);
-      const target = path.resolve(nativeNotices, license.path);
-      if (!source.startsWith(`${path.resolve(directory)}${path.sep}`) || !target.startsWith(`${path.resolve(nativeNotices)}${path.sep}`))
-         throw new Error("Native license path escapes its source or notices folder.");
-      if ((await hashFile(source)) !== license.sha256) throw new Error(`Native license changed: ${license.path}`);
-      await mkdir(path.dirname(target), { recursive: true });
+      if (!source.startsWith(`${path.resolve(directory)}${path.sep}`)) throw new Error("Native license path escapes its source folder.");
+      if ((await stat(source)).size !== license.size || (await hashFile(source)) !== license.sha256) throw new Error(`Native license changed: ${license.path}`);
+      // Shell-based NSIS copies still impose MAX_PATH. Archive source paths can
+      // exceed it in a custom install folder. Keep the original path in the index.
+      const relative = `${license.sha256}.txt`;
+      const target = path.join(next, relative);
       await copyFile(source, target);
+      if ((await hashFile(target)) !== license.sha256) throw new Error(`Native license copy changed: ${license.path}`);
+      const record = { source: license.path, path: relative, sha256: license.sha256, size: license.size };
+      const existing = records.get(license.path);
+      if (existing && existing.sha256 !== record.sha256) throw new Error(`Conflicting native license: ${license.path}`);
+      records.set(license.path, record);
    }
+   const entries = [...records.values()].sort((a, b) => a.source.localeCompare(b.source));
+   await writeFile(path.join(next, "index.json"), `${JSON.stringify({ version: 1, licenses: entries }, null, 2)}\n`);
+   await mkdir(path.dirname(nativeNotices), { recursive: true });
+   const existing = await lstat(nativeNotices).catch((error: unknown) => {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+      throw error;
+   });
+   if (existing?.isSymbolicLink()) throw new Error("Native notices folder must not be a link.");
+   if (existing) await rename(nativeNotices, previous);
+   try {
+      await rename(next, nativeNotices);
+   } catch (error) {
+      if (existing) await rename(previous, nativeNotices);
+      throw error;
+   }
+   // Prior generated notices stay outside the runtime package for diagnostics.
 }
 
 interface ObsRuntimeProbe {
@@ -265,9 +296,6 @@ export async function assembleSourceEvidence(project: string): Promise<SourceKit
       ...compiled.flatMap((input) => input.licenses),
       ...embeddedNotices,
    ];
-   // Preserve source paths and full copyright notices in the actual installer.
-   // Source-archive licenses are separate from the app's own GPL text.
-   await copyNativeLicenses(project, directory, [...obsLicenses, ...electronFfmpeg.licenseFiles]);
    add("obs-dependency-build-config", "OBS 32.2.2 / deps 2026-07-15", "GPL-2.0-or-later", obsArchives, obsLicenses, [
       recipes,
       obsConfiguration,
@@ -305,7 +333,7 @@ export async function assembleSourceEvidence(project: string): Promise<SourceKit
    const recordedFiles = await Promise.all(controlled.evidenceFiles.map((file) => fileRecord(path.join(controlledEvidence, file.path))));
    const buildInstructions = recordedFiles.filter((file) => /build-media-windows\.sh|mingw-cross\.ini|config|toolchain|build\.log|sha256/.test(file.path));
    const licenses = recordedFiles.filter((file) => /COPYING|LICENSE/.test(file.path));
-   await copyNativeLicenses(project, directory, licenses);
+   await copyNativeLicenses(project, directory, [...obsLicenses, ...electronFfmpeg.licenseFiles, ...licenses]);
    add("ffmpeg-core-build-config", "8.1.3-acroclip-local", "GPL-2.0-or-later", controlled.sourceArchives, licenses, buildInstructions);
    add(
       "ffmpeg-external:libx264",
