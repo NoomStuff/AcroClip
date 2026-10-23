@@ -1,109 +1,28 @@
-name: Checks
+name: Full-notice installer diagnostics
 on:
-   push:
-      branches: [main]
-   pull_request:
    workflow_dispatch:
-      inputs:
-         interactive_suite:
-            type: string
-            default: ""
-         expected_commit:
-            type: string
-            default: ""
-         interactive_arguments:
-            type: string
-            default: "[]"
-   workflow_call:
-      inputs:
-         interactive_suite:
-            type: string
-            default: ""
-         expected_commit:
-            type: string
-            default: ""
-         interactive_arguments:
-            type: string
-            default: "[]"
 permissions:
    contents: read
-concurrency:
-   group: checks-${{ github.workflow }}-${{ github.ref }}-${{ inputs.interactive_suite || 'verify' }}
-   cancel-in-progress: true
+   actions: read
 jobs:
-   controlled-media:
-      uses: ./.github/workflows/controlled-media.yml
-   verify:
-      if: inputs.interactive_suite == ''
-      needs: controlled-media
+   windows:
       runs-on: windows-2025
-      timeout-minutes: 25
-      env:
-         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
-      steps:
-         - uses: actions/checkout@v7
-         - uses: oven-sh/setup-bun@v2
-           with:
-              bun-version: "1.4.2"
-         - run: bun install --frozen-lockfile
-         - uses: actions/download-artifact@v8
-           with:
-              name: controlled-windows-media
-              path: work/
-         - name: Verify and record the cross build on Windows
-           run: bun scripts/controlled-media.ts
-         - run: bun scripts/provision-media.ts
-         - run: bun run bundle:media
-         - run: bun run build:icons
-         - run: bun run build:notices
-         - name: Stage the native helper used by real preview tests
-           run: bun run build:native
-         - run: bun run verify
-         - run: bun run test:media
-         - name: Prepare private playback output for UI checks
-           env:
-              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
-           run: pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
-         - run: bun run test:ui
-         - uses: actions/upload-artifact@v7
-           if: always()
-           with:
-              name: ui-verification
-              path: test-results/
-              retention-days: 7
-   interactive:
-      if: inputs.interactive_suite != ''
-      needs: controlled-media
-      runs-on: ${{ vars.ISOLATED_WINDOWS_RUNNER || 'windows-2025' }}
       timeout-minutes: 60
       env:
-         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
          ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
-         ACROCLIP_INTERACTIVE_SUITE: ${{ inputs.interactive_suite }}
-         ACROCLIP_EXPECTED_COMMIT: ${{ inputs.expected_commit }}
-         ACROCLIP_INTERACTIVE_ARGUMENTS: ${{ inputs.interactive_arguments }}
+         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
       steps:
-         - name: Require a disposable hosted runner
-           env:
-              ACTUAL_RUNNER_ENVIRONMENT: ${{ runner.environment }}
-           run: |
-              if ($env:ACTUAL_RUNNER_ENVIRONMENT -ne 'github-hosted') {
-                 throw 'Interactive checks require a separately isolated disposable hosted runner, not a personal desktop runner'
-              }
          - uses: actions/checkout@v7
-         - name: Verify the exact requested revision
-           run: |
-              if ($env:ACROCLIP_EXPECTED_COMMIT -notmatch '^[0-9a-f]{40}$' -or (git rev-parse HEAD) -ne $env:ACROCLIP_EXPECTED_COMMIT) {
-                 throw 'The isolated test revision differs from the requested local commit'
-              }
-              Write-Output "Testing exact committed revision $env:ACROCLIP_EXPECTED_COMMIT in a disposable Windows runner"
          - uses: oven-sh/setup-bun@v2
            with:
               bun-version: "1.4.2"
          - run: bun install --frozen-lockfile
-         - run: node node_modules/electron/install.js
+         - name: Install the locked Electron runtime for source inventory
+           run: node node_modules/electron/install.js
          - uses: actions/download-artifact@v8
            with:
+              run-id: 39872009385
+              github-token: ${{ github.token }}
               name: controlled-windows-media
               path: work/
          - run: bun scripts/controlled-media.ts
@@ -113,22 +32,20 @@ jobs:
          - run: bun run build:native
          - run: bun run build:notices
          - run: bun run build
-         - name: Prepare private audio routing
+         - name: Collect Windows runtime dependency sources
+           run: bun scripts/release-sources.ts --collect-only --dependencies --controlled-inputs
+         - name: Assemble exact Windows sources and native notices
+           run: bun scripts/assemble-source-evidence.ts
+         - run: bunx electron-builder --win --x64 --publish never
+         - name: Prepare a signed virtual audio endpoint and independent tone
            env:
               ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
-           run: |
-              if ($env:ACROCLIP_INTERACTIVE_SUITE -in @('packaged','portable','installer')) {
-                 pwsh -File scripts/setup-windows-runner-audio.ps1
-              } else {
-                 pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
-              }
-         - name: Prepare executable packages when requested
-           if: contains(fromJSON('["packaged","portable","installer"]'), inputs.interactive_suite)
-           run: bunx electron-builder --win --x64 --publish never
-         - name: Run the unchanged interactive checks
-           run: bun scripts/run-interactive-tests.ts "$env:ACROCLIP_INTERACTIVE_SUITE"
+           run: pwsh -File scripts/setup-windows-runner-audio.ps1
+         - name: Verify installed upgrade in an isolated installer identity
+           run: pwsh -File scripts/test-installer-upgrade.ps1
          - name: Stop the private tone producer
            if: always()
+           shell: pwsh
            run: |
               if ($env:ACROCLIP_AUDIO_FIXTURE_PID) {
                  $fixtureProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $env:ACROCLIP_AUDIO_FIXTURE_PID"
@@ -136,12 +53,17 @@ jobs:
                     Stop-Process -Id $fixtureProcess.ProcessId -ErrorAction SilentlyContinue
                  }
               }
+         - name: Preserve isolated installer evidence
+           if: always()
+           shell: pwsh
+           run: |
+              New-Item -ItemType Directory -Path work/installer-evidence -Force | Out-Null
+              if ($env:ACROCLIP_INSTALLER_EVIDENCE) {
+                 Get-ChildItem -LiteralPath $env:ACROCLIP_INSTALLER_EVIDENCE -Filter 'upgrade-*.json*' | Copy-Item -Destination work/installer-evidence
+              }
          - uses: actions/upload-artifact@v7
            if: always()
            with:
-              name: isolated-test-evidence
-              path: |
-                 test-results/
-                 .cache/native-*/
-              if-no-files-found: ignore
-              retention-days: 7
+              name: windows-isolated-installer-evidence
+              path: work/installer-evidence/
+              retention-days: 30

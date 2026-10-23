@@ -50,6 +50,53 @@ public static class InstallerProbe {
         }, IntPtr.Zero);
         return found.ToArray();
     }
+    [DllImport("kernel32.dll")] private static extern IntPtr OpenProcess(uint access, bool inherit, int process);
+    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll")] private static extern bool IsWow64Process(IntPtr process, out bool wow64);
+    [DllImport("kernel32.dll")] private static extern IntPtr VirtualAllocEx(IntPtr process, IntPtr address, UIntPtr size, uint type, uint protection);
+    [DllImport("kernel32.dll")] private static extern bool VirtualFreeEx(IntPtr process, IntPtr address, UIntPtr size, uint type);
+    [DllImport("kernel32.dll")] private static extern bool WriteProcessMemory(IntPtr process, IntPtr address, byte[] bytes, UIntPtr size, out UIntPtr written);
+    [DllImport("kernel32.dll")] private static extern bool ReadProcessMemory(IntPtr process, IntPtr address, byte[] bytes, UIntPtr size, out UIntPtr read);
+    public static string[] Details(int process) {
+        var lines = new List<string>();
+        var handle = OpenProcess(0x438, false, process);
+        if (handle == IntPtr.Zero) return new [] { "Installer details process could not be read" };
+        var remote = VirtualAllocEx(handle, IntPtr.Zero, (UIntPtr)8192, 0x3000, 4);
+        try {
+            if (remote == IntPtr.Zero) return new [] { "Installer details buffer could not be allocated" };
+            bool wow64; IsWow64Process(handle, out wow64);
+            bool small = !Environment.Is64BitOperatingSystem || wow64;
+            EnumWindows((root, unused) => {
+                uint owner; GetWindowThreadProcessId(root, out owner);
+                if (owner != process) return true;
+                EnumChildWindows(root, (window, data) => {
+                    var kind = new StringBuilder(256); GetClassName(window, kind, kind.Capacity);
+                    if (kind.ToString() != "SysListView32") return true;
+                    int count = SendMessage(window, 0x1004, IntPtr.Zero, IntPtr.Zero).ToInt32();
+                    for (int row = 0; row < count; row++) {
+                        var item = new byte[128];
+                        Buffer.BlockCopy(BitConverter.GetBytes(1), 0, item, 0, 4);
+                        long text = remote.ToInt64() + 128;
+                        var pointer = small ? BitConverter.GetBytes(checked((uint)text)) : BitConverter.GetBytes(text);
+                        Buffer.BlockCopy(pointer, 0, item, small ? 20 : 24, pointer.Length);
+                        Buffer.BlockCopy(BitConverter.GetBytes(2048), 0, item, small ? 24 : 32, 4);
+                        UIntPtr transferred;
+                        if (!WriteProcessMemory(handle, remote, item, (UIntPtr)item.Length, out transferred)) continue;
+                        SendMessage(window, 0x1073, (IntPtr)row, remote);
+                        var bytes = new byte[4096];
+                        if (ReadProcessMemory(handle, (IntPtr)text, bytes, (UIntPtr)bytes.Length, out transferred))
+                            lines.Add(Encoding.Unicode.GetString(bytes).Split('\0')[0]);
+                    }
+                    return true;
+                }, IntPtr.Zero);
+                return true;
+            }, IntPtr.Zero);
+        } finally {
+            if (remote != IntPtr.Zero) VirtualFreeEx(handle, remote, UIntPtr.Zero, 0x8000);
+            CloseHandle(handle);
+        }
+        return lines.ToArray();
+    }
     public static void Click(IntPtr window) { SendMessage(window, 0xF5, IntPtr.Zero, IntPtr.Zero); }
 }
 '@
@@ -94,11 +141,31 @@ function Install-Test([string] $file, [string] $arguments) {
     if ($process.ExitCode -ne 0) { throw "Isolated installation failed: $($process.ExitCode)" }
 }
 
+function Write-UpgradeHealth([string] $phase, [int] $processId = 0) {
+    $files = @(Get-ChildItem -LiteralPath $payload -Recurse -File | ForEach-Object {
+        $relative = [IO.Path]::GetRelativePath($payload, $_.FullName)
+        $destination = Join-Path $install $relative
+        @{relative=$relative;source=$_.FullName;destination=$destination;destinationLength=$destination.Length;bytes=$_.Length;attributes=$_.Attributes.ToString();installed=(Test-Path -LiteralPath $destination)}
+    })
+    $state = @{
+        phase=$phase;unixMilliseconds=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds();install=$install
+        drives=@([IO.DriveInfo]::GetDrives() | Where-Object IsReady | ForEach-Object { @{root=$_.Name;free=$_.AvailableFreeSpace;total=$_.TotalSize} })
+        processes=@(Get-CimInstance Win32_Process | Where-Object { ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) -or $_.Name -in @('AcroClip.exe','acroclip-recorder.exe',"$product.exe") } | Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine)
+        longest=@($files | Sort-Object destinationLength -Descending | Select-Object -First 20)
+        pathsOver259=@($files | Where-Object destinationLength -gt 259)
+        totalBytes=($files | Measure-Object -Property bytes -Sum).Sum
+        details=if ($processId) { @([InstallerProbe]::Details($processId)) } else { @() }
+    }
+    $state | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $root "upgrade-health-$phase.json")
+    Write-Output "Installer evidence $phase. Long destination paths: $(@($state.pathsOver259).Count). Payload bytes: $($state.totalBytes)."
+}
+
 function Upgrade-Interactive([string] $file) {
     $process = Start-Process -FilePath $file -PassThru -WindowStyle Normal
     $deadline = [DateTime]::UtcNow.AddMinutes(4)
     $finished = $false
     $previousText = $null
+    $recordedRetry = $false
     try {
         while (-not $process.HasExited -and [DateTime]::UtcNow -lt $deadline) {
             $controls = @([InstallerProbe]::Read($process.Id))
@@ -112,6 +179,10 @@ function Upgrade-Interactive([string] $file) {
             }
             if ($text -match 'Choose Install Location|Choose Installation Options|Choose Components|Choose Users|License Agreement|Browse\.\.\.') {
                 throw "Upgrade repeated a first-install page: $text"
+            }
+            if (-not $recordedRetry -and $text -match 'cannot be closed') {
+                Write-UpgradeHealth 'retry-dialog' $process.Id
+                $recordedRetry = $true
             }
             $finish = @($controls | Where-Object { $_.ClassName -eq 'Button' -and $_.Text.Replace('&', '') -eq 'Finish' })
             if ($finish.Count -eq 1) {
@@ -145,6 +216,7 @@ try {
     Set-Content -LiteralPath (Join-Path $profile 'preferences.json') -Value '{"setupComplete":true,"sentinel":"preserve-me"}'
     $settings = (Get-FileHash -LiteralPath (Join-Path $profile 'preferences.json')).Hash
     $second = Build-TestInstaller '0.0.2'
+    Write-UpgradeHealth 'before-upgrade'
     # No scope or directory switches. Registry detection must reuse the first install.
     Upgrade-Interactive $second
     if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'Upgrade moved the installation' }
