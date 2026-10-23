@@ -1,4 +1,4 @@
-/* global module, process */
+/* global module, process, Buffer */
 // Publication consumes the sealed artifact. It never packages application code.
 
 module.exports = async function publish({ github, context, core, directory = "candidate" }) {
@@ -16,7 +16,8 @@ module.exports = async function publish({ github, context, core, directory = "ca
          throw Error("Candidate verification was superseded");
    };
    const tag = `v${manifest.version}`;
-   const marker = `Candidate ${manifest.commit}, run ${manifest.run}, attempt ${manifest.attempt}.`;
+   const notes = (await fs.readFile(`release-notes/${manifest.version}.md`, "utf8")).trim();
+   if (!notes) throw Error("User-facing release notes are required");
    async function optional(operation) {
       try {
          return await operation();
@@ -27,8 +28,9 @@ module.exports = async function publish({ github, context, core, directory = "ca
    }
    async function publishAssets(releaseTag, files, body, prerelease) {
       await assertCurrent();
-      const ref = await optional(() => github.rest.repos.getCommit({ ...repo, ref: `refs/tags/${releaseTag}` }));
-      if (ref && ref.data.sha !== manifest.commit) throw Error(`Immutable tag ${releaseTag} points to another commit`);
+      const ref = await optional(() => github.rest.git.getRef({ ...repo, ref: `tags/${releaseTag}` }));
+      if (ref && (await github.rest.repos.getCommit({ ...repo, ref: `refs/tags/${releaseTag}` })).data.sha !== manifest.commit)
+         throw Error(`Immutable tag ${releaseTag} points to another commit`);
       let release = (await optional(() => github.rest.repos.getReleaseByTag({ ...repo, tag: releaseTag })))?.data;
       if (release?.draft && release.body !== body) {
          // Only private drafts may be discarded. Never replace a public asset or tag.
@@ -49,6 +51,7 @@ module.exports = async function publish({ github, context, core, directory = "ca
             })
          ).data;
       if (release.body !== body) throw Error(`Public release ${releaseTag} has another candidate identity`);
+      if (!release.draft && !recordedProvenance) throw Error("Public release provenance is missing");
       const expected = new Map(files.map((file) => [file.path.split("/").at(-1), file]));
       const existing = await github.paginate(github.rest.repos.listReleaseAssets, { ...repo, release_id: release.id });
       const verifiedExisting = new Set();
@@ -85,22 +88,31 @@ module.exports = async function publish({ github, context, core, directory = "ca
    }
    const sourceRepository = process.env.SOURCE_REPOSITORY;
    const sourceUrl = process.env.SOURCE_RELEASE_URL;
-   if (
-      !sourceRepository ||
-      !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(sourceRepository) ||
-      sourceRepository.toLowerCase() === `${repo.owner}/${repo.repo}`.toLowerCase()
-   )
-      throw Error("Configure a separate corresponding-source repository");
+   if (!sourceRepository || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(sourceRepository)) throw Error("Configure a corresponding-source repository");
+   const sameRepository = sourceRepository.toLowerCase() === `${repo.owner}/${repo.repo}`.toLowerCase();
    const sourcePrefix = `https://github.com/${sourceRepository}/releases/tag/`;
    const sourceTag = sourceUrl?.startsWith(sourcePrefix) ? sourceUrl.slice(sourcePrefix.length) : "";
    if (!sourceTag || !/^[A-Za-z0-9_.-]+$/.test(sourceTag)) throw Error("Pass the immutable source release URL in the configured separate repository");
+   if (sameRepository && sourceTag === tag) throw Error("Corresponding sources require a source-only release");
+   const provenancePath = `releases/${tag}.json`;
+   const provenance = JSON.stringify({ ...manifest, sourceRelease: sourceUrl }, null, 2) + "\n";
+   let recordedProvenance = (await optional(() => github.rest.repos.getContent({ ...repo, path: provenancePath, ref: "updates" })))?.data;
+   if (
+      recordedProvenance &&
+      (recordedProvenance.type !== "file" ||
+         recordedProvenance.encoding !== "base64" ||
+         Buffer.from(recordedProvenance.content, "base64").toString("utf8") !== provenance)
+   )
+      throw Error("Published release provenance differs from the reviewed candidate");
    const [owner, sourceRepo] = sourceRepository.split("/");
    const sources = manifest.files.filter((file) => file.path.startsWith("sources/"));
    if (sources.length !== 5) throw Error("All five corresponding-source packets are required");
    const verifySources = async () => {
       const sourceRelease = (await github.rest.repos.getReleaseByTag({ owner, repo: sourceRepo, tag: sourceTag })).data;
       if (sourceRelease.draft || sourceRelease.html_url !== sourceUrl) throw Error("Corresponding sources must already be publicly hosted");
+      if (sameRepository && !sourceRelease.prerelease) throw Error("A same-repository source release must be a prerelease to preserve stable update discovery");
       const remoteSources = await github.paginate(github.rest.repos.listReleaseAssets, { owner, repo: sourceRepo, release_id: sourceRelease.id });
+      if (remoteSources.length !== sources.length) throw Error("Source release must contain exactly five source packets");
       for (const file of sources) {
          const name = file.path.split("/").at(-1);
          const asset = remoteSources.find((entry) => entry.name === name);
@@ -109,19 +121,30 @@ module.exports = async function publish({ github, context, core, directory = "ca
             throw Error(`Published corresponding-source bytes are missing or differ: ${name}`);
       }
    };
+   async function updateBranch(entries, message) {
+      await assertCurrent();
+      const parent = (await optional(() => github.rest.git.getRef({ ...repo, ref: "heads/updates" })))?.data.object.sha;
+      const baseTree = parent ? (await github.rest.git.getCommit({ ...repo, commit_sha: parent })).data.tree.sha : undefined;
+      const tree = await github.rest.git.createTree({ ...repo, ...(baseTree ? { base_tree: baseTree } : {}), tree: entries });
+      const commit = await github.rest.git.createCommit({ ...repo, message, tree: tree.data.sha, parents: [parent ?? manifest.commit] });
+      if (parent) await github.rest.git.updateRef({ ...repo, ref: "heads/updates", sha: commit.data.sha, force: false });
+      else await github.rest.git.createRef({ ...repo, ref: "refs/heads/updates", sha: commit.data.sha });
+   }
    await verifySources();
+   if (!recordedProvenance) {
+      const existing = (await optional(() => github.rest.repos.getReleaseByTag({ ...repo, tag })))?.data;
+      if (existing && !existing.draft) throw Error("Public release provenance is missing");
+      await updateBranch([{ path: provenancePath, mode: "100644", type: "blob", content: provenance }], `Record reviewed ${tag} provenance`);
+      recordedProvenance = { type: "file", encoding: "base64", content: Buffer.from(provenance).toString("base64") };
+   }
    await publishAssets(
       tag,
       manifest.files.filter((file) => file.path.startsWith("downloads/")),
-      `${marker}\n\n[Corresponding sources](${sourceUrl})`,
+      `${notes}\n\n[Corresponding sources](${sourceUrl})`,
       false
    );
-   await assertCurrent();
-   const branch = "updates";
-   const parent = (await optional(() => github.rest.git.getRef({ ...repo, ref: `heads/${branch}` })))?.data.object.sha;
-   const tree = await github.rest.git.createTree({
-      ...repo,
-      tree: await Promise.all(
+   await updateBranch(
+      await Promise.all(
          ["latest.yml", "latest-linux.yml", "latest-linux-arm64.yml"].map(async (path) => ({
             path,
             mode: "100644",
@@ -129,14 +152,7 @@ module.exports = async function publish({ github, context, core, directory = "ca
             content: await fs.readFile(`${directory}/feeds/${path}`, "utf8"),
          }))
       ),
-   });
-   const commit = await github.rest.git.createCommit({
-      ...repo,
-      message: `Update feeds for ${tag} at ${manifest.commit}`,
-      tree: tree.data.sha,
-      parents: [parent ?? manifest.commit],
-   });
-   if (parent) await github.rest.git.updateRef({ ...repo, ref: `heads/${branch}`, sha: commit.data.sha, force: false });
-   else await github.rest.git.createRef({ ...repo, ref: `refs/heads/${branch}`, sha: commit.data.sha });
+      `Update feeds for ${tag} at ${manifest.commit}`
+   );
    core.info(`Published ${tag} from reviewed run ${manifest.run}, attempt ${manifest.attempt}`);
 };

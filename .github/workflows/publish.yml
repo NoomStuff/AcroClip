@@ -13,7 +13,7 @@ on:
             description: Full verified main commit SHA
             required: true
          source_release:
-            description: Published immutable corresponding-source release URL in the configured separate source repository
+            description: Published reviewed source-only release URL
             required: true
          correspondence_review:
             description: Confirm review of all five source packets and exact binary correspondence
@@ -72,7 +72,7 @@ jobs:
               CANDIDATE_ATTEMPT: ${{ inputs.attempt }}
               CANDIDATE_COMMIT: ${{ inputs.commit }}
               SOURCE_RELEASE_URL: ${{ inputs.source_release }}
-              SOURCE_REPOSITORY: ${{ vars.SOURCE_REPOSITORY || 'NoomStuff/AcroClip-sources' }}
+              SOURCE_REPOSITORY: ${{ vars.SOURCE_REPOSITORY || github.repository }}
            with:
               script: |
                  const publish = require('./scripts/publish-release.cjs');
