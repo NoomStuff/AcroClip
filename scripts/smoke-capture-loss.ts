@@ -99,6 +99,17 @@ async function command(value: Record<string, unknown>, expected = "response"): P
    assert.equal(result.event, expected, result.message ?? "Native command failed");
    return result;
 }
+async function waitForHistory(): Promise<void> {
+   const deadline = Date.now() + 20_000;
+   while (Date.now() < deadline) {
+      const after = events.length;
+      await command({ action: "status" });
+      const status = await wait((event) => event.event === "status", after);
+      if (!status.waiting && (status.availableSeconds ?? 0) >= 1.8) return;
+      await delay(100);
+   }
+   throw new Error(`Capture did not provide enough current footage: ${JSON.stringify(events.slice(-10))}`);
+}
 async function verify(name: string, minimumDuration: number, requested = false, width = 640, height = 360, fps = 24): Promise<NativeEvent> {
    const file = path.join(folder, `${name}.mkv`);
    if (!requested) await command({ action: "save", requestId: name, requestedAt: Date.now(), path: file });
@@ -187,7 +198,8 @@ try {
          events.some((event) => event.event === "capture-method"),
          "GDI fixture must fall back to the same application window"
       );
-   } else await delay(4000);
+   }
+   await waitForHistory();
    if (profileSwitch) {
       for (const name of ["queued-a", "queued-b", "queued-c"])
          await command({ action: "save", requestId: name, requestedAt: Date.now(), path: path.join(folder, `${name}.mkv`) });
@@ -231,7 +243,7 @@ try {
          captureAudio: appAudio,
          microphone: false,
       });
-      await delay(3000);
+      await waitForHistory();
    }
    await verify("healthy", 1.5);
    await command({ action: "save", requestId: "failed-destination", requestedAt: Date.now(), path: path.join(folder, "missing-parent", "failed.mkv") });
@@ -255,6 +267,7 @@ try {
    assert((earlier.secondsSinceCapture ?? 0) > 4, "The save must explain it uses earlier footage");
    await writeFile(actionPath, "restore");
    await delay(5000);
+   await waitForHistory();
    after = events.length;
    await command({ action: "status" });
    assert.equal((await wait((event) => event.event === "status", after)).waiting, false);

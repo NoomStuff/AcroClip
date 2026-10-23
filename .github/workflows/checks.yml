@@ -65,6 +65,7 @@ jobs:
            run: bun scripts/controlled-media.ts
          - run: bun scripts/provision-media.ts
          - run: bun run bundle:media
+         - run: bun run build:icons
          - run: bun run build:notices
          - name: Stage the native helper used by real preview tests
            run: bun run build:native
@@ -152,6 +153,9 @@ jobs:
               name: isolated-test-evidence
               path: |
                  test-results/
-                 .cache/native-*/
+                 .cache/native-*/**/*.json
+                 .cache/native-*/**/*.log
+                 .cache/native-*/**/*.mkv
+              include-hidden-files: true
               if-no-files-found: ignore
               retention-days: 7
