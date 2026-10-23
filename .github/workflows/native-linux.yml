@@ -25,6 +25,10 @@ on:
 permissions:
    contents: read
 
+concurrency:
+   group: linux-capture-${{ github.workflow }}-${{ github.ref }}-${{ inputs.architecture || 'x64' }}-${{ inputs.release_candidate || false }}
+   cancel-in-progress: true
+
 jobs:
    actual-capture:
       runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
@@ -223,7 +227,7 @@ jobs:
                       for source in proof.iterdir():
                           if source.is_symlink() or not source.is_file():
                               continue
-                          if source.name not in names and source.suffix != ".log":
+                          if source.name not in names and source.suffix not in {".log", ".mkv"}:
                               continue
                           target = destination / area / proof.name / source.name
                           target.parent.mkdir(parents=True, exist_ok=True)
@@ -235,6 +239,7 @@ jobs:
            with:
               name: linux-capture-evidence-${{ inputs.architecture || 'x64' }}
               path: .cache/linux-capture-evidence/
+              include-hidden-files: true
               if-no-files-found: ignore
          - name: Retain source verification diagnostics
            if: always()

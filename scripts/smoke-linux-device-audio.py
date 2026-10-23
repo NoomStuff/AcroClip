@@ -35,15 +35,15 @@ def launch(args, name, pipe=False):
     processes.append(process)
     return process
 
-def wait(predicate, timeout=20):
+def wait(predicate, timeout=20, after=0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        for event in events:
+        for event in events[after:]:
             if predicate(event):
                 return event
         if helper.poll() is not None:
             reader.join(timeout=1)
-            for event in events:
+            for event in events[after:]:
                 if predicate(event):return event
             raise RuntimeError(f"Recorder exited {helper.returncode}. Inspect {folder}")
         time.sleep(0.02)
@@ -195,10 +195,23 @@ try:
     failed=awaitState(True,'selected audio device');time.sleep(4)
     request,file=save('last-valid-after-device-loss');result=saved(request);assert result['previousFootage'];decode(file)
     assert status()['waiting'];assert 'acroclip-test.monitor' not in pactl('list','short','sources')
+    # PulseAudio can move the old playback client to another sink on removal.
+    # Stop it before replacing the tone so two copies cannot cancel each other.
+    if playing.poll() is None:playing.terminate();playing.wait(timeout=5)
     pactl('load-module','module-null-sink','sink_name=acroclip-test','rate=48000','channels=2')
+    recoveryMarker=len(events)
     playing=launch(['paplay','--device=acroclip-test',str(tone)],'recovered-tone')
-    awaitState(False);time.sleep(4)
-    request,file=save('extra-after-device-recovery');saved(request);decode(file);assert volume(file,2)>-40 and volume(file,0)<-70
+    recoveredClients=json.loads(pactl('-f','json','list','sink-inputs'))
+    proof['recoveredPlaybackClientCount']=len(recoveredClients)
+    awaitState(False)
+    # A healthy output can deliver silence while paplay primes its new stream.
+    # Observe the fixture tone before filling the recovered two-second clip.
+    wait(lambda event:event.get('event')=='audio-levels' and event.get('additional',{}).get('private-extra',0)>.01,after=recoveryMarker)
+    time.sleep(2);fill()
+    request,file=save('extra-after-device-recovery');saved(request);decode(file)
+    recoveredLevels={'isolatedDB':volume(file,2),'masterDB':volume(file,0)}
+    proof['extraDeviceRecoveryLevels']=recoveredLevels
+    assert recoveredLevels['isolatedDB']>-40 and recoveredLevels['masterDB']<-70,recoveredLevels
     proof['extraTrackGainMuteAndMasterPolicy']={'fullDB':full,'halfDB':half,'excludedFromMaster':True}
     proof['explicitDeviceLossAndReturn']={'waitingReason':failed['message'],'noDefaultSubstitution':True,'lastAvailableDecoded':True,'knownToneRecovered':True}
     command(dict(action='stop'))
