@@ -16,6 +16,7 @@
       "format:check": "prettier --check src scripts tests docs release-notes .github .vscode \"*.{ts,mjs,json,md}\" .prettierrc.json",
       "lint": "eslint src scripts tests \"*.{ts,mjs}\" --max-warnings 0",
       "verify": "bun run format:check && bun run lint && bun run test && bun run build",
+      "verify:release": "bun run verify && bun run test:media && bun run test:ui && bun run test:ui:native && bun run test:capture-loss && bun run test:packaged",
       "test:ui": "bun scripts/run-interactive-tests.ts ui",
       "test:ui:native": "bun scripts/run-interactive-tests.ts ui-native",
       "test:isolated": "bun scripts/run-interactive-tests.ts",

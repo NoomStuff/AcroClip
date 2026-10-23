@@ -26,6 +26,10 @@ The folder is the collection. Existing supported videos should work without regi
 
 Isolate runs from real user state with `ACROCLIP_PROFILE`, `ACROCLIP_COLLECTION`, and `ACROCLIP_TEST=1`. Never point destructive tests at a real collection. A platform build alone doesn't establish working capture.
 
-## Releases
+## Versioning
 
-Bump the version in `package.json` when the changes are release-worthy, then push a `v*` tag to trigger the Desktop builds workflow, which produces private release candidates for all five targets and publishes nothing itself. A release goes public only after its corresponding-source kit passes and the correspondence is reviewed; public release pages carry app downloads only. CI on main must be green before tagging. Don't blindly push without permission from the user. After a tag, watch the workflow: if a platform fails, fix it and re-tag rather than letting a half-verified release stand. Fix failures before pushing.
+Pushing to main with a new version number in `package.json` triggers a release candidate via GitHub Actions. Bump it appropriately for the changes made, not every change needs a new version. Follow ups should not bump again unless pushes to main have been made since. Don't blindly push without permission from the user.
+
+Always run `bun run format` and `bun run verify` after a turn with many file edits. For changes to capture, audio, export, playback, packaging, or release workflows, run `bun run verify:release` too. It runs verification, real-media tests, UI, native UI capture, capture-loss recovery and packaged-app checks. Interactive checks run in disposable Windows CI and require a clean, committed, pushed revision. Fix local check failures before pushing, then fix isolated check failures before publication.
+
+After a version bump, watch the candidate through completion on all five targets. If an unpublished attempt fails, fix and retry the same version. Publish only after the corresponding-source kits pass and their correspondence is reviewed, using the separate publication workflow. Create the final tag only when publishing the verified commit. Public releases and tags are immutable, so fixes after publication require a new version. Public app release pages carry app downloads only.
