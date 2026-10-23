@@ -29,6 +29,14 @@ async function fixture() {
    }
    const names = appDownloadNames(version, ["x64", "arm64"], ["x64", "arm64"]);
    const assets = await Promise.all(names.map((name) => file(name)));
+   const macReports: {
+      name: string;
+      value: {
+         appCommit: string;
+         source: { platform: string; appCommit: string; archive: { name: string; sha256: string; size: number } };
+         asset: { path: string; sha256: string; size: number };
+      };
+   }[] = [];
    for (const platform of ["windows-x64", "linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64"]) {
       const source = await file(`AcroClip-${version}-${platform}-sources-${commit.slice(0, 8)}.zip`);
       const covered = assets.filter((asset) =>
@@ -39,7 +47,15 @@ async function fixture() {
               : asset.path.endsWith(`mac-${platform.slice(7)}.zip`)
       );
       const name = platform === "windows-x64" ? `AcroClip-${version}-windows-x64-release.json` : `${covered[0]!.path}.release.json`;
-      await file(name, JSON.stringify({ appCommit: commit, source, assets: covered }));
+      if (platform.startsWith("darwin-")) {
+         const value = {
+            appCommit: commit,
+            source: { platform, appCommit: commit, archive: { name: source.path, sha256: source.sha256, size: source.size } },
+            asset: covered[0]!,
+         };
+         macReports.push({ name, value });
+         await file(name, JSON.stringify(value));
+      } else await file(name, JSON.stringify({ appCommit: commit, source, assets: covered }));
    }
    for (const arch of ["x64", "arm64"]) {
       const image = assets.find((asset) => asset.path.endsWith(`mac-${arch}.dmg`))!;
@@ -61,7 +77,7 @@ async function fixture() {
          `version: ${version}\npath: ${name}\nsha512: ${sha512}\nfiles:\n  - url: ${name}\n    size: ${bytes.length}\n    sha512: ${sha512}\n`
       );
    }
-   return { input, output, names, file };
+   return { input, output, names, file, macReports };
 }
 
 it("seals exact verified packages and source packets under a commit/run/attempt identity", async () => {
@@ -92,4 +108,23 @@ it("rejects unknown files added to a sealed artifact", async () => {
    await sealCandidate(input, output);
    await writeFile(path.join(output, "downloads", "unexpected.exe"), "extra");
    await expect(verifyCandidate(output)).rejects.toThrow("Candidate file set differs");
+});
+
+it("rejects a Mac source companion bound to another commit, architecture or version", async () => {
+   for (const field of ["appCommit", "platform", "version"] as const) {
+      const { input, output, macReports } = await fixture();
+      const mac = macReports[0]!;
+      if (field === "version") mac.value.source.archive.name = mac.value.source.archive.name.replace("AcroClip-", "AcroClip-9.9.9-");
+      else mac.value.source[field] = field === "appCommit" ? "b".repeat(40) : "darwin-arm64";
+      await writeFile(path.join(input, mac.name), JSON.stringify(mac.value));
+      await expect(sealCandidate(input, output)).rejects.toThrow("Mac source packet identity differs");
+   }
+});
+it("rejects missing Mac source archive hashes in the actual nested companion format", async () => {
+   const { input, output, macReports } = await fixture();
+   const mac = macReports[0]!;
+   const archive: Partial<typeof mac.value.source.archive> = { ...mac.value.source.archive };
+   delete archive.sha256;
+   await writeFile(path.join(input, mac.name), JSON.stringify({ ...mac.value, source: { ...mac.value.source, archive } }));
+   await expect(sealCandidate(input, output)).rejects.toThrow("sha256");
 });

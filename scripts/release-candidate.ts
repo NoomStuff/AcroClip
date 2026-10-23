@@ -7,6 +7,30 @@ import { prepareUpdateFeed } from "./prepare-update-feed";
 
 const record = z.object({ path: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/), size: z.number().int().nonnegative() });
 const report = z.object({ appCommit: z.string(), source: record, asset: record.optional(), assets: z.array(record).optional() });
+const macReport = z.object({
+   appCommit: z.string(),
+   source: z.object({
+      platform: z.enum(["darwin-x64", "darwin-arm64"]),
+      appCommit: z.string(),
+      archive: z.object({ name: z.string(), sha256: record.shape.sha256, size: record.shape.size }),
+   }),
+   asset: record,
+});
+function platformReport(value: unknown, platform: string, version: string): z.infer<typeof report> {
+   if (!platform.startsWith("darwin-")) return report.parse(value);
+   const parsed = macReport.parse(value);
+   if (
+      parsed.source.appCommit !== parsed.appCommit ||
+      parsed.source.platform !== platform ||
+      !parsed.source.archive.name.startsWith(`AcroClip-${version}-${platform}-sources-`)
+   )
+      throw new Error("Mac source packet identity differs from its release report.");
+   return {
+      appCommit: parsed.appCommit,
+      source: { path: parsed.source.archive.name, sha256: parsed.source.archive.sha256, size: parsed.source.archive.size },
+      asset: parsed.asset,
+   };
+}
 const manifestSchema = z.object({
    version: z.string().regex(/^\d+\.\d+\.\d+$/),
    commit: z.string().regex(/^[a-f0-9]{40}$/),
@@ -77,7 +101,7 @@ export async function sealCandidate(input: string, output: string): Promise<void
             : platform.startsWith("linux")
               ? `AcroClip-${version}-linux-${platform === "linux-x64" ? "x86_64" : "arm64"}.AppImage.release.json`
               : `AcroClip-${version}-mac-${platform.slice(7)}.zip.release.json`;
-      const proof = report.parse(JSON.parse(await readFile(path.join(flat, filename), "utf8")));
+      const proof = platformReport(JSON.parse(await readFile(path.join(flat, filename), "utf8")), platform, version);
       if (proof.appCommit !== commit) throw new Error(`Stale verification: ${filename}`);
       if (!new RegExp(`^AcroClip-${version.replaceAll(".", "\\.")}-${platform}-sources-${commit.slice(0, 8)}\\.zip$`).test(proof.source.path))
          throw new Error(`Wrong source packet: ${filename}`);
