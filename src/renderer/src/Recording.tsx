@@ -421,6 +421,7 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
                         .map((item) => (
                            <button
                               className={`source-row ${item.id === source?.id ? "selected" : ""}`}
+                              aria-pressed={item.id === source?.id}
                               key={item.id}
                               onClick={() => preferences({ sourceId: item.id })}
                            >

@@ -6,6 +6,7 @@ import { Button, Empty, HeaderActions, IconButton, Menu, MenuItem, Segmented, Se
 import { formatSize, formatTime } from "./format";
 import type { Run } from "./desktop";
 import { DropdownSelect } from "./DropdownSelect";
+import { ApplicationIcon } from "./ApplicationIcon";
 import { ViewerTransport } from "./ViewerTransport";
 import { PaneDivider, usePaneSize } from "./layout";
 
@@ -222,6 +223,9 @@ export function Viewer({
                      </Menu>
                   </HeaderActions>
                   <div className="viewer-metadata">
+                     {clip.applicationId && state.applicationIcons[clip.applicationId] && (
+                        <ApplicationIcon src={state.applicationIcons[clip.applicationId]} size={14} />
+                     )}
                      {clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown" && (
                         <span className="source-label" title={clip.source}>
                            {clip.source}

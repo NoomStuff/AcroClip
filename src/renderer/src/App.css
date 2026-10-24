@@ -170,11 +170,12 @@
    z-index: 120;
    bottom: 50px;
    left: calc(50% + 35px);
-   transform: translateX(-50%);
+   translate: -50% 0;
    display: flex;
    gap: 11px;
    align-items: center;
-   background: #262626;
+   background: var(--raised);
+   border: 1px solid var(--border-control);
    border-radius: 12px;
    padding: 12px 13px 12px 17px;
    box-shadow: 0 5px 25px #0008;

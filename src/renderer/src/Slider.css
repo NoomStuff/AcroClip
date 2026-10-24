@@ -14,11 +14,11 @@
    align-items: center;
    width: 76px;
    min-width: 76px;
-   height: 36px;
+   height: var(--control-height);
    padding-right: 8px;
-   border-radius: 7px;
-   background: #101010;
-   border: 1px solid #ffffff1c;
+   border-radius: var(--radius-control);
+   background: var(--raised);
+   border: 1px solid var(--border-control);
 }
 .slider-number:focus-within {
    border-color: var(--accent);
@@ -26,6 +26,7 @@
 .slider-number input[type="number"] {
    width: 100%;
    min-width: 0;
+   min-height: 0;
    padding: 7px 4px 7px 8px;
    border: 0;
    border-radius: inherit;

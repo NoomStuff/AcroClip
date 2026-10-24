@@ -217,20 +217,6 @@
    width: 260px;
 }
 
-.onboarding-body .quality-option {
-   padding: 28px 12px 18px;
-   background: var(--surface);
-}
-
-.onboarding-body .quality-option.selected {
-   background: #282828;
-}
-
-.onboarding-body .quality-option small {
-   line-height: 1.5;
-   font-size: 11px;
-}
-
 .setup-summary {
    background: #ffffff03;
    border-radius: 12px;

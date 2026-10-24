@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Cpu } from "lucide-react";
 import type { Preferences, RecordingCapabilities } from "../../shared/types";
 import { applyRecordingPreset } from "../../shared/recording-presets";
 import { api } from "./desktop";
@@ -31,9 +31,15 @@ function QualityPicker({
                aria-pressed={value === item.value}
             >
                <span className="quality-dot">{value === item.value && <Check size={12} />}</span>
-               <strong>{item.title}</strong>
+               <strong>
+                  {item.title}
+                  {item.value === recommended && (
+                     <span className="quality-hardware-hint" role="img" aria-label="Suggested for your hardware" title="Suggested for your hardware">
+                        <Cpu size={14} aria-hidden="true" />
+                     </span>
+                  )}
+               </strong>
                {item.detail && <span>{item.detail}</span>}
-               {item.value === recommended && <small>Recommended</small>}
             </button>
          ))}
       </div>

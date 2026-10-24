@@ -187,13 +187,23 @@ export function Menu({
    const [position, setPosition] = useState({ top: 0, left: 0 });
    useLayoutEffect(() => {
       if (!open || !ref.current || !menu.current) return;
-      const anchor = ref.current.getBoundingClientRect();
-      const bounds = menu.current.getBoundingClientRect();
-      setPosition({
-         left: Math.max(8, Math.min(window.innerWidth - bounds.width - 8, anchor.right - bounds.width)),
-         top: anchor.bottom + bounds.height + 8 > window.innerHeight ? Math.max(8, anchor.top - bounds.height - 5) : anchor.bottom + 5,
-      });
+      const place = () => {
+         if (!ref.current || !menu.current) return;
+         const anchor = ref.current.getBoundingClientRect();
+         const bounds = menu.current.getBoundingClientRect();
+         setPosition({
+            left: Math.max(8, Math.min(window.innerWidth - bounds.width - 8, anchor.right - bounds.width)),
+            top: anchor.bottom + bounds.height + 8 > window.innerHeight ? Math.max(8, anchor.top - bounds.height - 5) : anchor.bottom + 5,
+         });
+      };
+      place();
       menu.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+      window.addEventListener("resize", place);
+      window.addEventListener("scroll", place, true);
+      return () => {
+         window.removeEventListener("resize", place);
+         window.removeEventListener("scroll", place, true);
+      };
    }, [open]);
    useEffect(() => {
       if (!open) return;
@@ -242,6 +252,12 @@ export function Menu({
                      ref.current?.querySelector("button")?.focus();
                   }}
                   onKeyDown={(event) => {
+                     if (event.key === "Tab") {
+                        // Restore the anchor so Tab continues in the original document order.
+                        setOpen(false);
+                        ref.current?.querySelector("button")?.focus();
+                        return;
+                     }
                      if (event.key === "Escape") {
                         event.preventDefault();
                         event.stopPropagation();
@@ -251,6 +267,7 @@ export function Menu({
                      }
                      if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
                      event.preventDefault();
+                     event.stopPropagation();
                      const items = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
                      const index = items.indexOf(document.activeElement as HTMLButtonElement);
                      const next =
@@ -284,7 +301,7 @@ export function MenuItem({
    disabled?: boolean;
 }) {
    return (
-      <button role="menuitem" className={danger ? "danger" : ""} onClick={onClick} disabled={disabled}>
+      <button role="menuitem" tabIndex={-1} className={danger ? "danger" : ""} onClick={onClick} disabled={disabled}>
          {children}
       </button>
    );

@@ -256,7 +256,7 @@ export function Library({
             />
             <div className="sidebar-scroll moving-selection">
                <SelectionIndicator value={filter} />
-               <button className={`sidebar-item ${filter === "all" ? "selected" : ""}`} onClick={() => setFilter("all")}>
+               <button className={`sidebar-item ${filter === "all" ? "selected" : ""}`} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>
                   <Grid2X2 size={17} />
                   All clips<span className="count">{initial ? "" : state.clips.length}</span>
                </button>
@@ -270,11 +270,14 @@ export function Library({
                   <div className="category-item" key={item.id}>
                      <button
                         className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`}
+                        aria-pressed={filter === `category:${item.id}`}
                         style={categoryStyle(item.color)}
                         onClick={() => setFilter(`category:${item.id}`)}
                      >
                         <CategoryMark category={item} />
-                        {item.name}
+                        <span className="sidebar-label" title={item.name}>
+                           {item.name}
+                        </span>
                         <span className="count">{state.clips.filter((clip) => clip.categories.includes(item.id)).length}</span>
                      </button>
                      <Menu label={`Actions for ${item.name}`} trigger={<MoreHorizontal size={14} />}>
@@ -296,10 +299,13 @@ export function Library({
                         <button
                            key={source.id}
                            className={`sidebar-item ${filter === `source:${source.id}` ? "selected" : ""}`}
+                           aria-pressed={filter === `source:${source.id}`}
                            onClick={() => setFilter(`source:${source.id}`)}
                         >
                            <ApplicationIcon src={source.icon} size={16} />
-                           {source.name}
+                           <span className="sidebar-label" title={source.name}>
+                              {source.name}
+                           </span>
                         </button>
                      ))}
                   </>
@@ -444,10 +450,12 @@ export function Library({
                                  <div className="clip-card-info">
                                     <h3 title={clip.name}>{clip.name}</h3>
                                     <p>
-                                       {clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown" && (
+                                       {!filter.startsWith("source:") && clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown" && (
                                           <>
                                              <span className="clip-source-label">
-                                                {clip.applicationId && <ApplicationIcon src={state.applicationIcons[clip.applicationId]} size={12} />}
+                                                {clip.applicationId && state.applicationIcons[clip.applicationId] && (
+                                                   <ApplicationIcon src={state.applicationIcons[clip.applicationId]} size={14} />
+                                                )}
                                                 {clip.source}
                                              </span>
                                              <span aria-hidden="true">&middot;</span>
@@ -470,7 +478,7 @@ export function Library({
                                     {shareable && (
                                        <MenuItem onClick={() => void run(() => api.reveal(shareable.path))}>
                                           <FolderOpen size={15} />
-                                          Reveal shareable
+                                          Show shareable in folder
                                        </MenuItem>
                                     )}
                                     <MenuItem onClick={() => openCategories(clip)}>
@@ -483,7 +491,7 @@ export function Library({
                                     </MenuItem>
                                     <MenuItem disabled={!!clip.originalMissing} onClick={() => void run(() => api.reveal(clip.path))}>
                                        <Folder size={15} />
-                                       Reveal original
+                                       Show original in folder
                                     </MenuItem>
                                     <div className="menu-separator" />
                                     <MenuItem danger onClick={() => void remove(clip)}>
@@ -523,11 +531,16 @@ export function Library({
                      detail={
                         query
                            ? "Try another name or application."
-                           : filter !== "all"
-                             ? "Choose a different filter, or add a clip to this category."
-                             : "Save a clip while recording, or put supported videos into your collection folder."
+                           : folderPath !== null
+                             ? "Put supported videos in this folder to see them here."
+                             : selectedCategory
+                               ? "Add clips to this category using their actions menu."
+                               : filter.startsWith("source:")
+                                 ? "Clips recorded from this application appear here."
+                                 : "Save a clip while recording, or put supported videos into your collection folder."
                      }
                   >
+                     {query && <Button onClick={() => setQuery("")}>Clear search</Button>}
                      {filter !== "all" && (
                         <Button
                            onClick={() => {

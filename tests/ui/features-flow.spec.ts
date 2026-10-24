@@ -72,6 +72,17 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories[0])
          .toEqual({ ...original, name: "Matches", color: "#73c6a1", icon: "game" });
+      const categoryActions = page.getByRole("button", { name: "Actions for Matches", exact: true });
+      await categoryActions.click();
+      await expect(page.getByRole("menuitem", { name: "Edit category", exact: true })).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await expect(page.getByRole("menuitem", { name: "Delete category", exact: true })).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(categoryActions).toBeFocused();
+      await categoryActions.press("ArrowDown");
+      await page.keyboard.press("Shift+Tab");
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^Matches/ })).toBeFocused();
       await page.reload();
       await expect(page.locator(".recording-page")).toBeVisible();
       await focusNavigation();

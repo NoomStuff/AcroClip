@@ -1,6 +1,11 @@
 :root {
    --scrollbar-size: 6px;
    --workspace-padding: 12px;
+   --control-height: 38px;
+   --radius-control: 8px;
+   --radius-panel: 14px;
+   --border-control: #ffffff18;
+   --border-hover: #ffffff30;
    font-family:
       "Segoe UI Variable Text",
       "Segoe UI Variable",
@@ -22,6 +27,8 @@
    --hover: #322e39;
    --accent: #b197fc;
    --accent-soft: #b197fc16;
+   --accent-border: #b197fc66;
+   --accent-hover: #c2adff;
    --muted: #b0b0b0;
    --subtle: #929292;
    --line: #ffffff10;
@@ -84,16 +91,18 @@ button {
 input,
 select {
    color: inherit;
-   border: 1px solid #ffffff0c;
+   border: 1px solid var(--border-control);
    background: var(--raised);
-   border-radius: 9px;
-   padding: 10px 12px;
+   border-radius: var(--radius-control);
+   padding: 8px 11px;
+   min-height: var(--control-height);
+   font-size: 13px;
    outline: none;
 }
 
 input:focus,
 select:focus {
-   border-color: #b197fc55;
+   border-color: var(--accent-border);
 }
 
 input[type="number"] {
@@ -101,6 +110,7 @@ input[type="number"] {
 }
 
 input[type="range"] {
+   min-height: 0;
    accent-color: var(--accent);
    cursor: pointer;
    border: 0;
@@ -232,9 +242,7 @@ progress::-webkit-progress-value {
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
    }
-}
 
-@media (prefers-reduced-motion: reduce) {
    .spin {
       animation: none !important;
    }

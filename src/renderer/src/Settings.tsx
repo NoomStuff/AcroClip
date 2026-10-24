@@ -160,7 +160,12 @@ export function Settings({ state, run, target }: { state: AppState; run: Run; ta
             <div className="settings-nav moving-selection">
                <SelectionIndicator value={section} />
                {sections.map((item) => (
-                  <button key={item.id} className={`sidebar-item ${section === item.id ? "selected" : ""}`} onClick={() => void switchSection(item.id)}>
+                  <button
+                     key={item.id}
+                     className={`sidebar-item ${section === item.id ? "selected" : ""}`}
+                     aria-current={section === item.id ? "page" : undefined}
+                     onClick={() => void switchSection(item.id)}
+                  >
                      <item.icon size={17} />
                      {item.label}
                   </button>
@@ -322,7 +327,12 @@ export function Settings({ state, run, target }: { state: AppState; run: Run; ta
                         </Field>
                         <div className="size-presets">
                            {[10, 20, 50, 100].map((size) => (
-                              <button className={draft.shareSizeMB === size ? "selected" : ""} key={size} onClick={() => change("shareSizeMB", size)}>
+                              <button
+                                 className={draft.shareSizeMB === size ? "selected" : ""}
+                                 aria-pressed={draft.shareSizeMB === size}
+                                 key={size}
+                                 onClick={() => change("shareSizeMB", size)}
+                              >
                                  {size} MB
                               </button>
                            ))}

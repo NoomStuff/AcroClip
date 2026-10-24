@@ -32,11 +32,12 @@
    justify-content: center;
    gap: 8px;
    padding: 10px 15px;
-   border-radius: 10px;
+   border-radius: var(--radius-control);
    background: var(--raised);
    color: var(--text);
    font-weight: 500;
-   min-height: 38px;
+   min-height: var(--control-height);
+   font-size: 13px;
    transition:
       transform 260ms var(--spring),
       background 160ms var(--ease),
@@ -46,7 +47,6 @@
 }
 
 .button:hover:not(:disabled) {
-   transform: translateY(-1px);
    background: var(--hover);
 }
 
@@ -57,7 +57,7 @@
 }
 
 .button.primary:hover:not(:disabled) {
-   background: #c2adff;
+   background: var(--accent-hover);
 }
 
 .button.quiet {
@@ -86,12 +86,16 @@
 .icon-button {
    width: 30px;
    height: 30px;
-   border-radius: 8px;
+   border-radius: var(--radius-control);
    display: inline-flex;
    align-items: center;
    justify-content: center;
    color: var(--muted);
    flex-shrink: 0;
+   transition:
+      transform 150ms var(--ease),
+      background 160ms var(--ease),
+      color 160ms var(--ease);
 }
 
 .icon-button:hover:not(:disabled) {
@@ -120,7 +124,7 @@
 }
 
 .segmented button.selected {
-   background: #303030;
+   background: var(--raised);
    color: var(--accent);
    box-shadow: 0 1px 2px #0005;
 }
@@ -200,6 +204,7 @@
    opacity: 0;
    width: 1px;
    height: 1px;
+   min-height: 0;
 }
 
 .toggle-row input:focus-visible + .switch {
@@ -345,7 +350,7 @@
    width: 245px;
    flex-shrink: 0;
    background: var(--surface);
-   border-radius: 14px;
+   border-radius: var(--radius-panel);
    display: flex;
    flex-direction: column;
    padding: 18px 11px 12px;
@@ -361,7 +366,7 @@
    border-radius: 10px;
    width: 100%;
    color: var(--muted);
-   font-size: 12px;
+   font-size: 13px;
    min-height: 39px;
    overflow: hidden;
    text-overflow: ellipsis;
@@ -373,7 +378,7 @@
 }
 
 .sidebar-item.selected {
-   background: #2c2c2c;
+   background: var(--accent-soft);
    color: var(--accent);
 }
 
@@ -395,8 +400,8 @@
    z-index: 20;
    background: var(--raised);
    padding: 5px;
-   border: 1px solid #ffffff09;
-   border-radius: 12px;
+   border: 1px solid var(--border-control);
+   border-radius: var(--radius-control);
    box-shadow: 0 10px 35px #0006;
    animation: menu-in 170ms var(--ease);
    transform-origin: top right;
@@ -418,11 +423,13 @@
    width: 100%;
    text-align: left;
    border-radius: 7px;
-   font-size: 11px;
+   min-height: 36px;
+   font-size: 13px;
    color: var(--text);
 }
 
-.menu button:hover {
+.menu button:hover:not(:disabled),
+.menu button:focus-visible {
    background: #ffffff09;
 }
 
@@ -449,8 +456,9 @@
 
 .dialog {
    width: min(420px, calc(100vw - 48px));
-   background: #202020;
-   border-radius: 19px;
+   background: var(--surface);
+   border: 1px solid var(--border-control);
+   border-radius: var(--radius-panel);
    padding: 28px;
    position: relative;
    box-shadow: 0 20px 80px #0008;
@@ -458,6 +466,7 @@
 
 .dialog h2 {
    font-size: 19px;
+   padding-right: 24px;
 }
 
 .dialog p {
@@ -484,16 +493,10 @@
 }
 
 .button:active:not(:disabled) {
-   transform: scale(0.96);
-}
-.icon-button {
-   transition:
-      transform 260ms var(--spring),
-      background 160ms var(--ease),
-      color 160ms var(--ease);
+   transform: translateY(1px);
 }
 .icon-button:active:not(:disabled) {
-   transform: scale(0.88);
+   transform: scale(0.94);
 }
 .segmented button:active:not(:disabled) {
    transform: scale(0.97);

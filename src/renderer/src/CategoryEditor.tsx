@@ -96,7 +96,15 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
          >
             <label className="category-name-input">
                <CategoryMark category={{ color, icon }} size={20} />
-               <input autoFocus aria-label="Category name" maxLength={80} value={name} onChange={(event) => setName(event.target.value)} required />
+               <input
+                  autoFocus
+                  aria-label="Category name"
+                  placeholder="Category name"
+                  maxLength={80}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  required
+               />
             </label>
             <div className="category-icon-choices" role="group" aria-label="Category icon">
                {Object.entries(icons)
@@ -108,7 +116,15 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
                   ))}
                <Menu label="More category icons" className="category-icon-more" columns={6} trigger={<ChevronDown size={18} />}>
                   {Object.entries(icons).map(([id, Icon]) => (
-                     <button type="button" role="menuitemradio" key={id} aria-label={`Icon: ${id}`} aria-checked={icon === id} onClick={() => setIcon(id)}>
+                     <button
+                        type="button"
+                        role="menuitemradio"
+                        tabIndex={-1}
+                        key={id}
+                        aria-label={`Icon: ${id}`}
+                        aria-checked={icon === id}
+                        onClick={() => setIcon(id)}
+                     >
                         <Icon size={20} />
                      </button>
                   ))}
