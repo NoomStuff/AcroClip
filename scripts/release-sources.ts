@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createGunzip } from "node:zlib";
 import type { ControlledMediaBuild } from "./controlled-media";
+import { githubSourceApi } from "./github-source-api";
 import { collectWasapiPacket, exactWasapiException, validateWasapiPacket, wasapiRecordSchema, type WasapiRecord } from "./windows-wasapi-source";
 
 interface SourcePin {
@@ -383,7 +384,7 @@ export async function collectDependency(
       const repo = uri.pathname.replace(/^\//, "").replace(/\.git$/, "");
       if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("Source URL is not a GitHub repository or a hash-pinned archive.");
       if (!/^[a-f\d]{7,40}$/i.test(revision)) {
-         const response = await fetch(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(revision)}`, { signal: AbortSignal.timeout(30_000) });
+         const response = await githubSourceApi(`/repos/${repo}/commits/${encodeURIComponent(revision)}`);
          if (!response.ok) throw new Error(`Cannot resolve GitHub source tag: HTTP ${response.status}`);
          const value = (await response.json()) as { sha?: string };
          if (!value.sha || !/^[a-f\d]{40}$/i.test(value.sha)) throw new Error("Source tag did not resolve to a commit.");

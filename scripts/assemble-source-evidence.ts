@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { collectKit, collectDependency, hashFile, releaseInventory, type SourceKit } from "./release-sources";
 import type { ControlledMediaBuild } from "./controlled-media";
 import { collectElectronFfmpeg } from "./electron-source-evidence";
+import { githubSourceApi } from "./github-source-api";
 
 type Evidence = NonNullable<SourceKit["evidence"]>;
 type FileRecord = Evidence["components"][number]["sourceArchives"][number];
@@ -240,9 +241,7 @@ export async function assembleSourceEvidence(project: string): Promise<SourceKit
    ])
       compiled.push(dependency(name));
    const framework = source("Mbed-TLS/mbedtls-framework");
-   const response = await fetch("https://api.github.com/repos/Mbed-TLS/mbedtls/git/trees/c765c831e5c2a0971410692f92f7a81d6ec65ec2", {
-      signal: AbortSignal.timeout(30_000),
-   });
+   const response = await githubSourceApi("/repos/Mbed-TLS/mbedtls/git/trees/c765c831e5c2a0971410692f92f7a81d6ec65ec2");
    if (!response.ok) throw new Error(`Cannot verify MbedTLS gitlink: HTTP ${response.status}`);
    const tree = (await response.json()) as { tree: { path: string; mode: string; sha: string }[] };
    if (tree.tree.find((entry) => entry.path === "framework" && entry.mode === "160000")?.sha !== framework.commit)

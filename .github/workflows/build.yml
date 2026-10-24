@@ -83,8 +83,12 @@ jobs:
          - run: bun run build:notices
          - run: bun run build
          - name: Collect Windows runtime dependency sources
+           env:
+              GITHUB_TOKEN: ${{ github.token }}
            run: bun scripts/release-sources.ts --collect-only --dependencies --controlled-inputs
          - name: Assemble exact Windows sources and native notices
+           env:
+              GITHUB_TOKEN: ${{ github.token }}
            run: bun scripts/assemble-source-evidence.ts
          - name: Check Windows source closure
            run: bun scripts/release-sources.ts --check
