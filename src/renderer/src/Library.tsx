@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
    AlertCircle,
    Check,
@@ -6,6 +7,7 @@ import {
    Folder,
    FolderOpen,
    Grid2X2,
+   List,
    LoaderCircle,
    MoreHorizontal,
    Pencil,
@@ -30,6 +32,12 @@ import { categoryColors, categoryStyle } from "./category-color";
 import { CategoryEditor, CategoryMark } from "./CategoryEditor";
 import { useGridMotion } from "./useGridMotion";
 import { PaneDivider, usePaneSize } from "./layout";
+import { useApplicationColors } from "./useApplicationColors";
+import type { ContextMenuRequest } from "./ui";
+
+function applicationStyle(color: string | undefined): CSSProperties {
+   return color ? ({ "--application-color": color } as CSSProperties) : {};
+}
 
 export function Library({
    state,
@@ -49,19 +57,37 @@ export function Library({
    const layout = useRef<HTMLDivElement>(null);
    const scrollArea = useRef<HTMLDivElement>(null);
    const [placeholderCount, setPlaceholderCount] = useState(8);
+   const [view, setView] = useState<"grid" | "list">(() => {
+      try {
+         return localStorage.getItem("acroclip.library.view") === "list" ? "list" : "grid";
+      } catch {
+         return "grid";
+      }
+   });
+   useEffect(() => {
+      try {
+         localStorage.setItem("acroclip.library.view", view);
+      } catch {
+         /* The view still works when storage is unavailable. */
+      }
+   }, [view]);
    useLayoutEffect(() => {
       const node = scrollArea.current;
       if (!node || !visible) return;
       const observer = new ResizeObserver(([entry]) => {
          if (!entry || entry.contentRect.width < 1) return;
          const { width, height } = entry.contentRect;
+         if (view === "list") {
+            setPlaceholderCount(Math.min(24, Math.max(1, Math.ceil(height / 82))));
+            return;
+         }
          const columns = Math.max(1, Math.floor((width + 18) / 248));
          const cardHeight = Math.max(205, (((width - (columns - 1) * 18) / columns) * 9) / 16 + 68);
          setPlaceholderCount(Math.min(24, columns * Math.max(1, Math.ceil(height / (cardHeight + 18)))));
       });
       observer.observe(node);
       return () => observer.disconnect();
-   }, [visible]);
+   }, [visible, view]);
    const sidebar = usePaneSize(layout, { key: "library.sidebar", initial: 245, min: 200, max: 380, reserve: 440, axis: "x" });
    const pending = state.collectionStatus.phase === "loading" || state.collectionStatus.phase === "refreshing";
    const unavailable = state.collectionStatus.phase === "error";
@@ -70,6 +96,12 @@ export function Library({
    const [query, setQuery] = useState("");
    const [filter, setFilter] = useState("all");
    const [order, setOrder] = useState("newest");
+   const applicationColors = useApplicationColors(state.applicationIcons, visible);
+   const selectedApplicationColor = filter.startsWith("source:") ? applicationColors[filter.slice(7)] : undefined;
+   const [contextMenu, setContextMenu] = useState<(ContextMenuRequest & { clipId: string }) | null>(null);
+   const requestMenu = (clipId: string, element: HTMLElement, left: number, top: number) => {
+      setContextMenu({ clipId, left, top, restoreFocus: element.querySelector("button") ?? element });
+   };
    useEffect(() => {
       setFilter("all");
       setQuery("");
@@ -155,6 +187,9 @@ export function Library({
             .sort((a, b) => (order === "name" ? a.name.localeCompare(b.name) : order === "oldest" ? a.createdAt - b.createdAt : b.createdAt - a.createdAt)),
       [state.clips, query, filter, folderPath, order]
    );
+   useEffect(() => {
+      if (contextMenu && !clips.some((clip) => clip.id === contextMenu.clipId)) setContextMenu(null);
+   }, [clips, contextMenu]);
    const selectedCategory = state.categories.find((item) => `category:${item.id}` === filter);
    const discovering = state.collectionStatus.phase === "loading";
    const discovery = state.collectionStatus.discovery;
@@ -168,7 +203,7 @@ export function Library({
    const remainingSlots = discovering && !query && discoveredCount !== undefined ? Math.max(0, discoveredCount - clips.length) : 0;
    const showPlaceholders = discovering && !clips.length && !childFolders.length && !query;
    const grid = useRef<HTMLDivElement>(null);
-   useGridMotion(grid, JSON.stringify([collectionRoot, childFolders, clips.map((clip) => clip.id)]), visible);
+   useGridMotion(grid, JSON.stringify([collectionRoot, view, childFolders, clips.map((clip) => clip.id)]), visible);
    const heading =
       filter === "all"
          ? "All clips"
@@ -228,7 +263,14 @@ export function Library({
       <div className="library-page" ref={layout}>
          <aside
             className="library-sidebar"
-            style={{ width: sidebar.size, ...(selectedCategory ? { "--selection-background": categoryColors(selectedCategory.color).tint } : {}) }}
+            style={{
+               width: sidebar.size,
+               ...(selectedCategory
+                  ? { "--selection-background": categoryColors(selectedCategory.color).tint }
+                  : selectedApplicationColor
+                    ? { "--selection-background": `color-mix(in srgb, ${selectedApplicationColor} 12%, transparent)` }
+                    : {}),
+            }}
          >
             <ContextHeader
                className="collection-home"
@@ -298,7 +340,8 @@ export function Library({
                      {sources.map((source) => (
                         <button
                            key={source.id}
-                           className={`sidebar-item ${filter === `source:${source.id}` ? "selected" : ""}`}
+                           className={`sidebar-item application-filter ${filter === `source:${source.id}` ? "selected" : ""}`}
+                           style={applicationStyle(applicationColors[source.id])}
                            aria-pressed={filter === `source:${source.id}`}
                            onClick={() => setFilter(`source:${source.id}`)}
                         >
@@ -369,6 +412,14 @@ export function Library({
                         <option value="name">Name</option>
                      </Select>
                   </div>
+                  <div className="library-view-switch" role="group" aria-label="Library view">
+                     <IconButton label="Grid view" aria-pressed={view === "grid"} onClick={() => setView("grid")}>
+                        <Grid2X2 size={16} />
+                     </IconButton>
+                     <IconButton label="List view" aria-pressed={view === "list"} onClick={() => setView("list")}>
+                        <List size={18} />
+                     </IconButton>
+                  </div>
                </div>
             </header>
             <div className="library-scroll" ref={scrollArea} aria-busy={pending}>
@@ -391,7 +442,7 @@ export function Library({
                   </nav>
                )}
                {showPlaceholders ? (
-                  <div className="clip-grid library-skeleton" aria-label="Opening collection">
+                  <div className="clip-grid library-skeleton" data-view={view} aria-label="Opening collection">
                      {Array.from({ length: slots }, (_, key) => (
                         <div className="clip-placeholder" key={key}>
                            <div />
@@ -400,7 +451,7 @@ export function Library({
                      ))}
                   </div>
                ) : clips.length || childFolders.length ? (
-                  <div className="clip-grid" ref={grid}>
+                  <div className="clip-grid" data-view={view} ref={grid}>
                      {childFolders.map((path) => (
                         <article className="clip-card folder-card" key={`folder:${path}`} data-layout-key={`folder:${path}`}>
                            <button className="clip-open" aria-label={`Open folder ${path}`} onClick={() => setFilter(`folder:${path}`)}>
@@ -419,7 +470,23 @@ export function Library({
                         );
                         const shareable = clip.shareables.at(-1);
                         return (
-                           <article className="clip-card" key={clip.id} data-layout-key={clip.id}>
+                           <article
+                              className="clip-card"
+                              key={clip.id}
+                              data-layout-key={clip.id}
+                              style={applicationStyle(clip.applicationId ? applicationColors[clip.applicationId] : undefined)}
+                              onContextMenu={(event) => {
+                                 event.preventDefault();
+                                 requestMenu(clip.id, event.currentTarget, event.clientX, event.clientY);
+                              }}
+                              onKeyDown={(event) => {
+                                 if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+                                 event.preventDefault();
+                                 event.stopPropagation();
+                                 const bounds = event.currentTarget.getBoundingClientRect();
+                                 requestMenu(clip.id, event.currentTarget, bounds.left + 20, bounds.top + 30);
+                              }}
+                           >
                               <button
                                  className="clip-open"
                                  {...fileDragProps(clip.originalMissing ? shareable?.path : clip.path)}
@@ -429,7 +496,12 @@ export function Library({
                               >
                                  <div className="clip-thumbnail">
                                     {clip.thumbnail ? (
-                                       <img src={clip.thumbnail} alt="" loading="lazy" />
+                                       <img
+                                          src={clip.thumbnail}
+                                          alt=""
+                                          loading="lazy"
+                                          className={clip.height > clip.width ? "portrait-thumbnail" : undefined}
+                                       />
                                     ) : (
                                        <div className="thumbnail-fallback">
                                           <Clapperboard size={34} />
@@ -456,17 +528,29 @@ export function Library({
                                                 {clip.applicationId && state.applicationIcons[clip.applicationId] && (
                                                    <ApplicationIcon src={state.applicationIcons[clip.applicationId]} size={14} />
                                                 )}
-                                                {clip.source}
+                                                <span>{clip.source}</span>
                                              </span>
-                                             <span aria-hidden="true">&middot;</span>
                                           </>
                                        )}
-                                       <span>{age(clip.createdAt)}</span>
+                                       <span className="clip-age">{age(clip.createdAt)}</span>
+                                       <span className="clip-grid-size">
+                                          <span aria-hidden="true">&middot;</span>{" "}
+                                          {formatSize(clip.originalMissing ? (shareable?.size ?? clip.size) : clip.size)}
+                                       </span>
                                     </p>
                                  </div>
+                                 <span className="clip-file-facts">
+                                    <span>{clip.duration > 0 ? formatTime(clip.duration) : ""}</span>
+                                    <span>{formatSize(clip.originalMissing ? (shareable?.size ?? clip.size) : clip.size)}</span>
+                                 </span>
                               </button>
                               <div className="card-menu">
-                                 <Menu label={`Actions for ${clip.name}`} trigger={<MoreHorizontal size={17} />}>
+                                 <Menu
+                                    label={`Actions for ${clip.name}`}
+                                    trigger={<MoreHorizontal size={17} />}
+                                    contextRequest={contextMenu?.clipId === clip.id ? contextMenu : undefined}
+                                    onContextClose={() => setContextMenu((current) => (current?.clipId === clip.id ? null : current))}
+                                 >
                                     <MenuItem onClick={() => openClip(clip)}>
                                        <Clapperboard size={15} />
                                        Open clip

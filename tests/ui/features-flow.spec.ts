@@ -42,6 +42,8 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       await focusNavigation();
       await page.keyboard.press("Control+2");
       await expect(page.locator(".library-page")).toBeVisible();
+      await page.getByRole("button", { name: "List view", exact: true }).click();
+      await expect(page.getByRole("button", { name: "List view", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.keyboard.press("Control+f");
       const search = page.getByRole("textbox", { name: "Search clips", exact: true });
       await expect(search).toBeFocused();
@@ -88,6 +90,9 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       await focusNavigation();
       await page.keyboard.press("Control+2");
       await expect(page.getByRole("button", { name: /Matches/ }).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "List view", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await page.getByRole("button", { name: "Grid view", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Grid view", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.keyboard.press("Control+,");
       await expect(page.locator(".settings-page")).toBeVisible();
       await page.getByRole("button", { name: "Shortcuts", exact: true }).click();

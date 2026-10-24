@@ -64,6 +64,15 @@
    text-overflow: ellipsis;
    white-space: nowrap;
 }
+.application-filter.selected {
+   color: var(--application-color, var(--accent));
+}
+.application-filter:focus-visible {
+   outline-color: var(--application-color, var(--accent));
+}
+.application-filter:not(.selected):hover {
+   background: color-mix(in srgb, var(--application-color, #bdbdbd) 8%, transparent);
+}
 
 .sidebar-bottom {
    color: var(--subtle);
@@ -108,7 +117,7 @@
 .library-tools {
    flex-shrink: 0;
    display: flex;
-   gap: 12px;
+   gap: 8px;
    align-items: center;
 }
 
@@ -158,7 +167,9 @@
 .library-scroll {
    flex: 1;
    overflow-y: auto;
-   padding: 0 calc(var(--workspace-padding) - var(--scrollbar-size)) 15px 0;
+   padding: 8px calc(var(--workspace-padding) - var(--scrollbar-size)) 15px 8px;
+   margin-top: -8px;
+   margin-left: -8px;
    /* The viewport reaches the window edge; cards keep the workspace inset. */
    margin-inline-end: calc(-1 * var(--workspace-padding));
 }
@@ -170,15 +181,32 @@
 }
 
 .clip-card {
-   background: var(--surface);
-   border-radius: 13px;
+   background: transparent;
+   border-radius: 10px;
    overflow: visible;
    position: relative;
    align-self: start;
+   isolation: isolate;
 }
-
-.clip-card:hover {
-   background: var(--raised);
+.clip-card::before {
+   content: "";
+   position: absolute;
+   inset: 0;
+   z-index: -1;
+   pointer-events: none;
+   border-radius: 12px;
+   background: color-mix(in srgb, var(--application-color, #bdbdbd) 10%, transparent);
+   opacity: 0;
+   transform: scale(0.98);
+   transition:
+      opacity 150ms var(--ease),
+      inset 200ms var(--spring),
+      transform 200ms var(--spring);
+}
+.clip-card:is(:hover, :focus-within, :has([aria-expanded="true"]))::before {
+   inset: -7px;
+   opacity: 1;
+   transform: scale(1);
 }
 
 .clip-open {
@@ -186,8 +214,7 @@
    padding: 0;
    text-align: left;
    display: block;
-   border-radius: 13px;
-   overflow: hidden;
+   border-radius: 10px;
 }
 
 .clip-thumbnail {
@@ -195,6 +222,7 @@
    overflow: hidden;
    position: relative;
    background: var(--surface);
+   border-radius: 10px;
 }
 
 .clip-thumbnail img {
@@ -203,9 +231,116 @@
    object-fit: cover;
    transition: transform 350ms var(--ease);
 }
+.clip-thumbnail img.portrait-thumbnail {
+   object-fit: contain;
+}
+.clip-file-facts {
+   display: none;
+}
+.library-view-switch {
+   display: flex;
+   padding: 3px;
+   gap: 2px;
+   border: 1px solid var(--border-control);
+   border-radius: var(--radius-control);
+   background: var(--surface);
+}
+.library-view-switch .icon-button {
+   width: 30px;
+   height: 30px;
+   border-radius: 5px;
+}
+.library-view-switch [aria-pressed="true"] {
+   background: var(--raised);
+   color: var(--accent);
+}
+.clip-grid[data-view="list"] {
+   grid-template-columns: minmax(0, 1fr);
+   gap: 2px;
+}
+.clip-grid[data-view="list"] .clip-card {
+   border-radius: var(--radius-control);
+   background: transparent;
+   border-bottom: 1px solid #ffffff08;
+}
+.clip-grid[data-view="list"] .clip-card:is(:hover, :focus-within, :has([aria-expanded="true"]))::before {
+   inset: 0;
+}
+.clip-grid[data-view="list"] .clip-grid-size {
+   display: none;
+}
+.clip-grid[data-view="list"] .clip-open {
+   display: flex;
+   align-items: center;
+   gap: 16px;
+   padding: 10px 44px 10px 10px;
+   border-radius: var(--radius-control);
+}
+.clip-grid[data-view="list"] .clip-thumbnail {
+   width: 104px;
+   flex: 0 0 104px;
+   border-radius: 5px;
+}
+.clip-grid[data-view="list"] .clip-thumbnail .duration {
+   display: none;
+}
+.clip-grid[data-view="list"] .clip-thumbnail .copy-indicator {
+   bottom: 4px;
+   left: 4px;
+   width: 18px;
+   height: 18px;
+}
+.clip-grid[data-view="list"] .clip-card-info {
+   flex: 1;
+   min-width: 0;
+   padding: 0;
+}
+.clip-grid[data-view="list"] .clip-file-facts {
+   display: grid;
+   gap: 7px;
+   min-width: 68px;
+   text-align: right;
+   color: var(--muted);
+   font-size: 12px;
+   font-variant-numeric: tabular-nums;
+}
+.clip-grid[data-view="list"] .clip-file-facts > span:last-child {
+   font-size: 11px;
+   color: var(--subtle);
+}
+.clip-grid[data-view="list"] .card-menu {
+   top: 24px;
+   right: 5px;
+   margin-top: 0;
+}
+.clip-grid[data-view="list"] .card-job {
+   padding: 0 10px 8px 130px;
+}
+.clip-grid[data-view="list"] .folder-card svg {
+   width: 30px;
+   height: 30px;
+}
+.clip-grid[data-view="list"] .clip-placeholder {
+   min-height: 78px;
+   contain-intrinsic-size: auto 78px;
+   display: flex;
+   align-items: center;
+   gap: 16px;
+   padding: 10px;
+}
+.clip-grid[data-view="list"] .clip-placeholder > div {
+   width: 104px;
+   flex-shrink: 0;
+}
+.clip-grid[data-view="list"] .clip-placeholder > span {
+   margin: 0;
+}
 
 .clip-card:hover .clip-thumbnail img {
    transform: scale(1.025);
+}
+.clip-card:hover .clip-thumbnail img.portrait-thumbnail {
+   transform: none;
 }
 
 .thumbnail-fallback {
@@ -243,27 +378,41 @@
 }
 
 .clip-card-info {
-   padding: 12px 13px 13px;
+   padding: 10px 0 3px;
 }
 
 .clip-card h3 {
-   font-size: 13px;
+   font-size: 14px;
    font-weight: 600;
    color: var(--text);
-   white-space: nowrap;
+   line-height: 1.4;
    overflow: hidden;
    text-overflow: ellipsis;
    padding-right: 26px;
+   display: -webkit-box;
+   -webkit-line-clamp: 2;
+   -webkit-box-orient: vertical;
+   min-height: 20px;
 }
 
 .clip-card p {
-   margin-top: 6px;
+   margin-top: 5px;
    font-size: 12px;
    display: flex;
-   gap: 6px;
-   color: var(--subtle);
+   gap: 4px 6px;
+   flex-wrap: nowrap;
+   color: var(--muted);
+   line-height: 1.55;
+}
+.clip-grid-size,
+.clip-age {
    white-space: nowrap;
-   overflow: hidden;
+   flex-shrink: 0;
+}
+.clip-grid[data-view="list"] h3 {
+   padding: 0;
+   white-space: nowrap;
+   display: block;
 }
 
 .clip-card p > span:first-child {
@@ -273,10 +422,10 @@
 
 .card-menu {
    position: absolute;
-   right: 5px;
+   right: -5px;
    top: 0;
    /* Percentage margins follow card width, matching the 16:9 thumbnail above the title. */
-   margin-top: calc(56.25% + 5px);
+   margin-top: calc(56.25% + 4px);
 }
 
 .card-menu .icon-button {
@@ -288,7 +437,7 @@
    display: flex;
    gap: 7px;
    align-items: center;
-   padding: 0 11px 9px;
+   padding: 6px 0;
    font-size: 11px;
    color: var(--accent);
 }
@@ -581,6 +730,19 @@
    display: inline-flex;
    align-items: center;
    gap: 5px;
+   flex: 0 1 auto;
+   min-width: 0;
+   max-width: 100%;
+}
+.clip-source-label > span {
+   min-width: 0;
+   overflow: hidden;
+   white-space: nowrap;
+   text-overflow: ellipsis;
+}
+.clip-source-label + .clip-age::before {
+   content: "·";
+   margin-right: 6px;
 }
 
 .clip-placeholder {
@@ -625,7 +787,7 @@
    justify-content: center;
 }
 
-@container (max-width: 540px) {
+@container (max-width: 720px) {
    .library-heading {
       flex-wrap: wrap;
       gap: 12px;
@@ -645,5 +807,8 @@
    .library-skeleton,
    .source-placeholder {
       animation: none;
+   }
+   .clip-card::before {
+      transition: none;
    }
 }

@@ -1,4 +1,4 @@
-import { Children, Fragment, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { Children, Fragment, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -168,20 +168,45 @@ export function Empty({ icon, title, detail, children }: { icon: ReactNode; titl
       </div>
    );
 }
+export interface ContextMenuRequest {
+   left: number;
+   top: number;
+   restoreFocus: HTMLElement;
+}
 export function Menu({
    trigger,
    children,
    label,
    className = "",
    columns = 1,
+   contextRequest,
+   onContextClose,
 }: {
    trigger: ReactNode;
    children: ReactNode;
    label: string;
    className?: string;
    columns?: number;
+   contextRequest?: ContextMenuRequest | undefined;
+   onContextClose?: (() => void) | undefined;
 }) {
    const [open, setOpen] = useState(false);
+   const [contextAnchor, setContextAnchor] = useState<ContextMenuRequest | null>(null);
+   const contextClose = useRef(onContextClose);
+   contextClose.current = onContextClose;
+   const dismiss = useCallback(() => {
+      setOpen(false);
+      if (contextAnchor) contextClose.current?.();
+   }, [contextAnchor]);
+   useEffect(() => {
+      if (contextRequest) {
+         setContextAnchor(contextRequest);
+         setOpen(true);
+      } else {
+         setContextAnchor(null);
+         setOpen(false);
+      }
+   }, [contextRequest]);
    const ref = useRef<HTMLDivElement>(null);
    const menu = useRef<HTMLDivElement>(null);
    const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -192,28 +217,40 @@ export function Menu({
          const anchor = ref.current.getBoundingClientRect();
          const bounds = menu.current.getBoundingClientRect();
          setPosition({
-            left: Math.max(8, Math.min(window.innerWidth - bounds.width - 8, anchor.right - bounds.width)),
-            top: anchor.bottom + bounds.height + 8 > window.innerHeight ? Math.max(8, anchor.top - bounds.height - 5) : anchor.bottom + 5,
+            left: Math.max(8, Math.min(window.innerWidth - bounds.width - 8, contextAnchor?.left ?? anchor.right - bounds.width)),
+            top: contextAnchor
+               ? Math.max(8, Math.min(window.innerHeight - bounds.height - 8, contextAnchor.top))
+               : anchor.bottom + bounds.height + 8 > window.innerHeight
+                 ? Math.max(8, anchor.top - bounds.height - 5)
+                 : anchor.bottom + 5,
          });
       };
       place();
       menu.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+      const scroll = (event: Event) => {
+         if (contextAnchor && !menu.current?.contains(event.target as Node)) dismiss();
+         else place();
+      };
       window.addEventListener("resize", place);
-      window.addEventListener("scroll", place, true);
+      window.addEventListener("scroll", scroll, true);
       return () => {
          window.removeEventListener("resize", place);
-         window.removeEventListener("scroll", place, true);
+         window.removeEventListener("scroll", scroll, true);
       };
-   }, [open]);
+   }, [open, contextAnchor, dismiss]);
+   const restoreFocus = useCallback(
+      () => (contextAnchor?.restoreFocus.isConnected ? contextAnchor.restoreFocus : ref.current?.querySelector("button"))?.focus(),
+      [contextAnchor]
+   );
    useEffect(() => {
       if (!open) return;
       const close = (event: PointerEvent) => {
-         if (!ref.current?.contains(event.target as Node) && !menu.current?.contains(event.target as Node)) setOpen(false);
+         if (!ref.current?.contains(event.target as Node) && !menu.current?.contains(event.target as Node)) dismiss();
       };
       const key = (event: KeyboardEvent) => {
          if (event.key === "Escape") {
-            setOpen(false);
-            ref.current?.querySelector("button")?.focus();
+            dismiss();
+            restoreFocus();
          }
       };
       window.addEventListener("pointerdown", close);
@@ -222,17 +259,22 @@ export function Menu({
          window.removeEventListener("pointerdown", close);
          window.removeEventListener("keydown", key);
       };
-   }, [open]);
+   }, [open, restoreFocus, dismiss]);
    return (
       <div className={`menu-wrap ${className}`} ref={ref}>
          <IconButton
             label={label}
             aria-expanded={open}
             aria-haspopup="menu"
-            onClick={() => setOpen(!open)}
+            onClick={() => {
+               setContextAnchor(null);
+               if (open) dismiss();
+               else setOpen(true);
+            }}
             onKeyDown={(event) => {
                if (event.key === "ArrowDown") {
                   event.preventDefault();
+                  setContextAnchor(null);
                   setOpen(true);
                }
             }}
@@ -248,21 +290,21 @@ export function Menu({
                   role="menu"
                   aria-label={label}
                   onClick={() => {
-                     setOpen(false);
-                     ref.current?.querySelector("button")?.focus();
+                     dismiss();
+                     restoreFocus();
                   }}
                   onKeyDown={(event) => {
                      if (event.key === "Tab") {
                         // Restore the anchor so Tab continues in the original document order.
-                        setOpen(false);
-                        ref.current?.querySelector("button")?.focus();
+                        dismiss();
+                        restoreFocus();
                         return;
                      }
                      if (event.key === "Escape") {
                         event.preventDefault();
                         event.stopPropagation();
-                        setOpen(false);
-                        ref.current?.querySelector("button")?.focus();
+                        dismiss();
+                        restoreFocus();
                         return;
                      }
                      if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;

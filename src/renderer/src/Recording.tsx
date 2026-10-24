@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Clapperboard, Circle, CircleStop, Gamepad2, Monitor, RefreshCw } from "lucide-react";
+import { Clapperboard, Circle, CircleStop, Gamepad2, LoaderCircle, Monitor, RefreshCw } from "lucide-react";
 import type { AppState, AudioLevels, CaptureSource, GameCandidate, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
 import { api, reportFeedback } from "./desktop";
 import { Button, ContextHeader, Empty, Field, Segmented, Select } from "./ui";
@@ -335,22 +335,31 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
                   <div className="capture-actions">
                      <button
                         className={`record-action ${active ? "is-recording" : ""}`}
-                        aria-label={active ? "Stop recording" : "Start recording"}
+                        aria-label={active ? "Stop recording" : state.recorder.state === "starting" ? "Starting recording" : "Start recording"}
+                        aria-busy={state.recorder.state === "starting"}
+                        title={active ? "Stop recording. Unsaved history will clear." : undefined}
+                        aria-description={active ? "Stopping clears unsaved history." : undefined}
                         disabled={state.recorder.state === "starting" || !state.recorder.supported || (!active && !captureAvailable)}
                         onClick={() => void run(active ? () => api.stopRecording() : () => api.startRecording())}
                      >
-                        {active ? <CircleStop size={50} strokeWidth={1.7} /> : <Circle size={50} strokeWidth={1.7} />}
-                        <span>{active ? "Stop recording" : "Start recording"}</span>
-                        {active && <small>Unsaved history will clear</small>}
+                        {active ? (
+                           <CircleStop size={50} strokeWidth={1.7} />
+                        ) : state.recorder.state === "starting" ? (
+                           <LoaderCircle className="spin" size={32} />
+                        ) : (
+                           <Circle size={50} strokeWidth={1.7} />
+                        )}
+                        <span>{active ? "Stop recording" : state.recorder.state === "starting" ? "Starting…" : "Start recording"}</span>
                         {recordShortcut && <kbd>{formatBinding(recordShortcut, state.platform === "darwin")}</kbd>}
                      </button>
                      <button
                         className={`clip-action ${pulsing ? "shortcut-pulse" : ""}`}
                         aria-label={saving ? "Saving clip" : "Save clip"}
+                        aria-busy={saving}
                         disabled={!active || state.recorder.availableSeconds < 1 || saving}
                         onClick={() => void save()}
                      >
-                        <Clapperboard size={48} strokeWidth={1.65} />
+                        {saving ? <LoaderCircle className="spin" size={30} /> : <Clapperboard size={48} strokeWidth={1.65} />}
                         <span>{saving ? "Saving…" : "Save clip"}</span>
                         <kbd>{formatBinding(state.preferences.shortcut, state.platform === "darwin")}</kbd>
                      </button>
