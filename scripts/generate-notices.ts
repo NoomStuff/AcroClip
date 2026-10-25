@@ -110,7 +110,7 @@ export async function generateNotices(project: string): Promise<void> {
    const text = [
       "AcroClip bundled JavaScript dependencies",
       "Generated from the installed production dependency graph. Electron and Chromium retain their separate packaged notices.",
-      "Corresponding application and dependency sources: https://github.com/NoomStuff/AcroClip-sources/releases",
+      "Corresponding application and dependency sources: https://github.com/NoomStuff/AcroClip/releases",
       ...packages.flatMap((dependency) => [
          `${dependency.name}@${dependency.version}\nLicense: ${dependency.license}\nUpstream: ${dependency.repository}`,
          ...dependency.files.map((file) => `${file.name}\n${file.text}`),

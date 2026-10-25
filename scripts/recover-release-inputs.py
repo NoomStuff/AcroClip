@@ -23,8 +23,8 @@ headers = {"User-Agent": "AcroClip-source-inputs", "Accept": "application/vnd.gi
 if os.environ.get("GITHUB_TOKEN"):
     headers["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
 release = None
-for repository in ("NoomStuff/AcroClip-sources", "NoomStuff/AcroClip"):
-    request = urllib.request.Request("https://api.github.com/repos/" + repository + "/releases/tags/" + args.release, headers=headers)
+for tag in (args.release + "-sources", args.release):
+    request = urllib.request.Request("https://api.github.com/repos/NoomStuff/AcroClip/releases/tags/" + tag, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             release = json.load(response)

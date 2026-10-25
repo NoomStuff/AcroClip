@@ -72,7 +72,6 @@ jobs:
               CANDIDATE_ATTEMPT: ${{ inputs.attempt }}
               CANDIDATE_COMMIT: ${{ inputs.commit }}
               SOURCE_RELEASE_URL: ${{ inputs.source_release }}
-              SOURCE_REPOSITORY: ${{ vars.SOURCE_REPOSITORY || github.repository }}
            with:
               script: |
                  const publish = require('./scripts/publish-release.cjs');

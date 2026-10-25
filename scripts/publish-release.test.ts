@@ -236,12 +236,12 @@ it("refuses a stable source-only release in the app repository", async () => {
    expect(repos.createRelease).not.toHaveBeenCalled();
 });
 
-it("retains support for separately hosted historical source packets", async () => {
-   const { args, assets } = await fixture();
-   vi.stubEnv("SOURCE_REPOSITORY", "NoomStuff/AcroClip-sources");
-   vi.stubEnv("SOURCE_RELEASE_URL", "https://github.com/NoomStuff/AcroClip-sources/releases/tag/v0.3.1");
-   for (const asset of assets.get(0)!) asset.browser_download_url = `https://github.com/NoomStuff/AcroClip-sources/releases/download/v0.3.1/${asset.name}`;
-   await publish(args);
+it("rejects externally hosted source packets even with a repository override", async () => {
+   const { args, repos } = await fixture();
+   vi.stubEnv("SOURCE_REPOSITORY", "NoomStuff/legacy-sources");
+   vi.stubEnv("SOURCE_RELEASE_URL", "https://github.com/NoomStuff/legacy-sources/releases/tag/v0.3.1");
+   await expect(publish(args)).rejects.toThrow("source release URL in the app repository");
+   expect(repos.createRelease).not.toHaveBeenCalled();
 });
 
 it("retries a feed failure after public publication using the retained provenance", async () => {

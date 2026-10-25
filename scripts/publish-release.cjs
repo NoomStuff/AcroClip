@@ -86,14 +86,12 @@ module.exports = async function publish({ github, context, core, directory = "ca
       const finalCommit = (await github.rest.repos.getCommit({ ...repo, ref: `refs/tags/${releaseTag}` })).data.sha;
       if (finalCommit !== manifest.commit) throw Error("Published tag differs from verified commit");
    }
-   const sourceRepository = process.env.SOURCE_REPOSITORY;
+   const sourceRepository = `${repo.owner}/${repo.repo}`;
    const sourceUrl = process.env.SOURCE_RELEASE_URL;
-   if (!sourceRepository || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(sourceRepository)) throw Error("Configure a corresponding-source repository");
-   const sameRepository = sourceRepository.toLowerCase() === `${repo.owner}/${repo.repo}`.toLowerCase();
    const sourcePrefix = `https://github.com/${sourceRepository}/releases/tag/`;
    const sourceTag = sourceUrl?.startsWith(sourcePrefix) ? sourceUrl.slice(sourcePrefix.length) : "";
-   if (!sourceTag || !/^[A-Za-z0-9_.-]+$/.test(sourceTag)) throw Error("Pass the immutable source release URL in the configured separate repository");
-   if (sameRepository && sourceTag === tag) throw Error("Corresponding sources require a source-only release");
+   if (!sourceTag || !/^[A-Za-z0-9_.-]+$/.test(sourceTag)) throw Error("Pass the immutable source release URL in the app repository");
+   if (sourceTag === tag) throw Error("Corresponding sources require a source-only release");
    const provenancePath = `releases/${tag}.json`;
    const provenance = JSON.stringify({ ...manifest, sourceRelease: sourceUrl }, null, 2) + "\n";
    let recordedProvenance = (await optional(() => github.rest.repos.getContent({ ...repo, path: provenancePath, ref: "updates" })))?.data;
@@ -104,13 +102,13 @@ module.exports = async function publish({ github, context, core, directory = "ca
          Buffer.from(recordedProvenance.content, "base64").toString("utf8") !== provenance)
    )
       throw Error("Published release provenance differs from the reviewed candidate");
-   const [owner, sourceRepo] = sourceRepository.split("/");
+   const { owner, repo: sourceRepo } = repo;
    const sources = manifest.files.filter((file) => file.path.startsWith("sources/"));
    if (sources.length !== 5) throw Error("All five corresponding-source packets are required");
    const verifySources = async () => {
       const sourceRelease = (await github.rest.repos.getReleaseByTag({ owner, repo: sourceRepo, tag: sourceTag })).data;
       if (sourceRelease.draft || sourceRelease.html_url !== sourceUrl) throw Error("Corresponding sources must already be publicly hosted");
-      if (sameRepository && !sourceRelease.prerelease) throw Error("A same-repository source release must be a prerelease to preserve stable update discovery");
+      if (!sourceRelease.prerelease) throw Error("A same-repository source release must be a prerelease to preserve stable update discovery");
       const remoteSources = await github.paginate(github.rest.repos.listReleaseAssets, { owner, repo: sourceRepo, release_id: sourceRelease.id });
       if (remoteSources.length !== sources.length) throw Error("Source release must contain exactly five source packets");
       for (const file of sources) {
