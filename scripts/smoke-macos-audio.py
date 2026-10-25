@@ -26,6 +26,7 @@ ffmpeg = str(root / "resources/media/ffmpeg")
 ffprobe = str(root / "resources/media/ffprobe")
 processes, logs, events, fixtures, media, audio_diagnostics = [], [], [], [], [], []
 timed_events = []
+saved_captures = []
 
 
 def launch(args, name, pipe=False):
@@ -125,6 +126,10 @@ def save(name, verify_frames=True):
     command(dict(action="save", path=str(file), requestId=request, requestedAt=int(time.time() * 1000)))
     result = wait(lambda event: event.get("requestId") == request and event["event"] in ("saved", "error"), 45)
     assert result["event"] == "saved", result
+    saved_captures.append((name, file, verify_frames))
+
+
+def verify_capture(name, file, verify_frames):
     info = json.loads(subprocess.run([ffprobe, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(file)], capture_output=True, text=True, check=True).stdout)
     (folder / (name + ".media.json")).write_text(json.dumps(info, indent=2))
     packets = json.loads(subprocess.run([ffprobe, "-v", "error", "-show_packets", "-of", "json", str(file)], capture_output=True, text=True, check=True).stdout)
@@ -194,29 +199,17 @@ try:
     command(dict(action="stop"))
     command(configuration)
     time.sleep(3.5)
-    baseline = save("isolated")
-    for track in baseline[:3]:
-        only_main(track)
-    assert min(baseline[3].values()) > 0.03, baseline[3]
-    assert 0.8 < baseline[0]["997"] / baseline[1]["997"] < 1.2, "Excluded extras changed master audio"
+    save("isolated")
     command(dict(action="audio", source="selected", volume=0.5, muted=False))
     time.sleep(3)
-    quieter = save("half-volume")
-    assert 0.35 < quieter[2]["997"] / baseline[2]["997"] < 0.65, quieter[2]
-    assert 0.8 < quieter[0]["997"] / baseline[0]["997"] < 1.2, quieter[0]
+    save("half-volume")
     command(dict(action="audio", source="selected", volume=0.5, muted=True))
     time.sleep(3)
-    muted = save("muted")
-    assert max(muted[2].values()) < 0.005, muted[2]
-    only_main(muted[0])
-    assert min(muted[3].values()) > 0.03, muted[3]
+    save("muted")
     command(dict(action="stop"))
     command(dict(configuration, captureAudio=False, audioSources=[dict(application, includeInMaster=True), system]))
     time.sleep(3)
-    mixed = save("included-in-master")
-    only_main(mixed[0])
-    assert max(mixed[1].values()) < 0.005, mixed[1]
-    assert 0.8 < mixed[0]["997"] / mixed[2]["997"] < 1.2, "Included app did not supply the master mix"
+    save("included-in-master")
     # Video remains available in the other app. Losing the selected AUDIO app
     # must still report a stopped source rather than quietly capture its replacement.
     command(dict(action="source", sourceKind="app", sourceId=f"window:{decoy['windowId']}:0", sourceName="Decoy fixture", captureAudio=True))
@@ -237,6 +230,28 @@ try:
     helper.stdin.flush()
     helper.wait(timeout=15)
     assert helper.returncode == 0, helper.returncode
+    for item in fixtures:
+        pathlib.Path(str(item["output"]) + ".stop").touch()
+    # Decoding every track and scanning tone frequencies competes with the
+    # real-time fixture producers on Intel CI. Analyze the original files only
+    # after capture ends, without trimming samples or relaxing any assertion.
+    captures = {name: verify_capture(name, file, verify_frames) for name, file, verify_frames in saved_captures}
+    baseline = captures["isolated"]
+    for track in baseline[:3]:
+        only_main(track)
+    assert min(baseline[3].values()) > 0.03, baseline[3]
+    assert 0.8 < baseline[0]["997"] / baseline[1]["997"] < 1.2, "Excluded extras changed master audio"
+    quieter = captures["half-volume"]
+    assert 0.35 < quieter[2]["997"] / baseline[2]["997"] < 0.65, quieter[2]
+    assert 0.8 < quieter[0]["997"] / baseline[0]["997"] < 1.2, quieter[0]
+    muted = captures["muted"]
+    assert max(muted[2].values()) < 0.005, muted[2]
+    only_main(muted[0])
+    assert min(muted[3].values()) > 0.03, muted[3]
+    mixed = captures["included-in-master"]
+    only_main(mixed[0])
+    assert max(mixed[1].values()) < 0.005, mixed[1]
+    assert 0.8 < mixed[0]["997"] / mixed[2]["997"] < 1.2, "Included app did not supply the master mix"
     proof = dict(schema=1, actualMacOS=True, selected=selected, decoy=decoy, appIsolationTested=True, systemMixTested=True, masterExclusionTested=True, liveGainTested=True, liveMuteTested=True, masterInclusionTested=True, audioTargetLossTested=True, previousFootageSavedAfterTargetLoss=True, physicalOutputFallbackRejected=True, physicalMicrophoneTested=False, captures=media, targetLoss=status)
     (folder / "proof.json").write_text(json.dumps(proof, indent=2))
     print(json.dumps(proof, indent=2))
