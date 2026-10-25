@@ -54,10 +54,12 @@ describe("preference persistence recovery", () => {
       const root = await mkdtemp(join(tmpdir(), "acroclip-preferences-"));
       const path = join(root, "preferences.json");
       try {
-         await writeFile(path, JSON.stringify({ sound: false }));
+         await writeFile(path, JSON.stringify({ sound: false, shortcut: "Control+Shift+F8", shortcuts: { toggleRecording: "Control+Shift+F9" } }));
          const initial = await readPreferences(path, root);
          expect(initial.collection).toBe(root);
          expect(initial.sound).toBe(false);
+         expect(initial.shortcut).toBe("Control+Shift+F8");
+         expect(initial.shortcuts.toggleRecording).toBe("Control+Shift+F9");
          await writePreferences(path, initial);
          await writePreferences(path, { ...initial, sound: true });
          await writeFile(path, "damaged");

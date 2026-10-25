@@ -1,0 +1,23 @@
+.folder-picker {
+   display: flex;
+   align-items: center;
+   gap: 13px;
+   padding: 15px;
+   border-radius: 12px;
+   background: var(--surface);
+   color: var(--muted);
+}
+.folder-picker > svg {
+   flex-shrink: 0;
+}
+.folder-picker > span {
+   flex: 1;
+   min-width: 0;
+   font-size: 12px;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+.folder-picker[data-navigation-highlight] {
+   box-shadow: 0 0 0 2px var(--accent-border);
+}

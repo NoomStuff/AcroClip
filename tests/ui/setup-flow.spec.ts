@@ -26,33 +26,32 @@ test("onboarding UI persists choices without starting recording or OS startup", 
          });
          await page.reload();
       }
-      await expect(page.getByRole("heading", { name: "Capture", exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "Auto", exact: true }).last().click();
-      await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
-      await expect(page.locator(".onboarding")).toContainText("Recording waits when no game is found");
-      await page.getByRole("button", { name: "Screen", exact: true }).last().click();
+      await expect(page.getByRole("heading", { name: "What do you want to capture?", exact: true })).toBeVisible();
+      await expect(page.getByRole("combobox", { name: "Microphone input", exact: true })).toHaveAttribute("data-value", "default");
+      await selectOption(page, "Microphone input", "none");
+      await page.locator(".onboarding").getByRole("button", { name: "Auto", exact: true }).click();
+      await expect(page.locator(".onboarding")).toContainText("Follows your game. Waits when no game is open.");
+      await page.locator(".onboarding").getByRole("button", { name: "Screen", exact: true }).click();
       await page.getByRole("button", { name: "Continue", exact: true }).click();
-      await expect(page.locator(".onboarding").getByRole("heading", { name: "Audio", exact: true })).toBeVisible();
-      await expect(page.locator(".onboarding").getByRole("checkbox", { name: /Microphone/ })).not.toBeChecked();
+      await expect(page.getByRole("heading", { name: "Save a moment", exact: true })).toBeVisible();
+      await page.getByRole("spinbutton", { name: "Setup clip length in seconds" }).fill("30");
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      await expect(page.getByRole("combobox", { name: "Microphone input", exact: true })).toHaveAttribute("data-value", "none");
       await page.getByRole("button", { name: "Continue", exact: true }).click();
+      await expect(page.getByRole("spinbutton", { name: "Setup clip length in seconds" })).toHaveValue("30");
+      await page.getByRole("spinbutton", { name: "Setup clip length in seconds" }).fill("");
+      await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+      await expect(page.getByRole("alert").filter({ hasText: "Choose 5 to 1800 whole seconds." })).toBeVisible();
       await page.getByRole("spinbutton", { name: "Setup clip length in seconds" }).fill("45");
       await page.getByRole("button", { name: "Clip shortcut", exact: true }).click();
       await expect(page.getByRole("button", { name: "Clip shortcut", exact: true })).toHaveText(/Press a shortcut/);
       await page.getByRole("button", { name: "Clip shortcut", exact: true }).press("Control+Alt+Shift+F9");
-      await page.getByRole("button", { name: "Continue", exact: true }).click();
-      await page.getByRole("button", { name: "Custom", exact: true }).click();
-      await selectOption(page, "Resolution limit", "720");
-      await selectOption(page, "Recording frame rate", "30");
-      await page.getByRole("slider", { name: "Recording compression" }).fill("19");
       await page.waitForTimeout(300);
       await page.getByRole("button", { name: "Continue", exact: true }).click();
-      await page.getByRole("button", { name: "10 MB", exact: true }).click();
-      await expect(page.getByRole("checkbox", { name: /Automatically create shareables/ })).not.toBeChecked();
-      await page.getByRole("button", { name: "Continue", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "You're good to go", exact: true })).toBeVisible();
       await expect(page.getByRole("checkbox", { name: "Start with your computer", exact: true })).not.toBeChecked();
-      await expect(page.getByRole("checkbox", { name: /Start recording when AcroClip opens/ })).not.toBeChecked();
-      await page.waitForTimeout(300);
-      await page.getByRole("button", { name: "Open AcroClip", exact: true }).click();
+      await expect(page.getByRole("checkbox", { name: "Start recording when AcroClip opens", exact: true })).not.toBeChecked();
+      await page.getByRole("button", { name: "Finish", exact: true }).click();
       await expect(page.locator(".onboarding"), "Setup should close after saving")
          .toHaveCount(0)
          .catch(async (error: unknown) => {
@@ -64,14 +63,13 @@ test("onboarding UI persists choices without starting recording or OS startup", 
          collection,
          clipSeconds: 45,
          shortcut: "Control+Alt+Shift+F9",
-         quality: "custom",
-         resolutionLimit: 720,
-         customFPS: 30,
-         customCQ: 19,
          allowSoftwareEncoder: false,
-         shareSizeMB: 10,
+         shareSizeMB: 20,
+         autoShare: false,
          setupComplete: true,
          microphone: false,
+         microphoneDevice: "default",
+         microphoneMuted: true,
          autoRecord: false,
          startWithOS: false,
       });
@@ -83,6 +81,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureMuted).toBe(true);
       await expect(page.getByRole("button", { name: "Unmute source audio", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await selectOption(page, "Resolution limit", "720");
       await expect(page.getByRole("combobox", { name: "Resolution limit" })).toHaveAttribute("data-value", "720");
       await expect(page.getByRole("button", { name: "Audio", exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: /^High/ }).click();
@@ -99,7 +98,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences)
          .toMatchObject({ resolutionLimit: 1440, customFPS: 60, customCQ: 25, allowSoftwareEncoder: true });
       await page.getByRole("button", { name: "Sharing", exact: true }).click();
-      await expect(page.getByRole("spinbutton", { name: "Default shareable size in MB" })).toHaveValue("10");
+      await expect(page.getByRole("spinbutton", { name: "Default shareable size in MB" })).toHaveValue("20");
       await page.getByRole("spinbutton", { name: "Default shareable size in MB" }).fill("50");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.shareSizeMB).toBe(50);
       await page.getByRole("button", { name: "Collection", exact: true }).click();

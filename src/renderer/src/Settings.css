@@ -183,25 +183,6 @@
    box-shadow: 0 0 0 2px var(--accent);
 }
 
-.folder-picker {
-   display: flex;
-   align-items: center;
-   gap: 13px;
-   padding: 15px;
-   border-radius: 12px;
-   background: var(--surface);
-   color: var(--muted);
-}
-
-.folder-picker > span {
-   flex: 1;
-   min-width: 0;
-   font-size: 12px;
-   overflow: hidden;
-   text-overflow: ellipsis;
-   white-space: nowrap;
-}
-
 .filename-preview {
    margin: 20px 0;
    padding: 16px;
@@ -396,10 +377,6 @@
 }
 .settings-body .toggle-row:has(.field-detail) > span:first-child {
    padding-top: 3px;
-}
-
-.folder-picker[data-navigation-highlight] {
-   box-shadow: 0 0 0 2px #b197fc66;
 }
 
 .update-panel > .button {

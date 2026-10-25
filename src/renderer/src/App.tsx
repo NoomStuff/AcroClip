@@ -18,10 +18,21 @@ import { UpdateChip } from "./UpdateChip";
 import { Onboarding } from "./Onboarding";
 
 type Page = "recording" | "library" | "viewer" | "settings";
+const pageOrder: readonly Page[] = ["recording", "library", "viewer", "settings"];
 import type { Ask } from "./Dialog";
 export function App() {
    const [state, setState] = useState<AppState | null>(null);
-   const [page, setPage] = useState<Page>("recording");
+   const [{ page, direction }, setNavigation] = useState<{ page: Page; direction: "up" | "down" }>({ page: "recording", direction: "down" });
+   const setPage = useCallback((next: Page) => {
+      setNavigation((current) =>
+         current.page === next
+            ? current
+            : {
+                 page: next,
+                 direction: pageOrder.indexOf(next) < pageOrder.indexOf(current.page) ? "up" : "down",
+              }
+      );
+   }, []);
    const [settingsTarget, setSettingsTarget] = useState<SettingsTarget | null>(null);
    const openSettings = (section: SettingsTarget["section"]) => {
       setSettingsTarget((current) => ({ section, request: (current?.request ?? 0) + 1 }));
@@ -122,7 +133,7 @@ export function App() {
       };
       window.addEventListener("keydown", key);
       return () => window.removeEventListener("keydown", key);
-   }, [state, page]);
+   }, [state, page, setPage]);
    const clip = state?.clips.find((item) => item.id === selected) ?? (selected === null ? state?.clips[0] : undefined);
    useEffect(() => {
       // An empty viewer may receive its first clip after opening. Retain that
@@ -173,7 +184,7 @@ export function App() {
                </div>
             )}
          </header>
-         <nav className="moving-selection rail" aria-label="Main navigation">
+         <nav className="moving-selection rail" aria-label="Main navigation" inert={!!state && !state.preferences.setupComplete}>
             <SelectionIndicator value={page} />
             <div className="rail-main">
                {pages.map((item) => (
@@ -206,7 +217,7 @@ export function App() {
                <span>Settings</span>
             </button>
          </nav>
-         <main className="workspace">
+         <main className="workspace" data-direction={direction} inert={!!state && !state.preferences.setupComplete}>
             {state ? (
                <>
                   <section className="page" hidden={page !== "recording"}>

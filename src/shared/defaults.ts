@@ -4,7 +4,7 @@ export const defaultPreferences: Preferences = {
    collection: "",
    shortcuts: {},
    clipSeconds: 60,
-   shortcut: "CommandOrControl+Shift+F8",
+   shortcut: "Alt+C",
    recordingPresetVersion: 1,
    recordingSizeVersion: 2,
    resolutionLimit: 1080,

@@ -1,7 +1,7 @@
 import type { Preferences } from "./types";
 export const shortcutRegistry = [
    { id: "saveClip", label: "Save clip", scope: "global", page: "all", binding: "" },
-   { id: "toggleRecording", label: "Start / stop recording", scope: "global", page: "all", binding: "CommandOrControl+Shift+F9" },
+   { id: "toggleRecording", label: "Start / stop recording", scope: "global", page: "all", binding: "" },
    { id: "startRecording", label: "Start recording", scope: "global", page: "all", binding: "" },
    { id: "stopRecording", label: "Stop recording", scope: "global", page: "all", binding: "" },
    { id: "recording", label: "Recording page", scope: "local", page: "all", binding: "CommandOrControl+1" },
@@ -26,10 +26,7 @@ export function bindingFor(preferences: Pick<Preferences, "shortcut" | "shortcut
    if (id === "saveClip") return preferences.shortcut;
    const explicit = preferences.shortcuts[id];
    if (explicit !== undefined) return explicit;
-   const fallback = shortcutRegistry.find((item) => item.id === id)!.binding;
-   if (id === "toggleRecording" && [false, true].some((mac) => normalizeBinding(preferences.shortcut, mac) === normalizeBinding(fallback, mac)))
-      return "CommandOrControl+Shift+F10";
-   return fallback;
+   return shortcutRegistry.find((item) => item.id === id)!.binding;
 }
 export function normalizeBinding(value: string, mac: boolean): string {
    return value

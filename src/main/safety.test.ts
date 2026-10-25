@@ -22,6 +22,7 @@ describe("recording destination safety", () => {
 describe("shortcut and startup validation", () => {
    it("rejects malformed accelerators before Electron receives them", () => {
       expect(isValidShortcut("CommandOrControl+Shift+F8")).toBe(true);
+      expect(isValidShortcut("Alt+C")).toBe(true);
       expect(isValidShortcut("Control+Shift+K")).toBe(true);
       expect(isValidShortcut("Control++")).toBe(false);
       expect(isValidShortcut("Control+Control+K")).toBe(false);

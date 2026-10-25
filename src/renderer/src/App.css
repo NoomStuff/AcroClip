@@ -248,6 +248,32 @@
    background: var(--base);
    border-radius: 14px 0 0 14px;
 }
+.workspace > .page {
+   animation: workspace-page-down 280ms var(--ease) both;
+}
+.workspace[data-direction="up"] > .page {
+   animation-name: workspace-page-up;
+}
+@keyframes workspace-page-down {
+   from {
+      opacity: 0;
+      transform: translateY(16px);
+   }
+   to {
+      opacity: 1;
+      transform: translateY(0);
+   }
+}
+@keyframes workspace-page-up {
+   from {
+      opacity: 0;
+      transform: translateY(-16px);
+   }
+   to {
+      opacity: 1;
+      transform: translateY(0);
+   }
+}
 
 .status-audio {
    display: inline-flex;

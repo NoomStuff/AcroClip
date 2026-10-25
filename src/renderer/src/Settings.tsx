@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AlertCircle, Bell, Check, Download, Folder, ExternalLink, Gamepad2, Keyboard, LoaderCircle, RefreshCw, Settings2, Share2, Video } from "lucide-react";
+import { AlertCircle, Bell, Check, Download, Folder, Gamepad2, Keyboard, LoaderCircle, RefreshCw, Settings2, Share2, Video } from "lucide-react";
 import type { AppState, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
 import { previewFilename, validFilenameTemplate } from "../../shared/filename";
 import { SelectionIndicator } from "./SelectionIndicator";
-import { HeaderActions, IconButton, Button, Field, Select, Toggle } from "./ui";
+import { HeaderActions, Button, Field, Select, Toggle } from "./ui";
 import { api } from "./desktop";
 import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
@@ -12,6 +12,7 @@ import { shortcutRegistry, bindingFor } from "../../shared/shortcuts";
 import { ShortcutInput } from "./ShortcutInput";
 import { GameManagement } from "./GameManagement";
 import { PaneDivider, usePaneSize } from "./layout";
+import { FolderPicker } from "./FolderPicker";
 
 const sections = [
    { id: "recording", label: "Recording", icon: Video },
@@ -252,25 +253,14 @@ export function Settings({ state, run, target }: { state: AppState; run: Run; ta
                      <>
                         <h2>Collection folder</h2>
                         <p className="section-description">Supported videos in this folder appear in Library.</p>
-                        <div
-                           className="folder-picker"
+                        <FolderPicker
+                           path={draft.collection}
                            ref={collectionFolder}
-                           role="group"
-                           aria-label="Collection folder"
-                           tabIndex={-1}
-                           data-navigation-highlight={collectionHighlighted || undefined}
-                        >
-                           <Folder size={22} />
-                           <span title={draft.collection}>{draft.collection}</span>
-                           <Button onClick={() => void chooseFolder()}>Choose folder</Button>
-                           <IconButton
-                              label="Open collection folder"
-                              disabled={draft.collection !== state.preferences.collection}
-                              onClick={() => void run(() => api.reveal(state.preferences.collection))}
-                           >
-                              <ExternalLink size={17} />
-                           </IconButton>
-                        </div>
+                           navigationHighlighted={collectionHighlighted}
+                           onChoose={() => void chooseFolder()}
+                           revealDisabled={draft.collection !== state.preferences.collection}
+                           onReveal={() => void run(() => api.reveal(state.preferences.collection))}
+                        />
                         <h2>New recordings</h2>
                         <Field label="Folder layout" detail="Only affects future clips. Existing files aren't reorganized.">
                            <Select
@@ -370,6 +360,7 @@ export function Settings({ state, run, target }: { state: AppState; run: Run; ta
                   {section === "general" && (
                      <>
                         <h2>Startup</h2>
+                        <p className="section-description">Closing the window keeps AcroClip running in the tray.</p>
                         <Toggle label="Start with your computer" checked={draft.startWithOS} onChange={(value) => change("startWithOS", value)} />
                         <Toggle
                            label="Start recording when AcroClip opens"

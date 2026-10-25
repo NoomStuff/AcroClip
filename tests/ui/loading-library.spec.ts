@@ -123,12 +123,12 @@ test("cached loading states, enumeration retry, and interrupted library movement
          );
       }, actual);
       await page.reload();
-      await expect(page.getByLabel("Finding capture sources").last()).toBeVisible();
-      await expect(page.getByText("No sources available. Check capture permissions, or choose a screen.", { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("status").filter({ hasText: "Finding capture sources" })).toBeVisible();
+      await expect(page.getByText("No screens found. Check capture permissions.", { exact: true })).toHaveCount(0);
       await page.waitForTimeout(400);
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
       await app.evaluate(() => (globalThis as typeof globalThis & { resolveSources?: (value: unknown[]) => void }).resolveSources?.([]));
-      await expect(page.getByText("No sources available. Check capture permissions, or choose a screen.", { exact: true })).toBeVisible();
+      await expect(page.getByText("No screens found. Check capture permissions.", { exact: true })).toBeVisible();
       await app.evaluate(({ ipcMain }) => {
          ipcMain.removeHandler("sources");
          ipcMain.handle("sources", () => {
@@ -137,7 +137,7 @@ test("cached loading states, enumeration retry, and interrupted library movement
       });
       await page.reload();
       await expect(page.getByRole("button", { name: "Retry sources", exact: true })).toBeVisible();
-      await expect(page.getByText("No sources available. Check capture permissions, or choose a screen.", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("No screens found. Check capture permissions.", { exact: true })).toHaveCount(0);
       await app.evaluate(({ ipcMain }, sources) => {
          ipcMain.removeHandler("sources");
          ipcMain.handle("sources", () => sources);
