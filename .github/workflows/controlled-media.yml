@@ -47,6 +47,7 @@ jobs:
          - name: Share binaries and captured inputs with Windows verification
            uses: actions/upload-artifact@v7
            with:
+              overwrite: true
               name: controlled-windows-media
               path: |
                  work/controlled-media/windows-x64/

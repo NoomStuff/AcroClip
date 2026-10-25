@@ -157,6 +157,7 @@ jobs:
          - uses: actions/upload-artifact@v7
            if: success()
            with:
+              overwrite: true
               name: macOS-verified-release-candidate-${{ inputs.architecture || 'arm64' }}
               path: |
                  release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.dmg
@@ -172,6 +173,7 @@ jobs:
          - uses: actions/upload-artifact@v7
            if: always()
            with:
+              overwrite: true
               name: macOS-native-capture-proof-${{ inputs.architecture || 'arm64' }}
               path: |
                  .cache/macos-capture/**/proof.json
@@ -235,6 +237,7 @@ jobs:
          - uses: actions/upload-artifact@v7
            if: always()
            with:
+              overwrite: true
               name: macOS-native-feedback-proof-${{ inputs.architecture || 'arm64' }}
               path: |
                  .cache/macos-feedback/**/*.json

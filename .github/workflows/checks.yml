@@ -48,9 +48,10 @@ jobs:
       if: inputs.interactive_suite == ''
       needs: controlled-media
       runs-on: windows-2025
-      timeout-minutes: 25
+      timeout-minutes: 45
       env:
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
+         ACROCLIP_NATIVE_TEST_SOFTWARE: "1"
       steps:
          - uses: actions/checkout@v7
          - uses: oven-sh/setup-bun@v2
@@ -75,9 +76,12 @@ jobs:
               ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
            run: pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
          - run: bun run test:ui
+         - run: bun run test:ui:native
+         - run: bun run test:capture-loss
          - uses: actions/upload-artifact@v7
            if: always()
            with:
+              overwrite: true
               name: ui-verification
               path: test-results/
               retention-days: 7
@@ -150,6 +154,7 @@ jobs:
          - uses: actions/upload-artifact@v7
            if: always()
            with:
+              overwrite: true
               name: isolated-test-evidence
               path: |
                  test-results/

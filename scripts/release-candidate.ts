@@ -35,7 +35,6 @@ const manifestSchema = z.object({
    version: z.string().regex(/^\d+\.\d+\.\d+$/),
    commit: z.string().regex(/^[a-f0-9]{40}$/),
    run: z.string().regex(/^\d+$/),
-   attempt: z.string().regex(/^\d+$/),
    files: z.array(record),
 });
 
@@ -77,8 +76,7 @@ export async function sealCandidate(input: string, output: string): Promise<void
    const version = (JSON.parse(await readFile("package.json", "utf8")) as { version: string }).version;
    const commit = process.env["GITHUB_SHA"];
    const run = process.env["GITHUB_RUN_ID"];
-   const attempt = process.env["GITHUB_RUN_ATTEMPT"];
-   if (!commit || !run || !attempt) throw new Error("Candidate sealing requires exact CI identity.");
+   if (!commit || !run) throw new Error("Candidate sealing requires exact CI identity.");
    const names = appDownloadNames(version, ["x64", "arm64"], ["x64", "arm64"]);
    const indexed = new Map<string, string>();
    for (const file of await files(input)) {
@@ -141,7 +139,7 @@ export async function sealCandidate(input: string, output: string): Promise<void
          size: (await stat(path.join(output, file))).size,
       }))
    );
-   const manifest = manifestSchema.parse({ version, commit, run, attempt, files: records });
+   const manifest = manifestSchema.parse({ version, commit, run, files: records });
    await writeFile(path.join(output, "candidate.json"), `${JSON.stringify(manifest, null, 2)}\n`);
    await verifyCandidate(output);
 }

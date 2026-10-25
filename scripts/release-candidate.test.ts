@@ -20,7 +20,6 @@ async function fixture() {
    await mkdir(input);
    vi.stubEnv("GITHUB_SHA", commit);
    vi.stubEnv("GITHUB_RUN_ID", "123");
-   vi.stubEnv("GITHUB_RUN_ATTEMPT", "2");
    const version = (JSON.parse(await readFile("package.json", "utf8")) as { version: string }).version;
    async function file(name: string, content = name) {
       const bytes = Buffer.from(content);
@@ -80,11 +79,12 @@ async function fixture() {
    return { input, output, names, file, macReports };
 }
 
-it("seals exact verified packages and source packets under a commit/run/attempt identity", async () => {
+it("seals exact verified packages and source packets under a commit/run identity", async () => {
    const { input, output, names } = await fixture();
    await sealCandidate(input, output);
    const sealed = await verifyCandidate(output);
-   expect(sealed).toMatchObject({ commit, run: "123", attempt: "2" });
+   expect(sealed).toMatchObject({ commit, run: "123" });
+   expect(sealed).not.toHaveProperty("attempt");
    expect(sealed.files.filter((file) => file.path.startsWith("downloads/"))).toHaveLength(8);
    expect(sealed.files.filter((file) => file.path.startsWith("sources/"))).toHaveLength(5);
    await writeFile(path.join(output, "downloads", names[0]!), "tampered");

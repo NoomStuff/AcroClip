@@ -1,4 +1,4 @@
-name: Release candidate
+name: Release
 on:
    push:
       branches: [main]
@@ -6,8 +6,8 @@ on:
 permissions:
    contents: read
 concurrency:
-   group: release-candidate
-   cancel-in-progress: true
+   group: release
+   cancel-in-progress: false
 jobs:
    select:
       runs-on: ubuntu-24.04
@@ -22,6 +22,8 @@ jobs:
                  const version = JSON.parse(Buffer.from(pkg.content, 'base64')).version;
                  if (!/^\d+\.\d+\.\d+$/.test(version)) throw Error('Stable package version required');
                  if (context.ref !== 'refs/heads/main') throw Error('Release candidates must run on main');
+                 const main = (await github.rest.git.getRef({...context.repo, ref: 'heads/main'})).data.object.sha;
+                 if (main !== context.sha) throw Error('A newer main commit superseded this candidate');
                  try {
                    const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag: `v${version}`})).data;
                    core.setOutput('build', release.draft ? 'true' : 'false');
@@ -29,7 +31,7 @@ jobs:
                  } catch (error) {
                    if (error.status !== 404) throw error;
                    core.setOutput('build', 'true');
-                   core.info(`Verifying unpublished ${version} at ${context.sha}, run ${context.runId}, attempt ${process.env.GITHUB_RUN_ATTEMPT}`);
+                   core.info(`Verifying unpublished ${version} at ${context.sha}`);
                  }
    checks:
       needs: select
@@ -132,11 +134,13 @@ jobs:
          - uses: actions/upload-artifact@v7
            if: always()
            with:
+              overwrite: true
               name: windows-isolated-installer-evidence
               path: work/installer-evidence/
               retention-days: 30
          - uses: actions/upload-artifact@v7
            with:
+              overwrite: true
               name: Windows-verified-release-candidate-x64
               path: |
                  release/AcroClip-*.exe
@@ -163,10 +167,32 @@ jobs:
          - run: bun scripts/release-candidate.ts candidates candidate
          - uses: actions/upload-artifact@v7
            with:
+              overwrite: true
               name: sealed-release-candidate
               path: candidate/
               if-no-files-found: error
               retention-days: 30
-         - name: Review instructions
-           run: |
-              echo 'Review the five source packets and correspondence reports in sealed-release-candidate. Publish with publish.yml using this exact run ID, attempt and commit. No tag has been created.' >> "$GITHUB_STEP_SUMMARY"
+   publish:
+      name: Publish verified release
+      needs: seal
+      permissions:
+         contents: write
+      runs-on: ubuntu-24.04
+      timeout-minutes: 30
+      steps:
+         - uses: actions/checkout@v7
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: "1.4.2"
+         - run: bun install --frozen-lockfile
+         - uses: actions/download-artifact@v8
+           with:
+              name: sealed-release-candidate
+              path: candidate
+         - run: bun scripts/release-candidate.ts candidate
+         - name: Publish verified sources, app downloads and updater feeds
+           uses: actions/github-script@v9
+           with:
+              script: |
+                 const publish = require('./scripts/publish-release.cjs');
+                 await publish({github, context, core});

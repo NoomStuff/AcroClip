@@ -194,6 +194,7 @@ jobs:
            if: inputs.release_candidate == true
            uses: actions/upload-artifact@v7
            with:
+              overwrite: true
               name: Linux-verified-release-candidate-${{ inputs.architecture || 'x64' }}
               path: |
                  release/AcroClip-*.AppImage
@@ -237,6 +238,7 @@ jobs:
            if: always()
            uses: actions/upload-artifact@v7
            with:
+              overwrite: true
               name: linux-capture-evidence-${{ inputs.architecture || 'x64' }}
               path: .cache/linux-capture-evidence/
               include-hidden-files: true
@@ -245,6 +247,7 @@ jobs:
            if: always()
            uses: actions/upload-artifact@v7
            with:
+              overwrite: true
               name: linux-source-diagnostics-${{ inputs.architecture || 'x64' }}
               path: |
                  work/linux-release-sources/manifest.json

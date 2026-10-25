@@ -23,7 +23,22 @@ headers = {"User-Agent": "AcroClip-source-inputs", "Accept": "application/vnd.gi
 if os.environ.get("GITHUB_TOKEN"):
     headers["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
 release = None
-for tag in (args.release + "-sources", args.release):
+tags = [args.release + "-sources", args.release]
+# New releases record their commit-specific source tag in the updater provenance.
+request = urllib.request.Request(
+    "https://raw.githubusercontent.com/NoomStuff/AcroClip/updates/releases/" + args.release + ".json", headers=headers)
+try:
+    with urllib.request.urlopen(request, timeout=60) as response:
+        provenance = json.load(response)
+    prefix = "https://github.com/NoomStuff/AcroClip/releases/tag/"
+    source_url = provenance["sourceRelease"]
+    if not source_url.startswith(prefix):
+        raise ValueError("Corresponding sources must be hosted in the app repository")
+    tags.insert(0, source_url[len(prefix):])
+except urllib.error.HTTPError as error:
+    if error.code != 404:
+        raise
+for tag in tags:
     request = urllib.request.Request("https://api.github.com/repos/NoomStuff/AcroClip/releases/tags/" + tag, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=60) as response:

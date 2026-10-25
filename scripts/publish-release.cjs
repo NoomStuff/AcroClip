@@ -1,4 +1,4 @@
-/* global module, process, Buffer */
+/* global module, Buffer */
 // Publication consumes the sealed artifact. It never packages application code.
 
 module.exports = async function publish({ github, context, core, directory = "candidate" }) {
@@ -6,18 +6,12 @@ module.exports = async function publish({ github, context, core, directory = "ca
    const crypto = await import("node:crypto");
    const repo = context.repo;
    const manifest = JSON.parse(await fs.readFile(`${directory}/candidate.json`, "utf8"));
-   if (manifest.commit !== process.env.CANDIDATE_COMMIT || manifest.run !== process.env.CANDIDATE_RUN || manifest.attempt !== process.env.CANDIDATE_ATTEMPT)
-      throw Error("Sealed artifact differs from the reviewed candidate identity");
+   if (manifest.commit !== context.sha || manifest.run !== String(context.runId)) throw Error("Sealed artifact differs from the current workflow identity");
    const assertCurrent = async () => {
       const main = (await github.rest.git.getRef({ ...repo, ref: "heads/main" })).data.object.sha;
-      if (main !== manifest.commit) throw Error("Main changed. Verify and review the new candidate before publication");
-      const run = (await github.rest.actions.getWorkflowRun({ ...repo, run_id: Number(manifest.run) })).data;
-      if (run.conclusion !== "success" || run.run_attempt !== Number(manifest.attempt) || run.head_sha !== manifest.commit)
-         throw Error("Candidate verification was superseded");
+      if (main !== manifest.commit) throw Error("Main changed. Verify the new candidate before publication");
    };
    const tag = `v${manifest.version}`;
-   const notes = (await fs.readFile(`release-notes/${manifest.version}.md`, "utf8")).trim();
-   if (!notes) throw Error("User-facing release notes are required");
    async function optional(operation) {
       try {
          return await operation();
@@ -26,13 +20,20 @@ module.exports = async function publish({ github, context, core, directory = "ca
          throw error;
       }
    }
+   async function findRelease(releaseTag) {
+      // The tag endpoint can omit drafts. Listing also finds interrupted uploads.
+      const releases = await github.paginate(github.rest.repos.listReleases, repo);
+      const matches = releases.filter((release) => release.tag_name === releaseTag);
+      if (matches.length > 1) throw Error(`Multiple releases use ${releaseTag}`);
+      return matches[0] ?? null;
+   }
    async function publishAssets(releaseTag, files, body, prerelease) {
       await assertCurrent();
       const ref = await optional(() => github.rest.git.getRef({ ...repo, ref: `tags/${releaseTag}` }));
       if (ref && (await github.rest.repos.getCommit({ ...repo, ref: `refs/tags/${releaseTag}` })).data.sha !== manifest.commit)
          throw Error(`Immutable tag ${releaseTag} points to another commit`);
-      let release = (await optional(() => github.rest.repos.getReleaseByTag({ ...repo, tag: releaseTag })))?.data;
-      if (release?.draft && release.body !== body) {
+      let release = await findRelease(releaseTag);
+      if (release?.draft && (release.body !== body || release.target_commitish !== manifest.commit)) {
          // Only private drafts may be discarded. Never replace a public asset or tag.
          await github.rest.repos.deleteRelease({ ...repo, release_id: release.id });
          release = null;
@@ -51,6 +52,7 @@ module.exports = async function publish({ github, context, core, directory = "ca
             })
          ).data;
       if (release.body !== body) throw Error(`Public release ${releaseTag} has another candidate identity`);
+      if (release.prerelease !== prerelease) throw Error(`Release ${releaseTag} has the wrong prerelease status`);
       if (!release.draft && !recordedProvenance) throw Error("Public release provenance is missing");
       const expected = new Map(files.map((file) => [file.path.split("/").at(-1), file]));
       const existing = await github.paginate(github.rest.repos.listReleaseAssets, { ...repo, release_id: release.id });
@@ -81,17 +83,19 @@ module.exports = async function publish({ github, context, core, directory = "ca
       )
          throw Error("Remote release bytes differ from the sealed candidate");
       await assertCurrent();
-      await verifySources();
+      if (!prerelease) await verifySources();
       if (release.draft) await github.rest.repos.updateRelease({ ...repo, release_id: release.id, draft: false, make_latest: prerelease ? "false" : "true" });
       const finalCommit = (await github.rest.repos.getCommit({ ...repo, ref: `refs/tags/${releaseTag}` })).data.sha;
       if (finalCommit !== manifest.commit) throw Error("Published tag differs from verified commit");
    }
    const sourceRepository = `${repo.owner}/${repo.repo}`;
-   const sourceUrl = process.env.SOURCE_RELEASE_URL;
-   const sourcePrefix = `https://github.com/${sourceRepository}/releases/tag/`;
-   const sourceTag = sourceUrl?.startsWith(sourcePrefix) ? sourceUrl.slice(sourcePrefix.length) : "";
-   if (!sourceTag || !/^[A-Za-z0-9_.-]+$/.test(sourceTag)) throw Error("Pass the immutable source release URL in the app repository");
-   if (sourceTag === tag) throw Error("Corresponding sources require a source-only release");
+   const sources = manifest.files.filter((file) => file.path.startsWith("sources/"));
+   if (sources.length !== 5) throw Error("All five corresponding-source packets are required");
+   // Rebuilt source packets can differ at the same commit. Bind their immutable
+   // tag to their bytes so interrupted publications can retry without a bump.
+   const sourceKey = crypto.createHash("sha256").update(manifest.commit).update(JSON.stringify(sources)).digest("hex").slice(0, 12);
+   const sourceTag = `${tag}-sources-${sourceKey}`;
+   const sourceUrl = `https://github.com/${sourceRepository}/releases/tag/${sourceTag}`;
    const provenancePath = `releases/${tag}.json`;
    const provenance = JSON.stringify({ ...manifest, sourceRelease: sourceUrl }, null, 2) + "\n";
    let recordedProvenance = (await optional(() => github.rest.repos.getContent({ ...repo, path: provenancePath, ref: "updates" })))?.data;
@@ -100,11 +104,12 @@ module.exports = async function publish({ github, context, core, directory = "ca
       (recordedProvenance.type !== "file" ||
          recordedProvenance.encoding !== "base64" ||
          Buffer.from(recordedProvenance.content, "base64").toString("utf8") !== provenance)
-   )
-      throw Error("Published release provenance differs from the reviewed candidate");
+   ) {
+      const existing = await findRelease(tag);
+      if (existing && !existing.draft) throw Error("Published release provenance differs from the verified candidate");
+      recordedProvenance = null;
+   }
    const { owner, repo: sourceRepo } = repo;
-   const sources = manifest.files.filter((file) => file.path.startsWith("sources/"));
-   if (sources.length !== 5) throw Error("All five corresponding-source packets are required");
    const verifySources = async () => {
       const sourceRelease = (await github.rest.repos.getReleaseByTag({ owner, repo: sourceRepo, tag: sourceTag })).data;
       if (sourceRelease.draft || sourceRelease.html_url !== sourceUrl) throw Error("Corresponding sources must already be publicly hosted");
@@ -128,17 +133,18 @@ module.exports = async function publish({ github, context, core, directory = "ca
       if (parent) await github.rest.git.updateRef({ ...repo, ref: "heads/updates", sha: commit.data.sha, force: false });
       else await github.rest.git.createRef({ ...repo, ref: "refs/heads/updates", sha: commit.data.sha });
    }
-   await verifySources();
    if (!recordedProvenance) {
-      const existing = (await optional(() => github.rest.repos.getReleaseByTag({ ...repo, tag })))?.data;
+      const existing = await findRelease(tag);
       if (existing && !existing.draft) throw Error("Public release provenance is missing");
-      await updateBranch([{ path: provenancePath, mode: "100644", type: "blob", content: provenance }], `Record reviewed ${tag} provenance`);
+      await updateBranch([{ path: provenancePath, mode: "100644", type: "blob", content: provenance }], `Record verified ${tag} provenance`);
       recordedProvenance = { type: "file", encoding: "base64", content: Buffer.from(provenance).toString("base64") };
    }
+   await publishAssets(sourceTag, sources, "", true);
+   await verifySources();
    await publishAssets(
       tag,
       manifest.files.filter((file) => file.path.startsWith("downloads/")),
-      `${notes}\n\n[Corresponding sources](${sourceUrl})`,
+      "",
       false
    );
    await updateBranch(
@@ -152,5 +158,5 @@ module.exports = async function publish({ github, context, core, directory = "ca
       ),
       `Update feeds for ${tag} at ${manifest.commit}`
    );
-   core.info(`Published ${tag} from reviewed run ${manifest.run}, attempt ${manifest.attempt}`);
+   core.info(`Published ${tag}`);
 };

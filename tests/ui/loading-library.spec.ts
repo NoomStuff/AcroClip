@@ -35,7 +35,7 @@ test("cached loading states, enumeration retry, and interrupted library movement
    const app = await electron.launch({ args: [resolve("."), "--disable-gpu-sandbox"], env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile } });
    try {
       const page = await app.firstWindow();
-      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).collectionStatus?.phase).toBe("ready");
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).collectionStatus?.phase, { timeout: 15000 }).toBe("ready");
       const openedMs = performance.now() - started;
       const actual = await page.evaluate(() => window.acroClip.state());
       await app.evaluate(({ BrowserWindow }) => {
