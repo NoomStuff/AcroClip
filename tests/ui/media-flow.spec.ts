@@ -50,8 +50,12 @@ test("real media plays, creates a verified shareable, and supports overlapping c
          "aac",
          "-metadata:s:a:0",
          "title=Master",
+         "-metadata:s:a:0",
+         "handler_name=Master",
          "-metadata:s:a:1",
          "title=Microphone",
+         "-metadata:s:a:1",
+         "handler_name=Microphone",
          source,
       ],
       { windowsHide: true }

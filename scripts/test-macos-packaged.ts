@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { defaultPreferences } from "../src/shared/defaults";
+import { packagedShareSource } from "../tests/packaged-share-source";
 import type { AdditionalAudioSource } from "../src/shared/types";
 
 if (process.platform !== "darwin") throw new Error("Packaged Mac recording requires an actual macOS host.");
@@ -341,14 +342,17 @@ try {
    }
    audioEvidence.push({ clip: systemClip.id, tones: systemTones });
    await verifyFixtureFrames(systemClip.path);
-   await page.evaluate((id) => window.acroClip.createShareable(id, 1), original.id);
+   const shareSource = await packagedShareSource(page, ffmpeg, original);
+   const shareSourceHash = digest(await readFile(shareSource.path));
+   await page.evaluate((id) => window.acroClip.createShareable(id, 1), shareSource.id);
    await expect
-      .poll(() => page.evaluate(async (id) => (await window.acroClip.state()).clips.find((clip) => clip.id === id)?.shareables.length, original.id), {
+      .poll(() => page.evaluate(async (id) => (await window.acroClip.state()).clips.find((clip) => clip.id === id)?.shareables.length, shareSource.id), {
          timeout: 90000,
       })
       .toBe(1);
    expect(digest(await readFile(original.path))).toBe(hash);
-   const copy = (await page.evaluate(() => window.acroClip.state())).clips.find((clip) => clip.id === original.id)!.shareables[0]!;
+   expect(digest(await readFile(shareSource.path))).toBe(shareSourceHash);
+   const copy = (await page.evaluate(() => window.acroClip.state())).clips.find((clip) => clip.id === shareSource.id)!.shareables[0]!;
    expect((await stat(copy.path)).size).toBeLessThanOrEqual(1000000);
    await run(ffmpeg, ["-v", "error", "-i", copy.path, "-map", "0", "-f", "null", "-"]);
    await writeFile(
