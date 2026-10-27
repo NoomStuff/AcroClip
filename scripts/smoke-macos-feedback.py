@@ -90,10 +90,16 @@ def launch(args, name, pipe=False):
 
 def wait(name, predicate, timeout=25):
     deadline = time.monotonic() + timeout
+    next_status = time.monotonic() + 0.5
     while time.monotonic() < deadline:
         result = next((event for event in events[name] if predicate(event)), None)
         if result is not None:
             return result
+        if name == "recorder" and time.monotonic() >= next_status:
+            # The actual app polls status while recording. This also seals an
+            # accepted save when ScreenCaptureKit stops delivering video.
+            send(recorder, dict(action="status", id=str(uuid.uuid4())))
+            next_status = time.monotonic() + 0.5
         time.sleep(0.02)
     raise RuntimeError(f"{name} timed out: {events[name]}")
 
