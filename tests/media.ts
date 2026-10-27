@@ -51,6 +51,22 @@ try {
       original,
    ]);
    const before = await fileIdentity(original);
+   const registrationRoot = join(workspace, "registration");
+   await mkdir(registrationRoot);
+   const publishedSources: string[] = [];
+   const registering = new CollectionService({
+      onChange: () => publishedSources.push(...registering.clips.map((entry) => entry.source)),
+   });
+   await registering.open(registrationRoot);
+   const savedRecording = join(registrationRoot, "saved.mp4");
+   await copyFile(original, savedRecording);
+   const registered = await registering.registerRecording(savedRecording, "Recorded fixture");
+   assert.equal(registered.source, "Recorded fixture");
+   assert.ok(publishedSources.length > 0);
+   assert.ok(
+      publishedSources.every((source) => source === "Recorded fixture"),
+      "registration never publishes a temporary Unknown source"
+   );
    await writeFile(join(root, "not-a-video.mp4"), "invalid media");
    await copyFile(original, join(external, "external.mp4"));
    try {
