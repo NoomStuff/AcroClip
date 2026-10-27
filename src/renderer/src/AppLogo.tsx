@@ -1,4 +1,4 @@
-import icon from "../../../build/icon.svg";
+import icon from "../../../build/icon.svg?no-inline";
 
 /** App branding uses the exact asset shipped to the desktop, tray and installers. */
 export function AppLogo({ size = 24 }: { size?: number }) {
