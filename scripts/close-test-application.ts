@@ -7,6 +7,12 @@ export async function closeTestApplication(application: ElectronApplication): Pr
    const child = application.process();
    if (child.exitCode !== null || child.signalCode !== null) return;
    console.log(`Closing test application ${child.pid}`);
+   const shutdownEvents: string[] = [];
+   const consoleEvent = (message: { text(): string }) => {
+      if (message.text().startsWith("Test shutdown:")) shutdownEvents.push(message.text());
+   };
+   application.on("console", consoleEvent);
+   child.once("exit", (code, signal) => shutdownEvents.push(`Process exit: ${code}, ${signal}`));
    let timer: ReturnType<typeof setTimeout> | undefined;
    const closing = (async () => {
       const page = application.windows().find((window) => !window.isClosed());
@@ -23,11 +29,16 @@ export async function closeTestApplication(application: ElectronApplication): Pr
       }
       await application.evaluate(({ app }) => {
          const quit = app.quit.bind(app);
+         app.on("before-quit", () => console.log("Test shutdown: before-quit"));
+         app.on("will-quit", () => console.log("Test shutdown: will-quit"));
          app.quit = () => {
+            console.log("Test shutdown: quit called");
             setTimeout(quit, 0);
          };
       });
+      shutdownEvents.push("Playwright context close requested");
       await application.close();
+      shutdownEvents.push("Playwright context close returned");
    })();
    try {
       await Promise.race([
@@ -38,11 +49,13 @@ export async function closeTestApplication(application: ElectronApplication): Pr
       ]);
       console.log("Test application closed normally");
    } catch (error) {
+      console.log("Test shutdown events:", JSON.stringify(shutdownEvents));
       // This is the isolated application launched by this fixture. Forced
       // cleanup after the deadline is a test failure, never a successful quit.
       child.kill("SIGKILL");
       throw error;
    } finally {
+      application.off("console", consoleEvent);
       clearTimeout(timer);
    }
 }
