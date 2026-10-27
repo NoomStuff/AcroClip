@@ -77,7 +77,9 @@ jobs:
          - name: Verify device audio health, recovery, gain and synchronization
            run: python3 scripts/smoke-linux-device-audio.py resources/recorder
          - name: Verify selected application audio isolation and recovery
-           run: python3 scripts/smoke-linux-app-audio.py resources/recorder
+           run: |
+              python3 scripts/audio_tone.test.py
+              python3 scripts/smoke-linux-app-audio.py resources/recorder
          - name: Verify real Wine image identity and application capture
            if: inputs.architecture != 'arm64'
            run: python3 scripts/smoke-wine.py resources/recorder
