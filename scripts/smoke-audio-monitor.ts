@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import sharp from "sharp";
 if (process.platform !== "win32") throw new Error("This monitor proof requires Windows");
 const runtime = path.resolve("resources/recorder");
 const folder = path.resolve(".cache/native-monitor", randomUUID());
@@ -61,7 +62,9 @@ async function wait(predicate: (event: Event) => boolean, after = 0): Promise<Ev
 }
 async function command(action: string, data: Record<string, unknown> = {}) {
    const id = randomUUID();
-   helper.stdin.write(`${JSON.stringify({ action, id, ...data })}\n`);
+   helper.stdin.write(
+      `${JSON.stringify({ ...(action === "start" ? { allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1" } : {}), action, id, ...data })}\n`
+   );
    const result = await wait((event) => event.id === id && ["response", "error"].includes(event.event));
    if (result.event === "error") throw new Error(result.message);
    return id;
@@ -70,8 +73,13 @@ async function lifecycle() {
    const id = await command("test-lifecycle");
    return events.find((event) => event.event === "lifecycle" && event.id === id)!;
 }
+let statusTimer: ReturnType<typeof setInterval> | undefined;
 try {
    await wait((event) => event.event === "ready");
+   // Match the app's status polling, which advances capture readiness and recovery.
+   statusTimer = setInterval(() => {
+      if (helper.exitCode === null && helper.stdin.writable) helper.stdin.write(`${JSON.stringify({ action: "status" })}\n`);
+   }, 250);
    let target: { id: string; name: string; pid: number; pixelSize?: { width: number; height: number } } | undefined;
    for (let attempt = 0; attempt < 40 && !target; attempt++) {
       const mark = events.length;
@@ -84,6 +92,24 @@ try {
    }
    assert.ok(target, `The controlled application must be available, fixture exit ${fixture.exitCode}`);
    const baseline = await lifecycle();
+   const mutedInput = {
+      id: "closed-input",
+      name: "Muted microphone",
+      kind: "input",
+      deviceId: "missing-muted-microphone",
+      enabled: true,
+      volume: 1,
+      muted: true,
+   };
+   await command("monitor-audio", { enabled: true, audioSources: [mutedInput] });
+   const mutedMonitor = await lifecycle();
+   assert.equal(mutedMonitor.sources, baseline.sources, "A muted microphone must not create an OBS input or open a device");
+   assert.equal(mutedMonitor.attached, baseline.attached);
+   await assert.rejects(command("audio", { source: mutedInput.id, volume: 1, muted: false }), /microphone.*unavailable/i);
+   const deniedUnmute = await lifecycle();
+   assert.equal(deniedUnmute.sources, baseline.sources, "Failed unmute must leave the device closed");
+   assert.equal(deniedUnmute.attached, baseline.attached);
+   await command("monitor-audio", { enabled: false });
    const source = {
       id: "monitor-capture",
       name: title,
@@ -347,11 +373,13 @@ try {
    assert.equal(decoded.status, 0, decoded.stderr);
    const color = spawnSync(
       path.resolve("resources/media/ffmpeg.exe"),
-      ["-v", "error", "-ss", "1", "-i", cappedFile, "-frames:v", "1", "-vf", "crop=2:2:iw/2:ih/2,format=rgb24", "-f", "rawvideo", "-"],
+      ["-v", "error", "-ss", "1", "-i", cappedFile, "-frames:v", "1", "-vf", "crop=2:2:iw/2:ih/2,format=rgb24", "-c:v", "png", "-f", "image2pipe", "-"],
       { windowsHide: true }
    );
-   assert.equal(color.status, 0);
-   assert.ok(color.stdout[0]! < 50 && color.stdout[2]! > 160, `Controlled D3D colors changed: ${[...color.stdout]}`);
+   if (color.error) throw color.error;
+   assert.equal(color.status, 0, color.stderr.toString());
+   const colorPixels = await sharp(color.stdout).raw().toBuffer();
+   assert.ok(colorPixels[0]! < 50 && colorPixels[2]! > 160, `Controlled D3D colors changed: ${[...colorPixels]}`);
    console.log(
       "Preset source cap, actual pixels/fps/colors, stable audio track mute/unmute",
       JSON.stringify({ capped, video, initialTone, mutedTone, restoredTone })
@@ -362,22 +390,19 @@ try {
       windowsHide: true,
    });
    assert.equal(resized.status, 0, resized.stderr.toString());
-   await assert.rejects(
-      command("source", {
-         sourceKind: "auto",
-         resolvedKind: "app",
-         sourceId: target.id,
-         sourceName: title,
-         pid: target.pid,
-         quality: "high",
-         recordingPresetVersion: 1,
-         recordingSizeVersion: 2,
-         resolutionLimit: 1440,
-         customWidth: 2560,
-         customHeight: 1440,
-      }),
-      /resolution changed/
-   );
+   await command("source", {
+      sourceKind: "auto",
+      resolvedKind: "app",
+      sourceId: target.id,
+      sourceName: title,
+      pid: target.pid,
+      quality: "high",
+      recordingPresetVersion: 1,
+      recordingSizeVersion: 2,
+      resolutionLimit: 1440,
+      customWidth: 2560,
+      customHeight: 1440,
+   });
    const pausedPreset = await lifecycle();
    assert.equal(pausedPreset.active, true);
    assert.equal(pausedPreset.width, capped.width);
@@ -392,11 +417,11 @@ try {
       encoding: "utf8",
    });
    assert.equal(preservedDecode.status, 0, preservedDecode.stderr);
-   console.log("Smaller preset source pauses and retains a decodable history save", JSON.stringify(pausedPreset));
+   console.log("Smaller preset source continues on the original canvas with decodable history", JSON.stringify(pausedPreset));
    await command("stop");
    await assert.rejects(
       command("start", { sourceKind: "app", sourceId: "window:0:0", quality: "high", captureAudio: false, microphone: false }),
-      /pixel dimensions are unavailable/
+      /selected application is unavailable/
    );
    assert.equal((await lifecycle()).sources, baseline.sources, "Unknown preset source failure must release all sources");
 
@@ -537,19 +562,24 @@ try {
       JSON.stringify(appTones)
    );
    await command("listen-audio", { source: "test-listener" });
+   const beforeMute = await lifecycle();
    await command("audio", { source: "test-listener", volume: 1, muted: true });
    await delay(2400);
-   await command("test-listener-tone");
    const audition = await lifecycle();
-   assert.equal(audition.listening, "test-listener");
-   assert.ok(audition.listeningPeak! > 0.005);
-   const appMuted = await saveProof("automatic-app-mic-muted-listening");
-   assert.ok(
-      toneAt(0, 1733, appMuted) < -70 && toneAt(2, 1733, appMuted) < -70,
-      "Record mute remains silent in master and isolated track while audition is audible"
-   );
+   assert.equal(audition.listening, "");
+   assert.equal(audition.sources, beforeMute.sources! - 1, "Mute must destroy the input source");
+   assert.equal(audition.attached, beforeMute.attached! - 1, "Mute must detach the input without rebuilding capture");
+   assert.equal(audition.audioEncoders, beforeMute.audioEncoders, "Mute must retain the microphone track encoder");
+   assert.equal(audition.active, true);
+   await assert.rejects(command("listen-audio", { source: "test-listener" }), /microphone|Unmute/);
+   const appMuted = await saveProof("automatic-app-mic-muted-device-closed");
+   assert.ok(toneAt(0, 1733, appMuted) < -70 && toneAt(2, 1733, appMuted) < -70, "The released microphone remains silent in both master and isolated track");
    await command("listen-audio", { source: "" });
    await command("audio", { source: "test-listener", volume: 1, muted: false });
+   const reopened = await lifecycle();
+   assert.equal(reopened.sources, beforeMute.sources, "Unmute must recreate exactly one input");
+   assert.equal(reopened.attached, beforeMute.attached);
+   assert.equal(reopened.audioEncoders, beforeMute.audioEncoders);
    await delay(2300);
    await command("test-listener-tone");
    const appRestored = await saveProof("automatic-app-mic-restored");
@@ -605,6 +635,7 @@ try {
    await writeFile(path.join(folder, "proof.json"), JSON.stringify({ baseline, live, stopped, timings, events }, null, 2));
    console.log(`Idle native audio, no video/encoder/history, mute/gain, invalid identity and repeated cleanup passed: ${folder}`);
 } finally {
+   if (statusTimer) clearInterval(statusTimer);
    fixture.kill();
    extraFixture?.kill();
    screenCover?.kill();

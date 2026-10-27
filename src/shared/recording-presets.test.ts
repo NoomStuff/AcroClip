@@ -12,6 +12,7 @@ describe("recording presets", () => {
          allowSoftwareEncoder: true,
       });
       expect(applyRecordingPreset(input, "custom")).toEqual({ ...input, quality: "custom" });
+      expect(applyRecordingPreset(input, "high")).toMatchObject({ resolutionLimit: 0, customFPS: 60, customCQ: 18 });
    });
 });
 

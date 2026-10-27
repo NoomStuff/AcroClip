@@ -126,6 +126,8 @@ def save(name, verify_frames=True):
     command(dict(action="save", path=str(file), requestId=request, requestedAt=int(time.time() * 1000)))
     result = wait(lambda event: event.get("requestId") == request and event["event"] in ("saved", "error"), 45)
     assert result["event"] == "saved", result
+    if name == "video-continues-after-audio-target-loss":
+        assert result['source'] == 'Decoy fixture' and not result['previousFootage'],result
     saved_captures.append((name, file, verify_frames))
 
 
@@ -136,12 +138,14 @@ def verify_capture(name, file, verify_frames):
     (folder / (name + ".packets.json")).write_text(json.dumps(packets, indent=2))
     tracks = [stream for stream in info["streams"] if stream["codec_type"] == "audio"]
     assert len(tracks) == 4, tracks
-    assert [stream.get("tags", {}).get("title") for stream in tracks] == ["Master", "Capture audio", "Selected app", "System audio"], tracks
+    assert [stream.get("tags", {}).get("title") for stream in tracks] == ["Master", "Application", "Selected app", "System audio"], tracks
     assert float(info["format"]["duration"]) >= 1.5, info
     subprocess.run([ffmpeg, "-v", "error", "-i", str(file), "-map", "0", "-f", "null", "-"], check=True)
     video = next(stream for stream in info["streams"] if stream["codec_type"] == "video")
     assert (video["width"], video["height"]) == (320, 180), video
-    pixels = subprocess.run([ffmpeg, "-v", "error", "-i", str(file), "-vf", "crop=2:2:iw/2:ih/2,scale=1:1", "-fps_mode", "passthrough", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
+    # The compact fixture's counter crosses its centre. Sample above the text
+    # while still requiring both background colours in the decoded recording.
+    pixels = subprocess.run([ffmpeg, "-v", "error", "-i", str(file), "-vf", "crop=2:2:iw/2:ih/4,scale=1:1", "-fps_mode", "passthrough", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
     colors = ((228, 76, 102), (65, 184, 170))
     classes = [next((color for color, values in enumerate(colors) if all(abs(pixels[offset + index] - values[index]) <= 22 for index in range(3))), None) for offset in range(0, len(pixels), 3)]
     assert classes, "The saved video contained no decoded frames"
@@ -211,7 +215,7 @@ try:
     time.sleep(3)
     save("included-in-master")
     # Video remains available in the other app. Losing the selected AUDIO app
-    # must still report a stopped source rather than quietly capture its replacement.
+    # must warn and silence that track while fresh video continues.
     command(dict(action="source", sourceKind="app", sourceId=f"window:{decoy['windowId']}:0", sourceName="Decoy fixture", captureAudio=True))
     (fixtures[0]["output"].with_name(fixtures[0]["output"].name + ".stop")).touch()
     deadline = time.monotonic() + 15
@@ -220,11 +224,12 @@ try:
         begin = len(events)
         command(dict(action="status"))
         status = wait(lambda event: event["event"] == "status", after=begin)
-        if "Selected app" in status["message"] and status["waiting"]:
+        if "Selected app" in status.get("audioWarning", "") and not status["waiting"]:
             break
         time.sleep(0.15)
-    assert status and status["waiting"] and "Selected app" in status["message"], status
-    save("preserved-after-audio-target-loss", verify_frames=False)
+    assert status and status['active'] and not status["waiting"] and "Selected app" in status.get("audioWarning", ""), status
+    time.sleep(3)
+    save("video-continues-after-audio-target-loss")
     command(dict(action="stop"))
     helper.stdin.write(json.dumps(dict(action="exit")) + "\n")
     helper.stdin.flush()
@@ -252,7 +257,8 @@ try:
     only_main(mixed[0])
     assert max(mixed[1].values()) < 0.005, mixed[1]
     assert 0.8 < mixed[0]["997"] / mixed[2]["997"] < 1.2, "Included app did not supply the master mix"
-    proof = dict(schema=1, actualMacOS=True, selected=selected, decoy=decoy, appIsolationTested=True, systemMixTested=True, masterExclusionTested=True, liveGainTested=True, liveMuteTested=True, masterInclusionTested=True, audioTargetLossTested=True, previousFootageSavedAfterTargetLoss=True, physicalOutputFallbackRejected=True, physicalMicrophoneTested=False, captures=media, targetLoss=status)
+    assert max(captures['video-continues-after-audio-target-loss'][2].values()) < 0.005, captures['video-continues-after-audio-target-loss'][2]
+    proof = dict(schema=1, actualMacOS=True, selected=selected, decoy=decoy, appIsolationTested=True, systemMixTested=True, masterExclusionTested=True, liveGainTested=True, liveMuteTested=True, masterInclusionTested=True, audioTargetLossTested=True, freshVideoSavedAfterTargetLoss=True, physicalOutputFallbackRejected=True, physicalMicrophoneTested=False, captures=media, targetLoss=status)
     (folder / "proof.json").write_text(json.dumps(proof, indent=2))
     print(json.dumps(proof, indent=2))
 finally:

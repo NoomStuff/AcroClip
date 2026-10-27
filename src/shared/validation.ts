@@ -1,12 +1,23 @@
 import { z } from "zod";
 import { shortcutRegistry } from "./shortcuts";
 import { validFilenameTemplate } from "./filename";
+import { normalizeMicrophone } from "./audio-model";
 export const preferencesSchema = z
    .object({
       collection: z.string().trim().min(1).max(4096),
       clipSeconds: z.number().int().min(5).max(1800),
       shortcut: z.string().min(1).max(100),
-      shortcuts: z.partialRecord(z.enum(shortcutRegistry.map((item) => item.id)), z.string().max(100)).default({}),
+      shortcuts: z
+         .preprocess(
+            (value) => {
+               if (typeof value !== "object" || value === null || Array.isArray(value) || !("refresh" in value)) return value;
+               const shortcuts: Record<string, unknown> = { ...value };
+               delete shortcuts["refresh"];
+               return shortcuts;
+            },
+            z.partialRecord(z.enum(shortcutRegistry.map((item) => item.id)), z.string().max(100))
+         )
+         .default({}),
       recordingPresetVersion: z.literal(1).default(1),
       recordingSizeVersion: z.literal(2).default(2),
       resolutionLimit: z
@@ -67,6 +78,7 @@ export const preferencesSchema = z
                   includeInMaster: z.boolean(),
                })
                .strict()
+               .transform(normalizeMicrophone)
          )
          .max(5)
          .refine((items) => items.filter((item) => item.kind === "source").length <= 1, "Source audio is already added")

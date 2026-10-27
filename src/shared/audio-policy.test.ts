@@ -22,7 +22,7 @@ describe("microphone permission for recording", () => {
       ).toBe(false);
       expect(needsMicrophonePermission({ microphone: false, audioSources: [] })).toBe(false);
    });
-   it("still requires access when an enabled input is muted or has zero volume", () => {
+   it("does not request access for a muted input, but zero gain still needs access when unmuted", () => {
       const input: AdditionalAudioSource = {
          id: "input",
          name: "USB microphone",
@@ -35,6 +35,8 @@ describe("microphone permission for recording", () => {
          volume: 0,
          includeInMaster: false,
       };
-      expect(needsMicrophonePermission({ microphone: false, audioSources: [input] })).toBe(true);
+      expect(needsMicrophonePermission({ microphone: false, audioSources: [input] })).toBe(false);
+      expect(needsMicrophonePermission({ microphone: false, audioSources: [{ ...input, muted: false }] })).toBe(true);
+      expect(needsMicrophonePermission({ microphone: true, microphoneMuted: true, audioSources: [] })).toBe(false);
    });
 });

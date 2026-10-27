@@ -1,9 +1,15 @@
 import type { AdditionalAudioSource, Preferences } from "./types";
 const sourceBase = { deviceId: "", sourceId: "", executable: "", volume: 1, muted: false, includeInMaster: false };
+export function isDefaultMicrophone(source: Pick<AdditionalAudioSource, "id" | "kind">): boolean {
+   return /^microphone-default(?:-\d+)?$/.test(source.id) && source.kind === "input";
+}
+export function normalizeMicrophone(source: AdditionalAudioSource): AdditionalAudioSource {
+   return isDefaultMicrophone(source) ? { ...source, enabled: true, muted: !source.enabled || source.muted } : source;
+}
 export function defaultAudioSources(): AdditionalAudioSource[] {
    return [
       { ...sourceBase, id: "source-audio", name: "Source audio", kind: "source", enabled: true },
-      { ...sourceBase, id: "microphone-default", name: "Microphone", kind: "input", deviceId: "default", enabled: false },
+      { ...sourceBase, id: "microphone-default", name: "Microphone", kind: "input", deviceId: "default", enabled: true, muted: true },
    ];
 }
 export function migrateAudioSources(value: Preferences, extras: AdditionalAudioSource[]): AdditionalAudioSource[] {
@@ -18,10 +24,10 @@ export function migrateAudioSources(value: Preferences, extras: AdditionalAudioS
       {
          ...defaults[1]!,
          id: unique("microphone-default"),
-         enabled: value.microphone,
+         enabled: true,
          deviceId: value.microphoneDevice,
          volume: value.microphoneVolume,
-         muted: value.microphoneMuted,
+         muted: !value.microphone || value.microphoneMuted,
       },
       ...extras,
    ];
@@ -34,10 +40,15 @@ export function nativeAudioPreferences(value: Preferences) {
       captureVolume: source?.volume ?? 1,
       captureMuted: source?.muted ?? false,
       microphone: false,
-      audioSources: value.audioSources.filter((source) => source.kind !== "source"),
+      audioSources: value.audioSources
+         .filter((source) => source.kind !== "source")
+         .map((source) => {
+            const normalized = normalizeMicrophone(source);
+            return isDefaultMicrophone(normalized) ? { ...normalized, name: "Microphone" } : normalized;
+         }),
       automaticMaster: true,
       sourceAudioPresent: !!source,
-      sourceAudioName: source?.name ?? "Source audio",
+      sourceAudioName: value.sourceKind === "screen" ? "Desktop" : "Application",
    };
 }
 export function synchronizeLegacyAudio(previous: Preferences, next: Preferences): Preferences {
@@ -54,13 +65,14 @@ export function synchronizeLegacyAudio(previous: Preferences, next: Preferences)
          previous.microphoneMuted !== next.microphoneMuted
       )
          sources = sources.map((source) =>
-            source.id.startsWith("microphone-default") && source.kind === "input"
-               ? { ...source, enabled: next.microphone, deviceId: next.microphoneDevice, volume: next.microphoneVolume, muted: next.microphoneMuted }
+            isDefaultMicrophone(source)
+               ? { ...source, enabled: true, deviceId: next.microphoneDevice, volume: next.microphoneVolume, muted: !next.microphone || next.microphoneMuted }
                : source
          );
    }
+   sources = sources.map(normalizeMicrophone);
    const source = sources.find((source) => source.kind === "source"),
-      microphone = sources.find((source) => source.id.startsWith("microphone-default") && source.kind === "input");
+      microphone = sources.find(isDefaultMicrophone);
    return {
       ...next,
       audioSources: sources,

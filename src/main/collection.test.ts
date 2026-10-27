@@ -460,6 +460,100 @@ describe("collection loading snapshots", () => {
    });
 });
 
+describe("collection change polling", () => {
+   it("keeps unchanged polls silent and imports nested additions, in-place changes, moves and removals", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-poll-"));
+      const onChange = vi.fn();
+      try {
+         const file = join(root, "First.mp4");
+         await writeFile(file, "first");
+         const collection = new CollectionService({ onChange });
+         await collection.open(root);
+         const first = collection.clips;
+         onChange.mockClear();
+         io.identities = io.writes = 0;
+         const poll = collection.refresh();
+         expect(collection.refresh()).toBe(poll);
+         await poll;
+         await collection.refresh();
+         expect(collection.clips).toBe(first);
+         expect(onChange).not.toHaveBeenCalled();
+         expect(io.identities).toBe(0);
+         expect(io.writes).toBe(0);
+
+         await mkdir(join(root, "Nested"));
+         const added = join(root, "Nested", "Second.mp4");
+         await writeFile(added, "second");
+         await collection.refresh();
+         expect(collection.folders).toEqual(["Nested"]);
+         expect(collection.clips).toHaveLength(2);
+         const id = collection.clips.find((clip) => clip.path === added)!.id;
+         await rename(added, join(root, "Moved.mp4"));
+         await collection.refresh();
+         expect(collection.clips.find((clip) => clip.name === "Second")?.id).toBe(id);
+         await writeFile(file, "changed in place without changing directory entries");
+         await collection.refresh();
+         expect(collection.clips.find((clip) => clip.path === file)?.size).toBe(51);
+         await rm(join(root, "Moved.mp4"));
+         await collection.refresh();
+         expect(collection.clips).toHaveLength(1);
+         onChange.mockClear();
+         await collection.refresh();
+         expect(onChange).not.toHaveBeenCalled();
+         const metadataPath = join(root, ".acroclip", "collection.json");
+         await rm(metadataPath);
+         await collection.refresh();
+         expect((await stat(metadataPath)).size).toBeGreaterThan(0);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("detects removed registered shareables and recovers after the collection returns", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-poll-shares-"));
+      const moved = `${root}-offline`;
+      try {
+         await writeFile(join(root, "Original.mp4"), "original");
+         const collection = new CollectionService();
+         await collection.open(root);
+         await collection.createShareable(collection.clips[0]!.id, 1);
+         const share = collection.clips[0]!.shareables[0]!;
+         await rm(share.path);
+         await collection.refresh();
+         expect(collection.clips[0]!.shareables).toEqual([]);
+         await rename(root, moved);
+         await expect(collection.refresh()).rejects.toThrow();
+         expect(collection.phase).toBe("error");
+         expect(collection.clips).toHaveLength(1);
+         await rename(moved, root);
+         await collection.refresh();
+         expect(collection.phase).toBe("ready");
+         expect(collection.clips).toHaveLength(1);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+         await rm(moved, { recursive: true, force: true });
+      }
+   });
+   it("does not swallow additions arriving during a scan", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-poll-race-"));
+      try {
+         const collection = new CollectionService();
+         await collection.open(root);
+         await writeFile(join(root, "First.mp4"), "first");
+         io.beforeProbe = async () => {
+            io.beforeProbe = undefined;
+            await writeFile(join(root, "During scan.mp4"), "arrived after discovery");
+         };
+         await collection.refresh();
+         expect(collection.clips).toHaveLength(1);
+         await collection.refresh();
+         expect(collection.clips).toHaveLength(2);
+      } finally {
+         io.beforeProbe = undefined;
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+});
+
 describe("eager indexed previews", () => {
    it("hydrates before file verification, reuses unchanged media info, and hides confirmed dead entries", async () => {
       const root = await mkdtemp(join(os.tmpdir(), "acroclip-eager-"));

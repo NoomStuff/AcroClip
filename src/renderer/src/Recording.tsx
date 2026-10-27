@@ -22,6 +22,7 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
    const knownSources = useRef<CaptureSource[]>([]);
    const [capabilities, setCapabilities] = useState<RecordingCapabilities | null>(null);
    const [games, setGames] = useState<GameCandidate[]>([]);
+   const [gamesLoaded, setGamesLoaded] = useState(false);
    const [saving, setSaving] = useState(false);
    const [pulsing, setPulsing] = useState(false);
    const [nativeLevels, setNativeLevels] = useState<AudioLevels>({ capture: 0, microphone: 0 });
@@ -33,12 +34,17 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
    const [monitorError, setMonitorError] = useState("");
    const [monitorSetupError, setMonitorSetupError] = useState("");
    const active = state.recorder.state === "recording" || state.recorder.state === "waiting";
+   const findingGames = !active && state.recorder.supported && !gamesLoaded;
    useEffect(() => {
       if (!visible) {
          setNativeLevels({ capture: 0, microphone: 0 });
          return;
       }
       return api.onEvent((event) => {
+         if (event.type === "capture-sources") {
+            knownSources.current = event.sources;
+            setSources(event.sources);
+         }
          if (event.type === "audio-monitor") {
             setMonitorError(event.monitorError);
             if (event.monitorError) setNativeLevels({ capture: 0, microphone: 0 });
@@ -90,13 +96,16 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
       const update = async () => {
          try {
             const candidates = await api.games();
-            if (!disposed) setGames(candidates);
+            if (!disposed) {
+               setGames(candidates);
+               setGamesLoaded(true);
+            }
          } catch {
             /* The recorder reports connection failures separately. */
          }
       };
       void update();
-      const timer = window.setInterval(() => void update(), 2000);
+      const timer = window.setInterval(() => void update(), 1000);
       return () => {
          disposed = true;
          window.clearInterval(timer);
@@ -105,24 +114,31 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
    useEffect(() => {
       if (!visible) return;
       let gone = false;
+      void api
+         .recordingCapabilities()
+         .then((result) => {
+            if (!gone) setCapabilities(result);
+         })
+         .catch(() => undefined);
+      return () => {
+         gone = true;
+      };
+   }, [visible, sourceRequest]);
+   useEffect(() => {
+      if (!visible) return;
+      let gone = false;
       let fetching = false;
       const fetch = async () => {
          if (fetching) return;
          fetching = true;
+         if (!knownSources.current.length) setSourcePhase("loading");
          try {
-            const capability = api
-               .recordingCapabilities()
-               .then((result) => {
-                  if (!gone) setCapabilities(result);
-               })
-               .catch(() => undefined);
             const result = await api.sources();
             if (!gone) {
                knownSources.current = result;
                setSources(result);
                setSourcePhase("ready");
             }
-            await capability;
          } catch {
             if (!gone) setSourcePhase("error");
             /* Keep the last successful list while source refresh retries. */
@@ -130,23 +146,18 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
             fetching = false;
          }
       };
-      let refresh = knownSources.current.length ? window.setTimeout(() => void fetch(), 900) : undefined;
-      if (!knownSources.current.length) void fetch();
-      const focus = () => {
-         window.clearTimeout(refresh);
-         refresh = window.setTimeout(() => void fetch(), 900);
-      };
+      void fetch();
+      const focus = () => void fetch();
       window.addEventListener("focus", focus);
       const timer = window.setInterval(() => {
          if (!document.hidden) void fetch();
-      }, 10000);
+      }, 2000);
       return () => {
          gone = true;
-         window.clearTimeout(refresh);
          window.removeEventListener("focus", focus);
          window.clearInterval(timer);
       };
-   }, [visible, state.preferences.sourceId, state.preferences.sourceKind, sourceRequest]);
+   }, [visible, sourceRequest]);
    useEffect(() => {
       if (!pulse) return;
       setPulsing(true);
@@ -192,8 +203,16 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
       };
    }, [visible, active, state.recorder.state, monitorConfiguration, captureAvailable, sourcePhase]);
    useEffect(() => {
-      reportFeedback({ kind: "audio-status", message: visible && !active ? monitorSetupError || monitorError : "" });
-   }, [visible, active, monitorError, monitorSetupError]);
+      const message = visible && !active && state.recorder.state !== "starting" ? monitorSetupError || monitorError : "";
+      // Source creation and device changes settle asynchronously. Clear recovered
+      // errors immediately, and only show a failure that survives the transition.
+      if (!message) {
+         reportFeedback({ kind: "audio-status", message: "" });
+         return;
+      }
+      const timer = window.setTimeout(() => reportFeedback({ kind: "audio-status", message }), 1200);
+      return () => window.clearTimeout(timer);
+   }, [visible, active, state.recorder.state, monitorError, monitorSetupError]);
    const preferences = (patch: Partial<Preferences> | ((current: Preferences) => Partial<Preferences>)) => {
       pendingPreferences.current.push(patch);
       if (!writingPreferences.current) {
@@ -284,6 +303,11 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
                            </div>
                         )}
                      </>
+                  ) : (state.preferences.sourceKind !== "auto" && sourcePhase === "loading") || (state.preferences.sourceKind === "auto" && findingGames) ? (
+                     <div className="preview-message" role="status">
+                        <LoaderCircle size={30} className="spin" />
+                        <p>{state.preferences.sourceKind === "auto" ? "Finding games" : "Finding capture sources"}</p>
+                     </div>
                   ) : (
                      <Empty
                         icon={<Monitor size={38} />}
@@ -389,8 +413,16 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
                                  : "Detected game"
                               : "Auto capture"
                         }
-                        title={detectedName || "No game detected"}
-                        icon={detectedName ? <ApplicationIcon size={20} src={detectedSource?.appIcon} /> : <Gamepad2 size={20} />}
+                        title={detectedName || (findingGames ? "Finding games" : "No game detected")}
+                        icon={
+                           detectedName ? (
+                              <ApplicationIcon size={20} src={detectedSource?.appIcon} />
+                           ) : findingGames ? (
+                              <LoaderCircle size={20} className="spin" />
+                           ) : (
+                              <Gamepad2 size={20} />
+                           )
+                        }
                      />
                      <div className="auto-game-help">
                         <span>Not seeing your game?</span>
@@ -439,7 +471,16 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
                               {item.id === source?.id && <span className="source-selected" />}
                            </button>
                         ))}
-                     {sourcePhase === "loading" && !sources.length && <div className="source-placeholder" aria-label="Finding capture sources" />}
+                     {sourcePhase === "loading" && !sources.length && (
+                        <div className="source-loading" role="status" aria-label="Finding capture sources">
+                           {[0, 1].map((row) => (
+                              <div key={row} className="source-row source-skeleton" aria-hidden="true">
+                                 <span className="source-skeleton-icon" />
+                                 <span className="source-skeleton-name" />
+                              </div>
+                           ))}
+                        </div>
+                     )}
                      {sourcePhase === "error" && (
                         <Button className="source-retry" onClick={() => setSourceRequest((value) => value + 1)}>
                            Retry sources

@@ -132,7 +132,7 @@ try {
       assert.equal(media.streams[0]?.height, expectedSize.height);
       assert.deepEqual(
          media.streams.slice(1).map((stream) => stream.tags?.title),
-         ["Master", "Capture audio"]
+         ["Master", "Desktop"]
       );
       assert(Number(media.format.duration) > 1.5 && Number(media.format.duration) < 3.2, `Unexpected duration: ${media.format.duration}`);
       const decode = spawnSync(path.resolve("resources/media/ffmpeg.exe"), ["-v", "error", "-i", file, "-f", "null", "-"], {
@@ -162,6 +162,7 @@ try {
    await wait((event) => event.event === "error" && event.requestId === "collision");
    assert.equal(await readFile(existing, "utf8"), "keep existing user file");
    send({ action: "stop" });
+   if (statusTimer) clearInterval(statusTimer);
    send({ action: "exit" });
    await new Promise<void>((resolve) => child.once("exit", () => resolve()));
    assert.equal(child.exitCode, 0);

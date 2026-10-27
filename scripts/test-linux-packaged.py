@@ -64,6 +64,7 @@ try:
         if not binary.is_file():
             raise RuntimeError(f"Missing packaged executable: {binary}")
     env["ACROCLIP_PACKAGED_EXE"] = str(executable)
+    env["ACROCLIP_TEST_EVIDENCE"] = str(evidence)
 
     # Reserve an actual TCP display port. Existing desktop displays stay alone.
     display = None
@@ -101,7 +102,8 @@ try:
             raise RuntimeError("Private audio fixture did not start")
         time.sleep(0.1)
     launch(["openbox", "--sm-disable"], "window-manager")
-    launch(["xclock", "-update", "1", "-geometry", "640x360+0+0"], "clock")
+    subprocess.run(["xsetroot", "-solid", "#2255aa"], env=env, check=True)
+    launch(["xclock", "-update", "1", "-geometry", "200x200+10+10", "-bg", "#2255aa", "-fg", "white"], "clock")
     tone = evidence / "tone.wav"
     subprocess.run([str(package / "resources/media/ffmpeg"), "-v", "error", "-f", "lavfi",
                     "-i", "sine=frequency=997:sample_rate=48000:duration=120",

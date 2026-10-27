@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { AppEvent, DesktopAPI } from "../shared/types";
 const api: DesktopAPI = {
    state: () => ipcRenderer.invoke("state"),
-   sources: () => ipcRenderer.invoke("sources"),
+   sources: (options) => ipcRenderer.invoke("sources", options),
    games: () => ipcRenderer.invoke("games"),
    gameCatalog: () => ipcRenderer.invoke("game-catalog"),
    recordingCapabilities: () => ipcRenderer.invoke("recording-capabilities"),
@@ -11,7 +11,7 @@ const api: DesktopAPI = {
    monitorAudio: (enabled) => ipcRenderer.invoke("monitor-audio", enabled),
    audioDevices: (kind) => ipcRenderer.invoke("audio-devices", kind),
    captureShortcut: (enabled) => ipcRenderer.invoke("capture-shortcut", enabled),
-   savePreferences: (value) => ipcRenderer.invoke("preferences", value),
+   savePreferences: (value, changedKeys) => ipcRenderer.invoke("preferences", value, changedKeys),
    chooseFolder: () => ipcRenderer.invoke("choose-folder"),
    startRecording: () => ipcRenderer.invoke("record-start"),
    stopRecording: () => ipcRenderer.invoke("record-stop"),

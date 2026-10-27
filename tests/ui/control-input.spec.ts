@@ -80,7 +80,8 @@ test("gain entry commits, rejects invalid input and supports keyboard resets", a
       await resolution.press("ArrowDown");
       await page.keyboard.press("End");
       await page.keyboard.press("Enter");
-      await expect(resolution).toHaveText(/4K/);
+      await expect(resolution).toHaveText("Source");
+      await expect(resolution).toHaveAttribute("data-value", "0");
       const compression = page.getByRole("spinbutton", { name: "Recording compression value" });
       await compression.fill("22");
       await compression.press("Enter");

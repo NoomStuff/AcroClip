@@ -1,14 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { defaultPreferences } from "./defaults";
 import { defaultAudioSources, migrateAudioSources, nativeAudioPreferences, synchronizeLegacyAudio, monitoringPreferences } from "./audio-model";
+import { preferencesSchema } from "./validation";
 describe("unified audio source preferences", () => {
-   it("starts with Source audio and a disabled default microphone without opening it", () => {
+   it("always includes the default microphone as a muted track", () => {
       const sources = defaultAudioSources();
       expect(sources.map((source) => source.kind)).toEqual(["source", "input"]);
-      expect(sources[1]).toMatchObject({ deviceId: "default", enabled: false });
+      expect(sources[1]).toMatchObject({ deviceId: "default", enabled: true, muted: true });
       const native = nativeAudioPreferences(defaultPreferences);
       expect(native.microphone).toBe(false);
-      expect(native.audioSources[0]).toMatchObject({ kind: "input", enabled: false });
+      expect(native.audioSources[0]).toMatchObject({ kind: "input", enabled: true, muted: true });
       expect(native.automaticMaster).toBe(true);
    });
    it("migrates source scope, gain, mute and the microphone device and retains custom source identities", () => {
@@ -34,6 +35,32 @@ describe("unified audio source preferences", () => {
       const empty = { ...defaultPreferences, audioSources: [] };
       expect(nativeAudioPreferences(empty)).toMatchObject({ captureAudio: false, microphone: false, sourceAudioPresent: false, audioSources: [] });
       expect(synchronizeLegacyAudio(empty, { ...empty, captureAudio: true, microphone: true }).audioSources).toEqual([]);
+   });
+   it("migrates a disabled default microphone without unmuting it or changing other inputs", () => {
+      const oldMic = { ...defaultAudioSources()[1]!, enabled: false, muted: false };
+      const custom = { ...oldMic, id: "custom-microphone" };
+      const parsed = preferencesSchema.parse({ ...defaultPreferences, collection: "clips", audioSources: [oldMic, custom] });
+      expect(parsed.audioSources[0]).toMatchObject({ enabled: true, muted: true });
+      expect(parsed.audioSources[1]).toEqual(custom);
+      expect(nativeAudioPreferences({ ...defaultPreferences, audioSources: [oldMic] }).audioSources[0]).toMatchObject({ enabled: true, muted: true });
+   });
+   it("unmutes the default microphone during capture without changing its topology", () => {
+      const before = preferencesSchema.parse({ ...defaultPreferences, collection: "clips" });
+      const after = synchronizeLegacyAudio(before, {
+         ...before,
+         audioSources: before.audioSources.map((source) => (source.kind === "input" ? { ...source, muted: false } : source)),
+      });
+      expect(after.audioSources[1]).toMatchObject({ enabled: true, muted: false });
+   });
+   it("maps legacy microphone toggles to mute while retaining the track", () => {
+      const before = {
+         ...defaultPreferences,
+         microphone: true,
+         microphoneMuted: false,
+         audioSources: defaultAudioSources().map((source) => ({ ...source, muted: false })),
+      };
+      const after = synchronizeLegacyAudio(before, { ...before, microphone: false });
+      expect(after.audioSources[1]).toMatchObject({ enabled: true, muted: true });
    });
 });
 

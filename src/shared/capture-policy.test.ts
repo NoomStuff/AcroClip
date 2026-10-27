@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { portalScreenId, portalSources, sourceChoices, selectedCaptureSource } from "./capture-policy";
+import { bufferedCaptureSource, portalScreenId, portalSources, sourceChoices, selectedCaptureSource } from "./capture-policy";
+import { stoppedRecorder } from "./defaults";
 import type { RecordingCapabilities } from "./types";
 
 const ready: RecordingCapabilities = {
@@ -11,6 +12,22 @@ const ready: RecordingCapabilities = {
    sourceKinds: ["screen"],
    portalPicker: true,
 };
+it("uses the buffered application for saves while the selected source changes or waits", () => {
+   for (const sourceKind of ["app", "waiting"] as const) {
+      expect(
+         bufferedCaptureSource({
+            ...stoppedRecorder,
+            state: "waiting",
+            sourceKind,
+            sourceId: "window:next",
+            sourceName: "Next application",
+            bufferedSourceName: "Previous application",
+            bufferedSourceId: "window:previous",
+            bufferedSourceKind: "app",
+         })
+      ).toEqual({ name: "Previous application", id: "window:previous", kind: "app" });
+   }
+});
 describe("system picker capture policy", () => {
    it("exposes only the native screen picker and prevents unsupported app or auto selection", () => {
       const sources = portalSources(ready)!;

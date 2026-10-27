@@ -162,6 +162,10 @@ export interface RecorderState {
    sourceId?: string;
    sourceName?: string;
    sourceKind?: "screen" | "app" | "waiting";
+   audioWarning?: string;
+   bufferedSourceName?: string;
+   bufferedSourceId?: string;
+   bufferedSourceKind?: "screen" | "app";
 }
 export interface AvailableUpdate {
    version: string;
@@ -208,6 +212,7 @@ export interface AppState {
    platform: string;
 }
 export type AppEvent =
+   | { type: "capture-sources"; sources: CaptureSource[] }
    | { type: "state"; state: AppState }
    | { type: "recorder"; recorder: RecorderState }
    | { type: "notice"; message: string; error: boolean }
@@ -217,7 +222,7 @@ export type AppEvent =
    | { type: "visibility"; visible: boolean };
 export interface DesktopAPI {
    state(): Promise<AppState>;
-   sources(): Promise<CaptureSource[]>;
+   sources(options?: { thumbnails?: boolean }): Promise<CaptureSource[]>;
    games(): Promise<GameCandidate[]>;
    gameCatalog(): Promise<GameCatalogSnapshot>;
    recordingCapabilities(): Promise<RecordingCapabilities>;
@@ -225,7 +230,7 @@ export interface DesktopAPI {
    monitorAudio(enabled: boolean): Promise<string[]>;
    listenAudio(source: string | null): Promise<void>;
    audioDevices(kind?: "input" | "output"): Promise<{ id: string; name: string }[]>;
-   savePreferences(value: Preferences): Promise<AppState>;
+   savePreferences(value: Preferences, changedKeys?: Array<keyof Preferences>): Promise<AppState>;
    captureShortcut(enabled: boolean): Promise<void>;
    chooseFolder(): Promise<string | null>;
    startRecording(): Promise<void>;

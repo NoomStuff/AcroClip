@@ -25,7 +25,7 @@ public:
   Device device(const std::string &id,EDataFlow flow=eRender) {
     Device value;
     HRESULT result;
-    if(id == "default")result=enumerator->GetDefaultAudioEndpoint(flow,eConsole,&value);
+    if(id == "default")result=enumerator->GetDefaultAudioEndpoint(flow,flow==eCapture?eCommunications:eConsole,&value);
     else {int count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,id.c_str(),-1,nullptr,0);std::wstring wide(size_t(count>0?count:1),L'\0');if(count>0)MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,id.c_str(),-1,wide.data(),count);result=count>0?enumerator->GetDevice(wide.c_str(),&value):E_INVALIDARG;}
     DWORD state=0;
     if(FAILED(result)||FAILED(value->GetState(&state))||state!=DEVICE_STATE_ACTIVE)throw std::runtime_error("The listening output is unavailable");
