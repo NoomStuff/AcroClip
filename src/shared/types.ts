@@ -162,6 +162,10 @@ export interface RecorderState {
    sourceId?: string;
    sourceName?: string;
    sourceKind?: "screen" | "app" | "waiting";
+   audioWarning?: string;
+   bufferedSourceName?: string;
+   bufferedSourceId?: string;
+   bufferedSourceKind?: "screen" | "app";
 }
 export interface AvailableUpdate {
    version: string;
@@ -208,6 +212,7 @@ export interface AppState {
    platform: string;
 }
 export type AppEvent =
+   | { type: "capture-sources"; sources: CaptureSource[] }
    | { type: "state"; state: AppState }
    | { type: "recorder"; recorder: RecorderState }
    | { type: "notice"; message: string; error: boolean }
@@ -217,7 +222,7 @@ export type AppEvent =
    | { type: "visibility"; visible: boolean };
 export interface DesktopAPI {
    state(): Promise<AppState>;
-   sources(): Promise<CaptureSource[]>;
+   sources(options?: { thumbnails?: boolean }): Promise<CaptureSource[]>;
    games(): Promise<GameCandidate[]>;
    gameCatalog(): Promise<GameCatalogSnapshot>;
    recordingCapabilities(): Promise<RecordingCapabilities>;

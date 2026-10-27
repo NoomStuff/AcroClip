@@ -270,7 +270,7 @@ try {
       const audio = z
          .object({ streams: z.array(z.object({ codec_type: z.string(), tags: z.object({ title: z.string().optional() }).optional() })) })
          .parse(JSON.parse(metadata)).streams;
-      expect(audio.filter((stream) => stream.codec_type === "audio").map((stream) => stream.tags?.title)).toEqual(["Master", "Source audio", "Other app"]);
+      expect(audio.filter((stream) => stream.codec_type === "audio").map((stream) => stream.tags?.title)).toEqual(["Master", "Application", "Other app"]);
       for (const track of [0, 1, 2]) {
          const { stderr } = await run(ffmpeg, ["-hide_banner", "-i", clip.path, "-map", `0:a:${track}`, "-af", "volumedetect", "-f", "null", "-"]);
          const mean = stderr.match(/mean_volume: (-?[\d.]+) dB/);

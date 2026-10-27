@@ -31,7 +31,9 @@ test("Source audio and default microphone migrate, edit, remove and readd withou
       await expect(page.locator(".mixer-channel")).toHaveCount(2);
       let sources = (await page.evaluate(() => window.acroClip.state())).preferences.audioSources;
       expect(sources.map((item) => item.kind)).toEqual(["source", "input"]);
-      expect(sources[1]).toMatchObject({ enabled: false, deviceId: "missing-device" });
+      expect(sources[1]).toMatchObject({ enabled: true, muted: true, deviceId: "missing-device" });
+      await expect(page.getByRole("button", { name: "Unmute microphone", exact: true })).toBeEnabled();
+      await expect(page.locator(".mixer-channel").filter({ hasText: "Microphone" }).locator(".audio-listen")).toBeDisabled();
       await page.getByRole("button", { name: "Microphone options", exact: true }).click();
       await page.getByRole("menuitem", { name: "Edit source", exact: true }).click();
       await expect(page.getByRole("combobox", { name: "Audio source", exact: true })).toContainText("Selected device unavailable");
@@ -41,7 +43,10 @@ test("Source audio and default microphone migrate, edit, remove and readd withou
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.audioSources.find((item) => item.kind === "input")?.deviceId)
          .toBe("default");
-      expect((await page.evaluate(() => window.acroClip.state())).preferences.audioSources.find((item) => item.kind === "input")?.enabled).toBe(false);
+      expect((await page.evaluate(() => window.acroClip.state())).preferences.audioSources.find((item) => item.kind === "input")).toMatchObject({
+         enabled: true,
+         muted: true,
+      });
       for (const name of ["Source audio", "Microphone"]) {
          await page.getByRole("button", { name: `${name} options`, exact: true }).click();
          await page.getByRole("menuitem", { name: "Remove source", exact: true }).click();

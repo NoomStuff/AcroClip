@@ -67,6 +67,10 @@ interface NativeMessage {
    audioListen?: boolean;
    monitorMessage?: string;
    listeningMessage?: string;
+   audioWarning?: string;
+   bufferedSource?: string;
+   bufferedSourceId?: string;
+   bufferedSourceKind?: "screen" | "app";
 }
 
 export class Recorder {
@@ -91,11 +95,13 @@ export class Recorder {
    >();
    private readonly catalog: GameCatalog;
    private candidatesPending: Promise<GameCandidate[]> | null = null;
+   private applicationsPending: Promise<GameCandidate[]> | null = null;
    private candidatesResolve: ((items: GameCandidate[]) => void) | null = null;
    private autoPreferences: Preferences | null = null;
    private autoSources: CaptureSource[] = [];
    private autoKey = "";
    private autoBusy = false;
+   private autoFailure = "";
    private autoGeneration = 0;
    private focused = new Map<string, number>();
    private encoders: string[] = [];
@@ -106,7 +112,7 @@ export class Recorder {
    private audioMonitor = false;
    private audioListen = false;
    private monitorKey = "";
-   private requestArtwork = new Map<string, ApplicationArtwork>();
+   private requestArtwork = new Map<string, { application: ApplicationArtwork; sourceId: string }>();
    private sourceAudioId: string | null = null;
    private monitorGeneration = 0;
    private monitorLevels: AudioLevels = { capture: 0, microphone: 0 };
@@ -190,10 +196,9 @@ export class Recorder {
    }
    async games(additions: CustomGame[] = []): Promise<GameCandidate[]> {
       if (!this.current.supported) return [];
-      await this.initialize();
       await this.catalog.load();
       void this.catalog.refresh();
-      const candidates = (await this.candidates()).filter((candidate) => candidate.pid !== process.pid);
+      const candidates = (await this.capturableApplications()).filter((candidate) => candidate.pid !== process.pid);
       const games = this.catalog.match(candidates, additions);
       return candidates.map((candidate) => {
          const gameName = games.find((game) => game.id === candidate.id)?.gameName;
@@ -201,8 +206,16 @@ export class Recorder {
       });
    }
    async capturableApplications(): Promise<GameCandidate[]> {
+      if (this.applicationsPending) return this.applicationsPending;
+      this.applicationsPending = this.queryApplications().finally(() => {
+         this.applicationsPending = null;
+      });
+      return this.applicationsPending;
+   }
+   private async queryApplications(): Promise<GameCandidate[]> {
       if (!this.current.supported) return [];
       if (process.platform === "win32") {
+         if (this.process && this.ready && !this.readyResolve && !this.readyReject) return this.candidates();
          const executable = existsSync(this.executable) ? this.executable : this.developmentExecutable;
          try {
             const { stdout } = await promisify(execFile)(executable, [path.dirname(executable), "--candidates"], {
@@ -218,7 +231,7 @@ export class Recorder {
                  )
                : [];
          } catch {
-            return [];
+            throw new Error("Application discovery failed. Try refreshing the source list.");
          }
       }
       await this.initialize();
@@ -231,10 +244,10 @@ export class Recorder {
    }
    private candidates(): Promise<GameCandidate[]> {
       if (this.candidatesPending) return this.candidatesPending;
-      this.candidatesPending = new Promise<GameCandidate[]>((resolve) => {
+      this.candidatesPending = new Promise<GameCandidate[]>((resolve, reject) => {
          const timeout = setTimeout(() => {
             this.candidatesResolve = null;
-            resolve([]);
+            reject(new Error("Application detection timed out. Retrying"));
          }, 3000);
          this.candidatesResolve = (items) => {
             clearTimeout(timeout);
@@ -292,8 +305,9 @@ export class Recorder {
             await this.command({ action: "source", ...configuration });
             if (generation === this.autoGeneration) this.autoKey = key;
          }
+         if (generation === this.autoGeneration) this.autoFailure = "";
       } catch (error) {
-         if (generation === this.autoGeneration) this.update({ state: "waiting", message: error instanceof Error ? error.message : "Waiting for game" });
+         if (generation === this.autoGeneration) this.autoFailure = error instanceof Error ? error.message : "Waiting for game";
       } finally {
          this.autoBusy = false;
       }
@@ -447,6 +461,9 @@ export class Recorder {
             if (value.event === "error") {
                command.onNotAccepted();
                command.reject(new Error(value.message ?? "Recording action failed"));
+               // The caller owns command failures. Monitor setup and rejected
+               // source switches must not turn a healthy recording into an error.
+               return;
             } else command.resolve();
          }
       }
@@ -520,21 +537,34 @@ export class Recorder {
                : {}),
          });
       }
-      if (value.event === "recording") this.update({ state: "recording", startedAt: Date.now(), availableSeconds: 0, message: "", supported: true });
-      if (value.event === "stopped") this.update({ state: "stopped", startedAt: null, availableSeconds: 0, message: "" });
+      if (value.event === "recording")
+         this.update({
+            state: "recording",
+            startedAt: Date.now(),
+            availableSeconds: 0,
+            message: "",
+            supported: true,
+            audioWarning: "",
+            bufferedSourceName: "",
+            bufferedSourceId: "",
+         });
+      if (value.event === "stopped")
+         this.update({ state: "stopped", startedAt: null, availableSeconds: 0, message: "", audioWarning: "", bufferedSourceName: "", bufferedSourceId: "" });
       if (value.event === "audio-monitor") this.options.onAudioMonitorError?.(value.monitorMessage ?? "", value.listeningMessage ?? "");
       if (value.event === "status") {
          if (typeof value.monitorMessage === "string") this.options.onAudioMonitorError?.(value.monitorMessage, value.listeningMessage ?? "");
          this.fullscreen = value.fullscreen === true;
          this.update({
-            ...(value.active
+            ...(value.active && this.current.state !== "error"
                ? {
                     state: value.waiting ? ("waiting" as const) : ("recording" as const),
                     message: value.waiting
-                       ? value.message || (this.autoPreferences ? "Waiting for game" : "Waiting for application")
-                       : value.sourceKind === "screen" && this.autoPreferences
-                         ? "Recording screen fallback"
-                         : "",
+                       ? value.message || this.autoFailure || (this.autoPreferences ? "Waiting for game" : "Waiting for application")
+                       : this.autoFailure
+                         ? `Recording current source. ${this.autoFailure}`
+                         : value.sourceKind === "screen" && this.autoPreferences
+                           ? "Recording screen fallback"
+                           : "",
                  }
                : {}),
             availableSeconds: Number.isFinite(value.availableSeconds) ? value.availableSeconds! : 0,
@@ -542,6 +572,10 @@ export class Recorder {
             ...(value.sourceId !== undefined ? { sourceId: value.sourceId } : {}),
             ...(value.source !== undefined ? { sourceName: value.source } : {}),
             ...(value.sourceKind !== undefined ? { sourceKind: value.sourceKind } : {}),
+            ...(value.audioWarning !== undefined ? { audioWarning: value.audioWarning } : {}),
+            ...(value.bufferedSource !== undefined ? { bufferedSourceName: value.bufferedSource } : {}),
+            ...(value.bufferedSourceId !== undefined ? { bufferedSourceId: value.bufferedSourceId } : {}),
+            ...(value.bufferedSourceKind !== undefined ? { bufferedSourceKind: value.bufferedSourceKind } : {}),
          });
       }
       if (value.event === "saved" && value.path) {
@@ -549,7 +583,11 @@ export class Recorder {
             this.options.onSaved(value.path, value.source ?? this.source, value.requestId ?? "", {
                previousFootage: value.previousFootage ?? false,
                secondsSinceCapture: value.secondsSinceCapture ?? 0,
-               ...(value.requestId && this.requestArtwork.has(value.requestId) ? { application: this.requestArtwork.get(value.requestId)! } : {}),
+               ...(value.requestId &&
+               this.requestArtwork.has(value.requestId) &&
+               (value.sourceId === undefined || value.sourceId === this.requestArtwork.get(value.requestId)!.sourceId)
+                  ? { application: this.requestArtwork.get(value.requestId)!.application }
+                  : {}),
             })
          )
             .catch((error: unknown) => this.error(error instanceof Error ? error.message : "The saved clip could not be added to the library"))
@@ -703,6 +741,7 @@ export class Recorder {
       }
    }
    async start(preferences: Preferences, sources: CaptureSource[] = []): Promise<void> {
+      this.autoFailure = "";
       this.monitorGeneration++;
       this.monitorKey = "";
       this.monitorLevels = { capture: 0, microphone: 0 };
@@ -725,6 +764,7 @@ export class Recorder {
       }
    }
    async stop(): Promise<void> {
+      this.autoFailure = "";
       this.autoPreferences = null;
       this.autoGeneration++;
       if (this.process) await this.command({ action: "stop" });
@@ -735,6 +775,7 @@ export class Recorder {
       if (this.process) await this.command({ action: "audio", ...value });
    }
    async switchSource(preferences: Preferences, sources: CaptureSource[] = []): Promise<void> {
+      this.autoFailure = "";
       if (this.process) {
          this.autoPreferences = null;
          this.autoGeneration++;
@@ -751,7 +792,7 @@ export class Recorder {
       if (!file) throw new Error("A destination path is required for the clip");
       const requestId = randomUUID();
       this.requests.add(requestId);
-      if (application) this.requestArtwork.set(requestId, application);
+      if (application) this.requestArtwork.set(requestId, { application, sourceId: this.current.bufferedSourceId || this.current.sourceId || "" });
       this.update({ pendingSaves: this.requests.size });
       await this.command({ action: "save", path: file, requestId, requestedAt, requestAgeMs: Math.max(0, Date.now() - requestedAt) }, () => {
          this.requests.delete(requestId);

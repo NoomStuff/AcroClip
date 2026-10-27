@@ -6,6 +6,7 @@ import { reportFeedback } from "./desktop";
 export function RecordingStatus({ state, elapsed, audioMessage = "" }: { state: AppState | null; elapsed: number; audioMessage?: string }) {
    const recorder = state?.recorder;
    const active = recorder?.state === "recording";
+   const audioWarning = recorder?.audioWarning || audioMessage;
    const status = active
       ? recorder?.message || "Recording"
       : recorder?.state === "waiting"
@@ -39,15 +40,15 @@ export function RecordingStatus({ state, elapsed, audioMessage = "" }: { state: 
             )}
          </div>
          <div className="status-right">
-            {audioMessage && (
+            {audioWarning && (
                <button
                   className="status-audio"
-                  title={audioMessage}
-                  aria-label={`Audio status: ${audioMessage}`}
-                  onClick={() => reportFeedback({ kind: "notice", message: audioMessage, error: true })}
+                  title={audioWarning}
+                  aria-label={`Audio status: ${audioWarning}`}
+                  onClick={() => reportFeedback({ kind: "notice", message: audioWarning, error: true })}
                >
                   <AlertCircle size={13} />
-                  Audio unavailable
+                  Audio warning
                </button>
             )}
             {state?.storageWarning && (

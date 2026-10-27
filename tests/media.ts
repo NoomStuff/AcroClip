@@ -84,14 +84,14 @@ try {
    await mkdir(foreignFolder);
    const foreign = join(foreignFolder, "my-existing-file.mp4");
    await copyFile(original, foreign);
-   await service.scan();
+   await service.refresh();
    assert.equal(service.clips.length, 2, "unowned shareables folder is scanned rather than silently hidden");
    await service.createShareable(clip.id, 1);
    assert.equal(service.jobs.at(-1)?.state, "failed");
    assert.match(service.jobs.at(-1)?.message ?? "", /not owned/);
    assert.equal(await fileIdentity(foreign), before, "conflict preserves unrelated files");
    await rename(foreignFolder, join(root, "other-videos"));
-   await service.scan();
+   await service.refresh();
    await service.createShareable(clip.id, 1);
    assert.equal(service.jobs.at(-1)?.state, "complete", service.jobs.at(-1)?.message ?? "Export did not complete");
    const share = service.clips.find((entry) => entry.id === clip.id)?.shareables[0];
@@ -166,7 +166,7 @@ try {
    assert.equal(movedClip.categories.length, 1);
    const relocated = join(moved, "Existing game", "renamed-file.mp4");
    await rename(movedClip.path, relocated);
-   await reopened.scan();
+   await reopened.refresh();
    assert.equal(reopened.clips.find((entry) => entry.id === clip.id)?.path, relocated, "external rename retains verified identity");
    const deleteFiles = await reopened.filesForDeletion(clip.id, movedClip.shareables[0]?.id);
    assert.equal(deleteFiles.length, 1);

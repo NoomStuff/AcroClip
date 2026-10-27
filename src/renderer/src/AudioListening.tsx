@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Headphones } from "lucide-react";
+import { HeadphoneOff, Headphones } from "lucide-react";
 import { api, describeError, reportFeedback } from "./desktop";
 import { IconButton } from "./ui";
 import type { Preferences } from "../../shared/types";
@@ -23,7 +23,7 @@ export function ListenButton({ id, name, enabled }: { id: string; name: string; 
          className={on ? "audio-listen active" : "audio-listen"}
          onClick={() => context.toggle(id)}
       >
-         <Headphones size={18} />
+         {on ? <Headphones size={18} aria-hidden="true" /> : <HeadphoneOff size={18} aria-hidden="true" />}
       </IconButton>
    );
 }
@@ -59,6 +59,13 @@ export function AudioListening({
       preferences.captureAudio,
       preferences.audioSources.map(({ id, kind, sourceId, deviceId, enabled }) => ({ id, kind, sourceId, deviceId, enabled })),
    ]);
+   useEffect(() => {
+      if (!listening || !preferences.audioSources.some((source) => source.id === listening && source.kind === "input" && source.muted)) return;
+      invalidate();
+      setListening(null);
+      setBusy(false);
+      void api.listenAudio(null).catch(() => undefined);
+   }, [listening, preferences.audioSources, invalidate]);
    useEffect(() => {
       invalidate();
       setListening(null);

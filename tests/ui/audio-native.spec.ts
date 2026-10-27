@@ -76,7 +76,7 @@ test("extra audio rows persist, obey recording boundaries and produce named isol
       await page.getByRole("button", { name: /^Save clip/ }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length, { timeout: 20_000 }).toBe(1);
       const saved = (await page.evaluate(() => window.acroClip.state())).clips[0]!;
-      expect(saved.tracks.map((track) => track.title)).toEqual(["Master", "Source audio", "Microphone", source.name]);
+      expect(saved.tracks.map((track) => track.title)).toEqual(["Master", "Application", "Microphone", source.name]);
       await page.getByRole("button", { name: /^Stop recording/ }).click();
       await page.getByRole("button", { name: `${source.name} options`, exact: true }).click();
       await page.getByRole("menuitem", { name: "Remove source", exact: true }).click();

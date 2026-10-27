@@ -35,7 +35,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type 'using System; using System.Runtime.InteropServices; public class FixtureWindow { [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command); }'
 $form = New-Object System.Windows.Forms.Form
 $form.Text = '${escapePowerShell(title)}'
-$form.ClientSize = New-Object System.Drawing.Size(640,360)
+$form.ClientSize = New-Object System.Drawing.Size(${profileSwitch ? 640 : 320},${profileSwitch ? 360 : 180})
 $form.BackColor = [System.Drawing.Color]::DodgerBlue
 $form.ShowInTaskbar = $true
 $form.TopMost = $true
@@ -48,6 +48,11 @@ $timer.Add_Tick({
     Remove-Item -LiteralPath '${escapePowerShell(actionPath)}'
     if ($action -eq 'minimize') { $form.WindowState = 'Minimized' }
     if ($action -eq 'restore') { $form.WindowState = 'Normal'; $form.Activate() }
+    if ($action -eq 'grow') { $form.ClientSize = New-Object System.Drawing.Size(960,540); $form.BackColor = [System.Drawing.Color]::Red }
+    if ($action -eq 'portrait') { $form.ClientSize = New-Object System.Drawing.Size(360,640); $form.BackColor = [System.Drawing.Color]::DodgerBlue }
+    if ($action -eq 'black') { $form.BackColor = [System.Drawing.Color]::Black }
+    if ($action -eq 'shrink') { $form.ClientSize = New-Object System.Drawing.Size(320,180); $form.BackColor = [System.Drawing.Color]::Red }
+    if ($action -eq 'original') { $form.ClientSize = New-Object System.Drawing.Size(640,360); $form.BackColor = [System.Drawing.Color]::DodgerBlue }
     if ($action -eq 'exit') { $form.Close() }
   }
 })
@@ -70,6 +75,7 @@ interface NativeEvent {
    active?: boolean;
    pendingSaves?: number;
    message?: string;
+   source?: string;
 }
 const events: NativeEvent[] = [];
 const logs: string[] = [];
@@ -110,7 +116,15 @@ async function waitForHistory(): Promise<void> {
    }
    throw new Error(`Capture did not provide enough current footage: ${JSON.stringify(events.slice(-10))}`);
 }
-async function verify(name: string, minimumDuration: number, requested = false, width = 640, height = 360, fps = 24): Promise<NativeEvent> {
+async function verify(
+   name: string,
+   minimumDuration: number,
+   requested = false,
+   width = 640,
+   height = 360,
+   fps = 24,
+   color: "blue" | "red" | "black" = "blue"
+): Promise<NativeEvent> {
    const file = path.join(folder, `${name}.mkv`);
    if (!requested) await command({ action: "save", requestId: name, requestedAt: Date.now(), path: file });
    const saved = await wait((event) => event.event === "saved" && event.requestId === name);
@@ -148,7 +162,12 @@ async function verify(name: string, minimumDuration: number, requested = false, 
    const y = Number(/lavfi.signalstats.YAVG=([\d.]+)/.exec(pixel.stdout)?.[1]);
    const u = Number(/lavfi.signalstats.UAVG=([\d.]+)/.exec(pixel.stdout)?.[1]);
    const v = Number(/lavfi.signalstats.VAVG=([\d.]+)/.exec(pixel.stdout)?.[1]);
-   assert(y > 40 && y < 160 && u > 140 && v < 140, `${name}: expected the blue fixture, got YUV ${y},${u},${v}`);
+   assert(
+      color === "black"
+         ? y < 30 && Math.abs(u - 128) < 10 && Math.abs(v - 128) < 10
+         : y > 40 && y < 160 && (color === "red" ? u < 140 && v > 180 : u > 140 && v < 140),
+      `${name}: expected the ${color} fixture, got YUV ${y},${u},${v}`
+   );
    if (appAudio) {
       for (const track of [0, 1]) {
          const measured = spawnSync(
@@ -180,6 +199,7 @@ try {
       sourceId: `window:${handle}:0`,
       sourceName: title,
       quality: "custom",
+      ...(!profileSwitch ? { recordingSizeVersion: 2, resolutionLimit: 1080 } : {}),
       allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1",
       customWidth: profileSwitch ? 1280 : 640,
       customHeight: profileSwitch ? 720 : 360,
@@ -188,7 +208,24 @@ try {
       clipSeconds: 2,
       captureAudio: appAudio,
       microphone: false,
+      audioSources: [
+         {
+            id: "microphone-default",
+            name: "Muted unavailable microphone",
+            kind: "input",
+            deviceId: "missing-muted-fixture",
+            enabled: true,
+            muted: true,
+            volume: 1,
+            includeInMaster: false,
+         },
+      ],
    });
+   if (!profileSwitch) {
+      await command({ action: "status" });
+      await writeFile(actionPath, "original");
+      await delay(300);
+   }
    if (autoCapture) {
       for (let i = 0; i < 28; i++) {
          await command({ action: "status" });
@@ -246,6 +283,41 @@ try {
       await waitForHistory();
    }
    await verify("healthy", 1.5);
+   if (!profileSwitch) {
+      // Real window resizes must keep producing decodable media on the original
+      // canvas, including shrinking and changing aspect ratio with buffered clips.
+      for (const action of ["grow", "portrait", "shrink", "original"]) {
+         await writeFile(actionPath, action);
+         await delay(3000);
+         await waitForHistory();
+         const saved = await verify(`resize-${action}`, 1.5, false, 640, 360, 24, action === "grow" || action === "shrink" ? "red" : "blue");
+         assert.equal(saved.previousFootage, false, `${action}: resize left capture waiting on old footage`);
+      }
+      await writeFile(actionPath, "portrait");
+      await delay(300);
+      await command({ action: "source", sourceKind: "auto", resolvedKind: "waiting", sourceName: "Waiting for game" });
+      assert.equal((await verify("waiting-history", 1.5)).source, title, "Waiting must preserve the buffered application's name");
+      await writeFile(actionPath, "black");
+      await delay(300);
+      await command({
+         action: "source",
+         sourceKind: "auto",
+         resolvedKind: "app",
+         sourceId: `window:${handle}:0`,
+         sourceName: `${title} replacement`,
+         recordingSizeVersion: 2,
+         resolutionLimit: 1080,
+         captureAudio: appAudio,
+      });
+      await delay(3000);
+      await waitForHistory();
+      const switched = await verify("auto-resumed", 1.5, false, 640, 360, 24, "black");
+      assert.equal(switched.previousFootage, false);
+      assert.equal(switched.source, `${title} replacement`);
+      await writeFile(actionPath, "original");
+      await delay(3000);
+      await waitForHistory();
+   }
    await command({ action: "save", requestId: "failed-destination", requestedAt: Date.now(), path: path.join(folder, "missing-parent", "failed.mkv") });
    const failed = await wait((event) => event.event === "error" && event.requestId === "failed-destination");
    assert(failed.message?.includes("storage"), failed.message ?? "Save failure must explain what to check");

@@ -1,4 +1,10 @@
-import type { CaptureSource, GameCandidate, RecordingCapabilities, SourceKind, Preferences } from "./types";
+import type { CaptureSource, GameCandidate, RecordingCapabilities, SourceKind, Preferences, RecorderState } from "./types";
+
+export function bufferedCaptureSource(recorder: RecorderState) {
+   return recorder.bufferedSourceName
+      ? { name: recorder.bufferedSourceName, id: recorder.bufferedSourceId, kind: recorder.bufferedSourceKind }
+      : { name: recorder.sourceName, id: recorder.sourceId, kind: recorder.sourceKind };
+}
 
 export const portalScreenId = "portal:screen";
 export function portalSources(capabilities: RecordingCapabilities, candidates: GameCandidate[] = []): CaptureSource[] | null {

@@ -84,6 +84,13 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
             setSources(choices);
             setSourcePhase("ready");
             setDraft((current) => (current.sourceId ? current : { ...current, sourceId: choices.find((item) => item.kind === current.sourceKind)?.id ?? "" }));
+            // Source choices are usable before their optional thumbnail images.
+            void api
+               .sources({ thumbnails: true })
+               .then((images) => {
+                  if (!disposed) setSources(images);
+               })
+               .catch(() => undefined);
          })
          .catch((failure: unknown) => {
             if (!disposed) {
@@ -95,6 +102,13 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
          disposed = true;
       };
    }, [sourceRequest]);
+   useEffect(
+      () =>
+         api.onEvent((event) => {
+            if (event.type === "capture-sources") setSources(event.sources);
+         }),
+      []
+   );
    useEffect(() => {
       let disposed = false;
       void api

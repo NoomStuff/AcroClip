@@ -54,6 +54,9 @@ test("cached loading states, enumeration retry, and interrupted library movement
          }, value);
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.locator(".clip-card")).toHaveCount(6);
+      await page.getByRole("button", { name: "Collection actions", exact: true }).click();
+      await expect(page.getByRole("menuitem", { name: "Refresh collection", exact: true })).toHaveCount(0);
+      await page.keyboard.press("Escape");
       const refreshStart = performance.now();
       await page.evaluate(() => window.acroClip.refresh());
       const refreshMs = performance.now() - refreshStart;

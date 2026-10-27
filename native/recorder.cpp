@@ -413,6 +413,9 @@ private:
     uintptr_t window = 0;
     uint32_t pid = 0;
     uint32_t isolatedMask = 0;
+    uint32_t mixerMask = 0, outputChannel = 0;
+    bool managedInput = false;
+    uint64_t openedAt = 0;
     std::shared_ptr<ExtraMeter> metering;
 #ifdef __linux__
     ApplicationAudio *application = nullptr;
@@ -438,10 +441,7 @@ private:
   std::atomic<bool> monitoring{false};
   std::string listeningSource, listeningDevice, listeningRequestedDevice, listeningFailure;
   json sessionConfiguration;
-  std::string presetMessage;
   std::atomic<bool> waitingForPresetSize{false};
-  std::atomic<bool> sourceRelativeProfile{false}, applicationSizeProfile{false};
-  std::atomic<int> profilePixelLimit{1080};
   int sessionCQ = 23;
   bool presetRecording = false;
   std::atomic<bool> encoderFailed{false};
@@ -451,6 +451,9 @@ private:
   std::atomic<bool> gameCapture{false}, gameReady{false};
   std::atomic<bool> captureImageReady{false};
   std::atomic<uint64_t> captureImageSince{0};
+  uint64_t captureImageChecked = 0;
+  acroclip::RecordingSize initialSize{0, 0};
+  uint64_t initialSizeSince = 0;
   std::mutex captureSourceMutex;
   std::atomic<bool> windowCompatibility{false};
   uint64_t gameStarted = 0;
@@ -465,6 +468,7 @@ private:
   std::atomic<uint64_t> lastMeterEvent{0};
   float captureVolume = 1, microphoneVolume = 1;
   bool captureMuted = false, microphoneMuted = false;
+  uint64_t microphoneOpenedAt = 0;
   std::atomic<bool> captureAudioEnabled{true};
   std::atomic<bool> screenCapture{true};
   std::mutex displayIdentityMutex;
@@ -475,6 +479,10 @@ private:
   int seconds = 60, width = 1920, height = 1080, fps = 60;
   bool avoidOverlap = false;
   std::string encoder, sourceName, selectedSourceId;
+  std::string bufferedSourceName, bufferedSourceId;
+  std::string audioWarningCandidate;
+  uint64_t audioWarningSince = 0;
+  bool bufferedScreen = false;
 #ifdef __linux__
   std::shared_ptr<acroclip::wayland::Capture> portalCapture;
 #endif
@@ -512,6 +520,7 @@ public:
                   {"previousFootage", result.secondsSinceCapture > 0.25},
                   {"secondsSinceCapture", result.secondsSinceCapture},
                   {"source", result.request.source},
+                  {"sourceId", result.request.sourceId},
                   {"overlapSeconds", result.overlapSeconds}});
           else
             emit({{"event", "error"},
@@ -542,11 +551,15 @@ private:
   }
   void release() {
     waitingForPresetSize = false;
+    initialSize = {0, 0};
+    initialSizeSince = 0;
     listeningSource.clear();
     listeningFailure.clear();
     listeningDevice.clear();
     listeningRequestedDevice.clear();
     monitoring = false;
+    audioWarningCandidate.clear();
+    audioWarningSince = 0;
     captureEnabled = false;
     gameCapture = false;
     gameReady = false;
@@ -644,6 +657,8 @@ public:
     {
       std::lock_guard<std::mutex> lock(mutex);
       ring.clear();
+      bufferedSourceName.clear();
+      bufferedSourceId.clear();
       bytes = 0;
       streamHeaders.clear();
       encoderFailed = false;
@@ -656,27 +671,21 @@ public:
     idleVideo();
   }
 private:
-  bool profileMatchesCapture() {
-    if(!presetRecording)return true;
-    std::lock_guard<std::mutex> sourceLock(captureSourceMutex);
-    if(!capture)return true;
-    const acroclip::RecordingSize pixels{int(obs_source_get_width(capture)),int(obs_source_get_height(capture))};
-    // A source can briefly report no dimensions while OBS resets video.
-    // Image readiness blocks those frames; only known dimensions prove a resize.
-    if(pixels.width<=0||pixels.height<=0)return true;
-    if(!sourceRelativeProfile)return pixels.width>=width && pixels.height>=height;
-    try {const auto expected=acroclip::fitResolutionLimit(pixels,profilePixelLimit.load(),applicationSizeProfile.load());return expected.width==width && expected.height==height;}catch(...){return false;}
-  }
   bool targetAvailable() {
-    if (waitingForPresetSize || !profileMatchesCapture()) return false;
-    if (!additionalAudioError().empty())
-      return false;
+    if (waitingForPresetSize) return false;
     if (!captureEnabled)
       return false;
     if (gameCapture && !gameReady)
       return false;
 #ifdef _WIN32
-    refreshImageState();
+    {
+      std::lock_guard<std::mutex> sourceLock(captureSourceMutex);
+      if (!capture || !obs_source_get_width(capture) || !obs_source_get_height(capture)) {
+        captureImageReady = false;
+        captureImageSince = 0;
+        return false;
+      }
+    }
     if (!captureImageReady)
       return false;
     if (screenCapture) {
@@ -738,8 +747,6 @@ private:
     }
     if (!screenCapture && !windowCompatibility && captureTextureFailure)
       return false;
-    if (!captureAudioError().empty())
-      return false;
     if (windowCompatibility && !x11CompatibilityAvailable(targetWindow.load()))
       return false;
     return x11Available(targetWindow.load(), targetProcess.load());
@@ -747,7 +754,21 @@ private:
     return true;
   }
   void refreshCapture() {
-    if (active && waitingForPresetSize && capture && obs_source_get_width(capture) && obs_source_get_height(capture)) {
+#ifdef _WIN32
+    refreshImageState();
+#endif
+    if (active && waitingForPresetSize && capture && obs_source_get_width(capture) >= 64 && obs_source_get_height(capture) >= 64) {
+      const acroclip::RecordingSize pixels{int(obs_source_get_width(capture)), int(obs_source_get_height(capture))};
+      const auto now = os_gettime_ns();
+      if (pixels.width != initialSize.width || pixels.height != initialSize.height) {
+        initialSize = pixels;
+        initialSizeSince = now;
+        return;
+      }
+      if (now - initialSizeSince < 500000000ULL) return;
+#ifdef _WIN32
+      if (!captureImageReady) return;
+#endif
       try {
 #ifdef __linux__
         if (acroclip::wayland::enabled() && screenCapture) {
@@ -762,6 +783,8 @@ private:
         obs_wait_for_destroy_queue();
         width=size.width;height=size.height;
         configureVideoOutput();
+        captureImageSince = 0;
+        captureImageReady = false;
         vec2 bounds{float(width),float(height)},pos{width/2.f,height/2.f};
         obs_sceneitem_set_bounds(item,&bounds);obs_sceneitem_set_pos(item,&pos);
         waitingForPresetSize=false;
@@ -772,12 +795,6 @@ private:
       return;
     }
 
-    if(active && captureEnabled && !profileMatchesCapture()) {
-      const std::string previous=sourceName;
-      source({{"sourceKind","auto"},{"resolvedKind","waiting"},{"sourceName",previous}});
-      presetMessage="Source resolution changed. Save recent footage, then restart recording to fit this source";
-      return;
-    }
 #ifdef _WIN32
     if (!capture)
       return;
@@ -827,20 +844,65 @@ private:
 #endif
   }
 #ifdef _WIN32
-  void refreshImageState() {
-    std::lock_guard<std::mutex> sourceLock(captureSourceMutex);
-    const uint64_t now = os_gettime_ns();
-    if (!capture || !obs_source_get_width(capture) ||
-        !obs_source_get_height(capture)) {
-      captureImageSince = 0;
-      captureImageReady = false;
-      return;
+  bool sourceDrawsImage(obs_source_t *source, uint32_t sourceWidth, uint32_t sourceHeight) {
+    if (!sourceWidth || !sourceHeight) return false;
+    // A drawable black frame is valid. Clearing to a distinct transparent color
+    // lets us detect drawing without mistaking a missing texture for black video.
+    constexpr uint32_t side = 16;
+    bool drawn = false;
+    obs_enter_graphics();
+    {
+      std::unique_ptr<gs_texrender_t, decltype(&gs_texrender_destroy)> target(gs_texrender_create(GS_RGBA, GS_ZS_NONE), &gs_texrender_destroy);
+      std::unique_ptr<gs_stagesurf_t, decltype(&gs_stagesurface_destroy)> surface(gs_stagesurface_create(side, side, GS_RGBA), &gs_stagesurface_destroy);
+      if (target && surface) for (int pass = 0; pass < 2 && !drawn; ++pass) {
+        gs_texrender_reset(target.get());
+        if (!gs_texrender_begin(target.get(), side, side)) break;
+        vec4 clear;
+        vec4_set(&clear, pass == 0 ? 1.f : 0.f, pass == 0 ? 0.f : 1.f, 1.f, 0.f);
+        gs_clear(GS_CLEAR_COLOR, &clear, 0, 0);
+        gs_ortho(0, float(sourceWidth), 0, float(sourceHeight), -100, 100);
+        gs_blend_state_push();
+        gs_reset_blend_state();
+        obs_source_video_render(source);
+        gs_blend_state_pop();
+        gs_texrender_end(target.get());
+        gs_stage_texture(surface.get(), gs_texrender_get_texture(target.get()));
+        uint8_t *pixels = nullptr;
+        uint32_t stride = 0;
+        if (gs_stagesurface_map(surface.get(), &pixels, &stride)) {
+          for (uint32_t y = 0; y < side && !drawn; ++y)
+            for (uint32_t x = 0; x < side; ++x) {
+              const auto *pixel = pixels + y * stride + x * 4;
+              if (pixel[0] != (pass == 0 ? 255 : 0) || pixel[1] != (pass == 0 ? 0 : 255) || pixel[2] != 255 || pixel[3] != 0) { drawn = true; break; }
+            }
+          gs_stagesurface_unmap(surface.get());
+        }
+      }
     }
-    if (!captureImageSince)
+    obs_leave_graphics();
+    return drawn;
+  }
+  void refreshImageState() {
+    const uint64_t now = os_gettime_ns();
+    std::unique_ptr<obs_source_t, decltype(&obs_source_release)> source(nullptr, &obs_source_release);
+    {
+      std::lock_guard<std::mutex> sourceLock(captureSourceMutex);
+      if (!capture || !obs_source_get_width(capture) || !obs_source_get_height(capture)) {
+        captureImageSince = 0;
+        captureImageReady = false;
+        captureImageChecked = 0;
+        return;
+      }
+      if (captureImageReady || now - captureImageChecked < 250000000ULL) return;
+      source.reset(obs_source_get_ref(capture));
+    }
+    captureImageChecked = now;
+    // Never hold captureSourceMutex while acquiring the graphics context.
+    // Encoder callbacks may check availability from a graphics-owned thread.
+    if (sourceDrawsImage(source.get(), obs_source_get_width(source.get()), obs_source_get_height(source.get()))) {
       captureImageSince = now;
-    // OBS can publish dimensions before the first usable texture. Also exclude
-    // encoded packets queued before this source finished warming up.
-    captureImageReady = now - captureImageSince >= 500000000ULL;
+      captureImageReady = true;
+    }
   }
   static bool selectedWindowFullscreen(HWND window) {
     RECT rect{};
@@ -857,6 +919,73 @@ private:
            rect.bottom >= monitor.rcMonitor.bottom;
   }
 #endif
+  obs_source_t *openMicrophone(const std::string &device, const std::string &name) {
+    const char *type = microphoneType();
+    if (device == "test-tone" && std::getenv("ACROCLIP_NATIVE_TEST_LIFECYCLE")) {
+      auto *source = obs_source_create_private("acroclip_test_tone", name.c_str(), nullptr);
+      if (!source) throw std::runtime_error("The controlled microphone source could not be created");
+      return source;
+    }
+#ifdef __APPLE__
+    acroclip::macos::requireMicrophonePermission();
+#endif
+    std::unique_ptr<obs_properties_t, decltype(&obs_properties_destroy)> properties(
+        obs_get_source_properties(type), &obs_properties_destroy);
+    auto *devices = properties ? obs_properties_get(properties.get(), "device_id") : nullptr;
+    bool found = false;
+    if (devices)
+      for (size_t index = 0; index < obs_property_list_item_count(devices); ++index)
+        if (device == obs_property_list_item_string(devices, index) &&
+            !obs_property_list_item_disabled(devices, index)) found = true;
+    if (!found) throw std::runtime_error("The microphone is unavailable. Choose an available input device");
+#ifdef _WIN32
+    if (sessionConfiguration.value("automaticMaster", false)) {
+      acroclip::windows::ListenRouting routing;
+      const auto endpoint = acroclip::windows::ListenRouting::identity(routing.device(device, eCapture).Get());
+      for (const auto &extra : additionalAudio)
+        if (extra.kind == "input" && extra.source && endpoint == acroclip::windows::ListenRouting::identity(routing.device(extra.deviceId, eCapture).Get()))
+          throw std::runtime_error("This microphone is already included by another audio source");
+    }
+#endif
+    std::unique_ptr<obs_data_t, decltype(&obs_data_release)> settings(obs_data_create(), &obs_data_release);
+    obs_data_set_string(settings.get(), "device_id", device.c_str());
+    auto *source = obs_source_create_private(type, name.c_str(), settings.get());
+    if (!source) throw std::runtime_error("The microphone could not be opened");
+#ifdef __APPLE__
+    acroclip::macos::watchInput(source);
+#endif
+#ifdef _WIN32
+    audioHealth.watch(source);
+#endif
+    return source;
+  }
+  static bool inputWarming(const std::string &error, uint64_t openedAt) {
+    // Opening a microphone is asynchronous. Its expected startup silence must
+    // not interrupt video or erase history, but persistent failure still does.
+    return openedAt && os_gettime_ns() - openedAt < 3000000000ULL &&
+           (error == "Audio capture is starting" || error == "Audio capture is reconnecting");
+  }
+  void closeMicrophone(obs_source_t *&source, obs_volmeter_t *meter, uint32_t channel, const std::string &id) {
+    if (!source) return;
+    obs_source_set_muted(source, true);
+    obs_source_set_monitoring_type(source, OBS_MONITORING_TYPE_NONE);
+    if (listeningSource == id) {
+      listeningSource.clear();
+      listeningFailure.clear();
+      listeningDevice.clear();
+      listeningRequestedDevice.clear();
+    }
+    if (meter) obs_volmeter_detach_source(meter);
+    obs_set_output_source(channel, nullptr);
+#ifdef __APPLE__
+    acroclip::macos::forgetInput(source);
+#endif
+#ifdef _WIN32
+    audioHealth.forget(source);
+#endif
+    obs_source_release(source);
+    source = nullptr;
+  }
 public:
   void setAudio(const json &c) {
     std::string source = c.at("source");
@@ -865,7 +994,8 @@ public:
     if (!std::isfinite(volume) || volume < 0 || volume > 4)
       throw std::runtime_error(
           "Audio volume must be between 0 and 400 percent");
-    std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+    std::unique_lock<std::mutex> audioLock(audioSourcesMutex);
+    bool releasedInput = false;
     if (source == "capture") {
       captureVolume = volume;
       captureMuted = muted;
@@ -884,6 +1014,19 @@ public:
     } else if (source == "microphone") {
       microphoneVolume = volume;
       microphoneMuted = muted;
+      if (muted && mic) {
+        closeMicrophone(mic, microphoneMeter, 2, "microphone");
+        microphoneLevel = 0;
+        microphonePendingPeak = 0;
+        releasedInput = true;
+      } else if (!muted && !mic && sessionConfiguration.value("microphone", false)) {
+        mic = openMicrophone(sessionConfiguration.value("microphoneDevice", std::string("default")), "Microphone");
+        microphoneOpenedAt = os_gettime_ns();
+        obs_source_set_volume(mic, volume);
+        obs_source_set_audio_mixers(mic, 5);
+        obs_volmeter_attach_source(microphoneMeter, mic);
+        obs_set_output_source(2, mic);
+      }
       if (mic) {
         obs_source_set_volume(mic, volume);
         obs_source_set_muted(mic, muted);
@@ -894,85 +1037,89 @@ public:
           [&](const AdditionalAudio &value) { return value.id == source; });
       if (found == additionalAudio.end())
         throw std::runtime_error("Unknown audio source");
+      if (found->managedInput) {
+        if (muted) {
+          releasedInput = found->source != nullptr;
+          closeMicrophone(found->source, found->metering ? found->metering->meter : nullptr, found->outputChannel, found->id);
+          if (found->metering) found->metering->pendingPeak = 0;
+          emit({{"event", "audio-levels"}, {"capture", captureLevel.load()}, {"microphone", microphoneLevel.load()}, {"additional", {{found->id, 0.f}}}});
+        } else if (!found->source) {
+          found->source = openMicrophone(found->deviceId, found->name);
+          found->openedAt = os_gettime_ns();
+          obs_source_set_volume(found->source, volume);
+          obs_source_set_audio_mixers(found->source, found->mixerMask);
+          if (found->metering) obs_volmeter_attach_source(found->metering->meter, found->source);
+          obs_set_output_source(found->outputChannel, found->source);
+        }
+      }
       if (found->source) {
         obs_source_set_volume(found->source, volume);
         obs_source_set_muted(found->source, muted);
       }
     }
+    audioLock.unlock();
+    // Device destruction can join an audio thread. Do not hold the source lock
+    // while waiting, and acknowledge mute only once OBS has released the input.
+    if (releasedInput) obs_wait_for_destroy_queue();
   }
 private:
+  std::string deviceAudioError(obs_source_t *source, uint64_t openedAt = 0) {
+    if (!source || obs_source_muted(source)) return {};
+    std::string error;
+#ifdef __linux__
+    error = linuxDeviceAudioError(source);
+#elif defined(_WIN32)
+    error = audioHealth.error(source);
+#elif defined(__APPLE__)
+    error = acroclip::macos::audioError(source, 0, 0);
+#endif
+    return inputWarming(error, openedAt) ? std::string{} : error;
+  }
+  std::string additionalSourceError(const AdditionalAudio &extra) {
+    auto physical = deviceAudioError(extra.source, extra.openedAt);
+    if (!physical.empty()) return extra.name + ": " + physical;
+#ifdef _WIN32
+    if (extra.window) {
+      DWORD pid = 0;
+      GetWindowThreadProcessId(reinterpret_cast<HWND>(extra.window), &pid);
+      if (!IsWindow(reinterpret_cast<HWND>(extra.window)) || pid != extra.pid)
+        return "Audio source " + extra.name + " is unavailable";
+      calldata_t state{};
+      calldata_init(&state);
+      bool queried = proc_handler_call(obs_source_get_proc_handler(extra.source), "get_hooked", &state);
+      bool ready = queried && calldata_bool(&state, "hooked");
+      calldata_free(&state);
+      if (!ready) return "Waiting for audio source " + extra.name;
+    }
+#elif defined(__linux__)
+    if (extra.application) {
+      auto error = applicationAudioError(extra.application);
+      if (!error.empty()) return extra.name + ": " + error;
+      if (!x11Available(extra.window, extra.pid, false)) return "Audio source " + extra.name + " is unavailable";
+    }
+#elif defined(__APPLE__)
+    auto error = acroclip::macos::audioError(extra.source, extra.window, extra.pid);
+    if (!error.empty() && !inputWarming(error, extra.openedAt)) return extra.name + ": " + error;
+#endif
+    return {};
+  }
   std::string additionalAudioError() {
     std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
-#ifdef __linux__
-    if (mic) {
-      auto error = linuxDeviceAudioError(mic);
-      if (!error.empty())
-        return "Microphone: " + error;
-    }
-    if (desktop && screenCapture && captureAudioEnabled) {
-      auto error = linuxDeviceAudioError(desktop);
-      if (!error.empty())
-        return "Capture audio: " + error;
-    }
-#endif
-#ifdef _WIN32
-    if (mic) {
-      auto error = audioHealth.error(mic);
-      if (!error.empty()) return "Microphone: " + error;
-    }
-    if (desktop && screenCapture && captureAudioEnabled) {
-      auto error = audioHealth.error(desktop);
-      if (!error.empty()) return "Capture audio: " + error;
-    }
-#endif
-#ifdef __APPLE__
-    if (mic) {
-      auto error = acroclip::macos::audioError(mic, 0, 0);
-      if (!error.empty())
-        return "Microphone: " + error;
-    }
-#endif
+    std::string warning;
+    auto route = [&](obs_source_t *source, const std::string &error, uint32_t mask, const std::string &name) {
+      if (source) obs_source_set_audio_mixers(source, error.empty() ? mask : 0);
+      if (warning.empty() && !error.empty()) warning = name.empty() ? error : name + ": " + error;
+    };
+    route(mic, deviceAudioError(mic, microphoneOpenedAt), 5, "Microphone");
+    if (desktop && screenCapture && captureAudioEnabled)
+      route(desktop, deviceAudioError(desktop), 3, "Capture audio");
     for (auto &extra : additionalAudio) {
-#ifdef __linux__
-      auto physicalError = linuxDeviceAudioError(extra.source);
-      if (!physicalError.empty())
-        return extra.name + ": " + physicalError;
-#endif
-#ifdef _WIN32
-      auto physicalError = audioHealth.error(extra.source);
-      if (!physicalError.empty()) return extra.name + ": " + physicalError;
-      if (extra.window) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(reinterpret_cast<HWND>(extra.window), &pid);
-        if (!IsWindow(reinterpret_cast<HWND>(extra.window)) || pid != extra.pid)
-          return "Audio source " + extra.name + " is unavailable";
-        calldata_t state{};
-        calldata_init(&state);
-        bool queried = proc_handler_call(
-            obs_source_get_proc_handler(extra.source), "get_hooked", &state);
-        bool ready = queried && calldata_bool(&state, "hooked");
-        calldata_free(&state);
-        if (!ready)
-          return "Waiting for audio source " + extra.name;
-      }
-#endif
-#ifdef __linux__
-      if (extra.application) {
-        auto error = applicationAudioError(extra.application);
-        if (!error.empty())
-          return extra.name + ": " + error;
-        if (!x11Available(extra.window, extra.pid, false))
-          return "Audio source " + extra.name + " is unavailable";
-      }
-#endif
-#ifdef __APPLE__
-      auto error =
-          acroclip::macos::audioError(extra.source, extra.window, extra.pid);
-      if (!error.empty())
-        return extra.name + ": " + error;
-#endif
+      if (!extra.source) continue;
+      // Retain a silent encoded track while its source is unavailable. Recovery
+      // restores routing, without pausing video or changing the user's mute.
+      route(extra.source, obs_source_muted(extra.source) ? std::string{} : additionalSourceError(extra), extra.mixerMask, "");
     }
-    return {};
+    return warning;
   }
   std::string captureAudioError() {
 #ifdef __linux__
@@ -995,8 +1142,8 @@ private:
     if(automatic && screenCapture && captureAudioEnabled){acroclip::windows::ListenRouting routing;endpointIdentities.insert(L"output:"+acroclip::windows::ListenRouting::identity(routing.device("default").Get()));}
 #endif
     audioNames = {"Master"};
-    if(!automatic || config.value("sourceAudioPresent",false))audioNames.emplace_back(automatic?config.value("sourceAudioName",std::string("Source audio")):"Capture audio");
-    if (mic)
+    if(!automatic || config.value("sourceAudioPresent",false))audioNames.emplace_back(config.value("sourceKind",std::string("screen")) == "screen" ? "Desktop" : "Application");
+    if (config.value("microphone", false))
       audioNames.emplace_back("Microphone");
     for (const auto &settings : sources) {
       AdditionalAudio extra;
@@ -1034,6 +1181,10 @@ private:
                           ? 0u
                           : (((automatic ? (!screenCapture || extra.kind=="input") : settings.value("includeInMaster", true)) ? 1u : 0u) |
                              extra.isolatedMask);
+      extra.mixerMask = mask;
+      extra.outputChannel = uint32_t(additionalAudio.size() + 3);
+      extra.deviceId = settings.value("deviceId", "default");
+      extra.managedInput = extra.kind == "input" && settings.value("enabled", true);
       if (!settings.value("enabled", true)) {
         additionalAudio.push_back(std::move(extra));
         extraOwner.release();
@@ -1103,48 +1254,33 @@ private:
         throw std::runtime_error("Additional application audio is not "
                                  "available on this platform yet");
 #endif
-      } else if(kind=="input" && settings.value("deviceId",std::string{})=="test-tone" && std::getenv("ACROCLIP_NATIVE_TEST_LIFECYCLE")) {
-        extra.source=obs_source_create_private("acroclip_test_tone",extra.name.c_str(),nullptr);
-        if(!extra.source)throw std::runtime_error("The controlled microphone source could not be created");
-        obs_source_set_audio_mixers(extra.source,mask);
-      } else if (kind == "input" || kind == "output") {
-#ifdef _WIN32
-        if(automatic){acroclip::windows::ListenRouting routing;const auto key=(kind=="input"?L"input:":L"output:")+acroclip::windows::ListenRouting::identity(routing.device(settings.value("deviceId",std::string("default")),kind=="input"?eCapture:eRender).Get());if(!endpointIdentities.insert(key).second)throw std::runtime_error("This audio device is already included by another source");}
-#endif
-        type = kind == "input" ? microphoneType() : desktopType();
-        std::string device = settings.value("deviceId", "default");
-#ifdef __APPLE__
-        if (kind == "output") {
-          data.reset();
-          type = nullptr;
-          if (device != "system")
-            throw std::runtime_error(
-                "Choose System audio. Individual output-device capture is "
-                "unavailable on macOS");
-          extra.source = acroclip::macos::createSystemAudio(extra.name);
-        } else {
-          acroclip::macos::requireMicrophonePermission();
-#endif
-          auto *properties = obs_get_source_properties(type);
-          auto *devices = properties
-                              ? obs_properties_get(properties, "device_id")
-                              : nullptr;
-          bool found = false;
-          if (devices)
-            for (size_t index = 0;
-                 index < obs_property_list_item_count(devices); index++)
-              if (device == obs_property_list_item_string(devices, index) &&
-                  !obs_property_list_item_disabled(devices, index))
-                found = true;
-          obs_properties_destroy(properties);
-          if (!found) {
-            data.reset();
-            throw std::runtime_error(
-                "The additional audio device is unavailable");
-          }
-          obs_data_set_string(data.get(), "device_id", device.c_str());
-#ifdef __APPLE__
+      } else if (kind == "input") {
+        // Reserve the track without opening a microphone while muted.
+        if (!settings.value("muted", false)) {
+          extra.source = openMicrophone(extra.deviceId, extra.name);
+          extra.openedAt = os_gettime_ns();
         }
+      } else if (kind == "output") {
+#ifdef _WIN32
+        if(automatic){acroclip::windows::ListenRouting routing;const auto key=L"output:"+acroclip::windows::ListenRouting::identity(routing.device(extra.deviceId).Get());if(!endpointIdentities.insert(key).second)throw std::runtime_error("This audio device is already included by another source");}
+#endif
+#ifdef __APPLE__
+        data.reset();
+        if (extra.deviceId != "system")
+          throw std::runtime_error("Choose System audio. Individual output-device capture is unavailable on macOS");
+        extra.source = acroclip::macos::createSystemAudio(extra.name);
+#else
+        type = desktopType();
+        auto *properties = obs_get_source_properties(type);
+        auto *devices = properties ? obs_properties_get(properties, "device_id") : nullptr;
+        bool found = false;
+        if (devices)
+          for (size_t index = 0; index < obs_property_list_item_count(devices); ++index)
+            if (extra.deviceId == obs_property_list_item_string(devices, index) &&
+                !obs_property_list_item_disabled(devices, index)) found = true;
+        obs_properties_destroy(properties);
+        if (!found) throw std::runtime_error("The additional audio device is unavailable");
+        obs_data_set_string(data.get(), "device_id", extra.deviceId.c_str());
 #endif
       } else {
         data.reset();
@@ -1169,9 +1305,9 @@ private:
               "The additional audio source could not be opened");
         obs_source_set_audio_mixers(extra.source, mask);
       }
+      if (extra.source) obs_source_set_audio_mixers(extra.source, mask);
 #ifdef __APPLE__
       if (extra.source) {
-        obs_source_set_audio_mixers(extra.source, mask);
         acroclip::macos::watchInput(extra.source);
       }
 #endif
@@ -1216,8 +1352,8 @@ private:
                     {"additional", {{meter->id, meter->pendingPeak.exchange(0)}}}});
           },
           metering.get());
-      obs_volmeter_attach_source(metering->meter,
-                                 additionalAudio.back().source);
+      if (additionalAudio.back().source)
+        obs_volmeter_attach_source(metering->meter, additionalAudio.back().source);
       additionalAudio.back().metering = std::move(metering);
       obs_set_output_source(uint32_t(additionalAudio.size() + 2),
                             additionalAudio.back().source);
@@ -1232,7 +1368,8 @@ public:
     AdditionalAudio extra;extra.id="test-listener";extra.name="Controlled listen tone";extra.kind="input";
     extra.source=obs_source_create_private("acroclip_test_tone",extra.name.c_str(),nullptr);
     if(!extra.source)throw std::runtime_error("Test tone source failed");
-    obs_source_set_audio_mixers(extra.source,active ? 1u : 0u);obs_set_output_source(3,extra.source);additionalAudio.push_back(std::move(extra));
+    extra.mixerMask = active ? 1u : 0u;
+    obs_source_set_audio_mixers(extra.source,extra.mixerMask);obs_set_output_source(3,extra.source);additionalAudio.push_back(std::move(extra));
     setAudio({{"source","test-listener"},{"volume",1.f},{"muted",true}});
     if(desktop)setupAdditionalAudio({{"audioSources",json::array({{{"id","test-desktop"},{"name","Idle desktop meter"},{"kind","output"},{"deviceId","default"},{"enabled",true},{"includeInMaster",false},{"volume",1.f},{"muted",false}}})}});
   }
@@ -1274,7 +1411,7 @@ public:
 #else
     if(!obs_audio_monitoring_available())throw std::runtime_error("Audio listening is unavailable in this session");
     const auto found=listenTarget(id);
-    if(!found.source)throw std::runtime_error("Enable the audio source before listening");
+    if(!found.source)throw std::runtime_error(found.kind == "input" ? "Unmute the microphone before listening" : "Enable the audio source before listening");
     const std::string requested=config.value("deviceId","default");
     acroclip::windows::ListenRouting routing;
     const std::string output=utf8(acroclip::windows::ListenRouting::identity(routing.device(requested).Get()));
@@ -1327,6 +1464,9 @@ public:
     }
     if (!active)
       return;
+    // Keep failed audio out of subsequent mixes between status polls. Audio
+    // health never controls whether video packets enter the replay history.
+    if (p->type == OBS_ENCODER_AUDIO) additionalAudioError();
     if (!targetAvailable()) {
       std::lock_guard<std::mutex> lock(mutex);
       if (!active)
@@ -1338,7 +1478,7 @@ public:
       return;
     }
 #ifdef _WIN32
-    if (p->sys_dts_usec < int64_t(captureImageSince / 1000 + 500000))
+    if (p->sys_dts_usec < int64_t(captureImageSince / 1000))
       return;
 #endif
     std::lock_guard<std::mutex> lock(mutex);
@@ -1362,6 +1502,13 @@ public:
       captureInterrupted = false;
       deliveryInterrupted = false;
       recoveryBoundary = 0;
+      bufferedSourceName.clear();
+      bufferedSourceId.clear();
+    }
+    if (p->type == OBS_ENCODER_VIDEO && bufferedSourceName.empty()) {
+      bufferedSourceName = sourceName;
+      bufferedSourceId = selectedSourceId;
+      bufferedScreen = screenCapture;
     }
     ring.emplace_back(*p);
     bytes += p->size;
@@ -1474,6 +1621,8 @@ private:
         }
     Job j;
     j.request = r;
+    j.request.source = bufferedSourceName;
+    j.request.sourceId = bufferedSourceId;
     j.end = end;
     j.reduceOverlap = avoidOverlap;
     j.width = width;
@@ -1493,6 +1642,8 @@ private:
     }
     j.headers = streamHeaders;
     j.audioNames = audioNames;
+    if ((!sessionConfiguration.value("automaticMaster", false) || sessionConfiguration.value("sourceAudioPresent", false)) && j.audioNames.size() > 1)
+      j.audioNames[1] = bufferedScreen ? "Desktop" : "Application";
     clipWriter->submit(std::move(j));
   }
 public:
@@ -1525,24 +1676,6 @@ public:
       requests.pop_back();
     }
   }
-  acroclip::RecordingSize sourcePixels(const json &c) {
-    std::string kind = c.value("sourceKind", "screen");
-    if (kind == "auto") kind = c.value("resolvedKind", "waiting");
-#ifdef _WIN32
-    if (kind == "app") {
-      const auto id = c.value("sourceId", std::string{});
-      if (id.rfind("window:", 0) == 0) {
-        HWND window = reinterpret_cast<HWND>(std::stoull(id.substr(7)));
-        RECT area{};
-        if (IsWindow(window) && GetClientRect(window, &area)) return {area.right-area.left, area.bottom-area.top};
-      }
-      throw std::runtime_error("The selected application's pixel dimensions are unavailable");
-    }
-    if (kind == "screen" && c.contains("bounds")) return {c["bounds"].value("width",0), c["bounds"].value("height",0)};
-#endif
-    if (kind != "waiting" && c.contains("pixelSize")) return {c["pixelSize"].value("width",0),c["pixelSize"].value("height",0)};
-    return {0,0};
-  }
   acroclip::RecordingSize requestedPresetSize(const json &c) {
     const std::string quality = c.value("quality", "standard");
     int w = quality == "low" ? 1280 : quality == "high" ? 2560 : 1920;
@@ -1560,31 +1693,14 @@ public:
     }
     return acroclip::fitRecordingSize(requestedPresetSize(c),pixels);
   }
-  acroclip::RecordingSize presetSize(const json &c) {
-    return recordingSize(c,sourcePixels(c));
-  }
   void source(const json &c) {
-    std::string requestedKind=c.value("sourceKind","screen");
-    if(requestedKind=="auto")requestedKind=c.value("resolvedKind","waiting");
-    if(active && (c.value("recordingSizeVersion",0)==2 || c.value("quality",std::string("custom"))!="custom") && requestedKind!="waiting") {
-      const auto pixels=sourcePixels(c);
-      const auto size=presetSize(c);
-      if((size.width!=width || size.height!=height) && (c.value("recordingSizeVersion",0)==2 || pixels.width<width || pixels.height<height || !captureEnabled)) {
-        bool empty=false;
-        {std::lock_guard<std::mutex> lock(mutex);empty=ring.empty()&&requests.empty();}
-        if(empty && clipWriter->pending()==0) {
-          json next=sessionConfiguration;
-          for(auto &[key,value]:c.items())if(key!="audioSources")next[key]=value;
-          stop();initializeSession(next);return;
-        }
-        const std::string previous=sourceName;
-        source({{"sourceKind","auto"},{"resolvedKind","waiting"},{"sourceName",previous}});
-        presetMessage="Source resolution changed. Save recent footage, then restart recording to fit this source";
-        throw std::runtime_error(presetMessage);
-      }
-    }
+    // The first usable source establishes the encoded canvas. Later sources and
+    // window resizes fit that canvas without restarting encoders or cancelling saves.
     for(auto &[key,value]:c.items())if(key!="audioSources")sessionConfiguration[key]=value;
-    presetMessage.clear();
+    if (waitingForPresetSize) {
+      initialSize = {0, 0};
+      initialSizeSince = 0;
+    }
     if (!listeningSource.empty()) {
       listenAudio({{"source", ""}});
       listeningFailure = "Listening stopped because the capture source changed";
@@ -2003,15 +2119,12 @@ public:
       if (capture)
         obs_source_release(capture);
       capture = next;
-      sourceRelativeProfile=sessionConfiguration.value("recordingSizeVersion",0)==2;
-      applicationSizeProfile=kind=="app";
-      profilePixelLimit=sessionConfiguration.value("resolutionLimit",1080);
     }
 #ifdef __linux__
     std::atomic_store(&portalCapture, std::move(nextPortal));
 #endif
     item = obs_scene_add(scene, capture);
-    obs_sceneitem_set_bounds_type(item, c.value("quality",std::string("custom")) == "custom" ? OBS_BOUNDS_SCALE_INNER : OBS_BOUNDS_MAX_ONLY);
+    obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
     vec2 bounds{float(width), float(height)};
     obs_sceneitem_set_bounds(item, &bounds);
     obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
@@ -2045,7 +2158,10 @@ public:
 #else
         screenCapture ? desktop : capture;
 #endif
-    if(sessionConfiguration.value("automaticMaster",false))for(auto &extra:additionalAudio)if(extra.source)obs_source_set_audio_mixers(extra.source,extra.isolatedMask|((!screenCapture||extra.kind=="input")?1u:0u));
+    if(sessionConfiguration.value("automaticMaster",false))for(auto &extra:additionalAudio) {
+      extra.mixerMask = extra.isolatedMask | ((!screenCapture || extra.kind == "input") ? 1u : 0u);
+      if(extra.source)obs_source_set_audio_mixers(extra.source, extra.mixerMask);
+    }
     if (audioSource) {
       obs_source_set_volume(audioSource, captureVolume);
       obs_source_set_muted(audioSource, captureMuted || !captureAudioEnabled);
@@ -2099,16 +2215,13 @@ private:
   void initializeSession(const json &c) {
     release();
     sessionConfiguration = c;
-    presetMessage.clear();
     seconds = c.value("clipSeconds", 60);
     avoidOverlap = c.value("avoidOverlap", false);
     clipWriter->resetOverlap();
     std::string quality = c.value("quality", "standard");
-    const auto size = quality == "custom" && c.value("recordingSizeVersion",0)!=2 ? acroclip::RecordingSize{c.value("customWidth",1920),c.value("customHeight",1080)} : presetSize(c);
+    const auto size = quality == "custom" && c.value("recordingSizeVersion",0)!=2 ? acroclip::RecordingSize{c.value("customWidth",1920),c.value("customHeight",1080)} : acroclip::RecordingSize{0,0};
     presetRecording = c.value("recordingSizeVersion",0)==2 || quality != "custom";
     waitingForPresetSize = presetRecording;
-    sourceRelativeProfile=c.value("recordingSizeVersion",0)==2;
-    profilePixelLimit=c.value("resolutionLimit",1080);
     // This temporary profile never enters history. NVENC rejects dimensions below its hardware minimum.
     width=waitingForPresetSize ? 320 : size.width; height=waitingForPresetSize ? 180 : size.height;
     fps=c.value("recordingPresetVersion",0)==1 || quality=="custom" ? c.value("customFPS",60) : quality=="low"?30:60;
@@ -2143,46 +2256,6 @@ private:
 #else
     d.reset();
 #endif
-    if (c.value("microphone", false)) {
-#ifdef __APPLE__
-      acroclip::macos::requireMicrophonePermission();
-#endif
-      d.reset(obs_data_create());
-      std::unique_ptr<obs_properties_t, decltype(&obs_properties_destroy)> props(
-          obs_get_source_properties(microphoneType()), &obs_properties_destroy);
-      auto *devices = props ? obs_properties_get(props.get(), "device_id") : nullptr;
-      bool found = false;
-      std::string requested =
-          c.value("microphoneDevice", std::string("default"));
-      for (size_t i = 0; i < obs_property_list_item_count(devices); i++)
-        if (requested == obs_property_list_item_string(devices, i))
-          found = true;
-      props.reset();
-      if (!found) {
-        d.reset();
-        throw std::runtime_error("The selected microphone is unavailable. "
-                                 "Choose an available microphone in Settings");
-      }
-      obs_data_set_string(
-          d.get(), "device_id",
-          c.value("microphoneDevice", std::string("default")).c_str());
-      std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
-      mic = obs_source_create_private(microphoneType(), "Microphone", d.get());
-      d.reset();
-      if (!mic)
-        throw std::runtime_error("The microphone could not be opened");
-#ifdef __APPLE__
-      acroclip::macos::watchInput(mic);
-#endif
-#ifdef _WIN32
-      audioHealth.watch(mic);
-#endif
-      obs_source_set_audio_mixers(mic, 5);
-      obs_set_output_source(2, mic);
-      obs_source_set_volume(mic, microphoneVolume);
-      obs_source_set_muted(mic, microphoneMuted);
-      obs_volmeter_attach_source(microphoneMeter, mic);
-    }
     source(c);
     setupAdditionalAudio(c);
     captureVolume = c.value("captureVolume", 1.f);
@@ -2324,15 +2397,22 @@ public:
     captureError = acroclip::macos::captureError();
 #endif
 #ifdef __linux__
-    captureError = captureAudioError();
     if (acroclip::wayland::enabled() && screenCapture) {
       auto portal = std::atomic_load(&portalCapture);
       if (portal)
         captureError = portal->health().message();
     }
 #endif
-    if (captureError.empty())
-      captureError = additionalAudioError();
+    std::string audioWarning = additionalAudioError();
+#ifdef __linux__
+    const auto sourceAudioError = captureAudioError();
+    if (audioWarning.empty()) audioWarning = sourceAudioError;
+#endif
+    if (audioWarning != audioWarningCandidate) {
+      audioWarningCandidate = audioWarning;
+      audioWarningSince = os_gettime_ns();
+    }
+    const std::string visibleAudioWarning = audioWarning.empty() || os_gettime_ns() - audioWarningSince >= 1200000000ULL ? audioWarning : "";
 #ifdef _WIN32
     if(!listeningSource.empty()) {
       try {
@@ -2366,7 +2446,7 @@ public:
     }
 #endif
     if (monitoring)
-      emit({{"event", "audio-monitor"}, {"monitorMessage", listeningFailure.empty() ? captureError : listeningFailure}, {"listeningMessage", listeningFailure}});
+      emit({{"event", "audio-monitor"}, {"monitorMessage", listeningFailure.empty() ? audioWarning : listeningFailure}, {"listeningMessage", listeningFailure}});
     if (captureError.empty() && deliveryInterrupted)
       captureError = "Waiting for recording to resume";
 #ifdef _WIN32
@@ -2384,8 +2464,12 @@ public:
           {"fullscreen", fullscreen},
           {"active", active.load()},
           {"source", sourceName},
-          {"message", presetMessage.empty() ? captureError : presetMessage},
-          {"monitorMessage", monitoring && listeningFailure.empty() ? captureError : listeningFailure},
+          {"message", captureError},
+          {"audioWarning", active ? visibleAudioWarning : ""},
+          {"bufferedSource", bufferedSourceName},
+          {"bufferedSourceId", bufferedSourceId},
+          {"bufferedSourceKind", bufferedScreen ? "screen" : "app"},
+          {"monitorMessage", monitoring && listeningFailure.empty() ? audioWarning : listeningFailure},
           {"listeningMessage", listeningFailure},
           {"sourceId", selectedSourceId},
           {"sourceKind", captureEnabled
@@ -2395,7 +2479,7 @@ public:
                             : gameCapture       ? "game"
                                                   : "window"},
           {"waiting",
-           active && (!targetAvailable() || captureInterrupted || !presetMessage.empty())},
+           active && (!targetAvailable() || captureInterrupted)},
           {"availableSeconds", std::min(double(seconds), available)},
           {"pendingSaves", clipWriter->pending()}};
   }

@@ -25,6 +25,7 @@ struct Packet {
 struct ClipRequest {
   std::string id, path, source;
   int64_t end;
+  std::string sourceId;
 };
 
 // All media and profile data are sealed before a job leaves the replay history.

@@ -75,7 +75,6 @@ export function requiresCaptureRestart(a: Preferences, b: Preferences): boolean 
       a.customFPS !== b.customFPS ||
       a.customCQ !== b.customCQ ||
       a.allowSoftwareEncoder !== b.allowSoftwareEncoder ||
-      a.microphone !== b.microphone ||
       a.microphoneDevice !== b.microphoneDevice ||
       a.captureAudio !== b.captureAudio ||
       a.avoidOverlap !== b.avoidOverlap ||

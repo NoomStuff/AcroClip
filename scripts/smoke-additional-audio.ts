@@ -26,6 +26,8 @@ interface Event {
    requestId?: string;
    message?: string;
    waiting?: boolean;
+   active?: boolean;
+   audioWarning?: string;
    additional?: Record<string, number>;
 }
 const events: Event[] = [],
@@ -80,8 +82,13 @@ function levels(file: string, track: number): Record<string, number> {
       })
    );
 }
+let statusTimer: ReturnType<typeof setInterval> | undefined;
 try {
    await wait((event) => event.event === "ready");
+   // Match the app's status polling, which advances capture readiness and recovery.
+   statusTimer = setInterval(() => {
+      if (helper.exitCode === null && helper.stdin.writable) helper.stdin.write(`${JSON.stringify({ action: "status" })}\n`);
+   }, 250);
    const handles = await Promise.all(fixtures.map((value) => value.handle));
    await command({
       action: "start",
@@ -150,13 +157,22 @@ try {
       "Missing measured extra B levels"
    );
    fixtures[1]!.child.kill();
-   await delay(500);
+   await delay(1600);
    const before = events.length;
    await command({ action: "status" });
+   await delay(1400);
+   await command({ action: "status" });
    assert(
-      events.slice(before).some((event) => event.event === "status" && event.waiting && event.message?.includes("Selected B")),
-      "Closed extra must invalidate recording"
+      events.slice(before).some((event) => event.event === "status" && event.active && !event.waiting && event.audioWarning?.includes("Selected B")),
+      "A lost audio source must warn while video keeps recording"
    );
+   await delay(3000);
+   const lossFile = path.join(folder, "audio-source-lost.mkv");
+   await command({ action: "save", path: lossFile, requestId: "audio-source-lost", requestedAt: Date.now() });
+   await wait((event) => event.event === "saved" && event.requestId === "audio-source-lost");
+   assert(levels(lossFile, 3)["577"]! < -70, "The unavailable source's track must be silent");
+   const decode = spawnSync(decoder, ["-v", "error", "-i", lossFile, "-f", "null", "-"], { encoding: "utf8", windowsHide: true });
+   assert.equal(decode.status, 0, decode.stderr);
    await command({ action: "stop" });
    helper.stdin.write('{"action":"exit"}\n');
    await new Promise<void>((resolve) => helper.once("exit", () => resolve()));
@@ -164,6 +180,7 @@ try {
    await writeFile(path.join(folder, "measurements.json"), JSON.stringify(measured, null, 2));
    console.log("Actual Windows application audio, isolated tracks, master exclusion, gain/mute, meters and lost-source state passed", folder);
 } finally {
+   if (statusTimer) clearInterval(statusTimer);
    for (const fixture of fixtures) fixture.child.kill();
    if (helper.exitCode === null) helper.kill();
    await writeFile(path.join(folder, "native.log"), logs.join(""));

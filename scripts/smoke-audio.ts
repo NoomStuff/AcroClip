@@ -94,8 +94,13 @@ function rms(file: string, track: number): number {
    assert(match, measured.stderr);
    return Number(match[1]);
 }
+let statusTimer: ReturnType<typeof setInterval> | undefined;
 try {
    await wait((event) => event.event === "ready");
+   // Match the app's status polling, which advances capture readiness and recovery.
+   statusTimer = setInterval(() => {
+      if (helper.exitCode === null && helper.stdin.writable) helper.stdin.write(`${JSON.stringify({ action: "status" })}\n`);
+   }, 250);
    await command({
       action: "start",
       sourceKind: "screen",
@@ -159,6 +164,7 @@ try {
    );
    console.log(folder);
 } finally {
+   if (statusTimer) clearInterval(statusTimer);
    tone.kill();
    if (helper.exitCode === null) helper.kill();
    await writeFile(path.join(folder, "native.log"), diagnostics.join(""));
