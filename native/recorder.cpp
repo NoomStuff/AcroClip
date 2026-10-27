@@ -1076,8 +1076,10 @@ private:
     return inputWarming(error, openedAt) ? std::string{} : error;
   }
   std::string additionalSourceError(const AdditionalAudio &extra) {
+#ifndef __APPLE__
     auto physical = deviceAudioError(extra.source, extra.openedAt);
     if (!physical.empty()) return extra.name + ": " + physical;
+#endif
 #ifdef _WIN32
     if (extra.window) {
       DWORD pid = 0;
@@ -2061,13 +2063,14 @@ public:
         nullptr, &destroyApplicationAudio);
     std::unique_ptr<obs_source_t, decltype(&obs_source_release)> nextDesktop(
         nullptr, &obs_source_release);
+    const bool wantsDesktop = kind == "screen" && c.value("captureAudio", sessionConfiguration.value("captureAudio", true));
     try {
       if (target && c.value("captureAudio", sessionConfiguration.value("captureAudio",true)))
         nextAudio.reset(createApplicationAudio(targetPid));
       bool needsDesktop = false;
       {
         std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
-        needsDesktop = kind == "screen" && !desktop;
+        needsDesktop = wantsDesktop && !desktop;
       }
       if (needsDesktop) {
         std::unique_ptr<obs_data_t, decltype(&obs_data_release)> settings(
@@ -2092,7 +2095,7 @@ public:
       applicationAudio = nextAudio.release();
       if (nextDesktop)
         desktop = nextDesktop.release();
-      if (kind != "screen" && desktop) {
+      if (!wantsDesktop && desktop) {
         obs_source_release(desktop);
         desktop = nullptr;
       }

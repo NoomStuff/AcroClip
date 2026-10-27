@@ -51,17 +51,15 @@ async function command(value: Record<string, unknown>): Promise<void> {
    const result = await wait((event) => event.id === id);
    assert.equal(result.event, "response", result.message ?? "Native command failed");
 }
-const decoder = process.env["ACROCLIP_TEST_FFMPEG"] ?? "ffmpeg";
+const decoder = process.env["ACROCLIP_TEST_FFMPEG"] ?? process.env["FFMPEG_PATH"] ?? path.resolve("resources/media/ffmpeg.exe");
 function levels(file: string, track: number): Record<string, number> {
-   const result = spawnSync(decoder, ["-v", "error", "-i", file, "-map", `0:a:${track}`, "-ac", "1", "-ar", "48000", "-f", "f32le", "-"], {
+   const result = spawnSync(decoder, ["-v", "error", "-i", file, "-map", `0:a:${track}`, "-ac", "1", "-ar", "48000", "-f", "s16le", "-"], {
       windowsHide: true,
       maxBuffer: 16 * 1024 * 1024,
    });
+   if (result.error) throw result.error;
    assert.equal(result.status, 0, result.stderr.toString());
-   const samples = new Float32Array(result.stdout.buffer.slice(result.stdout.byteOffset, result.stdout.byteOffset + result.stdout.byteLength)).slice(
-      24000,
-      72000
-   );
+   const samples = Float32Array.from({ length: result.stdout.length / 2 }, (_, index) => result.stdout.readInt16LE(index * 2) / 32768).slice(24000, 72000);
    assert(samples.length > 20000, "Saved audio is too short to measure");
    return Object.fromEntries(
       [997, 577, 1234].map((frequency) => {

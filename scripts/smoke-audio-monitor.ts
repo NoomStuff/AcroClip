@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import sharp from "sharp";
 if (process.platform !== "win32") throw new Error("This monitor proof requires Windows");
 const runtime = path.resolve("resources/recorder");
 const folder = path.resolve(".cache/native-monitor", randomUUID());
@@ -372,11 +373,13 @@ try {
    assert.equal(decoded.status, 0, decoded.stderr);
    const color = spawnSync(
       path.resolve("resources/media/ffmpeg.exe"),
-      ["-v", "error", "-ss", "1", "-i", cappedFile, "-frames:v", "1", "-vf", "crop=2:2:iw/2:ih/2,format=rgb24", "-f", "rawvideo", "-"],
+      ["-v", "error", "-ss", "1", "-i", cappedFile, "-frames:v", "1", "-vf", "crop=2:2:iw/2:ih/2,format=rgb24", "-c:v", "png", "-f", "image2pipe", "-"],
       { windowsHide: true }
    );
-   assert.equal(color.status, 0);
-   assert.ok(color.stdout[0]! < 50 && color.stdout[2]! > 160, `Controlled D3D colors changed: ${[...color.stdout]}`);
+   if (color.error) throw color.error;
+   assert.equal(color.status, 0, color.stderr.toString());
+   const colorPixels = await sharp(color.stdout).raw().toBuffer();
+   assert.ok(colorPixels[0]! < 50 && colorPixels[2]! > 160, `Controlled D3D colors changed: ${[...colorPixels]}`);
    console.log(
       "Preset source cap, actual pixels/fps/colors, stable audio track mute/unmute",
       JSON.stringify({ capped, video, initialTone, mutedTone, restoredTone })

@@ -59,7 +59,9 @@ test("native capture survives preview teardown and saves the selected applicatio
       const source = (await page.evaluate(() => window.acroClip.sources())).find((item) => item.name === "Native preview fixture");
       expect(source).toBeDefined();
       expect(source!.applicationId).toMatch(/^[a-f0-9]{64}$/);
-      expect(source!.appIcon).toMatch(/^data:image\/png;base64,/);
+      await expect
+         .poll(() => page.evaluate(async (id) => (await window.acroClip.sources()).find((item) => item.id === id)?.appIcon, source!.id))
+         .toMatch(/^data:image\/png;base64,/);
       expect(source!.pixelSize).toBeDefined();
       await page.evaluate(async (id) => {
          const state = await window.acroClip.state();
