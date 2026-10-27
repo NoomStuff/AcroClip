@@ -14,6 +14,7 @@ for (const args of [
       "tests/ui/shortcuts-native.spec.ts",
       "tests/ui/listen-native.spec.ts",
       "tests/ui/resolution-native.spec.ts",
+      ...process.argv.slice(2),
    ],
 ]) {
    if (args[0] === "x") {
