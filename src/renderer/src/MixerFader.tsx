@@ -3,30 +3,33 @@ import { useSliderMotion } from "./useSliderMotion";
 import { boundedGain, gainDb, gainText, parseGain } from "./audio-meter";
 export function MixerFader({
    value,
+   muted,
    label,
    disabled,
    onCommit,
 }: {
    value: number;
+   muted: boolean;
    label: string;
    disabled: boolean;
-   onCommit: (value: number) => void | Promise<void>;
+   onCommit: (value: number, restore: number) => void | Promise<void>;
 }) {
-   const [display, setDisplay] = useState(value),
+   const [display, setDisplay] = useState(muted ? 0 : value),
       [draft, setDraft] = useState<string | null>(null);
    const motion = useSliderMotion<HTMLDivElement>(Math.min(1, display / 1.41) * 100);
    const revision = useRef(0);
-   const latest = useRef(value),
+   const gestureVolume = useRef<number | null>(null);
+   const latest = useRef(muted ? 0 : value),
       timer = useRef<number | undefined>(undefined),
       callback = useRef(onCommit),
       changing = useRef(false);
    callback.current = onCommit;
    useEffect(() => {
       if (!changing.current) {
-         latest.current = value;
-         setDisplay(value);
+         latest.current = muted ? 0 : value;
+         setDisplay(muted ? 0 : value);
       }
-   }, [value]);
+   }, [value, muted]);
    useEffect(() => () => window.clearTimeout(timer.current), []);
    const dragging = useRef(false),
       exact = useRef(false),
@@ -36,7 +39,7 @@ export function MixerFader({
       timer.current = undefined;
       const committed = revision.current;
       changing.current = true;
-      void Promise.resolve(callback.current(next))
+      void Promise.resolve(callback.current(next, gestureVolume.current ?? value))
          .finally(() => {
             if (committed === revision.current && !dragging.current) changing.current = false;
          })
@@ -87,6 +90,7 @@ export function MixerFader({
                disabled={disabled}
                onChange={(event) => change(Number(event.target.value))}
                onPointerDown={(event) => {
+                  gestureVolume.current = value;
                   exact.current = event.shiftKey;
                   dragging.current = true;
                }}
@@ -96,18 +100,25 @@ export function MixerFader({
                onPointerUp={() => {
                   dragging.current = false;
                   commit(latest.current);
+                  gestureVolume.current = null;
                }}
                onPointerCancel={() => {
                   dragging.current = false;
                   commit(latest.current);
+                  gestureVolume.current = null;
                }}
-               onKeyUp={() => commit(latest.current)}
+               onKeyUp={() => {
+                  commit(latest.current);
+                  gestureVolume.current = null;
+               }}
                onBlur={() => {
                   dragging.current = false;
                   if (changing.current) commit(latest.current);
+                  gestureVolume.current = null;
                }}
                onDoubleClick={reset}
                onKeyDown={(event) => {
+                  gestureVolume.current ??= value;
                   if (event.key === "Delete") {
                      event.preventDefault();
                      reset();

@@ -117,8 +117,8 @@ export function AdditionalAudio({
                level={levels[source.id] ?? 0}
                active={active}
                onEnable={(enabled) => update(source.id, { enabled, muted: false })}
-               onMute={() => update(source.id, { muted: !source.muted })}
-               onVolume={(volume) => update(source.id, { volume })}
+               onMute={() => update(source.id, { muted: !source.muted && source.volume > 0, volume: source.volume > 0 ? source.volume : 1 })}
+               onVolume={(volume, restore) => update(source.id, { volume: volume === 0 ? (restore > 0 ? restore : 1) : volume, muted: volume === 0 })}
                options={
                   <>
                      <MenuItem disabled={active} onClick={() => show(source)}>

@@ -30,7 +30,7 @@ export function AudioMixerRow({
    visible: boolean;
    onEnable: (enabled: boolean) => void;
    onMute: () => void;
-   onVolume: (volume: number) => void | Promise<void>;
+   onVolume: (volume: number, restore: number) => void | Promise<void>;
    options: ReactNode;
 }) {
    const listening = useIsListening(sourceId);
@@ -46,13 +46,13 @@ export function AudioMixerRow({
          </div>
          <div className="mixer-channel-gain">
             <IconButton
-               label={`${!enabled || muted ? "Unmute" : "Mute"} ${muteLabel}`}
+               label={`${!enabled || muted || volume === 0 ? "Unmute" : "Mute"} ${muteLabel}`}
                disabled={!enabled && active}
                onClick={() => (enabled ? onMute() : onEnable(true))}
             >
-               {muted || !enabled ? <VolumeX size={18} /> : <Volume2 size={18} />}
+               {muted || !enabled || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </IconButton>
-            <MixerFader label={`${name} level`} value={volume} disabled={!enabled} onCommit={onVolume} />
+            <MixerFader label={`${name} level`} value={volume} muted={muted} disabled={!enabled} onCommit={onVolume} />
          </div>
          <div className="audio-meter-controls">
             <ListenButton id={sourceId} name={name} enabled={enabled && listenAvailable} />

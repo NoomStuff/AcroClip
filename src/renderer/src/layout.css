@@ -25,7 +25,7 @@
 }
 .pane-divider:hover::after,
 .pane-divider:active::after,
-.pane-divider:focus-visible::after {
+:root[data-keyboard] .pane-divider:focus-visible::after {
    background: var(--accent);
    box-shadow: 0 0 0 3px var(--accent-soft);
 }

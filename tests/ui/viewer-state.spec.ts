@@ -14,7 +14,27 @@ test("the viewer rail retains its first clip, version and position when a newer 
    const source = join(collection, "Reviewed moment.mp4");
    await promisify(execFile)(
       resolve("resources/media/ffmpeg.exe"),
-      ["-v", "error", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=24", "-t", "5", "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", source],
+      [
+         "-v",
+         "error",
+         "-f",
+         "lavfi",
+         "-i",
+         "testsrc2=size=960x540:rate=24",
+         "-t",
+         "5",
+         "-c:v",
+         "libx264",
+         "-preset",
+         "ultrafast",
+         "-crf",
+         "18",
+         "-threads",
+         "1",
+         "-pix_fmt",
+         "yuv420p",
+         source,
+      ],
       { windowsHide: true }
    );
    await writeFile(
@@ -37,7 +57,7 @@ test("the viewer rail retains its first clip, version and position when a newer 
    try {
       const page = await desktop.firstWindow();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length).toBe(1);
-      await page.getByRole("button", { name: "Clip viewer", exact: true }).click();
+      await page.getByRole("button", { name: "Player", exact: true }).click();
       await expect(page.locator(".viewer-title h1")).toHaveText("Reviewed moment");
       await page.getByRole("button", { name: "Create shareable", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips[0]?.shareables.length).toBe(1);
@@ -50,15 +70,17 @@ test("the viewer rail retains its first clip, version and position when a newer 
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips[0]?.name).toBe("Newly saved moment");
       await expect(page.locator(".viewer-title h1")).toHaveText("Reviewed moment");
       await expect(page.getByRole("button", { name: "Shareable", exact: true })).toHaveAttribute("aria-pressed", "true");
-      await page.getByRole("button", { name: "Original", exact: true }).click();
+      await page.getByRole("button", { name: "Clip", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(2);
       await rm(source);
       await page.evaluate(() => window.acroClip.refresh());
-      await expect(page.locator(".viewer-sidebar")).toContainText("Original missing or changed");
-      await expect(page.getByRole("button", { name: "Original", exact: true })).toBeDisabled();
+      await expect(page.locator(".viewer-sidebar")).toContainText("Clip missing or changed");
+      await expect(page.getByRole("button", { name: "Clip", exact: true })).toBeDisabled();
       await expect(page.getByRole("button", { name: "Shareable", exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("button", { name: "Create shareable", exact: true })).toBeDisabled();
-      await expect(page.getByRole("button", { name: "Open in AttaCut", exact: true })).toBeDisabled();
+      await page.getByRole("button", { name: "File actions", exact: true }).click();
+      await expect(page.getByRole("menuitem", { name: "Open in AttaCut", exact: true })).toHaveCount(0);
+      await page.keyboard.press("Escape");
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(2);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
       // A stale playback request must not leave a global error over the player.
@@ -77,7 +99,7 @@ test("the viewer rail retains its first clip, version and position when a newer 
       await expect(page.locator(".toast.error")).toHaveCount(0);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
       await page.getByRole("button", { name: "Library", exact: true }).first().click();
-      await page.getByRole("button", { name: "Clip viewer", exact: true }).click();
+      await page.getByRole("button", { name: "Player", exact: true }).click();
       await expect(page.locator(".viewer-title h1")).toHaveText("Reviewed moment");
       await expect(page.getByRole("button", { name: "Shareable", exact: true })).toHaveAttribute("aria-pressed", "true");
    } finally {

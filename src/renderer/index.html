@@ -3,11 +3,20 @@
    <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="icon" type="image/svg+xml" href="../../build/icon.svg" />
+      <link rel="stylesheet" href="./src/startup.css" />
       <title>AcroClip</title>
       <meta name="color-scheme" content="dark" />
    </head>
    <body>
-      <div id="root"></div>
+      <div id="root">
+         <div class="startup-splash" role="status" aria-label="Opening AcroClip">
+            <div class="startup-brand">
+               <img src="../../build/icon.svg" width="64" height="64" alt="" />
+               <p>Loading...</p>
+            </div>
+         </div>
+      </div>
       <script type="module" src="/src/main.tsx"></script>
    </body>
 </html>

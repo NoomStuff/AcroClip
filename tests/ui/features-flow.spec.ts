@@ -64,6 +64,21 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.length).toBe(1);
       const original = (await page.evaluate(() => window.acroClip.state())).categories[0]!;
       expect(original).toMatchObject({ name: "Highlights", color: "#112233", icon: "rocket" });
+      const highlightRow = page.locator(".category-item").filter({ hasText: "Highlights" });
+      await page.getByRole("button", { name: "List view", exact: true }).hover();
+      await expect(highlightRow.locator(".count")).toBeVisible();
+      const countBounds = await highlightRow.locator(".count").boundingBox();
+      await highlightRow.hover();
+      await expect(highlightRow.locator(".count")).toBeHidden();
+      const menuBounds = await page.getByRole("button", { name: "Actions for Highlights", exact: true }).boundingBox();
+      expect(countBounds).not.toBeNull();
+      expect(menuBounds).not.toBeNull();
+      expect(Math.abs(countBounds!.x + countBounds!.width / 2 - menuBounds!.x - menuBounds!.width / 2)).toBeLessThan(1);
+      await highlightRow.click({ button: "right" });
+      await expect(page.getByRole("menu", { name: "Actions for Highlights", exact: true })).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "Edit category", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(highlightRow.locator(".sidebar-item")).toBeFocused();
       await page.getByRole("button", { name: "Actions for Highlights", exact: true }).click();
       await page.getByRole("menuitem", { name: "Edit category", exact: true }).click();
       const edit = page.getByRole("dialog", { name: "Edit category", exact: true });
@@ -75,6 +90,7 @@ test("category appearance, local shortcuts, conflicts and global capture binding
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories[0])
          .toEqual({ ...original, name: "Matches", color: "#73c6a1", icon: "game" });
       const categoryActions = page.getByRole("button", { name: "Actions for Matches", exact: true });
+      await page.locator(".category-item").filter({ hasText: "Matches" }).hover();
       await categoryActions.click();
       await expect(page.getByRole("menuitem", { name: "Edit category", exact: true })).toBeFocused();
       await page.keyboard.press("ArrowDown");

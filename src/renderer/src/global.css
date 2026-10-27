@@ -72,12 +72,16 @@ button:disabled {
    opacity: 0.38;
 }
 
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-video:focus-visible {
+:root[data-keyboard] button:focus-visible,
+:root[data-keyboard] input:focus-visible,
+:root[data-keyboard] select:focus-visible,
+:root[data-keyboard] video:focus-visible {
    outline: 2px solid var(--accent);
    outline-offset: 3px;
+}
+
+:root:not([data-keyboard]) :focus {
+   outline: none;
 }
 
 button {

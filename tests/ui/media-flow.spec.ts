@@ -128,8 +128,18 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await expect(page.locator(".viewer-title")).not.toContainText("Unknown");
       await expect(page.locator(".viewer-title time")).toBeVisible();
       await page.getByRole("button", { name: "File actions", exact: true }).click();
-      await expect(page.getByRole("menuitem", { name: "Delete original", exact: true })).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "Delete clip", exact: true })).toBeVisible();
+      const fileMenu = page.getByRole("menu", { name: "File actions", exact: true });
+      const fileActions = await fileMenu.getByRole("menuitem").allTextContents();
+      await expect(fileMenu.getByRole("menuitem", { name: "Show clip in folder", exact: true })).toBeVisible();
+      await expect(fileMenu.getByRole("menuitem", { name: "Create shareable", exact: true })).toBeVisible();
+      await expect(fileMenu.getByRole("separator")).toHaveCount(2);
       await page.keyboard.press("Escape");
+      await page.locator(".viewer-main video").click({ button: "right" });
+      await expect(fileMenu).toBeVisible();
+      expect(await fileMenu.getByRole("menuitem").allTextContents()).toEqual(fileActions);
+      await page.keyboard.press("Escape");
+      await expect(page.locator(".viewer-main video")).toBeFocused();
       await desktop.evaluate(() => {
          delete (globalThis as typeof globalThis & { testDragPath?: string }).testDragPath;
       });
@@ -137,6 +147,10 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await expect.poll(() => desktop.evaluate(() => (globalThis as typeof globalThis & { testDragPath?: string }).testDragPath)).toBe(source);
       await page.getByRole("combobox", { name: "Shareable size: 2 MB (default)", exact: true }).click();
       await page.getByRole("option", { name: "Custom", exact: true }).click();
+      await page.getByRole("spinbutton", { name: "Shareable size target in MB", exact: true }).fill("2000");
+      await expect(page.getByRole("button", { name: "Create shareable", exact: true })).toBeDisabled();
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: "createShareable" })));
+      expect((await page.evaluate(() => window.acroClip.state())).jobs).toHaveLength(0);
       await page.getByRole("spinbutton", { name: "Shareable size target in MB", exact: true }).fill("1");
       await page.keyboard.press("Escape");
       await expect(page.getByRole("combobox", { name: "Shareable size: 1 MB", exact: true })).toBeFocused();
@@ -147,15 +161,42 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await page.getByRole("button", { name: "Play", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThan(0.2);
       await page.getByRole("button", { name: "Pause", exact: true }).click();
+      await page.getByRole("button", { name: "Mute playback", exact: true }).hover();
       await page.getByRole("slider", { name: "Playback volume", exact: true }).fill("0.37");
       await page.getByRole("button", { name: "Mute playback", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.muted)).toBe(true);
       await page.getByRole("button", { name: "Unmute playback", exact: true }).click();
       expect(await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.volume)).toBeCloseTo(0.37);
 
+      await page.getByRole("button", { name: "Mute playback", exact: true }).hover();
+      const volumeSlider = page.getByRole("slider", { name: "Playback volume", exact: true });
+      await volumeSlider.dispatchEvent("pointerdown", { pointerType: "mouse" });
+      await volumeSlider.fill("0.18");
+      await volumeSlider.fill("0");
+      await volumeSlider.dispatchEvent("pointerup", { pointerType: "mouse" });
+      await expect(page.getByRole("button", { name: "Unmute playback", exact: true })).toBeVisible();
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.muted)).toBe(true);
+      await page.getByRole("button", { name: "Unmute playback", exact: true }).click();
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.muted)).toBe(false);
+      expect(await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.volume)).toBeCloseTo(0.37);
+      await page.getByRole("button", { name: "Mute playback", exact: true }).hover();
+      await volumeSlider.focus();
+      await volumeSlider.press("Home");
+      await expect(page.getByRole("button", { name: "Unmute playback", exact: true })).toBeVisible();
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: "mutePlayback" })));
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.muted)).toBe(false);
+      expect(await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.volume)).toBeCloseTo(0.37);
+
+      await selectOption(page, "Playback speed", "1.5");
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.playbackRate)).toBe(1.5);
       await page.getByRole("slider", { name: "Playback position", exact: true }).fill("2");
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
-      await selectOption(page, "Audio track", "2");
+      await selectOption(page, "Audio tracks", "2");
+      await expect(page.getByRole("listbox", { name: "Audio tracks", exact: true })).toHaveAttribute("aria-multiselectable", "true");
+      await expect(page.getByRole("option", { name: "Master", exact: true })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("option", { name: "Microphone", exact: true })).toHaveAttribute("aria-selected", "true");
+      await page.getByRole("option", { name: "Master", exact: true }).click();
+      await page.keyboard.press("Escape");
       await expect
          .poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState), { timeout: 30000 })
          .toBeGreaterThanOrEqual(2);
@@ -163,15 +204,26 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await page.getByRole("button", { name: "Play", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
       const isolatedTrackUrl = await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentSrc);
-      await selectOption(page, "Audio track", "-1");
+      await selectOption(page, "Audio tracks", "1");
+      await page.getByRole("option", { name: "Microphone", exact: true }).click();
+      await page.keyboard.press("Escape");
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentSrc)).not.toBe(isolatedTrackUrl);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
       await page.getByRole("button", { name: "Pause", exact: true }).click();
       await page.getByRole("slider", { name: "Playback position", exact: true }).fill("2");
-      await page.getByRole("button", { name: "Fullscreen", exact: true }).click();
+      await page.getByRole("button", { name: "Fullscreen", exact: true }).focus();
+      await page.keyboard.press("Space");
       await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
-      await page.getByRole("combobox", { name: "Audio track", exact: true }).click();
-      await expect(page.getByRole("listbox", { name: "Audio track" })).toBeVisible();
+      await page.locator(".viewer-main video").click({ button: "right" });
+      await expect(fileMenu).toBeVisible();
+      expect(await fileMenu.evaluate((node) => document.fullscreenElement?.contains(node))).toBe(true);
+      await fileMenu.getByRole("menuitem", { name: "Rename clip", exact: true }).click();
+      const renameDialog = page.getByRole("dialog", { name: "Rename clip", exact: true });
+      await expect(renameDialog).toBeVisible();
+      expect(await renameDialog.evaluate((node) => document.fullscreenElement?.contains(node))).toBe(true);
+      await renameDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("combobox", { name: "Audio tracks", exact: true }).click();
+      await expect(page.getByRole("listbox", { name: "Audio tracks" })).toBeVisible();
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: "Exit fullscreen", exact: true }).click();
       await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
@@ -215,6 +267,12 @@ test("real media plays, creates a verified shareable, and supports overlapping c
             .digest("hex")
       ).toBe(originalHash);
       await selectOption(page, "Choose shareable", firstShare.id);
+      await expect(page.getByRole("combobox", { name: "Choose shareable", exact: true })).not.toContainText("target");
+      await page.getByRole("button", { name: "File actions", exact: true }).click();
+      await expect(fileMenu.getByRole("menuitem", { name: "Show clip in folder", exact: true })).toBeVisible();
+      await expect(fileMenu.getByRole("menuitem", { name: "Show shareable in folder", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+
       await desktop.evaluate(({ dialog }) => {
          dialog.showMessageBox = async (windowOrOptions: Electron.BaseWindow | Electron.MessageBoxOptions, options?: Electron.MessageBoxOptions) => {
             (globalThis as typeof globalThis & { testDeletePrompt?: string }).testDeletePrompt = (
@@ -224,14 +282,20 @@ test("real media plays, creates a verified shareable, and supports overlapping c
          };
       });
       await page.getByRole("button", { name: "File actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Delete shareable", exact: true }).click();
+      await page.getByRole("menuitem", { name: /^Delete shareable [0-9]+$/, exact: false }).click();
       await expect
          .poll(() => desktop.evaluate(() => (globalThis as typeof globalThis & { testDeletePrompt?: string }).testDeletePrompt))
          .toBe("Move this shareable to the trash?");
       expect((await page.evaluate(() => window.acroClip.state())).clips[0]!.shareables).toHaveLength(2);
-      await page.getByRole("button", { name: "Original", exact: true }).click();
       await page.getByRole("button", { name: "File actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Delete original and shareables", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete all shareables", exact: true }).click();
+      await expect
+         .poll(() => desktop.evaluate(() => (globalThis as typeof globalThis & { testDeletePrompt?: string }).testDeletePrompt))
+         .toBe("Move all shareables for this clip to the trash?");
+      expect((await page.evaluate(() => window.acroClip.state())).clips[0]!.shareables).toHaveLength(2);
+      await page.getByRole("button", { name: "Clip", exact: true }).click();
+      await page.getByRole("button", { name: "File actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete clip", exact: true }).click();
       await expect
          .poll(() => desktop.evaluate(() => (globalThis as typeof globalThis & { testDeletePrompt?: string }).testDeletePrompt))
          .toBe("Move this clip and its shareables to the trash?");

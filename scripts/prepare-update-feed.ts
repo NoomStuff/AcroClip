@@ -1,4 +1,4 @@
-// Adapted from AttaCut's MIT-licensed feed preparation. See licenses/AttaCut-MIT.txt.
+// Adapted from AttaCut's MIT-licensed feed preparation. See THIRD_PARTY_NOTICES.md.
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";

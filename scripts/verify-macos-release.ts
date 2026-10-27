@@ -57,7 +57,6 @@ async function verifyMacPayload(project: string, app: string, expected: MacTreeE
    for (const [source, target] of [
       ["LICENSE", "LICENSE"],
       ["THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"],
-      ["licenses/AttaCut-MIT.txt", "LICENSE-AttaCut"],
       ["build/icon.png", "icons/icon.png"],
    ]) {
       if ((await hashFile(path.join(project, source!))) !== (await hashFile(path.join(resources, target!))))

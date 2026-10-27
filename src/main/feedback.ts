@@ -8,9 +8,11 @@ export class Feedback {
    private notification: Notification | null = null;
    private readonly executable: string;
    private readonly onWarning: (message: string) => void;
-   constructor(executable: string, onWarning: (message: string) => void) {
+   private readonly icon: string;
+   constructor(executable: string, onWarning: (message: string) => void, icon: string) {
       this.executable = executable;
       this.onWarning = onWarning;
+      this.icon = icon;
    }
    show(message: string, error = false, saving = false): void {
       if (existsSync(this.executable)) {
@@ -43,7 +45,7 @@ export class Feedback {
    private system(message: string): void {
       if (!Notification.isSupported()) return;
       this.notification?.close();
-      this.notification = new Notification({ title: "AcroClip", body: message, silent: true });
+      this.notification = new Notification({ title: "AcroClip", body: message, icon: this.icon, silent: true });
       this.notification.on("failed", (_event, reason) => this.onWarning(`System feedback failed: ${reason}`));
       this.notification.show();
    }

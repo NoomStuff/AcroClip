@@ -8,17 +8,37 @@ export interface AttaCutLocations {
    home: string;
    appData: string;
    searchPath: string;
+   programFiles?: string[];
+}
+
+export function attaCutEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+   const result = { ...environment };
+   const developmentOverrides = new Set(["ELECTRON_RENDERER_URL", "ELECTRON_EXEC_PATH", "ELECTRON_RUN_AS_NODE", "NODE_ENV", "NODE_OPTIONS", "NODE_PATH"]);
+   for (const key of Object.keys(result)) {
+      const normalized = key.toUpperCase();
+      if (developmentOverrides.has(normalized) || normalized.startsWith("ACROCLIP_")) delete result[key];
+   }
+   return result;
 }
 
 function attaCutCandidates(locations: AttaCutLocations): string[] {
    const { platform, home, appData, searchPath } = locations;
-   if (platform === "win32")
-      return [path.join(appData, "../Local/Programs/AttaCut/AttaCut.exe"), path.join(home, "AppData/Local/Programs/attacut/AttaCut.exe")];
-   if (platform === "darwin") return ["/Applications/AttaCut.app/Contents/MacOS/AttaCut", path.join(home, "Applications/AttaCut.app/Contents/MacOS/AttaCut")];
-   return searchPath
-      .split(path.delimiter)
+   const onPath = searchPath
+      .split(platform === "win32" ? ";" : ":")
+      .map((directory) => directory.replace(/^"|"$/g, ""))
       .filter((directory) => path.isAbsolute(directory))
-      .flatMap((directory) => [path.join(directory, "attacut"), path.join(directory, "AttaCut")]);
+      .flatMap((directory) =>
+         platform === "win32" ? [path.join(directory, "AttaCut.exe")] : [path.join(directory, "attacut"), path.join(directory, "AttaCut")]
+      );
+   if (platform === "win32")
+      return [
+         path.join(appData, "../Local/Programs/AttaCut/AttaCut.exe"),
+         path.join(home, "AppData/Local/Programs/attacut/AttaCut.exe"),
+         ...(locations.programFiles ?? []).map((directory) => path.join(directory, "AttaCut/AttaCut.exe")),
+         ...onPath,
+      ];
+   if (platform === "darwin") return ["/Applications/AttaCut.app/Contents/MacOS/AttaCut", path.join(home, "Applications/AttaCut.app/Contents/MacOS/AttaCut")];
+   return onPath;
 }
 
 function attaCutExecutable(selection: string, platform: NodeJS.Platform): string {

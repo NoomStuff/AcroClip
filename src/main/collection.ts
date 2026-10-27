@@ -718,23 +718,43 @@ export class CollectionService {
       const stored = this.stored(id);
       const original = await this.resolveFile(stored);
       if (!original) throw new Error("The original video moved or changed. Refresh the collection.");
-      const destination = join(dirname(original), `${cleaned}${extname(original)}`);
-      if (normal(destination) !== normal(original)) {
-         try {
-            await publishWithoutOverwrite(original, destination);
-         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "EEXIST")
-               throw new Error("A video with that name already exists. Choose another name.", { cause: error });
-            throw error;
+      const moves: { file: StoredFile; source: string; destination: string; removed: boolean }[] = [];
+      const addMove = (file: StoredFile, source: string, filename: string) => {
+         const destination = join(dirname(source), filename);
+         if (normal(destination) !== normal(source)) moves.push({ file, source, destination, removed: false });
+      };
+      addMove(stored, original, `${cleaned}${extname(original)}`);
+      for (const share of stored.shareables) {
+         const source = await this.resolveFile(share);
+         if (!source) throw new Error("A shareable moved or changed. Refresh the collection before renaming.");
+         addMove(share, source, `${cleaned}-${share.targetMB}MB-${share.id.slice(0, 8)}${extname(source)}`);
+      }
+      // Publish every destination before removing any source, so a collision leaves the group intact.
+      const published: typeof moves = [];
+      try {
+         for (const move of moves) {
+            await publishWithoutOverwrite(move.source, move.destination);
+            published.push(move);
          }
-         try {
-            await rm(original);
-         } catch (error) {
-            await rm(destination, { force: true });
-            throw error;
+      } catch (error) {
+         for (const move of published) await rm(move.destination, { force: true });
+         if ((error as NodeJS.ErrnoException).code === "EEXIST")
+            throw new Error("A video with that name already exists. Choose another name.", { cause: error });
+         throw error;
+      }
+      try {
+         for (const move of moves) {
+            await rm(move.source);
+            move.removed = true;
+            move.file.relativePath = relative(this.root, move.destination);
+            move.file.absolutePath = move.destination;
          }
-         stored.relativePath = relative(this.root, destination);
-         stored.absolutePath = destination;
+      } catch (error) {
+         // Keep completed moves associated and remove unused copies if a source cannot be removed.
+         for (const move of moves) if (!move.removed) await rm(move.destination, { force: true });
+         await this.writeMetadata();
+         await this.scan();
+         throw error;
       }
       stored.name = cleaned;
       await this.writeMetadata();
@@ -806,10 +826,14 @@ export class CollectionService {
       await this.scan();
    }
 
-   async filesForDeletion(id: string, shareableId?: string): Promise<string[]> {
+   async filesForDeletion(id: string, shareableId?: string, scope?: "shareables"): Promise<string[]> {
       if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's shareable before deleting it.");
       const stored = this.stored(id);
-      const files: StoredFile[] = shareableId ? stored.shareables.filter((share) => share.id === shareableId) : [stored, ...stored.shareables];
+      const files: StoredFile[] = shareableId
+         ? stored.shareables.filter((share) => share.id === shareableId)
+         : scope === "shareables"
+           ? stored.shareables
+           : [stored, ...stored.shareables];
       if (shareableId && !files.length) throw new Error("That shareable no longer exists.");
       const result: string[] = [];
       for (const file of files) {
@@ -929,7 +953,7 @@ export class CollectionService {
       this.controllers.get(id)?.abort();
    }
 
-   async playback(path: string, track?: number): Promise<string> {
+   async playback(path: string, track?: number | number[]): Promise<string> {
       const root = this.root;
       const actual = await realpath(path);
       if (root !== this.root || !withinRoot(root, actual)) throw new Error("The video is outside the current collection.");

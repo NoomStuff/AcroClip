@@ -310,9 +310,31 @@
    min-height: 0;
    padding: 14px 6px 0;
 }
-
+.detected-game {
+   flex-shrink: 0;
+   padding: 14px;
+   border-radius: 10px;
+   background: var(--raised);
+}
+.detected-game .context-header-label {
+   margin-bottom: 8px;
+   color: var(--muted);
+}
+.detected-game .context-header-title {
+   min-height: 32px;
+   color: var(--text);
+   font-size: 15px;
+   line-height: 22px;
+}
+.detected-game .context-header-title > .application-icon,
+.detected-game .context-header-title > svg {
+   flex: 0 0 28px;
+   width: 28px;
+   height: 28px;
+}
 .auto-game-help {
    display: flex;
+   flex-shrink: 0;
    align-items: center;
    gap: 5px;
    flex-wrap: wrap;
@@ -329,8 +351,9 @@
    color: var(--text);
 }
 .auto-fallback {
+   flex-shrink: 0;
    margin-top: auto;
-   padding-top: 16px;
+   padding-top: 20px;
 }
 .auto-fallback .field {
    padding: 0;
@@ -492,7 +515,7 @@
    height: 20px;
    margin-top: -8px;
 }
-.mixer-fader-range:focus-visible {
+:root[data-keyboard] .mixer-fader-range:focus-visible {
    outline: 2px solid var(--accent);
    outline-offset: 2px;
    border-radius: 4px;
@@ -606,7 +629,8 @@
    border: 1px solid #fff4;
    transition: background 120ms ease;
 }
-.mixer-fader-control:has(input:is(:hover, :focus-visible):not(:disabled)) .mixer-fader-thumb {
+.mixer-fader-control:has(input:hover:not(:disabled)) .mixer-fader-thumb,
+:root[data-keyboard] .mixer-fader-control:has(input:focus-visible:not(:disabled)) .mixer-fader-thumb {
    background: var(--accent);
 }
 .mixer-fader-control:has(input:disabled) .mixer-fader-track {

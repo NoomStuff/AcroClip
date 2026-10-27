@@ -1,4 +1,5 @@
-import { isPackagedApp, registerWindowsIdentity } from "./identity";
+import { shareableTargetAllowed } from "../shared/shareable-target";
+import { isPackagedApp, registerWindowsIdentity, windowsAppId } from "./identity";
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, protocol, shell, Tray, session, systemPreferences } from "electron";
 import { mkdirSync, realpathSync } from "node:fs";
 import { appendFile, mkdir, realpath, stat, rename as renameFile, rm } from "node:fs/promises";
@@ -23,7 +24,7 @@ import { linuxDesktopIdentity, linuxStartup } from "./startup";
 import { pendingExitDecision } from "./lifecycle";
 import { Feedback } from "./feedback";
 import { portalScreenId, selectedCaptureSource } from "../shared/capture-policy";
-import { findAttaCut, rememberAttaCut } from "./attacut";
+import { attaCutEnvironment, findAttaCut } from "./attacut";
 import { needsMicrophonePermission } from "../shared/audio-policy";
 import { StorageMonitor } from "./storage";
 
@@ -32,7 +33,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const testProfile = process.env["ACROCLIP_PROFILE"];
 if (testProfile) app.setPath("userData", resolve(testProfile));
 app.setName("AcroClip");
-if (process.platform === "win32") app.setAppUserModelId("dev.acroclip.app");
+if (process.platform === "win32") app.setAppUserModelId(windowsAppId());
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
@@ -63,7 +64,8 @@ const feedback = new Feedback(
    isPackagedApp()
       ? join(process.resourcesPath, "recorder", process.platform === "win32" ? "acroclip-notifier.exe" : "acroclip-notifier")
       : resolve(here, "../../resources/recorder", process.platform === "win32" ? "acroclip-notifier.exe" : "acroclip-notifier"),
-   (message) => void log(message)
+   (message) => void log(message),
+   iconPath()
 );
 const storage = new StorageMonitor({ onChange: () => emitState(), onWarning: (message) => notice(message, true) });
 const recorder = new Recorder({
@@ -98,7 +100,7 @@ const recorder = new Recorder({
       const clip = await collections.registerRecording(path, source, capture.application);
       emitState();
       notice(capture.previousFootage ? "Saved last available footage" : "Clip saved", false, "saved");
-      if (preferences.autoShare) {
+      if (preferences.autoShare && shareableTargetAllowed(clip.size, preferences.shareSizeMB)) {
          void collections.createShareable(clip.id, preferences.shareSizeMB).catch((e) => notice(errorMessage(e), true));
       }
    },
@@ -193,7 +195,7 @@ function createWindow() {
       height: 900,
       minWidth: 980,
       minHeight: 680,
-      backgroundColor: "#0c0c0c",
+      backgroundColor: "#0d0c0f",
       frame: process.platform === "darwin",
       titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
       title: "AcroClip",
@@ -201,6 +203,9 @@ function createWindow() {
       show: false,
       webPreferences: { preload: join(here, "../preload/index.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false },
    });
+   if (process.platform === "win32") {
+      mainWindow.setAppDetails({ appId: windowsAppId(), appIconPath: process.execPath, appIconIndex: 0 });
+   }
    mainWindow.once("ready-to-show", () => mainWindow?.show());
    const visibilityChanged = () => {
       const visible = !!mainWindow?.isVisible() && !mainWindow.isMinimized();
@@ -625,18 +630,28 @@ function registerIPC() {
       await recorder.stop();
    });
    handle("record-save", () => saveClip());
-   handle("share", (id, target) =>
-      collections.createShareable(idSchema.parse(id), target === undefined ? preferences.shareSizeMB : z.number().min(1).max(2000).parse(target))
-   );
+   handle("share", (id, target) => {
+      const clipId = idSchema.parse(id);
+      const targetMB = target === undefined ? preferences.shareSizeMB : z.number().min(1).max(2000).parse(target);
+      const clip = collections.clips.find((item) => item.id === clipId);
+      if (!clip) throw new Error("Clip not found");
+      if (!shareableTargetAllowed(clip.size, targetMB)) throw new Error("Choose a shareable size target no larger than the clip.");
+      return collections.createShareable(clipId, targetMB);
+   });
    handle("cancel-job", (id) => collections.cancelJob(idSchema.parse(id)));
    handle("rename", (id, name) => collections.rename(idSchema.parse(id), z.string().trim().min(1).max(150).parse(name)));
-   handle("delete", async (id, shareId) => {
+   handle("delete", async (id, shareId, scope) => {
       const clipId = idSchema.parse(id);
       const shareableId = shareId === undefined ? undefined : idSchema.parse(shareId);
+      const selection = scope === undefined ? undefined : z.literal("shareables").parse(scope);
       if (pendingJobs().some((j) => j.clipId === clipId)) throw new Error("Cancel the shareable export before removing this clip.");
       const result = await dialog.showMessageBox({
          type: "warning",
-         message: shareableId ? "Move this shareable to the trash?" : "Move this clip and its shareables to the trash?",
+         message: shareableId
+            ? "Move this shareable to the trash?"
+            : selection === "shareables"
+              ? "Move all shareables for this clip to the trash?"
+              : "Move this clip and its shareables to the trash?",
          buttons: ["Cancel", "Move to trash"],
          defaultId: 0,
          cancelId: 0,
@@ -644,7 +659,7 @@ function registerIPC() {
       if (result.response !== 1) return;
       const deleted: string[] = [];
       try {
-         for (const path of await collections.filesForDeletion(clipId, shareableId)) {
+         for (const path of await collections.filesForDeletion(clipId, shareableId, selection)) {
             await shell.trashItem(path);
             deleted.push(path);
          }
@@ -670,50 +685,33 @@ function registerIPC() {
       if (samePath(selected, collections.root)) void shell.openPath(selected);
       else shell.showItemInFolder(selected);
    });
-   handle("attacut", async (id) => {
-      const clip = collections.clips.find((c) => c.id === idSchema.parse(id));
-      if (!clip) throw new Error("Clip not found");
-      const settings = join(app.getPath("userData"), "attacut.json");
-      let executable = await findAttaCut(settings, {
+   const detectAttaCut = () =>
+      findAttaCut(join(app.getPath("userData"), "attacut.json"), {
          platform: process.platform,
          home: app.getPath("home"),
          appData: app.getPath("appData"),
          searchPath: process.env["PATH"] ?? "",
+         programFiles: [process.env["ProgramFiles"], process.env["ProgramFiles(x86)"]].filter((directory): directory is string => !!directory),
       });
-      if (!executable) {
-         const action = await dialog.showMessageBox({
-            type: "info",
-            message: "Where is AttaCut?",
-            detail: "Locate the application once to open your clips there.",
-            buttons: ["Locate AttaCut", "Show clip", "Cancel"],
-            defaultId: 0,
-            cancelId: 2,
-         });
-         if (action.response === 1) {
-            shell.showItemInFolder(clip.path);
-            return;
-         }
-         if (action.response !== 0) return;
-         const picked = await dialog.showOpenDialog({
-            title: "Locate AttaCut",
-            properties: ["openFile"],
-            ...(process.platform === "win32"
-               ? { filters: [{ name: "Application", extensions: ["exe"] }] }
-               : process.platform === "darwin"
-                 ? { filters: [{ name: "Application", extensions: ["app"] }] }
-                 : {}),
-         });
-         if (picked.canceled || !picked.filePaths[0]) return;
-         executable = await rememberAttaCut(settings, picked.filePaths[0], process.platform);
-      }
+   handle("attacut-available", async () => !!(await detectAttaCut()));
+   handle("attacut", async (id) => {
+      const clip = collections.clips.find((c) => c.id === idSchema.parse(id));
+      if (!clip || clip.originalMissing) throw new Error("Clip not found");
+      const executable = await detectAttaCut();
+      if (!executable) throw new Error("AttaCut is no longer available. Install it to open this clip there.");
       if (executable) {
          const { spawn } = await import("node:child_process");
-         const child = spawn(executable, [clip.path], { detached: true, stdio: "ignore", windowsHide: true });
+         const child = spawn(executable, [clip.path], { detached: true, stdio: "ignore", windowsHide: true, env: attaCutEnvironment(process.env) });
          child.once("error", () => notice("AttaCut could not open. Show the clip in your file manager and open it there.", true));
          child.unref();
       }
    });
-   handle("playback", (path, track) => collections.playback(trustedPath(path), track === undefined ? undefined : z.number().int().min(0).max(63).parse(track)));
+   handle("playback", (path, track) =>
+      collections.playback(
+         trustedPath(path),
+         track === undefined ? undefined : z.union([z.number().int().min(0).max(63), z.array(z.number().int().min(0).max(63)).min(1).max(64)]).parse(track)
+      )
+   );
    handle("refresh", async () => {
       await collections.scan();
       emitState();
@@ -774,7 +772,7 @@ else {
    void app
       .whenReady()
       .then(async () => {
-         registerWindowsIdentity(iconPath());
+         registerWindowsIdentity(process.execPath);
          if (process.platform === "darwin") app.dock?.setIcon(iconPath());
          preferencePath = join(app.getPath("userData"), "preferences.json");
          preferences = await readPreferences(preferencePath, process.env["ACROCLIP_COLLECTION"] ?? join(app.getPath("videos"), "AcroClip"));

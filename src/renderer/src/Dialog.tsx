@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, X } from "lucide-react";
@@ -66,15 +66,31 @@ export function DialogPanel({
 }) {
    const card = useRef<HTMLDivElement>(null),
       titleId = useId();
+   const backdropPointer = useRef(false);
+   const focusable = useCallback(
+      () =>
+         [...(card.current?.querySelectorAll<HTMLElement>("button,a[href],input,select,textarea,[tabindex]") ?? [])].filter(
+            (node) => node.tabIndex >= 0 && !node.matches(":disabled") && node.getClientRects().length && !node.closest("[inert]")
+         ),
+      []
+   );
    useLayoutEffect(() => {
       const previous = document.activeElement;
-      card.current?.querySelector<HTMLElement>('[role="combobox"]:not(:disabled),input:not(:disabled),button:not(:disabled)')?.focus();
+      focusable()[0]?.focus();
       return () => {
          if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
       };
-   }, []);
+   }, [focusable]);
    return createPortal(
-      <div className="modal-backdrop" onClick={close}>
+      <div
+         className="modal-backdrop"
+         onPointerDownCapture={(event) => {
+            backdropPointer.current = event.target === event.currentTarget;
+         }}
+         onClick={(event) => {
+            if (event.target === event.currentTarget && backdropPointer.current) close();
+         }}
+      >
          <div
             ref={card}
             className={`dialog ${className}`}
@@ -89,9 +105,7 @@ export function DialogPanel({
                   close();
                }
                if (event.key === "Tab") {
-                  const nodes = [...(card.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),[tabindex="0"]') ?? [])].filter(
-                     (node) => node.getClientRects().length
-                  );
+                  const nodes = focusable();
                   const first = nodes[0],
                      last = nodes.at(-1);
                   if (event.shiftKey && document.activeElement === first) {
@@ -111,6 +125,6 @@ export function DialogPanel({
             </IconButton>
          </div>
       </div>,
-      document.body
+      document.fullscreenElement ?? document.body
    );
 }

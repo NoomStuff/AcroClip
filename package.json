@@ -1,6 +1,6 @@
 {
    "name": "acroclip",
-   "version": "0.3.2",
+   "version": "0.5.0",
    "description": "Clip it. Watch it. Share It.",
    "license": "GPL-3.0-or-later",
    "type": "module",
@@ -12,8 +12,8 @@
       "build": "bun run build:icons && bun run typecheck && electron-vite build",
       "typecheck": "tsc --noEmit",
       "test": "vitest run",
-      "format": "prettier --write src scripts tests docs .github .vscode \"*.{ts,mjs,json,md}\" .prettierrc.json",
-      "format:check": "prettier --check src scripts tests docs .github .vscode \"*.{ts,mjs,json,md}\" .prettierrc.json",
+      "format": "prettier --write src scripts tests .github .vscode \"*.{ts,mjs,json,md}\" .prettierrc.json",
+      "format:check": "prettier --check src scripts tests .github .vscode \"*.{ts,mjs,json,md}\" .prettierrc.json",
       "lint": "eslint src scripts tests \"*.{ts,mjs}\" --max-warnings 0",
       "verify": "bun run format:check && bun run lint && bun run test && bun run build",
       "verify:release": "bun run verify && bun run test:media && bun run test:ui && bun run test:ui:native && bun run test:capture-loss && bun run test:packaged",
@@ -76,10 +76,6 @@
          {
             "to": "icons/icon.ico",
             "from": "build/icon.ico"
-         },
-         {
-            "to": "LICENSE-AttaCut",
-            "from": "licenses/AttaCut-MIT.txt"
          }
       ],
       "win": {
@@ -91,10 +87,18 @@
          "signExecutable": false
       },
       "nsis": {
+         "installerIcon": "build/icon.ico",
+         "uninstallerIcon": "build/icon.ico",
+         "installerHeaderIcon": "build/icon.ico",
+         "installerSidebar": "build/installerSidebar.bmp",
+         "uninstallerSidebar": "build/installerSidebar.bmp",
          "oneClick": false,
          "allowToChangeInstallationDirectory": true,
          "artifactName": "${productName}-${version}-${os}-${arch}-Installer.${ext}",
          "include": "build/installer.nsh"
+      },
+      "portable": {
+         "splashImage": "build/portableSplash.bmp"
       },
       "mac": {
          "icon": "build/icon.icns",

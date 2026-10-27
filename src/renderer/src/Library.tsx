@@ -1,3 +1,4 @@
+import { shareableTargetAllowed } from "../../shared/shareable-target";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
@@ -13,6 +14,7 @@ import {
    Pencil,
    Plus,
    Search,
+   Scissors,
    Share2,
    Tag,
    Trash2,
@@ -34,6 +36,7 @@ import { useGridMotion } from "./useGridMotion";
 import { PaneDivider, usePaneSize } from "./layout";
 import { useApplicationColors } from "./useApplicationColors";
 import type { ContextMenuRequest } from "./ui";
+import { useAttaCutAvailable } from "./useAttaCutAvailable";
 
 function applicationStyle(color: string | undefined): CSSProperties {
    return color ? ({ "--application-color": color } as CSSProperties) : {};
@@ -93,12 +96,14 @@ export function Library({
    const unavailable = state.collectionStatus.phase === "error";
    const initial = state.collectionStatus.phase === "loading" && !state.clips.length;
    const collectionRoot = state.collectionStatus.root || state.preferences.collection;
+   const attaCutAvailable = useAttaCutAvailable(visible);
    const [query, setQuery] = useState("");
    const [filter, setFilter] = useState("all");
    const [order, setOrder] = useState("newest");
    const applicationColors = useApplicationColors(state.applicationIcons, visible);
    const selectedApplicationColor = filter.startsWith("source:") ? applicationColors[filter.slice(7)] : undefined;
    const [contextMenu, setContextMenu] = useState<(ContextMenuRequest & { clipId: string }) | null>(null);
+   const [categoryContextMenu, setCategoryContextMenu] = useState<(ContextMenuRequest & { categoryId: string }) | null>(null);
    const requestMenu = (clipId: string, element: HTMLElement, left: number, top: number) => {
       setContextMenu({ clipId, left, top, restoreFocus: element.querySelector("button") ?? element });
    };
@@ -119,12 +124,17 @@ export function Library({
    const sources = useMemo(() => {
       const apps = new Map<string, { id: string; name: string; icon?: string | undefined }>();
       for (const clip of state.clips)
-         if (clip.source) {
+         if (clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown") {
             const id = clip.applicationId ?? `label:${clip.source}`;
-            if (!apps.has(id)) apps.set(id, { id, name: clip.source, icon: clip.applicationId ? state.applicationIcons[clip.applicationId] : undefined });
+            if (!apps.has(id))
+               apps.set(id, { id, name: clip.source.trim(), icon: clip.applicationId ? state.applicationIcons[clip.applicationId] : undefined });
          }
       return [...apps.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
    }, [state.clips, state.applicationIcons]);
+   useEffect(() => {
+      if (filter.startsWith("source:") && !sources.some((source) => `source:${source.id}` === filter)) setFilter("all");
+      if (filter.startsWith("category:") && !state.categories.some((category) => `category:${category.id}` === filter)) setFilter("all");
+   }, [filter, sources, state.categories]);
    const folderPath = filter.startsWith("folder:") ? filter.slice(7) : null;
    const folders = useMemo(() => {
       const found = new Set(state.folders);
@@ -276,7 +286,7 @@ export function Library({
                className="collection-home"
                label="Collection"
                title={folderName(collectionRoot)}
-               icon={<Folder size={20} />}
+               icon={<Folder size={17} />}
                hint={collectionRoot}
                onTitleClick={() => setFilter("folder:")}
                actions={
@@ -300,16 +310,29 @@ export function Library({
                <SelectionIndicator value={filter} />
                <button className={`sidebar-item ${filter === "all" ? "selected" : ""}`} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>
                   <Grid2X2 size={17} />
-                  All clips<span className="count">{initial ? "" : state.clips.length}</span>
+                  <span className="sidebar-label">All clips</span>
+                  <span className="count">{initial ? "" : state.clips.length}</span>
                </button>
                <div className="sidebar-group-title">
-                  Categories
+                  <span>Categories</span>
                   <IconButton label="New category" onClick={() => void createCategory()}>
-                     <Plus size={14} />
+                     <Plus size={16} />
                   </IconButton>
                </div>
                {state.categories.map((item) => (
-                  <div className="category-item" key={item.id}>
+                  <div
+                     className="category-item"
+                     key={item.id}
+                     onContextMenu={(event) => {
+                        event.preventDefault();
+                        setCategoryContextMenu({
+                           categoryId: item.id,
+                           left: event.clientX,
+                           top: event.clientY,
+                           restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
+                        });
+                     }}
+                  >
                      <button
                         className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`}
                         aria-pressed={filter === `category:${item.id}`}
@@ -322,11 +345,17 @@ export function Library({
                         </span>
                         <span className="count">{state.clips.filter((clip) => clip.categories.includes(item.id)).length}</span>
                      </button>
-                     <Menu label={`Actions for ${item.name}`} trigger={<MoreHorizontal size={14} />}>
+                     <Menu
+                        label={`Actions for ${item.name}`}
+                        trigger={<MoreHorizontal size={14} />}
+                        contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
+                        onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
+                     >
                         <MenuItem onClick={() => setEditingCategory(item)}>
                            <Pencil size={14} />
                            Edit category
                         </MenuItem>
+                        <div className="menu-separator" role="separator" />
                         <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
                            <Trash2 size={14} />
                            Delete category
@@ -412,7 +441,8 @@ export function Library({
                         <option value="name">Name</option>
                      </Select>
                   </div>
-                  <div className="library-view-switch" role="group" aria-label="Library view">
+                  <div className="library-view-switch moving-selection" role="group" aria-label="Library view">
+                     <SelectionIndicator value={view} selector={'button[aria-pressed="true"]'} />
                      <IconButton label="Grid view" aria-pressed={view === "grid"} onClick={() => setView("grid")}>
                         <Grid2X2 size={16} />
                      </IconButton>
@@ -555,9 +585,26 @@ export function Library({
                                        <Clapperboard size={15} />
                                        Open clip
                                     </MenuItem>
-                                    <MenuItem disabled={!!job || !!clip.originalMissing} onClick={() => void run(() => api.createShareable(clip.id))}>
+                                    <MenuItem
+                                       disabled={!!job || !!clip.originalMissing || !shareableTargetAllowed(clip.size, state.preferences.shareSizeMB)}
+                                       onClick={() => void run(() => api.createShareable(clip.id))}
+                                    >
                                        <Share2 size={15} />
                                        {job ? "Creating shareable…" : "Create shareable"}
+                                    </MenuItem>
+                                    <div className="menu-separator" role="separator" />
+                                    <MenuItem disabled={!!clip.originalMissing || !!job} onClick={() => void rename(clip)}>
+                                       <Pencil size={15} />
+                                       Rename clip
+                                    </MenuItem>
+                                    <MenuItem onClick={() => openCategories(clip)}>
+                                       <Tag size={15} />
+                                       Categories
+                                    </MenuItem>
+                                    <div className="menu-separator" role="separator" />
+                                    <MenuItem disabled={!!clip.originalMissing} onClick={() => void run(() => api.reveal(clip.path))}>
+                                       <FolderOpen size={15} />
+                                       Show clip in folder
                                     </MenuItem>
                                     {shareable && (
                                        <MenuItem onClick={() => void run(() => api.reveal(shareable.path))}>
@@ -565,19 +612,13 @@ export function Library({
                                           Show shareable in folder
                                        </MenuItem>
                                     )}
-                                    <MenuItem onClick={() => openCategories(clip)}>
-                                       <Tag size={15} />
-                                       Categories
-                                    </MenuItem>
-                                    <MenuItem disabled={!!clip.originalMissing} onClick={() => void rename(clip)}>
-                                       <Pencil size={15} />
-                                       Rename
-                                    </MenuItem>
-                                    <MenuItem disabled={!!clip.originalMissing} onClick={() => void run(() => api.reveal(clip.path))}>
-                                       <Folder size={15} />
-                                       Show original in folder
-                                    </MenuItem>
-                                    <div className="menu-separator" />
+                                    {attaCutAvailable && !clip.originalMissing && (
+                                       <MenuItem onClick={() => void run(() => api.openInAttaCut(clip.id))}>
+                                          <Scissors size={15} />
+                                          Open in AttaCut
+                                       </MenuItem>
+                                    )}
+                                    <div className="menu-separator" role="separator" />
                                     <MenuItem danger onClick={() => void remove(clip)}>
                                        <Trash2 size={15} />
                                        Delete clip

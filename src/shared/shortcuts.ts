@@ -6,7 +6,7 @@ export const shortcutRegistry = [
    { id: "stopRecording", label: "Stop recording", scope: "global", page: "all", binding: "" },
    { id: "recording", label: "Recording page", scope: "local", page: "all", binding: "CommandOrControl+1" },
    { id: "library", label: "Library page", scope: "local", page: "all", binding: "CommandOrControl+2" },
-   { id: "viewer", label: "Clip viewer", scope: "local", page: "all", binding: "CommandOrControl+3" },
+   { id: "viewer", label: "Player", scope: "local", page: "all", binding: "CommandOrControl+3" },
    { id: "settings", label: "Settings", scope: "local", page: "all", binding: "CommandOrControl+," },
    { id: "search", label: "Search clips", scope: "local", page: "library", binding: "CommandOrControl+F" },
    { id: "refresh", label: "Refresh collection", scope: "local", page: "library", binding: "CommandOrControl+R" },
