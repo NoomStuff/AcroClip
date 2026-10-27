@@ -1585,6 +1585,15 @@ private:
       snapshot(request);
     requests.clear();
   }
+  void beginSourceSwitch() {
+    if (!active) return;
+    std::lock_guard<std::mutex> lock(mutex);
+    captureEnabled = false;
+    for (auto &request : requests) snapshot(request);
+    requests.clear();
+    captureInterrupted = true;
+    recoveryBoundary = int64_t(os_gettime_ns() / 1000);
+  }
   void readStreamHeaders() {
     std::vector<std::vector<uint8_t>> headers;
     std::vector<obs_encoder_t *> encoders{video};
@@ -2074,6 +2083,7 @@ public:
       obs_source_release(next);
       throw;
     }
+    beginSourceSwitch();
     obs_volmeter_detach_source(captureMeter);
     {
       std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
@@ -2090,6 +2100,9 @@ public:
                                    ? desktop
                                    : applicationAudioSource(applicationAudio));
     }
+#endif
+#ifndef __linux__
+    beginSourceSwitch();
 #endif
     targetWindow = target;
     targetProcess = targetPid;
@@ -2135,6 +2148,7 @@ public:
       std::lock_guard<std::mutex> lock(mutex);
       sourceName = c.value("sourceName", "Screen");
       selectedSourceId = c.value("sourceId", "");
+      if (active) recoveryBoundary = int64_t(os_gettime_ns() / 1000);
 #ifdef __linux__
       if (acroclip::wayland::enabled() && screenCapture)
         sourceName = "Portal-selected screen";

@@ -89,6 +89,7 @@ try {
    for (const mode of ["default", "reduced", "failed"] as const) {
       send({
          action: "start",
+         allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1",
          id: `${mode}-start`,
          sourceKind: "auto",
          resolvedKind: "waiting",

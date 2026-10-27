@@ -103,6 +103,7 @@ try {
    }, 250);
    await command({
       action: "start",
+      allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1",
       sourceKind: "screen",
       screenIndex: 0,
       sourceName: "Audio test",

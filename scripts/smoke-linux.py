@@ -103,7 +103,7 @@ try:
         video = probe["streams"][0]
         assert (video["codec_name"],video["width"],video["height"],video["r_frame_rate"]) == ("h264",640,360,"24/1"), video
         assert 1.5 < float(probe["format"]["duration"]) < 3.2, probe
-        assert [stream["tags"]["title"] for stream in probe["streams"][1:]] == ["Master","Capture audio"]
+        assert [stream["tags"]["title"] for stream in probe["streams"][1:]] == ["Master","Desktop"]
         subprocess.run(["ffmpeg","-v","error","-i",str(file),"-f","null","-"],check=True)
         # The private X11 fixture must appear in actual encoded pixels.
         frame = subprocess.check_output(["ffmpeg","-v","error","-ss","0.4","-i",str(file),"-frames:v","1","-pix_fmt","gray","-f","rawvideo","-"])

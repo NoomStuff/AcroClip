@@ -61,7 +61,9 @@ async function wait(predicate: (event: Event) => boolean, after = 0): Promise<Ev
 }
 async function command(action: string, data: Record<string, unknown> = {}) {
    const id = randomUUID();
-   helper.stdin.write(`${JSON.stringify({ action, id, ...data })}\n`);
+   helper.stdin.write(
+      `${JSON.stringify({ ...(action === "start" ? { allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1" } : {}), action, id, ...data })}\n`
+   );
    const result = await wait((event) => event.id === id && ["response", "error"].includes(event.event));
    if (result.event === "error") throw new Error(result.message);
    return id;

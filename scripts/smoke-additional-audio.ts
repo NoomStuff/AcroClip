@@ -92,6 +92,7 @@ try {
    const handles = await Promise.all(fixtures.map((value) => value.handle));
    await command({
       action: "start",
+      allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1",
       sourceKind: "app",
       sourceId: `window:${handles[0]}:0`,
       pid: fixtures[0]!.child.pid,
