@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { defaultPreferences } from "../../src/shared/defaults";
-test("Listen is one direct default-output toggle and survives gain changes without changing record mute", async () => {
+test("Listen is one direct default-output toggle and survives gain changes with the shared mute behavior", async () => {
    test.skip(process.platform !== "win32" || process.env["ACROCLIP_NATIVE_UI"] !== "1", "Requires Windows audio capture");
    test.setTimeout(100000);
    const profile = await mkdtemp(join(tmpdir(), "acroclip-listen-ui-")),
@@ -105,7 +105,7 @@ test("Listen is one direct default-output toggle and survives gain changes witho
       await page.getByRole("textbox", { name: "Source audio level in decibels" }).press("Enter");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureVolume).toBe(0.5);
       await expect(listening).toHaveAttribute("aria-pressed", "true");
-      expect((await page.evaluate(() => window.acroClip.state())).preferences.captureMuted).toBe(true);
+      expect((await page.evaluate(() => window.acroClip.state())).preferences.captureMuted).toBe(false);
       await page.waitForTimeout(1200);
       await expect(listening).toHaveAttribute("aria-pressed", "true");
       await listening.click();
