@@ -193,6 +193,18 @@ def notice(identity, label, saving=True, expected_motion=None):
 
 def save(label, stop=True):
     output = folder / (label + ".mkv")
+    # A recording-start acknowledgement precedes the first encoded video packet.
+    # Wait for actual buffered footage, rather than assuming a fixed sleep is
+    # enough on an Intel runner. Still fail if capture never becomes ready.
+    deadline = time.monotonic() + 25
+    while True:
+        index = len(events["recorder"])
+        command(dict(action="status"))
+        status = wait("recorder", lambda event: event in events["recorder"][index:] and event["event"] == "status")
+        if status.get("active") and status.get("availableSeconds", 0) >= 2:
+            break
+        assert time.monotonic() < deadline, f"Capture did not buffer footage: {status}"
+        time.sleep(0.05)
     request = str(uuid.uuid4())
     command(dict(action="save", path=str(output), requestId=request, requestedAt=int(time.time() * 1000)))
     result = wait("recorder", lambda event: event.get("requestId") == request and event["event"] in ("saved", "error"), 40)
