@@ -24,6 +24,9 @@ test("mismatched and stale sources stay unselected without preview or capture fa
    const app = await electron.launch({ args: [resolve("."), "--disable-gpu-sandbox"], env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile } });
    try {
       const page = await app.firstWindow();
+      // The fixture retains this state across reloads. Wait for the real window
+      // to show so an early hidden snapshot cannot disable source discovery.
+      await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).windowVisible)).toBe(true);
       const initial = await page.evaluate(() => window.acroClip.state());
       await app.evaluate(({ ipcMain, BrowserWindow }, initial) => {
          // Source-selection UI does not require the CI machine to have a recorder.
