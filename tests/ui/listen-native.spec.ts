@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { defaultPreferences } from "../../src/shared/defaults";
+import { closeTestApplication } from "../../scripts/close-test-application";
 test("Listen is one direct default-output toggle and survives gain changes without changing record mute", async () => {
    test.skip(process.platform !== "win32" || process.env["ACROCLIP_NATIVE_UI"] !== "1", "Requires Windows audio capture");
    test.setTimeout(100000);
@@ -125,7 +126,10 @@ test("Listen is one direct default-output toggle and survives gain changes witho
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
       await page.evaluate(() => window.acroClip.stopRecording());
    } finally {
-      await app.close();
-      fixture.kill();
+      try {
+         await closeTestApplication(app);
+      } finally {
+         fixture.kill();
+      }
    }
 });
