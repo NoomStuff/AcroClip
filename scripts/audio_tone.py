@@ -10,8 +10,28 @@ class TonePeak(TypedDict):
 
 
 def tone_peak(samples: Sequence[float], sample_rate: int, nominal: int) -> TonePeak:
-    if len(samples) < 2 or sample_rate <= 0:
+    if len(samples) < 3 or sample_rate <= 0:
         raise ValueError("A tone measurement requires audio samples and a positive sample rate")
+    # Device resampling and delayed callbacks can change phase within a clip.
+    # A single coherent projection then cancels parts of the same audible tone.
+    # Average independently measured 200 ms blocks, weighted by sample count.
+    # Include every block, including silence, rather than selecting good audio.
+    block_size = max(3, sample_rate // 5)
+    peaks: list[tuple[int, TonePeak]] = []
+    offset = 0
+    while offset < len(samples):
+        end = min(len(samples), offset + block_size)
+        if len(samples) - end < 3:
+            end = len(samples)
+        peaks.append((end - offset, _window_peak(samples[offset:end], sample_rate, nominal)))
+        offset = end
+    amplitude = sum(count * peak["amplitude"] for count, peak in peaks) / len(samples)
+    frequency = (sum(count * peak["amplitude"] * peak["frequency"] for count, peak in peaks)
+                 / (amplitude * len(samples))) if amplitude else float(nominal)
+    return dict(frequency=frequency, amplitude=amplitude)
+
+
+def _window_peak(samples: Sequence[float], sample_rate: int, nominal: int) -> TonePeak:
     weights = [0.5 - 0.5 * math.cos(2 * math.pi * index / (len(samples) - 1)) for index in range(len(samples))]
     weighted = [value * weight for value, weight in zip(samples, weights)]
     window_scale = 2 / sum(weights)
@@ -37,7 +57,7 @@ def tone_peak(samples: Sequence[float], sample_rate: int, nominal: int) -> ToneP
         return min(uniform_amplitude, window_scale * math.sqrt(power))
 
     peak: TonePeak = dict(frequency=float(nominal), amplitude=0.0)
-    # The two fixtures are 616 Hz apart. This fixed +/-4 Hz band measures each
+    # The fixture tones are hundreds of Hz apart. This fixed +/-4 Hz band measures each
     # tone independently without treating a different tone as the expected one.
     for offset in range(-8, 9):
         frequency = nominal + offset * 0.5

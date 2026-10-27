@@ -127,6 +127,7 @@ export class CollectionService {
    private writes: Promise<void> = Promise.resolve();
    private scanRunning: Promise<Clip[]> | undefined;
    private refreshRunning: Promise<Clip[]> | undefined;
+   private registeringSources = new Map<string, string>();
    private changeStamp: string | undefined;
    private scanRetryNeeded = false;
    private metadataWritable = true;
@@ -661,6 +662,8 @@ export class CollectionService {
                const cached = await this.cachedMedia(actual, identity, fileStat, stored.preview);
                stored.previewUnavailable = undefined;
                stored.preview = { stamp: fileStamp(fileStat), size: Number(fileStat.size), info: cached.info };
+               const recordingSource = this.registeringSources.get(normal(actual));
+               if (recordingSource !== undefined) stored.source = recordingSource;
                const shares: Shareable[] = [];
                for (const share of stored.shareables) {
                   const located = await this.resolveFile(share, true);
@@ -849,6 +852,16 @@ export class CollectionService {
    async registerRecording(path: string, source: string, application?: ApplicationArtwork): Promise<Clip> {
       const actual = await realpath(path);
       if (!withinRoot(this.root, actual)) throw new Error("The saved recording is outside the collection.");
+      // Registration scans publish library updates before this method returns.
+      // Give those scans the known source before they expose the new recording.
+      this.registeringSources.set(normal(actual), source);
+      try {
+         return await this.registerKnownRecording(actual, source, application);
+      } finally {
+         this.registeringSources.delete(normal(actual));
+      }
+   }
+   private async registerKnownRecording(actual: string, source: string, application?: ApplicationArtwork): Promise<Clip> {
       await this.scan();
       let clip = this.clips.find((entry) => normal(entry.path) === normal(actual));
       if (!clip) {

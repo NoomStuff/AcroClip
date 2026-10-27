@@ -20,6 +20,7 @@ on:
          - scripts/build-recorder-macos.ts
          - scripts/smoke-macos.py
          - scripts/smoke-macos-audio.py
+         - scripts/audio_tone*.py
          - scripts/smoke-macos-feedback.py
          - scripts/build-media-macos.sh
          - scripts/controlled-media-macos.ts

@@ -9,6 +9,7 @@ import tempfile
 import time
 import uuid
 import socket
+from audio_tone import tone_peak
 
 root = pathlib.Path.cwd()
 runtime = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "resources/recorder").resolve()
@@ -117,13 +118,7 @@ try:
             raw=subprocess.check_output(["ffmpeg","-v","error","-i",str(file),"-map",f"0:a:{track}","-ac","1","-ar","48000","-f","f32le","-"])
             pcm=array.array("f",raw)[24000:72000]
             def amplitude(frequency):
-                powers=[]
-                for offset in range(0,len(pcm)-4800+1,4800):
-                    segment=pcm[offset:offset+4800]
-                    a=sum(value*(.5-.5*math.cos(2*math.pi*i/(len(segment)-1)))*math.cos(2*math.pi*frequency*i/48000) for i,value in enumerate(segment))
-                    b=sum(value*(.5-.5*math.cos(2*math.pi*i/(len(segment)-1)))*math.sin(2*math.pi*frequency*i/48000) for i,value in enumerate(segment))
-                    powers.append((4*math.hypot(a,b)/len(segment))**2)
-                return 20*math.log10(max(1e-10,math.sqrt(sum(powers)/len(powers))))
+                return 20*math.log10(max(1e-10,tone_peak(pcm,48000,frequency)["amplitude"]))
             amplitudes.append(dict(selected=amplitude(997),secondInput=amplitude(1499),descendant=amplitude(1999),unrelated=amplitude(1234)))
         measured[name]=amplitudes
         for track in range(2): amplitudes[track]["meanVolume"]=volume(file,track)
