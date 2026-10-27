@@ -230,7 +230,7 @@ export interface DesktopAPI {
    monitorAudio(enabled: boolean): Promise<string[]>;
    listenAudio(source: string | null): Promise<void>;
    audioDevices(kind?: "input" | "output"): Promise<{ id: string; name: string }[]>;
-   savePreferences(value: Preferences): Promise<AppState>;
+   savePreferences(value: Preferences, changedKeys?: Array<keyof Preferences>): Promise<AppState>;
    captureShortcut(enabled: boolean): Promise<void>;
    chooseFolder(): Promise<string | null>;
    startRecording(): Promise<void>;

@@ -162,6 +162,7 @@ try {
    await wait((event) => event.event === "error" && event.requestId === "collision");
    assert.equal(await readFile(existing, "utf8"), "keep existing user file");
    send({ action: "stop" });
+   if (statusTimer) clearInterval(statusTimer);
    send({ action: "exit" });
    await new Promise<void>((resolve) => child.once("exit", () => resolve()));
    assert.equal(child.exitCode, 0);

@@ -148,6 +148,7 @@ try {
       }
       console.log(`${mode}: second clip ${seconds.toFixed(3)} s, overlap ${(secondEvent.overlapSeconds ?? 0).toFixed(3)} s`);
    }
+   if (statusTimer) clearInterval(statusTimer);
    send({ action: "exit" });
    await new Promise<void>((resolve) => child.once("exit", () => resolve()));
    assert.equal(child.exitCode, 0);

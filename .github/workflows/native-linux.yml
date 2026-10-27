@@ -228,7 +228,7 @@ jobs:
                       for source in proof.iterdir():
                           if source.is_symlink() or not source.is_file():
                               continue
-                          if source.name not in names and source.suffix not in {".log", ".mkv"}:
+                          if source.name not in names and source.suffix not in {".log", ".mkv", ".png"}:
                               continue
                           target = destination / area / proof.name / source.name
                           target.parent.mkdir(parents=True, exist_ok=True)

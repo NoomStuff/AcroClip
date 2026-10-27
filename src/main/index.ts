@@ -7,10 +7,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { ApplicationArtwork, AppEvent, AppState, Preferences, RecorderState } from "../shared/types";
-import { categoryRequest, idSchema, preferencesSchema } from "../shared/validation";
+import { categoryRequest, idSchema } from "../shared/validation";
 import { assertDistinctAudioSources } from "./audio-sources";
 import { audioTopology, synchronizeLegacyAudio, monitoringPreferences } from "../shared/audio-model";
-import { readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
+import { mergePreferenceChanges, readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
 import { CollectionService, withinRoot } from "./collection";
 import { isValidShortcut, recordingDestination, recordingSourceLabel, samePath } from "./safety";
 import { bindingFor, shortcutRegistry, shortcutConflict } from "../shared/shortcuts";
@@ -562,12 +562,12 @@ function registerIPC() {
       const picked = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"], defaultPath: preferences.collection });
       return picked.canceled ? null : (picked.filePaths[0] ?? null);
    });
-   handle("preferences", async (value) => {
+   handle("preferences", async (value, changedKeys) => {
       const operation = preferenceWrites
          .catch(() => undefined)
          .then(async () => {
             if (startingCapture) throw new Error("Recording is starting. Wait before applying settings.");
-            const next = synchronizeLegacyAudio(preferences, preferencesSchema.parse(value));
+            const next = synchronizeLegacyAudio(preferences, mergePreferenceChanges(preferences, value, changedKeys));
             if (audioTopology(next) !== audioTopology(preferences) || next.sourceKind !== preferences.sourceKind || next.sourceId !== preferences.sourceId)
                assertDistinctAudioSources(next, captureSources.cached);
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");

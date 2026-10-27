@@ -173,6 +173,7 @@ try {
    const decode = spawnSync(decoder, ["-v", "error", "-i", lossFile, "-f", "null", "-"], { encoding: "utf8", windowsHide: true });
    assert.equal(decode.status, 0, decode.stderr);
    await command({ action: "stop" });
+   if (statusTimer) clearInterval(statusTimer);
    helper.stdin.write('{"action":"exit"}\n');
    await new Promise<void>((resolve) => helper.once("exit", () => resolve()));
    assert.equal(helper.exitCode, 0);

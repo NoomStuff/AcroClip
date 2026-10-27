@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { defaultPreferences } from "../shared/defaults";
 import { preferencesSchema } from "../shared/validation";
-import { readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
+import { mergePreferenceChanges, readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { synchronizeLegacyAudio } from "../shared/audio-model";
 describe("recording settings boundaries", () => {
+   it("merges an autosave at write time without overwriting another queued edit", () => {
+      const before = { ...defaultPreferences, collection: "clips", sound: true };
+      const draft = { ...before, clipSeconds: 74 };
+      const afterExternalWrite = { ...before, sound: false, shareSizeMB: 35 };
+      expect(mergePreferenceChanges(afterExternalWrite, draft, ["clipSeconds"])).toMatchObject({ clipSeconds: 74, sound: false, shareSizeMB: 35 });
+      expect(mergePreferenceChanges(afterExternalWrite, draft, undefined)).toEqual(draft);
+      expect(() => mergePreferenceChanges(afterExternalWrite, draft, ["unrecognized-setting"])).toThrow();
+   });
    it("permits source switches and notification preferences without rebuilding capture", () => {
       expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, sourceId: "window:11:0", sourceKind: "app", sound: false })).toBe(false);
    });

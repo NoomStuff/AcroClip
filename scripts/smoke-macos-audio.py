@@ -143,7 +143,9 @@ def verify_capture(name, file, verify_frames):
     subprocess.run([ffmpeg, "-v", "error", "-i", str(file), "-map", "0", "-f", "null", "-"], check=True)
     video = next(stream for stream in info["streams"] if stream["codec_type"] == "video")
     assert (video["width"], video["height"]) == (320, 180), video
-    pixels = subprocess.run([ffmpeg, "-v", "error", "-i", str(file), "-vf", "crop=2:2:iw/2:ih/2,scale=1:1", "-fps_mode", "passthrough", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
+    # The compact fixture's counter crosses its centre. Sample above the text
+    # while still requiring both background colours in the decoded recording.
+    pixels = subprocess.run([ffmpeg, "-v", "error", "-i", str(file), "-vf", "crop=2:2:iw/2:ih/4,scale=1:1", "-fps_mode", "passthrough", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
     colors = ((228, 76, 102), (65, 184, 170))
     classes = [next((color for color, values in enumerate(colors) if all(abs(pixels[offset + index] - values[index]) <= 22 for index in range(3))), None) for offset in range(0, len(pixels), 3)]
     assert classes, "The saved video contained no decoded frames"

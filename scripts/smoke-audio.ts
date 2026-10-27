@@ -156,6 +156,7 @@ try {
       "No measured audio levels arrived"
    );
    await command({ action: "stop" });
+   if (statusTimer) clearInterval(statusTimer);
    helper.stdin.write(`${JSON.stringify({ action: "exit" })}\n`);
    await new Promise<void>((resolve) => helper.once("exit", () => resolve()));
    assert.equal(helper.exitCode, 0);

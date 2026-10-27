@@ -3,7 +3,7 @@ import { _electron as electron, chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawn, execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -148,6 +148,12 @@ try {
       const pixels = await sharp(frame.stdout).greyscale().raw().toBuffer();
       assert(pixels.length > 0, "The packaged capture must decode real pixels");
       const mean = pixels.reduce((sum, value) => sum + value, 0) / pixels.length;
+      const evidence = process.env["ACROCLIP_TEST_EVIDENCE"];
+      if (evidence) {
+         await writeFile(join(evidence, "capture-frame.png"), frame.stdout);
+         await copyFile(clip.path, join(evidence, "packaged-capture.mkv"));
+         await writeFile(join(evidence, "report.json"), JSON.stringify({ source, recorder: state.recorder, mean, clip }, null, 2));
+      }
       assert(mean > 10, "The packaged X11 fixture must appear in the captured frame");
    }
    if (linux || process.env["ACROCLIP_PACKAGED_PRIVATE_AUDIO"] === "1") {
