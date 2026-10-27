@@ -66,15 +66,13 @@ test("the viewer rail retains its first clip, version and position when a newer 
       await page.getByRole("slider", { name: "Playback position", exact: true }).fill("2");
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
       await copyFile(source, join(collection, "Newly saved moment.mp4"));
-      await page.evaluate(() => window.acroClip.refresh());
-      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips[0]?.name).toBe("Newly saved moment");
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips[0]?.name, { timeout: 15000 }).toBe("Newly saved moment");
       await expect(page.locator(".viewer-title h1")).toHaveText("Reviewed moment");
       await expect(page.getByRole("button", { name: "Shareable", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("button", { name: "Clip", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(2);
       await rm(source);
-      await page.evaluate(() => window.acroClip.refresh());
-      await expect(page.locator(".viewer-sidebar")).toContainText("Clip missing or changed");
+      await expect(page.locator(".viewer-sidebar")).toContainText("Clip missing or changed", { timeout: 15000 });
       await expect(page.getByRole("button", { name: "Clip", exact: true })).toBeDisabled();
       await expect(page.getByRole("button", { name: "Shareable", exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("button", { name: "Create shareable", exact: true })).toBeDisabled();

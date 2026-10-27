@@ -8,10 +8,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { ApplicationArtwork, AppEvent, AppState, Preferences, RecorderState } from "../shared/types";
-import { categoryRequest, idSchema, preferencesSchema } from "../shared/validation";
+import { categoryRequest, idSchema } from "../shared/validation";
 import { assertDistinctAudioSources } from "./audio-sources";
 import { audioTopology, synchronizeLegacyAudio, monitoringPreferences } from "../shared/audio-model";
-import { readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
+import { mergePreferenceChanges, readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
 import { CollectionService, withinRoot } from "./collection";
 import { isValidShortcut, recordingDestination, recordingSourceLabel, samePath } from "./safety";
 import { bindingFor, shortcutRegistry, shortcutConflict } from "../shared/shortcuts";
@@ -23,7 +23,7 @@ import { Updates } from "./updates";
 import { linuxDesktopIdentity, linuxStartup } from "./startup";
 import { pendingExitDecision } from "./lifecycle";
 import { Feedback } from "./feedback";
-import { portalScreenId, selectedCaptureSource } from "../shared/capture-policy";
+import { bufferedCaptureSource, portalScreenId, selectedCaptureSource } from "../shared/capture-policy";
 import { attaCutEnvironment, findAttaCut } from "./attacut";
 import { needsMicrophonePermission } from "../shared/audio-policy";
 import { StorageMonitor } from "./storage";
@@ -87,10 +87,11 @@ const recorder = new Recorder({
       ? join(process.resourcesPath, "recorder", process.platform === "win32" ? "acroclip-recorder.exe" : "acroclip-recorder")
       : resolve(here, "../../resources/recorder", process.platform === "win32" ? "acroclip-recorder.exe" : "acroclip-recorder"),
    onState: (current) => {
-      if (current.state === "recording" && current.sourceKind === "app") {
-         const actual = captureSources.cached.find((source) => source.kind === "app" && source.id.split(":")[1] === current.sourceId?.split(":")[1]);
+      const footage = bufferedCaptureSource(current);
+      if (current.state === "recording" && footage.kind === "app") {
+         const actual = captureSources.cached.find((source) => source.kind === "app" && source.id.split(":")[1] === footage.id?.split(":")[1]);
          lastRecordingArtwork = actual?.applicationId ? { id: actual.applicationId, icon: actual.appIcon ?? "" } : undefined;
-      } else if (current.state === "recording" && current.sourceKind === "screen") lastRecordingArtwork = undefined;
+      } else if (current.state === "recording" && footage.kind === "screen") lastRecordingArtwork = undefined;
       updateStorageActivity();
       send({ type: "recorder", recorder: recorderState() });
       updateTray();
@@ -105,8 +106,10 @@ const recorder = new Recorder({
       }
    },
 });
-const captureSources = new CaptureSources(recorder, () =>
-   process.platform === "win32" && mainWindow ? mainWindow.getNativeWindowHandle().readBigUInt64LE().toString() : ""
+const captureSources = new CaptureSources(
+   recorder,
+   () => (process.platform === "win32" && mainWindow ? mainWindow.getNativeWindowHandle().readBigUInt64LE().toString() : ""),
+   (sources) => send({ type: "capture-sources", sources })
 );
 function errorMessage(error: unknown): string {
    return error instanceof Error ? error.message : "Something went wrong. Try again.";
@@ -288,6 +291,12 @@ function updateTray() {
       ])
    );
 }
+async function ensureMicrophoneAccess(value: Preferences): Promise<void> {
+   if (process.platform === "darwin" && needsMicrophonePermission(value) && systemPreferences.getMediaAccessStatus("microphone") !== "granted") {
+      if (!(await systemPreferences.askForMediaAccess("microphone")))
+         throw new Error("Allow microphone access in System Settings, or mute microphone sources.");
+   }
+}
 async function startRecording() {
    lastRecordingArtwork = undefined;
    if (!preferences.setupComplete) throw new Error("Finish setup before recording.");
@@ -295,10 +304,7 @@ async function startRecording() {
    if (startingCapture || ["starting", "recording", "waiting"].includes(recorder.status.state)) throw new Error("Recording is already running.");
    startingCapture = (async () => {
       await preferenceWrites.catch(() => undefined);
-      if (process.platform === "darwin" && needsMicrophonePermission(preferences) && systemPreferences.getMediaAccessStatus("microphone") !== "granted") {
-         if (!(await systemPreferences.askForMediaAccess("microphone")))
-            throw new Error("Allow microphone access in System Settings, or turn off microphone sources.");
-      }
+      await ensureMicrophoneAccess(preferences);
       const available = await captureSources.list();
       if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to record.");
       await recorder.start(preferences, available);
@@ -318,9 +324,10 @@ async function saveClip() {
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to save another clip.");
    if (recorder.status.state !== "recording" && recorder.status.state !== "waiting") throw new Error("Start recording before saving a clip.");
    send({ type: "clip-action" });
+   const footage = bufferedCaptureSource(recorder.status);
    const destination = recordingDestination(
       { ...preferences, collection: collections.root },
-      preferences.sourceKind === "auto" ? (recorder.status.sourceName ?? "Game") : recordingSourceLabel(preferences, captureSources.cached),
+      footage.name || (preferences.sourceKind === "auto" ? "Game" : recordingSourceLabel(preferences, captureSources.cached)),
       randomUUID().slice(0, 8),
       new Date(requestedAt)
    );
@@ -329,11 +336,11 @@ async function saveClip() {
       throw new Error("The recording folder points outside this collection. Choose another folder.");
    void storage.check(collections.root);
    const actual =
-      recorder.status.sourceKind === "app"
-         ? captureSources.cached.find((source) => source.kind === "app" && source.id.split(":")[1] === recorder.status.sourceId?.split(":")[1])
+      footage.kind === "app"
+         ? captureSources.cached.find((source) => source.kind === "app" && source.id.split(":")[1] === footage.id?.split(":")[1])
          : undefined;
    if (actual?.applicationId) lastRecordingArtwork = { id: actual.applicationId, icon: actual.appIcon ?? "" };
-   if (recorder.status.sourceKind === "screen") lastRecordingArtwork = undefined;
+   if (footage.kind === "screen") lastRecordingArtwork = undefined;
    await recorder.save(destination, requestedAt, lastRecordingArtwork);
    notice("Saving clip…", false, "saving");
 }
@@ -509,7 +516,9 @@ function registerIPC() {
    handle("capture-shortcut", (enabled) => suspendShortcuts(z.boolean().parse(enabled) && !!mainWindow?.isVisible() && !mainWindow.isMinimized()));
    handle("recording-capabilities", () => recorder.capabilities());
    handle("state", () => state());
-   handle("sources", () => captureSources.list());
+   handle("sources", (options) =>
+      captureSources.list(z.object({ thumbnails: z.boolean().optional() }).strict().optional().parse(options)?.thumbnails ?? false)
+   );
    handle("games", () => recorder.games(preferences.customGames));
    handle("game-catalog", () => recorder.gameCatalog());
    handle("preview-source", async (id, token) => {
@@ -558,12 +567,12 @@ function registerIPC() {
       const picked = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"], defaultPath: preferences.collection });
       return picked.canceled ? null : (picked.filePaths[0] ?? null);
    });
-   handle("preferences", async (value) => {
+   handle("preferences", async (value, changedKeys) => {
       const operation = preferenceWrites
          .catch(() => undefined)
          .then(async () => {
             if (startingCapture) throw new Error("Recording is starting. Wait before applying settings.");
-            const next = synchronizeLegacyAudio(preferences, preferencesSchema.parse(value));
+            const next = synchronizeLegacyAudio(preferences, mergePreferenceChanges(preferences, value, changedKeys));
             if (audioTopology(next) !== audioTopology(preferences) || next.sourceKind !== preferences.sourceKind || next.sourceId !== preferences.sourceId)
                assertDistinctAudioSources(next, captureSources.cached);
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
@@ -580,6 +589,7 @@ function registerIPC() {
             }
             const rollbackShortcuts = installShortcuts(next);
             try {
+               if (needsMicrophonePermission(next) && !needsMicrophonePermission(preferences)) await ensureMicrophoneAccess(next);
                if (next.collection !== preferences.collection) await collections.open(next.collection);
                if (
                   ["recording", "waiting"].includes(recorder.status.state) &&
@@ -713,8 +723,7 @@ function registerIPC() {
       )
    );
    handle("refresh", async () => {
-      await collections.scan();
-      emitState();
+      await collections.refresh();
    });
    handle("update-check", () => updates.check());
    handle("update-download", () => updates.download());
@@ -865,7 +874,7 @@ else {
             if (!refreshBusy && !pendingJobs().length) {
                refreshBusy = true;
                void collections
-                  .scan()
+                  .refresh()
                   .catch((e) => void log(errorMessage(e)))
                   .finally(() => {
                      refreshBusy = false;

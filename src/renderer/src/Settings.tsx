@@ -293,7 +293,6 @@ export function Settings({ state, run, target }: { state: AppState; run: Run; ta
                   {section === "collection" && (
                      <>
                         <h2>Collection folder</h2>
-                        <p className="section-description">Supported videos in this folder appear in Library.</p>
                         <FolderPicker
                            path={draft.collection}
                            ref={collectionFolder}

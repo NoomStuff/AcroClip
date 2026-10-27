@@ -6,7 +6,7 @@ export interface PixelSize {
 const recordingPresets = {
    low: { resolutionLimit: 720, customWidth: 1280, customHeight: 720, customFPS: 30, customCQ: 23 },
    standard: { resolutionLimit: 1080, customWidth: 1920, customHeight: 1080, customFPS: 60, customCQ: 23 },
-   high: { resolutionLimit: 1440, customWidth: 2560, customHeight: 1440, customFPS: 60, customCQ: 18 },
+   high: { resolutionLimit: 0, customWidth: 2560, customHeight: 1440, customFPS: 60, customCQ: 18 },
 } as const;
 export function applyRecordingPreset(value: Preferences, quality: Preferences["quality"]): Preferences {
    return quality === "custom" ? { ...value, quality } : { ...value, ...recordingPresets[quality], recordingSizeVersion: 2, quality };

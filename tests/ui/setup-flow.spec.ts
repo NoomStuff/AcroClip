@@ -67,7 +67,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
          shareSizeMB: 20,
          autoShare: false,
          setupComplete: true,
-         microphone: false,
+         microphone: true,
          microphoneDevice: "default",
          microphoneMuted: true,
          autoRecord: false,
@@ -86,17 +86,23 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect(page.getByRole("button", { name: "Audio", exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: /^High/ }).click();
       await expect(page.getByRole("button", { name: /^High/ })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByRole("combobox", { name: "Resolution limit" })).toHaveAttribute("data-value", "0");
+      await page.getByRole("combobox", { name: "Resolution limit" }).click();
+      await expect(page.getByRole("option").last()).toHaveText("Source");
+      await expect(page.getByRole("option", { name: "Original", exact: true })).toHaveCount(0);
+      await page.keyboard.press("Escape");
       await expect(page.getByRole("slider", { name: "Recording compression", exact: true })).toHaveValue("18");
       await selectOption(page, "Resolution limit", "1440");
       await expect(page.getByRole("button", { name: "Custom", exact: true })).toHaveAttribute("aria-pressed", "true");
-      await selectOption(page, "Recording frame rate", "60");
+      await page.getByRole("spinbutton", { name: "Recording frame rate" }).fill("48");
       await page.getByRole("slider", { name: "Recording compression" }).fill("25");
+      await page.locator(".quality-advanced > summary").click();
       await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).not.toBeChecked();
       await page.getByRole("checkbox", { name: /Allow software encoding/ }).check();
       await page.waitForTimeout(300);
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences)
-         .toMatchObject({ resolutionLimit: 1440, customFPS: 60, customCQ: 25, allowSoftwareEncoder: true });
+         .toMatchObject({ resolutionLimit: 1440, customFPS: 48, customCQ: 25, allowSoftwareEncoder: true });
       await page.getByRole("button", { name: "Sharing", exact: true }).click();
       await expect(page.getByRole("spinbutton", { name: "Default shareable size in MB" })).toHaveValue("20");
       await page.getByRole("spinbutton", { name: "Default shareable size in MB" }).fill("50");

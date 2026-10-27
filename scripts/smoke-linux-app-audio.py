@@ -200,7 +200,7 @@ try:
     command(dict(action="save",path=str(file),requestId="additional",requestedAt=int(time.time()*1000)))
     wait(lambda event:event["event"]=="saved" and event.get("requestId")=="additional")
     streams=json.loads(subprocess.check_output(["ffprobe","-v","error","-show_streams","-of","json",str(file)],text=True))["streams"]
-    assert [v["tags"]["title"] for v in streams if v["codec_type"]=="audio"]==["Master","Capture audio","Selected A","Selected B"],streams
+    assert [v["tags"]["title"] for v in streams if v["codec_type"]=="audio"]==["Master","Application","Selected A","Selected B"],streams
     additional=[]
     for track in range(4):
         raw=subprocess.check_output(["ffmpeg","-v","error","-i",str(file),"-map",f"0:a:{track}","-ac","1","-ar","48000","-f","f32le","-"])
@@ -219,12 +219,24 @@ try:
     measured["additional"]=additional
     assert any(e.get("additional",{}).get("fixture-a",0)>.05 for e in events if e["event"]=="audio-levels")
     assert any(e.get("additional",{}).get("fixture-b",0)>.05 for e in events if e["event"]=="audio-levels")
-    # A stopped private audio server must invalidate recording rather than
-    # silently substitute desktop audio or claim a healthy capture.
+    # A stopped private audio server must warn without stopping video or
+    # substituting another output for the unavailable application tracks.
     pulse.terminate();pulse.wait(timeout=5);time.sleep(1)
-    previous=len(events);command(dict(action="status"))
-    current=next(event for event in events[previous:] if event["event"]=="status")
-    assert current["waiting"] and "audio" in current["message"].lower(),current
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        previous=len(events);command(dict(action="status"))
+        current=next(event for event in events[previous:] if event["event"]=="status")
+        assert current['active'] and not current['waiting'],current
+        if current.get('audioWarning'):break
+        time.sleep(.1)
+    assert current.get('audioWarning'),current
+    time.sleep(3)
+    failed_audio=folder/'audio-server-down-video-continues.mkv'
+    command(dict(action='save',path=str(failed_audio),requestId='audio-server-down',requestedAt=int(time.time()*1000)))
+    result=wait(lambda event:event.get('requestId')=='audio-server-down' and event['event'] in ['saved','error'])
+    assert result['event']=='saved' and not result['previousFootage'],result
+    subprocess.run(['ffmpeg','-v','error','-i',str(failed_audio),'-map','0','-f','null','-'],check=True)
+    assert all(volume(failed_audio,track)<-70 for track in range(4))
     command(dict(action="stop"))
     helper.stdin.write('{"action":"exit"}\n');helper.stdin.flush()
     assert helper.wait(timeout=10)==0

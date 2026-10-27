@@ -50,7 +50,7 @@ export function useSettingsAutosave(preferences: Preferences) {
             for (const key of snapshot.keys()) Object.assign(candidate, { [key]: values[key] });
             const valid = preferencesSchema.safeParse(candidate);
             if (!valid.success) throw new Error(valid.error.issues[0]?.message ?? "Check your settings.");
-            const result = await api.savePreferences(valid.data);
+            const result = await api.savePreferences(valid.data, [...snapshot.keys()]);
             for (const [key, version] of snapshot) if (edits.current.get(key) === version) edits.current.delete(key);
             const merged = { ...result.preferences };
             for (const key of edits.current.keys()) Object.assign(merged, { [key]: current.current[key] });

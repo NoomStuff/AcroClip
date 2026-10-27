@@ -94,10 +94,16 @@ function rms(file: string, track: number): number {
    assert(match, measured.stderr);
    return Number(match[1]);
 }
+let statusTimer: ReturnType<typeof setInterval> | undefined;
 try {
    await wait((event) => event.event === "ready");
+   // Match the app's status polling, which advances capture readiness and recovery.
+   statusTimer = setInterval(() => {
+      if (helper.exitCode === null && helper.stdin.writable) helper.stdin.write(`${JSON.stringify({ action: "status" })}\n`);
+   }, 250);
    await command({
       action: "start",
+      allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1",
       sourceKind: "screen",
       screenIndex: 0,
       sourceName: "Audio test",
@@ -150,6 +156,7 @@ try {
       "No measured audio levels arrived"
    );
    await command({ action: "stop" });
+   if (statusTimer) clearInterval(statusTimer);
    helper.stdin.write(`${JSON.stringify({ action: "exit" })}\n`);
    await new Promise<void>((resolve) => helper.once("exit", () => resolve()));
    assert.equal(helper.exitCode, 0);
@@ -159,6 +166,7 @@ try {
    );
    console.log(folder);
 } finally {
+   if (statusTimer) clearInterval(statusTimer);
    tone.kill();
    if (helper.exitCode === null) helper.kill();
    await writeFile(path.join(folder, "native.log"), diagnostics.join(""));

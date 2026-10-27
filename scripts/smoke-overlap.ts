@@ -70,8 +70,13 @@ function duration(file: string): number {
    assert.equal(decode.status, 0, decode.stderr);
    return Number(media.format.duration);
 }
+let statusTimer: ReturnType<typeof setInterval> | undefined;
 try {
    await wait((value) => value.event === "ready");
+   // Match the app's status polling, which advances capture readiness and recovery.
+   statusTimer = setInterval(() => {
+      if (child.exitCode === null && child.stdin.writable) child.stdin.write(`${JSON.stringify({ action: "status" })}\n`);
+   }, 250);
    send({ action: "candidates" });
    const candidates = await wait((value) => value.event === "candidates");
    assert(Array.isArray(candidates.windows));
@@ -84,6 +89,7 @@ try {
    for (const mode of ["default", "reduced", "failed"] as const) {
       send({
          action: "start",
+         allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1",
          id: `${mode}-start`,
          sourceKind: "auto",
          resolvedKind: "waiting",
@@ -142,11 +148,13 @@ try {
       }
       console.log(`${mode}: second clip ${seconds.toFixed(3)} s, overlap ${(secondEvent.overlapSeconds ?? 0).toFixed(3)} s`);
    }
+   if (statusTimer) clearInterval(statusTimer);
    send({ action: "exit" });
    await new Promise<void>((resolve) => child.once("exit", () => resolve()));
    assert.equal(child.exitCode, 0);
    console.log(`Queued overlap, default windows, failed predecessor, Auto waiting and exact candidates passed. Proof: ${folder}`);
 } finally {
+   if (statusTimer) clearInterval(statusTimer);
    if (child.exitCode === null) child.kill();
    await writeFile(path.join(folder, "events.json"), JSON.stringify(events, null, 2));
    await writeFile(path.join(folder, "native.log"), logs.join(""));

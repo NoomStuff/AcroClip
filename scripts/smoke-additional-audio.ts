@@ -26,6 +26,8 @@ interface Event {
    requestId?: string;
    message?: string;
    waiting?: boolean;
+   active?: boolean;
+   audioWarning?: string;
    additional?: Record<string, number>;
 }
 const events: Event[] = [],
@@ -49,17 +51,15 @@ async function command(value: Record<string, unknown>): Promise<void> {
    const result = await wait((event) => event.id === id);
    assert.equal(result.event, "response", result.message ?? "Native command failed");
 }
-const decoder = process.env["ACROCLIP_TEST_FFMPEG"] ?? "ffmpeg";
+const decoder = process.env["ACROCLIP_TEST_FFMPEG"] ?? process.env["FFMPEG_PATH"] ?? path.resolve("resources/media/ffmpeg.exe");
 function levels(file: string, track: number): Record<string, number> {
-   const result = spawnSync(decoder, ["-v", "error", "-i", file, "-map", `0:a:${track}`, "-ac", "1", "-ar", "48000", "-f", "f32le", "-"], {
+   const result = spawnSync(decoder, ["-v", "error", "-i", file, "-map", `0:a:${track}`, "-ac", "1", "-ar", "48000", "-f", "s16le", "-"], {
       windowsHide: true,
       maxBuffer: 16 * 1024 * 1024,
    });
+   if (result.error) throw result.error;
    assert.equal(result.status, 0, result.stderr.toString());
-   const samples = new Float32Array(result.stdout.buffer.slice(result.stdout.byteOffset, result.stdout.byteOffset + result.stdout.byteLength)).slice(
-      24000,
-      72000
-   );
+   const samples = Float32Array.from({ length: result.stdout.length / 2 }, (_, index) => result.stdout.readInt16LE(index * 2) / 32768).slice(24000, 72000);
    assert(samples.length > 20000, "Saved audio is too short to measure");
    return Object.fromEntries(
       [997, 577, 1234].map((frequency) => {
@@ -80,11 +80,17 @@ function levels(file: string, track: number): Record<string, number> {
       })
    );
 }
+let statusTimer: ReturnType<typeof setInterval> | undefined;
 try {
    await wait((event) => event.event === "ready");
+   // Match the app's status polling, which advances capture readiness and recovery.
+   statusTimer = setInterval(() => {
+      if (helper.exitCode === null && helper.stdin.writable) helper.stdin.write(`${JSON.stringify({ action: "status" })}\n`);
+   }, 250);
    const handles = await Promise.all(fixtures.map((value) => value.handle));
    await command({
       action: "start",
+      allowSoftwareEncoder: process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"] === "1",
       sourceKind: "app",
       sourceId: `window:${handles[0]}:0`,
       pid: fixtures[0]!.child.pid,
@@ -150,20 +156,31 @@ try {
       "Missing measured extra B levels"
    );
    fixtures[1]!.child.kill();
-   await delay(500);
+   await delay(1600);
    const before = events.length;
    await command({ action: "status" });
+   await delay(1400);
+   await command({ action: "status" });
    assert(
-      events.slice(before).some((event) => event.event === "status" && event.waiting && event.message?.includes("Selected B")),
-      "Closed extra must invalidate recording"
+      events.slice(before).some((event) => event.event === "status" && event.active && !event.waiting && event.audioWarning?.includes("Selected B")),
+      "A lost audio source must warn while video keeps recording"
    );
+   await delay(3000);
+   const lossFile = path.join(folder, "audio-source-lost.mkv");
+   await command({ action: "save", path: lossFile, requestId: "audio-source-lost", requestedAt: Date.now() });
+   await wait((event) => event.event === "saved" && event.requestId === "audio-source-lost");
+   assert(levels(lossFile, 3)["577"]! < -70, "The unavailable source's track must be silent");
+   const decode = spawnSync(decoder, ["-v", "error", "-i", lossFile, "-f", "null", "-"], { encoding: "utf8", windowsHide: true });
+   assert.equal(decode.status, 0, decode.stderr);
    await command({ action: "stop" });
+   if (statusTimer) clearInterval(statusTimer);
    helper.stdin.write('{"action":"exit"}\n');
    await new Promise<void>((resolve) => helper.once("exit", () => resolve()));
    assert.equal(helper.exitCode, 0);
    await writeFile(path.join(folder, "measurements.json"), JSON.stringify(measured, null, 2));
    console.log("Actual Windows application audio, isolated tracks, master exclusion, gain/mute, meters and lost-source state passed", folder);
 } finally {
+   if (statusTimer) clearInterval(statusTimer);
    for (const fixture of fixtures) fixture.child.kill();
    if (helper.exitCode === null) helper.kill();
    await writeFile(path.join(folder, "native.log"), logs.join(""));

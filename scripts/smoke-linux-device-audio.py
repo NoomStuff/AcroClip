@@ -77,6 +77,16 @@ def awaitState(waiting, message=None, timeout=15):
         if result['waiting']==waiting and (not message or message in result.get('message','')):return result
         time.sleep(.1)
     raise AssertionError(result)
+
+def awaitAudio(warning, message=None, timeout=15):
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        result=status()
+        assert result['active'] and not result['waiting'], result
+        text=result.get('audioWarning','')
+        if bool(text)==warning and (not message or message in text):return result
+        time.sleep(.1)
+    raise AssertionError(result)
 def fill():
     deadline=time.monotonic()+15
     while time.monotonic()<deadline:
@@ -132,7 +142,13 @@ try:
     outputs=json.loads(pactl('-f','json','list','source-outputs'))
     chosen=next(value for value in outputs if value['properties'].get('application.name')=='AcroClip device audio')
     subprocess.run([str(root/'.cache/native-tests-linux/acroclip-pulse-client-control'),str(chosen['index'])],env=env,check=True)
-    awaitState(True)
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        clients=json.loads(pactl('-f','json','list','source-outputs'))
+        if any(value['properties'].get('application.name')=='AcroClip device audio' and value['index']!=chosen['index'] for value in clients):break
+        time.sleep(.1)
+    else:raise AssertionError('The terminated private audio client did not reconnect')
+    assert not status()['waiting']
     first=saved(request);decode(file);assert volume(file,1)>-40
     # Automatic recovery recreates the terminated real capture client.
     time.sleep(2);awaitState(False);time.sleep(3)
@@ -142,32 +158,36 @@ try:
     (folder/'input-catalog-pulse.json').write_text(pactl('-f','json','list','sources'))
     marker=len(events); command(dict(action='audio-devices',kind='input'))
     (folder/'input-catalog-native.json').write_text(json.dumps(events[marker:],indent=2))
-    # Enabled mic receives frames even when its OBS recording row is muted.
+    # A muted microphone retains its encoded track without opening its device.
     command(dict(base,action='start',captureAudio=False,microphone=True,microphoneDevice='private-input',microphoneMuted=True))
     awaitState(False);time.sleep(4);assert not status()['waiting']
     request,file=save('muted-input');saved(request);decode(file);assert volume(file,2)<-70
     proof['mutedInputHealthy']=True
+    clients=json.loads(pactl('-f','json','list','source-outputs'))
+    assert not any(value['properties'].get('application.name')=='AcroClip device audio' for value in clients),clients
+    command(dict(action='audio',source='microphone',volume=1,muted=False))
+    awaitAudio(False);time.sleep(4)
     # Freeze only this private server. The endpoint and stream still exist,
     # but real sample delivery stops. Restore it even if the assertion fails.
     os.kill(pulse.pid,signal.SIGSTOP)
     try:
-        failed=awaitState(True)
+        failed=awaitAudio(True)
         time.sleep(3)
-        request,file=save('stalled-input-last-valid');result=saved(request);assert result['previousFootage'];decode(file)
+        request,file=save('stalled-input-video-continues');result=saved(request);assert not result['previousFootage'];decode(file);assert volume(file,2)<-70
     finally:
         os.kill(pulse.pid,signal.SIGCONT)
-    awaitState(False);time.sleep(3)
-    proof['actualInputDeliveryStallAndRecovery']={'waitingReason':failed['message'],'lastAvailableDecoded':True}
+    awaitAudio(False);time.sleep(3)
+    proof['actualInputDeliveryStallAndRecovery']={'audioWarning':failed['audioWarning'],'freshVideoDecoded':True}
     # Suspend only this private virtual input. An explicit input suspension
     # must be unavailable even if a server keeps sending silent holes.
-    pactl('suspend-source','private-input','1');awaitState(True,'input is suspended');time.sleep(3)
-    request,file=save('input-suspended-last-valid');result=saved(request);assert result['previousFootage'];decode(file)
-    pactl('suspend-source','private-input','0');awaitState(False);time.sleep(3)
+    pactl('suspend-source','private-input','1');awaitAudio(True,'input is suspended');time.sleep(3)
+    request,file=save('input-suspended-video-continues');result=saved(request);assert not result['previousFootage'];decode(file);assert volume(file,2)<-70
+    pactl('suspend-source','private-input','0');awaitAudio(False);time.sleep(3)
     proof['actualInputSuspensionAndRecovery']=True
     # Removal must not substitute another default physical input.
     pactl('load-module','module-null-source','source_name=unrelated-input','rate=48000','channels=2')
-    pactl('unload-module',inputModule);awaitState(True,'selected audio device');time.sleep(3)
-    pactl('load-module','module-null-source','source_name=private-input','rate=48000','channels=2');awaitState(False)
+    pactl('unload-module',inputModule);awaitAudio(True,'selected audio device');time.sleep(3)
+    pactl('load-module','module-null-source','source_name=private-input','rate=48000','channels=2');awaitAudio(False)
     proof['explicitInputRemovalAndReturn']=True
     command(dict(action='stop'))
     # Explicit extra output must remain tied to its selected monitor, even
@@ -192,9 +212,9 @@ try:
     moduleId=owned[0];assert moduleId.isdigit(),owned
     pactl('unload-module',str(moduleId))
     saved(request);decode(file);assert volume(file,2)>-40 and volume(file,0)<-70
-    failed=awaitState(True,'selected audio device');time.sleep(4)
-    request,file=save('last-valid-after-device-loss');result=saved(request);assert result['previousFootage'];decode(file)
-    assert status()['waiting'];assert 'acroclip-test.monitor' not in pactl('list','short','sources')
+    failed=awaitAudio(True,'selected audio device');time.sleep(4)
+    request,file=save('fresh-video-after-device-loss');result=saved(request);assert not result['previousFootage'];decode(file);assert volume(file,2)<-70
+    assert not status()['waiting'];assert 'acroclip-test.monitor' not in pactl('list','short','sources')
     # PulseAudio can move the old playback client to another sink on removal.
     # Stop it before replacing the tone so two copies cannot cancel each other.
     if playing.poll() is None:playing.terminate();playing.wait(timeout=5)
@@ -203,7 +223,7 @@ try:
     playing=launch(['paplay','--device=acroclip-test',str(tone)],'recovered-tone')
     recoveredClients=json.loads(pactl('-f','json','list','sink-inputs'))
     proof['recoveredPlaybackClientCount']=len(recoveredClients)
-    awaitState(False)
+    awaitAudio(False)
     # A healthy output can deliver silence while paplay primes its new stream.
     # Observe the fixture tone before filling the recovered two-second clip.
     wait(lambda event:event.get('event')=='audio-levels' and event.get('additional',{}).get('private-extra',0)>.01,after=recoveryMarker)
@@ -213,22 +233,22 @@ try:
     proof['extraDeviceRecoveryLevels']=recoveredLevels
     assert recoveredLevels['isolatedDB']>-40 and recoveredLevels['masterDB']<-70,recoveredLevels
     proof['extraTrackGainMuteAndMasterPolicy']={'fullDB':full,'halfDB':half,'excludedFromMaster':True}
-    proof['explicitDeviceLossAndReturn']={'waitingReason':failed['message'],'noDefaultSubstitution':True,'lastAvailableDecoded':True,'knownToneRecovered':True}
+    proof['explicitDeviceLossAndReturn']={'audioWarning':failed['audioWarning'],'noDefaultSubstitution':True,'freshVideoDecoded':True,'knownToneRecovered':True}
     command(dict(action='stop'))
     # Primary default output uses our own independent context and recovers
     # after the entire isolated server actually exits and restarts.
     pactl('set-default-sink','acroclip-test')
     command(dict(base,action='start'));awaitState(False);time.sleep(4)
     request,file=save('queued-before-server-loss');pulse.terminate();pulse.wait(timeout=5)
-    saved(request);decode(file);awaitState(True);time.sleep(4)
-    request,file=save('last-valid-with-server-down');result=saved(request);assert result['previousFootage'];decode(file)
+    saved(request);decode(file);awaitAudio(True);time.sleep(4)
+    request,file=save('fresh-video-with-server-down');result=saved(request);assert not result['previousFootage'];decode(file);assert volume(file,1)<-70
     pulse=launch(pulseArgs,'restarted-pulse')
     deadline=time.monotonic()+10
     while True:
         try:pactl('set-default-sink','acroclip-test');break
         except subprocess.CalledProcessError:assert time.monotonic()<deadline;time.sleep(.1)
     serverPlaying=launch(['paplay','--device=acroclip-test',str(tone)],'server-recovered-tone')
-    awaitState(False);time.sleep(4)
+    awaitAudio(False);time.sleep(4)
     request,file=save('server-recovered');saved(request);decode(file);assert volume(file,1)>-40
     proof['actualServerRestartRecovery']=True
     command(dict(action='stop'))

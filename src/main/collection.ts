@@ -112,6 +112,7 @@ export class CollectionService {
    scanError = "";
    discovery: { videos: number; byFolder: Record<string, number>; complete: boolean } | undefined;
    private scanned = false;
+   private opening = false;
    private playbackCache = new PlaybackCache();
    private artworkCache = new Map<string, string>();
    clips: Clip[] = [];
@@ -125,6 +126,9 @@ export class CollectionService {
    private queue: Promise<void> = Promise.resolve();
    private writes: Promise<void> = Promise.resolve();
    private scanRunning: Promise<Clip[]> | undefined;
+   private refreshRunning: Promise<Clip[]> | undefined;
+   private changeStamp: string | undefined;
+   private scanRetryNeeded = false;
    private metadataWritable = true;
    private cache = new Map<string, { stamp: string; info: MediaInfo; thumbnail: string }>();
    // Scanning may reuse sampled identities. Export, rename and deletion always
@@ -157,6 +161,7 @@ export class CollectionService {
    }
 
    async open(root: string): Promise<void> {
+      this.opening = true;
       try {
          await this.openCollection(root);
       } catch (error) {
@@ -164,10 +169,13 @@ export class CollectionService {
          this.scanError = message(error);
          this.notify();
          throw error;
+      } finally {
+         this.opening = false;
       }
    }
    private async openCollection(root: string): Promise<void> {
       if (this.pendingJobs.length) throw new Error("Finish or cancel shareable creation before changing folders.");
+      if (this.refreshRunning) await this.refreshRunning.catch(() => undefined);
       if (this.scanRunning) await this.scanRunning;
       await this.writes;
       await mkdir(resolve(root), { recursive: true });
@@ -183,6 +191,7 @@ export class CollectionService {
       this.applicationIcons = {};
       this.artworkCache.clear();
       this.scanned = false;
+      this.changeStamp = undefined;
       this.discovery = undefined;
       this.phase = "loading";
       this.scanError = "";
@@ -418,11 +427,105 @@ export class CollectionService {
       }
    }
 
+   // Poll file metadata only. Reading media, generating previews and publishing
+   // refresh state belong to scan(), and only run after something changes.
+   refresh(): Promise<Clip[]> {
+      if (this.scanRunning) return this.scanRunning;
+      if (this.refreshRunning) return this.refreshRunning;
+      if (this.opening || !this.root) return Promise.resolve(this.clips);
+      this.refreshRunning = (async () => {
+         try {
+            const [stamp, metadataCurrent] = await Promise.all([this.collectionStamp(), this.metadataCurrent()]);
+            if (this.phase === "ready" && stamp === this.changeStamp && metadataCurrent) return this.clips;
+            return await this.scan();
+         } catch (error) {
+            const text = message(error);
+            if (this.phase !== "error" || this.scanError !== text) {
+               this.phase = "error";
+               this.scanError = text;
+               this.notify();
+            }
+            throw error;
+         }
+      })().finally(() => {
+         this.refreshRunning = undefined;
+      });
+      return this.refreshRunning;
+   }
+   private async metadataCurrent(): Promise<boolean> {
+      if (!this.metadataWritable) return true;
+      try {
+         return this.writtenMetadata?.stamp === fileStamp(await stat(this.metaPath(), { bigint: true }));
+      } catch (error) {
+         if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+         return false;
+      }
+   }
+   private async collectionStamp(): Promise<string> {
+      if (!this.root) return "";
+      const hash = createHash("sha256");
+      const ownedShares = await this.shareablesOwned();
+      const walk = async (directory: string): Promise<void> => {
+         if (!withinRoot(this.root, await realpath(directory))) return;
+         hash.update(JSON.stringify([relative(this.root, directory), fileStamp(await stat(directory, { bigint: true }))]));
+         const entries = await readdir(directory, { withFileTypes: true });
+         entries.sort((a, b) => a.name.localeCompare(b.name));
+         for (const entry of entries) {
+            if (entry.isSymbolicLink() || entry.name === ".acroclip") continue;
+            const path = join(directory, entry.name);
+            if (entry.isDirectory()) {
+               if (directory === this.root && entry.name === "shareables" && ownedShares) continue;
+               try {
+                  await walk(path);
+               } catch (error) {
+                  if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+                  hash.update(JSON.stringify([relative(this.root, path), "missing"]));
+               }
+            } else if (entry.isFile() && supported.has(extname(entry.name).toLowerCase()) && !entry.name.startsWith(".acroclip-")) {
+               // In-progress recorder output is imported only after publication.
+               if (
+                  /\.mkv\.saving\.mkv$/i.test(entry.name) &&
+                  !this.metadata.clips.some((clip) => normal(resolve(this.root, clip.relativePath)) === normal(path))
+               )
+                  continue;
+               try {
+                  hash.update(JSON.stringify([relative(this.root, path), fileStamp(await stat(path, { bigint: true }))]));
+               } catch (error) {
+                  if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+                  hash.update(JSON.stringify([relative(this.root, path), "missing"]));
+               }
+            }
+         }
+      };
+      await walk(this.root);
+      // Owned shareables are excluded from discovery, but changes to registered
+      // files still need to update their original clip's available exports.
+      for (const path of [...new Set(this.metadata.clips.flatMap((clip) => clip.shareables.map((share) => share.relativePath)))].sort()) {
+         if (!safeRelative(path)) continue;
+         const full = resolve(this.root, path);
+         if (!withinRoot(this.root, full)) continue;
+         try {
+            hash.update(JSON.stringify([path, fileStamp(await stat(full, { bigint: true }))]));
+         } catch (error) {
+            if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+            hash.update(JSON.stringify([path, "missing"]));
+         }
+      }
+      return hash.digest("hex");
+   }
+   private async scanWithStamp(): Promise<Clip[]> {
+      // Snapshot before scanning so edits arriving during a scan trigger the
+      // next poll instead of becoming an unchecked baseline.
+      const stamp = await this.collectionStamp();
+      const clips = await this.scanCollection();
+      this.changeStamp = this.scanRetryNeeded ? undefined : stamp;
+      return clips;
+   }
    scan(): Promise<Clip[]> {
       if (this.scanRunning) return this.scanRunning;
       this.phase = this.scanned ? "refreshing" : "loading";
       this.scanError = "";
-      this.scanRunning = this.scanCollection()
+      this.scanRunning = this.scanWithStamp()
          .then(
             (clips) => {
                this.scanned = true;
@@ -444,6 +547,7 @@ export class CollectionService {
    }
    private async scanCollection(): Promise<Clip[]> {
       if (!this.root) return [];
+      this.scanRetryNeeded = false;
       const files: string[] = [];
       const folders: string[] = [];
       const ownedShares = await this.shareablesOwned();
@@ -591,6 +695,7 @@ export class CollectionService {
                   shareables: shares,
                });
             } catch (error) {
+               this.scanRetryNeeded = true;
                const previous = this.clips.find((clip) => normal(clip.path) === normal(path));
                if (previous) {
                   result.push({ ...previous, availability: "unverified" });
@@ -654,6 +759,7 @@ export class CollectionService {
                ...(!original ? { originalMissing: true } : {}),
             });
          } catch (error) {
+            this.scanRetryNeeded = true;
             const previous = this.clips.find((clip) => clip.id === stored.id);
             if (previous) result.push({ ...previous, availability: "unverified" });
             this.warn(`Could not open retained shareables for ${stored.name}: ${message(error)}`);
@@ -700,7 +806,7 @@ export class CollectionService {
    }
    private visible(id: string): Clip {
       const clip = this.clips.find((entry) => entry.id === id);
-      if (!clip) throw new Error("This video is missing. Refresh the collection.");
+      if (!clip) throw new Error("This video is missing.");
       return clip;
    }
    async rename(id: string, name: string): Promise<void> {
@@ -717,7 +823,7 @@ export class CollectionService {
       if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's shareable before renaming it.");
       const stored = this.stored(id);
       const original = await this.resolveFile(stored);
-      if (!original) throw new Error("The original video moved or changed. Refresh the collection.");
+      if (!original) throw new Error("The original video moved or changed. Try again after the library updates.");
       const moves: { file: StoredFile; source: string; destination: string; removed: boolean }[] = [];
       const addMove = (file: StoredFile, source: string, filename: string) => {
          const destination = join(dirname(source), filename);
@@ -726,7 +832,7 @@ export class CollectionService {
       addMove(stored, original, `${cleaned}${extname(original)}`);
       for (const share of stored.shareables) {
          const source = await this.resolveFile(share);
-         if (!source) throw new Error("A shareable moved or changed. Refresh the collection before renaming.");
+         if (!source) throw new Error("A shareable moved or changed. Try renaming again after the library updates.");
          addMove(share, source, `${cleaned}-${share.targetMB}MB-${share.id.slice(0, 8)}${extname(source)}`);
       }
       // Publish every destination before removing any source, so a collision leaves the group intact.
@@ -876,7 +982,7 @@ export class CollectionService {
                if (controller.signal.aborted) throw new Error("Cancelled");
                this.jobUpdate(job, { state: "running", message: "Creating shareable" });
                const original = await this.resolveFile(this.stored(id));
-               if (!original) throw new Error("The original video moved or changed. Refresh the collection.");
+               if (!original) throw new Error("The original video moved or changed. Try again after the library updates.");
                const sharesRoot = join(this.root, "shareables");
                let existing = false;
                try {
@@ -919,7 +1025,7 @@ export class CollectionService {
                if (!verified) throw new Error("The shareable could not fit the size limit. Choose a larger limit.");
                if (controller.signal.aborted) throw new Error("Cancelled");
                if ((await fileIdentity(original)) !== this.stored(id).identity)
-                  throw new Error("The original changed during export. Create the shareable again after refreshing.");
+                  throw new Error("The original changed during export. Try creating the shareable again.");
                // Hard-link publication is atomic and cannot overwrite a pre-existing file.
                await publishWithoutOverwrite(temporary, final);
                const identity = await fileIdentity(final);

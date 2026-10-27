@@ -9,7 +9,6 @@ export const shortcutRegistry = [
    { id: "viewer", label: "Player", scope: "local", page: "all", binding: "CommandOrControl+3" },
    { id: "settings", label: "Settings", scope: "local", page: "all", binding: "CommandOrControl+," },
    { id: "search", label: "Search clips", scope: "local", page: "library", binding: "CommandOrControl+F" },
-   { id: "refresh", label: "Refresh collection", scope: "local", page: "library", binding: "CommandOrControl+R" },
    { id: "newCategory", label: "New category", scope: "local", page: "library", binding: "CommandOrControl+Shift+N" },
    { id: "openClip", label: "Open first matching clip", scope: "local", page: "library", binding: "CommandOrControl+Enter" },
    { id: "playPause", label: "Play / pause", scope: "local", page: "viewer", binding: "Space" },

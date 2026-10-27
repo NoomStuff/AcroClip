@@ -111,7 +111,7 @@ export function AdditionalAudio({
                sourceId={source.id}
                name={source.name}
                enabled={source.enabled}
-               listenAvailable={source.kind !== "source" || captureAvailable}
+               listenAvailable={(source.kind !== "source" || captureAvailable) && !(source.kind === "input" && source.muted)}
                muted={source.muted}
                volume={source.volume}
                level={levels[source.id] ?? 0}

@@ -1,22 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { defaultPreferences } from "../shared/defaults";
 import { preferencesSchema } from "../shared/validation";
-import { readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
+import { mergePreferenceChanges, readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { synchronizeLegacyAudio } from "../shared/audio-model";
 describe("recording settings boundaries", () => {
+   it("merges an autosave at write time without overwriting another queued edit", () => {
+      const before = { ...defaultPreferences, collection: "clips", sound: true };
+      const draft = { ...before, clipSeconds: 74 };
+      const afterExternalWrite = { ...before, sound: false, shareSizeMB: 35 };
+      expect(mergePreferenceChanges(afterExternalWrite, draft, ["clipSeconds"])).toMatchObject({ clipSeconds: 74, sound: false, shareSizeMB: 35 });
+      expect(mergePreferenceChanges(afterExternalWrite, draft, undefined)).toEqual(draft);
+      expect(() => mergePreferenceChanges(afterExternalWrite, draft, ["unrecognized-setting"])).toThrow();
+   });
    it("permits source switches and notification preferences without rebuilding capture", () => {
       expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, sourceId: "window:11:0", sourceKind: "app", sound: false })).toBe(false);
    });
    it("requires restart for audio routing and encoding changes", () => {
-      expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, microphone: true })).toBe(true);
+      expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, microphoneDevice: "another-device" })).toBe(true);
       expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, quality: "high" })).toBe(true);
    });
    it("applies bounded gain and mute changes without clearing recorded history", () => {
       expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, captureVolume: 0.5, microphoneMuted: true })).toBe(false);
       expect(preferencesSchema.safeParse({ ...defaultPreferences, captureVolume: 4.1 }).success).toBe(false);
       expect(preferencesSchema.safeParse({ ...defaultPreferences, microphoneVolume: -1 }).success).toBe(false);
+   });
+   it("unmutes the default microphone during capture without rebuilding its track", () => {
+      const before = preferencesSchema.parse({ ...defaultPreferences, collection: "clips" });
+      const after = synchronizeLegacyAudio(before, {
+         ...before,
+         audioSources: before.audioSources.map((source) => (source.kind === "input" ? { ...source, muted: false } : source)),
+      });
+      expect(after.audioSources[1]).toMatchObject({ enabled: true, muted: false });
+      expect(requiresCaptureRestart(before, after)).toBe(false);
+      expect(requiresCaptureRestart(after, synchronizeLegacyAudio(after, { ...after, microphone: false }))).toBe(false);
    });
    it("requires stopping for custom profile changes and rejects dimensions incompatible with subsampled video", () => {
       expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, customFPS: 120 })).toBe(true);
@@ -31,6 +50,21 @@ describe("recording settings boundaries", () => {
    });
 });
 describe("preference persistence recovery", () => {
+   it("drops the retired refresh shortcut without resetting other preferences", async () => {
+      const root = await mkdtemp(join(tmpdir(), "acroclip-retired-shortcut-"));
+      try {
+         const path = join(root, "preferences.json");
+         await writeFile(
+            path,
+            JSON.stringify({ ...defaultPreferences, collection: root, clipSeconds: 90, shortcuts: { refresh: "Control+R", search: "Control+G" } })
+         );
+         const value = await readPreferences(path, root);
+         expect(value.clipSeconds).toBe(90);
+         expect(value.shortcuts).toEqual({ search: "Control+G" });
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
    it("migrates legacy preset fields to their previous actual profile without changing Custom or audio", async () => {
       const root = await mkdtemp(join(tmpdir(), "acroclip-preset-migration-"));
       const file = join(root, "preferences.json");

@@ -97,6 +97,19 @@ export function Library({
    const initial = state.collectionStatus.phase === "loading" && !state.clips.length;
    const collectionRoot = state.collectionStatus.root || state.preferences.collection;
    const attaCutAvailable = useAttaCutAvailable(visible);
+   useEffect(() => {
+      if (!visible) return;
+      const refresh = () => {
+         if (document.visibilityState === "visible") void api.refresh().catch(() => undefined);
+      };
+      refresh();
+      window.addEventListener("focus", refresh);
+      document.addEventListener("visibilitychange", refresh);
+      return () => {
+         window.removeEventListener("focus", refresh);
+         document.removeEventListener("visibilitychange", refresh);
+      };
+   }, [visible, collectionRoot]);
    const [query, setQuery] = useState("");
    const [filter, setFilter] = useState("all");
    const [order, setOrder] = useState("newest");
@@ -226,7 +239,6 @@ export function Library({
       const command = (event: Event) => {
          const id = (event as CustomEvent<string>).detail;
          if (id === "search") layout.current?.querySelector<HTMLInputElement>('input[aria-label="Search clips"]')?.focus();
-         else if (id === "refresh") void run(() => api.refresh());
          else if (id === "newCategory") setEditingCategory("new");
          else if (id === "openClip" && clips[0]) openClip(clips[0]);
       };
@@ -298,10 +310,6 @@ export function Library({
                      <MenuItem onClick={openSettings}>
                         <Folder size={15} />
                         Choose folder in settings
-                     </MenuItem>
-                     <MenuItem onClick={() => void run(() => api.refresh())}>
-                        <Grid2X2 size={15} />
-                        Refresh collection
                      </MenuItem>
                   </Menu>
                }

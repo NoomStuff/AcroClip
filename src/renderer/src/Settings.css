@@ -140,6 +140,35 @@
    margin-top: 8px;
 }
 
+.quality-advanced > summary {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   cursor: pointer;
+   list-style: none;
+   padding: 10px 0;
+   color: var(--muted);
+   font-size: 13px;
+   border-radius: var(--radius-control);
+}
+
+.quality-advanced > summary::-webkit-details-marker {
+   display: none;
+}
+
+.quality-advanced > summary:hover {
+   color: var(--text);
+}
+
+.quality-advanced > summary:focus-visible {
+   outline: 2px solid var(--accent);
+   outline-offset: 3px;
+}
+
+.quality-advanced[open] > summary svg {
+   transform: rotate(180deg);
+}
+
 .preset-source-note {
    color: var(--muted);
    font-size: 12px;

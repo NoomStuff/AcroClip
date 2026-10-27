@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Recorder } from "./recorder";
 import { defaultPreferences } from "../shared/defaults";
-import type { RecorderState } from "../shared/types";
+import type { ApplicationArtwork, RecorderState } from "../shared/types";
 
 const roots: string[] = [];
 const children: Array<Pick<Recorder, "close">> = [];
@@ -12,7 +12,10 @@ afterEach(async () => {
    for (const child of children.splice(0)) await child.close({ cancel: true });
    for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
-async function fixture(mode: "crash" | "pending" | "normal" | "fatal" | "reject-save" | "unacknowledged-save" | "devices-exit", invalidExecutable = false) {
+async function fixture(
+   mode: "crash" | "pending" | "normal" | "fatal" | "reject-save" | "unacknowledged-save" | "devices-exit" | "candidates-timeout" | "saved-source-mismatch",
+   invalidExecutable = false
+) {
    const root = await mkdtemp(join(tmpdir(), "acroclip-protocol-exit-"));
    roots.push(root);
    const executable = join(root, process.platform === "win32" ? "node.exe" : "node");
@@ -32,13 +35,14 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  if(v.action==='start') {
   active=true; emit({event:'recording'});
   if(mode==='crash') setTimeout(()=>process.exit(17),80);
-  if(mode==='fatal') setTimeout(()=>{emit({event:'fatal',message:'Video driver stopped responding'});setTimeout(()=>process.exit(17),30)},30);
+  if(mode==='fatal') setTimeout(()=>{emit({event:'fatal',message:'Video driver stopped responding'});emit({event:'status',active:true,availableSeconds:10});setTimeout(()=>process.exit(17),30)},30);
  }
  if(v.action==='status') emit({event:'status',active,availableSeconds:active?10:0});
  if(v.action==='stop') {active=false;emit({event:'stopped'});}
  if(v.action==='save' && mode==='pending') setTimeout(()=>process.exit(19),80);
  if(v.action==='save' && mode==='reject-save') {emit({event:'error',id:v.id,message:'Save was not accepted'});return;}
  if(v.action==='save' && mode==='unacknowledged-save') return;
+ if(v.action==='save' && mode==='saved-source-mismatch') emit({event:'saved',requestId:v.requestId,path:v.path,source:'Previous game',sourceId:'window:previous:0'});
  if(v.action==='audio-devices' && mode==='devices-exit') process.exit(0);
  if(v.action==='exit') process.exit(0);
  if(v.id) emit({event:'response',id:v.id});
@@ -46,13 +50,16 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
    );
    const states: RecorderState[] = [];
    const errors: string[] = [];
+   const saved: Array<{ source: string; application?: ApplicationArtwork }> = [];
    const Constructor = Recorder;
    const child = new Constructor({
       nativePath: executable,
       gameCatalogPath: join(root, "catalog.json"),
       onState: (state) => states.push(state),
       onError: (message) => errors.push(message),
-      onSaved: () => undefined,
+      onSaved: (_path, source, _requestId, capture) => {
+         saved.push({ source, ...(capture.application ? { application: capture.application } : {}) });
+      },
    });
    // The fixture speaks only the helper protocol. It never simulates a valid media file.
    children.push(child);
@@ -61,12 +68,38 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
          { id: "screen:0:0", kind: "screen", name: "Isolated fixture", thumbnail: "" },
       ]);
    if (!invalidExecutable) await start();
-   return { child, states, errors, root, executable, start };
+   return { child, states, errors, saved, root, executable, start };
 }
 
 // Real process startup can exceed five seconds on Windows, especially with two fixtures.
 const helperTestTimeout = process.platform === "win32" ? 15000 : 5000;
 describe("recorder helper termination", () => {
+   it(
+      "does not label earlier footage with a newly selected application's artwork",
+      async () => {
+         const { child, root, saved } = await fixture("saved-source-mismatch");
+         await child.save(join(root, "earlier.mkv"), Date.now(), { id: "new-application", icon: "new-icon" });
+         await expect.poll(() => saved).toEqual([{ source: "Previous game" }]);
+      },
+      helperTestTimeout
+   );
+   it(
+      "distinguishes an application detection timeout from an empty list without interrupting capture",
+      async () => {
+         const { child, errors } = await fixture("candidates-timeout");
+         vi.useFakeTimers();
+         try {
+            const query = expect(child.applicationCandidates()).rejects.toThrow("Application detection timed out");
+            await vi.advanceTimersByTimeAsync(3001);
+            await query;
+            expect(child.status.state).toBe("recording");
+            expect(errors).toEqual([]);
+         } finally {
+            vi.useRealTimers();
+         }
+      },
+      helperTestTimeout
+   );
    it(
       "keeps a save pending when its acknowledgement times out because acceptance is uncertain",
       async () => {
@@ -88,9 +121,11 @@ describe("recorder helper termination", () => {
    it(
       "releases a rejected save so shutdown does not wait for footage the helper never accepted",
       async () => {
-         const { child, root } = await fixture("reject-save");
+         const { child, root, errors } = await fixture("reject-save");
          await expect(child.save(join(root, "rejected.mkv"))).rejects.toThrow("Save was not accepted");
          expect(child.status.pendingSaves).toBe(0);
+         expect(child.status.state).toBe("recording");
+         expect(errors).toEqual([]);
          await child.close();
          expect(child.status.state).toBe("stopped");
       },
@@ -154,10 +189,12 @@ describe("recorder helper termination", () => {
    it(
       "retains a more useful native fatal reason after the helper exits",
       async () => {
-         const { child, errors } = await fixture("fatal");
+         const { child, errors, states } = await fixture("fatal");
          await expect.poll(() => child.status.availableSeconds === 0 && child.status.startedAt === null).toBe(true);
          expect(child.status).toMatchObject({ state: "error", message: "Video driver stopped responding" });
          expect(errors).toEqual(["Video driver stopped responding"]);
+         const failed = states.findIndex((state) => state.state === "error");
+         expect(states.slice(failed).every((state) => state.state === "error")).toBe(true);
       },
       helperTestTimeout
    );

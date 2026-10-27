@@ -21,6 +21,18 @@ const state: AppState = {
    platform: "win32",
 };
 describe("persistent recording feedback", () => {
+   it("keeps recording and available history visible when an audio device fails", () => {
+      const html = renderToStaticMarkup(
+         createElement(RecordingStatus, {
+            state: { ...state, recorder: { ...state.recorder, state: "recording", availableSeconds: 42, audioWarning: "Microphone: device disconnected" } },
+            elapsed: 100,
+         })
+      );
+      expect(html).toContain("status-dot recording");
+      expect(html).toContain("42s available");
+      expect(html).toContain("Microphone: device disconnected");
+      expect(html).not.toContain("has-error");
+   });
    it("shows the actual waiting reason instead of claiming audio is recording", () => {
       for (const message of ["Microphone: selected device is unavailable", ""]) {
          const status = renderToStaticMarkup(

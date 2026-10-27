@@ -258,6 +258,43 @@
    flex: 0 0 auto;
 }
 
+.source-loading {
+   animation: delayed-placeholder 200ms 150ms both;
+}
+
+.source-row.source-skeleton {
+   pointer-events: none;
+}
+
+.source-skeleton-icon,
+.source-skeleton-name {
+   display: block;
+   background: var(--raised);
+   border-radius: 4px;
+}
+
+.source-skeleton-icon {
+   width: 18px;
+   height: 18px;
+   flex-shrink: 0;
+}
+
+.source-skeleton-name {
+   height: 12px;
+   width: 64%;
+}
+
+.source-skeleton:nth-child(2) .source-skeleton-name {
+   width: 46%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+   .source-loading {
+      animation: none;
+      opacity: 0.35;
+   }
+}
+
 .source-row {
    width: 100%;
    display: flex;

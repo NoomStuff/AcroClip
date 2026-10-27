@@ -7,6 +7,15 @@ import { audioTopology, migrateAudioSources } from "../shared/audio-model";
 import type { AdditionalAudioSource } from "../shared/types";
 import { applyRecordingPreset } from "../shared/recording-presets";
 import { preferencesSchema } from "../shared/validation";
+import { z } from "zod";
+export function mergePreferenceChanges(current: Preferences, value: unknown, changedKeys: unknown): Preferences {
+   const incoming = preferencesSchema.parse(value);
+   if (changedKeys === undefined) return incoming;
+   const keys = z.array(preferencesSchema.keyof()).max(100).parse(changedKeys);
+   const merged = { ...current };
+   for (const key of keys) Object.assign(merged, { [key]: incoming[key] });
+   return preferencesSchema.parse(merged);
+}
 export async function readPreferences(path: string, collection: string): Promise<Preferences> {
    for (const candidate of [path, `${path}.bak`]) {
       try {
@@ -75,7 +84,6 @@ export function requiresCaptureRestart(a: Preferences, b: Preferences): boolean 
       a.customFPS !== b.customFPS ||
       a.customCQ !== b.customCQ ||
       a.allowSoftwareEncoder !== b.allowSoftwareEncoder ||
-      a.microphone !== b.microphone ||
       a.microphoneDevice !== b.microphoneDevice ||
       a.captureAudio !== b.captureAudio ||
       a.avoidOverlap !== b.avoidOverlap ||
