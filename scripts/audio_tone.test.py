@@ -39,6 +39,26 @@ class ToneTests(unittest.TestCase):
         samples[:12000] = [0.0] * 12000
         self.assertAlmostEqual(tone_peak(samples, 48000, 997)["amplitude"], 0.21, delta=0.001)
 
+    def test_phase_changes_do_not_cancel_a_continuous_tone(self):
+        samples = self.signal([(997, 0.28, 0)])
+        samples[24000:] = [-value for value in samples[24000:]]
+        self.assertGreater(tone_peak(samples, 48000, 997)["amplitude"] / 0.28, 0.8)
+        self.assertLess(tone_peak(samples, 48000, 997)["amplitude"] / 0.28, 1.2)
+
+    def test_phase_changes_still_expose_gain_errors_and_leaked_audio(self):
+        samples = self.signal([(997, 0.14, 0), (1613, 0.07, 1)])
+        samples[24000:] = [-value for value in samples[24000:]]
+        selected = tone_peak(samples, 48000, 997)["amplitude"]
+        leaked = tone_peak(samples, 48000, 1613)["amplitude"]
+        self.assertLess(selected / 0.28, 0.8)
+        self.assertGreater(leaked, selected / 8)
+
+    def test_silent_blocks_and_partial_final_block_remain_in_measurement(self):
+        samples = self.signal([(997, 0.28, 0)])[:45599]
+        samples[:24000] = [0.0] * 24000
+        self.assertAlmostEqual(tone_peak(samples, 48000, 997)["amplitude"],
+                               0.28 * (len(samples) - 24000) / len(samples), delta=0.002)
+
 
 if __name__ == "__main__":
     unittest.main()
