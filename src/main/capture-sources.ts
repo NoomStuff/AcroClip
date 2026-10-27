@@ -143,7 +143,11 @@ export class CaptureSources {
    private hydrateIcons(candidates: GameCandidate[]): void {
       const pending = candidates.filter(
          (candidate) =>
-            candidate.executable && this.cached.some((source) => source.id === candidate.id && source.processId === candidate.pid && !source.appIcon)
+            candidate.executable &&
+            this.cached.some(
+               (source) =>
+                  source.kind === "app" && source.id.split(":")[1] === candidate.id.split(":")[1] && source.processId === candidate.pid && !source.appIcon
+            )
       );
       void Promise.all(
          pending.map(async (candidate) => {

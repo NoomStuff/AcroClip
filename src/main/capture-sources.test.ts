@@ -85,6 +85,15 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       expect(changed).toHaveBeenCalledTimes(1);
    });
 
+   it("hydrates an Electron-owned window without replacing Electron's capture identity", async () => {
+      electron.getSources.mockResolvedValueOnce([{ id: "window:42:1", name: "Application", display_id: "", thumbnail: { toDataURL: () => "" } }]);
+      const sources = new CaptureSources(recorder(), () => "999");
+      const list = await sources.list();
+      expect(list[0]).toMatchObject({ id: "window:42:1", processId: 88 });
+      await expect.poll(() => sources.cached[0]?.appIcon).toBe("data:image/png;base64,icon");
+      expect(sources.cached[0]?.id).toBe("window:42:1");
+   });
+
    it("fetches thumbnails only for an explicit image request, including immediately after a metadata query", async () => {
       const sources = new CaptureSources(recorder(), () => "999");
       await sources.list();

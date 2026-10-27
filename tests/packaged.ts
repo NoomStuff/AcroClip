@@ -142,7 +142,9 @@ try {
    if (linux) {
       const frame = await promisify(execFile)(
          ffmpeg,
-         ["-v", "error", "-ss", "1", "-i", clip.path, "-frames:v", "1", "-c:v", "png", "-threads", "1", "-f", "image2pipe", "-"],
+         // Initial footage includes the app before minimization. Inspect the
+         // recent desktop fixture instead of asserting on that earlier moment.
+         ["-v", "error", "-sseof", "-1", "-i", clip.path, "-frames:v", "1", "-c:v", "png", "-threads", "1", "-f", "image2pipe", "-"],
          { encoding: "buffer", maxBuffer: 4 * 1024 * 1024 }
       );
       const pixels = await sharp(frame.stdout).greyscale().raw().toBuffer();
