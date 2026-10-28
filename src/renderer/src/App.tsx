@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, Check, Clapperboard, Film, Folder, LoaderCircle, Minus, Settings2, Square, Video, X } from "lucide-react";
+import { AlertCircle, Check, Clapperboard, Film, Folder, Minus, Settings2, Square, Video, X } from "lucide-react";
+import { AppLogo } from "./AppLogo";
 import type { AppState, Clip, RecorderState } from "../../shared/types";
 import { SelectionIndicator, TabMarker } from "./SelectionIndicator";
 import { api, describeError } from "./desktop";
@@ -126,7 +127,14 @@ export function App() {
                bindingFor(state.preferences, item.id) &&
                normalizeBinding(bindingFor(state.preferences, item.id), mac) === pressed
          );
-         if (!action || (target?.closest("button") && !event.ctrlKey && !event.metaKey && !event.altKey)) return;
+         if (
+            !action ||
+            (target?.closest('button,a[href],[role="button"],[role="menuitem"],[role="menuitemradio"],[role="option"]') &&
+               !event.ctrlKey &&
+               !event.metaKey &&
+               !event.altKey)
+         )
+            return;
          event.preventDefault();
          if (["recording", "library", "viewer", "settings"].includes(action.id)) setPage(action.id as Page);
          else window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: action.id }));
@@ -147,17 +155,17 @@ export function App() {
    const pages = [
       { id: "recording", title: "Recording", icon: Video },
       { id: "library", title: "Library", icon: Folder },
-      { id: "viewer", title: "Clip viewer", icon: Film },
+      { id: "viewer", title: "Player", icon: Film },
    ] as const;
    return (
       <div className="app-shell">
          <header className="titlebar">
             <div className="wordmark">
-               <Clapperboard size={17} />
+               <Clapperboard size={17} aria-hidden="true" />
                <span>AcroClip</span>
             </div>
             <span className="window-page">
-               {page === "viewer" ? "Clip viewer" : page[0]?.toUpperCase()}
+               {page === "viewer" ? "Player" : page[0]?.toUpperCase()}
                {page === "viewer" ? "" : page.slice(1)}
             </span>
             <div className="titlebar-drag" />
@@ -184,7 +192,7 @@ export function App() {
                </div>
             )}
          </header>
-         <nav className="moving-selection rail" aria-label="Main navigation" inert={!!state && !state.preferences.setupComplete}>
+         <nav className="moving-selection rail" aria-label="Main navigation" inert={!state || !state.preferences.setupComplete}>
             <SelectionIndicator value={page} />
             <div className="rail-main">
                {pages.map((item) => (
@@ -240,16 +248,25 @@ export function App() {
                      />
                   </section>
                   <section className="page" hidden={page !== "viewer"}>
-                     <Viewer state={state} clip={clip} visible={page === "viewer" && windowVisible} run={run} openLibrary={() => setPage("library")} />
+                     <Viewer
+                        ask={ask}
+                        state={state}
+                        clip={clip}
+                        visible={page === "viewer" && windowVisible}
+                        run={run}
+                        openLibrary={() => setPage("library")}
+                     />
                   </section>
                   <section className="page" hidden={page !== "settings"}>
                      <Settings state={state} run={run} target={settingsTarget} />
                   </section>
                </>
             ) : (
-               <div className="loading-app">
-                  <LoaderCircle size={30} className="spin" />
-                  <p>Opening your collection…</p>
+               <div className="loading-app" role="status" aria-label="Opening AcroClip">
+                  <div className="startup-brand">
+                     <AppLogo size={64} />
+                     <p>Loading...</p>
+                  </div>
                </div>
             )}
          </main>

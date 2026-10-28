@@ -62,8 +62,12 @@ export function AdditionalAudio({
          cancelled = true;
       };
    }, [open, kind, visible, active, editing, existing?.deviceId, existing?.kind, existing?.sourceId]);
-   const update = (id: string, patch: Partial<AdditionalAudioSource>) =>
-      save((current) => ({ audioSources: current.audioSources.map((source) => (source.id === id ? { ...source, ...patch } : source)) }));
+   const update = (id: string, patch: Partial<AdditionalAudioSource> | ((source: AdditionalAudioSource) => Partial<AdditionalAudioSource>)) =>
+      save((current) => ({
+         audioSources: current.audioSources.map((source) =>
+            source.id === id ? { ...source, ...(typeof patch === "function" ? patch(source) : patch) } : source
+         ),
+      }));
    const submit = async () => {
       const app = kind === "application" ? candidates.find((item) => item.id === selected) : undefined,
          device = kind === "input" || kind === "output" ? devices.find((item) => item.id === selected) : undefined;
@@ -117,8 +121,8 @@ export function AdditionalAudio({
                level={levels[source.id] ?? 0}
                active={active}
                onEnable={(enabled) => update(source.id, { enabled, muted: false })}
-               onMute={() => update(source.id, { muted: !source.muted })}
-               onVolume={(volume) => update(source.id, { volume })}
+               onMute={() => update(source.id, (current) => ({ muted: !current.muted && current.volume > 0, volume: current.volume > 0 ? current.volume : 1 }))}
+               onVolume={(volume, restore) => update(source.id, { volume: volume === 0 ? (restore > 0 ? restore : 1) : volume, muted: volume === 0 })}
                options={
                   <>
                      <MenuItem disabled={active} onClick={() => show(source)}>

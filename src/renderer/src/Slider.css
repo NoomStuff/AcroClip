@@ -124,13 +124,14 @@
    height: 16px;
    background: #9d97a6;
 }
-.slider-input:is(:hover, :focus-visible):not(:disabled) + .slider-track .slider-thumb {
+.slider-input:hover:not(:disabled) + .slider-track .slider-thumb,
+:root[data-keyboard] .slider-input:focus-visible:not(:disabled) + .slider-track .slider-thumb {
    background: #cfbaff;
 }
 .slider-input:active:not(:disabled) + .slider-track .slider-thumb {
    background: #dfd0ff;
 }
-.slider-input:focus-visible + .slider-track {
+:root[data-keyboard] .slider-input:focus-visible + .slider-track {
    outline: 2px solid var(--accent);
    outline-offset: 4px;
 }
@@ -152,7 +153,8 @@
    box-shadow: none;
 }
 
-.slider-input:is(:hover, :focus-visible):not(:disabled) + .slider-track .slider-fill {
+.slider-input:hover:not(:disabled) + .slider-track .slider-fill,
+:root[data-keyboard] .slider-input:focus-visible:not(:disabled) + .slider-track .slider-fill {
    background: var(--accent);
 }
 

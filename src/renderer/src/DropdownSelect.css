@@ -1,10 +1,10 @@
-/* Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut; licenses/AttaCut-MIT.txt. */
+/* Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut; THIRD_PARTY_NOTICES.md. */
 .custom-select {
    position: relative;
    min-width: 0;
    width: 100%;
 }
-.select-trigger {
+.select-trigger:not(.icon-button) {
    width: 100%;
    min-height: var(--control-height);
    display: flex;
@@ -23,11 +23,11 @@
       border-color 150ms var(--ease),
       transform 160ms var(--spring);
 }
-.select-trigger:active:not(:disabled) {
+.select-trigger:not(.icon-button):active:not(:disabled) {
    transform: translateY(1px);
 }
-.select-trigger:hover:not(:disabled),
-.select-trigger[aria-expanded="true"] {
+.select-trigger:not(.icon-button):hover:not(:disabled),
+.select-trigger:not(.icon-button)[aria-expanded="true"] {
    background: var(--hover);
    border-color: var(--border-hover);
 }
@@ -72,7 +72,7 @@
    overflow-wrap: anywhere;
 }
 .select-menu button:hover:not(:disabled),
-.select-menu button:focus-visible {
+:root[data-keyboard] .select-menu button:focus-visible {
    background: var(--hover);
    outline: none;
 }

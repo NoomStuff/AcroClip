@@ -239,15 +239,16 @@ export interface DesktopAPI {
    createShareable(clipId: string, targetMB?: number): Promise<void>;
    cancelJob(id: string): Promise<void>;
    renameClip(id: string, name: string): Promise<void>;
-   deleteClip(id: string, shareableId?: string): Promise<void>;
+   deleteClip(id: string, shareableId?: string, scope?: "shareables"): Promise<void>;
    category(
       action: "create" | "update" | "delete" | "assign",
       value: { id?: string; name?: string; color?: string; icon?: string; clipId?: string; categoryIds?: string[] }
    ): Promise<void>;
    reveal(path: string): Promise<void>;
    openInAttaCut(id: string): Promise<void>;
+   attaCutAvailable(): Promise<boolean>;
    dragFile(path: string): void;
-   playback(path: string, track?: number): Promise<string>;
+   playback(path: string, track?: number | number[]): Promise<string>;
    refresh(): Promise<void>;
    checkUpdate(): Promise<void>;
    downloadUpdate(): Promise<void>;

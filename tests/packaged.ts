@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { createServer } from "node:net";
 import sharp from "sharp";
 import { defaultPreferences } from "../src/shared/defaults";
+import { packagedShareSource } from "./packaged-share-source";
 import { closeTestApplication } from "../scripts/close-test-application";
 
 // This captures the selected screen. Windows uses the real desktop. The Linux
@@ -165,16 +166,19 @@ try {
          assert(level && Number(level) > -40 && Number(level) < -15, "The private tone must exist in both master and isolated capture audio");
       }
    }
-   await page.evaluate((id) => window.acroClip.createShareable(id, 1), clip.id);
+   const shareSource = await packagedShareSource(page, ffmpeg, clip);
+   const shareSourceHash = hash(await readFile(shareSource.path));
+   await page.evaluate((id) => window.acroClip.createShareable(id, 1), shareSource.id);
    await expect
-      .poll(() => page.evaluate(async (id) => (await window.acroClip.state()).clips.find((item) => item.id === id)?.shareables.length, clip.id), {
+      .poll(() => page.evaluate(async (id) => (await window.acroClip.state()).clips.find((item) => item.id === id)?.shareables.length, shareSource.id), {
          timeout: 120000,
       })
       .toBe(1);
    const updated = await page.evaluate(() => window.acroClip.state());
-   const shareable = updated.clips.find((item) => item.id === clip.id)!.shareables[0]!;
+   const shareable = updated.clips.find((item) => item.id === shareSource.id)!.shareables[0]!;
    assert((await stat(shareable.path)).size <= 1_000_000);
    assert.equal(hash(await readFile(clip.path)), originalHash);
+   assert.equal(hash(await readFile(shareSource.path)), shareSourceHash);
    await promisify(execFile)(ffmpeg, ["-v", "error", "-i", shareable.path, "-f", "null", "-"], { windowsHide: true });
    const url = await page.evaluate((file) => window.acroClip.playback(file), clip.path);
    await page.evaluate(async (url) => {

@@ -157,9 +157,7 @@ export async function verifyLinuxRelease(project: string, stage: string, sourceA
       (file) =>
          file.startsWith("src/") ||
          file.startsWith("build/") ||
-         ["package.json", "bun.lock", "electron.vite.config.ts", "tsconfig.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "licenses/AttaCut-MIT.txt"].includes(
-            file
-         )
+         ["package.json", "bun.lock", "electron.vite.config.ts", "tsconfig.json", "LICENSE", "THIRD_PARTY_NOTICES.md"].includes(file)
    )) {
       const bytes = execFileSync("tar", ["-xOf", packetPath(sourceFolder, kit.applicationSource.path), `acroclip/${relative}`], {
          maxBuffer: 32 * 1024 * 1024,

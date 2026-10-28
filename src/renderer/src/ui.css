@@ -83,6 +83,12 @@
    width: 100%;
 }
 
+.button > svg,
+.icon-button > svg,
+.menu button > svg {
+   flex-shrink: 0;
+}
+
 .icon-button {
    width: 30px;
    height: 30px;
@@ -207,7 +213,7 @@
    min-height: 0;
 }
 
-.toggle-row input:focus-visible + .switch {
+:root[data-keyboard] .toggle-row input:focus-visible + .switch {
    outline: 2px solid var(--accent);
    outline-offset: 3px;
 }
@@ -411,8 +417,10 @@
    position: fixed;
    z-index: 100;
    right: auto;
-   max-height: calc(100vh - 16px);
+   max-height: calc(100dvh - 16px);
+   max-width: calc(100vw - 16px);
    overflow-y: auto;
+   overscroll-behavior: contain;
 }
 
 .menu button {
@@ -429,7 +437,7 @@
 }
 
 .menu button:hover:not(:disabled),
-.menu button:focus-visible {
+:root[data-keyboard] .menu button:focus-visible {
    background: #ffffff09;
 }
 
@@ -439,8 +447,8 @@
 
 .menu-separator {
    height: 1px;
-   background: #ffffff0a;
-   margin: 4px 5px;
+   background: var(--border-control);
+   margin: 6px 5px;
 }
 
 .modal-backdrop {
@@ -461,6 +469,9 @@
    border-radius: var(--radius-panel);
    padding: 28px;
    position: relative;
+   max-height: calc(100dvh - 64px);
+   overflow-y: auto;
+   overscroll-behavior: contain;
    box-shadow: 0 20px 80px #0008;
 }
 

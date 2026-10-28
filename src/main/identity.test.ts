@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { isPackagedApp } from "./identity";
+import { isPackagedApp, windowsAppId } from "./identity";
 vi.mock("electron", () => ({ app: { isPackaged: true } }));
 const original = Object.getOwnPropertyDescriptor(process, "defaultApp");
 afterEach(() => {
@@ -9,8 +9,10 @@ afterEach(() => {
 it("keeps branded default_app launches in development mode", () => {
    Object.defineProperty(process, "defaultApp", { configurable: true, value: true });
    expect(isPackagedApp()).toBe(false);
+   expect(windowsAppId()).toBe("dev.acroclip.app.development");
 });
 it("recognizes a packaged branded runtime", () => {
    Reflect.deleteProperty(process, "defaultApp");
    expect(isPackagedApp()).toBe(true);
+   expect(windowsAppId()).toBe("dev.acroclip.app");
 });

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 NoomStuff
 // SPDX-License-Identifier: MIT
-// Adapted from AttaCut's DropdownSelect. See licenses/AttaCut-MIT.txt.
+// Adapted from AttaCut's DropdownSelect. See THIRD_PARTY_NOTICES.md.
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -20,18 +20,21 @@ export function DropdownSelect({
    className = "",
    triggerContent,
    placement,
+   menuWidth,
    iconOnly = false,
+   multiple,
+   required = false,
 }: {
    label: string;
    options: DropdownOption[];
-   value: string;
-   onChange: (value: string) => void;
    disabled?: boolean;
    className?: string;
    triggerContent?: ReactNode;
    placement?: "up";
+   menuWidth?: number;
    iconOnly?: boolean;
-}) {
+   required?: boolean;
+} & ({ multiple?: false; value: string; onChange: (value: string) => void } | { multiple: true; value: string[]; onChange: (value: string[]) => void })) {
    const [open, setOpen] = useState(false);
    const [position, setPosition] = useState<CSSProperties>({});
    const root = useRef<HTMLDivElement>(null);
@@ -39,7 +42,8 @@ export function DropdownSelect({
    const trigger = useRef<HTMLButtonElement>(null);
    const listId = useId();
    const search = useRef({ text: "", time: 0 });
-   const selected = options.find((option) => option.value === value);
+   const values = Array.isArray(value) ? value : [value];
+   const selected = options.find((option) => values.includes(option.value));
    const available = options.some((option) => !option.disabled);
    const shown = open && !disabled && available;
    useEffect(() => {
@@ -88,7 +92,7 @@ export function DropdownSelect({
          const height = Math.min(popup.scrollHeight, 280);
          const up = (placement === "up" && above >= height) || (below < height && above > below);
          const maxHeight = Math.max(40, Math.min(280, up ? above : below));
-         const width = Math.min(Math.max(anchor.width, 220), window.innerWidth - 24);
+         const width = Math.min(menuWidth ?? Math.max(anchor.width, 220), window.innerWidth - 24);
          setPosition({
             width,
             maxHeight,
@@ -119,6 +123,7 @@ export function DropdownSelect({
       window.addEventListener("scroll", place, true);
       const observer = new ResizeObserver(place);
       if (trigger.current) observer.observe(trigger.current);
+      if (menu.current) observer.observe(menu.current);
       return () => {
          window.removeEventListener("pointerdown", outside);
          window.removeEventListener("keydown", escape, true);
@@ -126,21 +131,21 @@ export function DropdownSelect({
          window.removeEventListener("scroll", place, true);
          observer.disconnect();
       };
-   }, [placement, shown]);
+   }, [placement, menuWidth, shown]);
    return (
       <div className={`custom-select ${className}`} ref={root}>
          <button
             ref={trigger}
             type="button"
             role="combobox"
-            className={`select-trigger ${iconOnly ? "button icon-only" : ""}`}
+            className={`select-trigger ${iconOnly ? "icon-button" : ""}`}
             aria-label={label}
             title={label}
             aria-controls={shown ? listId : undefined}
             aria-haspopup="listbox"
             aria-expanded={shown}
             disabled={disabled || !available}
-            data-value={value}
+            data-value={values.join(",")}
             onClick={() => setOpen((current) => !current)}
             onKeyDown={(event) => {
                if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
@@ -159,6 +164,7 @@ export function DropdownSelect({
                   id={listId}
                   role="listbox"
                   aria-label={label}
+                  aria-multiselectable={multiple || undefined}
                   className={`select-menu ${className ? `${className}-menu` : ""}`}
                   style={position}
                   onKeyDown={navigate}
@@ -168,18 +174,23 @@ export function DropdownSelect({
                         type="button"
                         key={option.value}
                         role="option"
-                        aria-selected={option.value === value}
+                        aria-selected={values.includes(option.value)}
                         disabled={option.disabled}
                         data-value={option.value}
                         tabIndex={-1}
                         onClick={() => {
-                           onChange(option.value);
-                           close();
+                           if (multiple) {
+                              const next = value.includes(option.value) ? value.filter((entry) => entry !== option.value) : [...value, option.value];
+                              if (!required || next.length) onChange(next);
+                           } else {
+                              onChange(option.value);
+                              close();
+                           }
                         }}
                      >
                         <span>{option.label}</span>
                         <span className="select-check" aria-hidden="true">
-                           {option.value === value && <Check size={14} />}
+                           {values.includes(option.value) && <Check size={14} />}
                         </span>
                      </button>
                   ))}

@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="build/icon.png"
+    <img src="build/icon.svg"
         title="AcroClip" alt="AcroClip logo" width="120" />
     <h1>AcroClip</h1>
     <p>

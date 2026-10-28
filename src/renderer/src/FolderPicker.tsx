@@ -1,5 +1,5 @@
 import type { Ref } from "react";
-import { ExternalLink, Folder } from "lucide-react";
+import { FolderOpen, Folder } from "lucide-react";
 import { Button, IconButton } from "./ui";
 
 export function FolderPicker({
@@ -31,7 +31,7 @@ export function FolderPicker({
          <Button onClick={onChoose}>Choose folder</Button>
          {onReveal && (
             <IconButton label="Open collection folder" disabled={revealDisabled} onClick={onReveal}>
-               <ExternalLink size={17} />
+               <FolderOpen size={17} />
             </IconButton>
          )}
       </div>

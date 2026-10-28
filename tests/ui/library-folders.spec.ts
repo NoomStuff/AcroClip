@@ -51,6 +51,30 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       const page = await app.firstWindow();
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.locator(".clip-card")).toHaveCount(3);
+      await expect(page.locator(".application-filter")).toHaveCount(0);
+      await expect(page.locator(".sidebar-group-title").filter({ hasText: "Applications" })).toHaveCount(0);
+      // Read one animation frame, rather than comparing rectangles sampled at
+      // different positions during the directional page transition.
+      await expect
+         .poll(() =>
+            page.locator(".library-sidebar").evaluate((sidebar) => {
+               const rect = (selector: string) => {
+                  const element = sidebar.querySelector(selector);
+                  if (!element) throw new Error(`Missing sidebar control: ${selector}`);
+                  return element.getBoundingClientRect();
+               };
+               const action = rect(".collection-home .header-actions button");
+               const title = rect(".collection-home .context-header-title");
+               const category = rect(".sidebar-group-title button");
+               const count = rect(".sidebar-scroll > .sidebar-item > .count");
+               return Math.max(
+                  Math.abs(action.y + action.height / 2 - title.y - title.height / 2),
+                  Math.abs(action.x + action.width / 2 - category.x - category.width / 2),
+                  Math.abs(action.x + action.width / 2 - count.x - count.width / 2)
+               );
+            })
+         )
+         .toBeLessThan(1);
       await page.locator(".collection-home button").first().click();
       await expect(page.getByRole("button", { name: "Open folder Games", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Open Root moment", exact: true })).toBeVisible();

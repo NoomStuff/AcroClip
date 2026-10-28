@@ -122,7 +122,6 @@ export async function verifyPackagedResources(project: string, unpacked: string,
    compareFiles([ffmpeg], [await fileRecord(path.join(unpacked, "ffmpeg.dll"), ffmpeg.path)], "Packaged Electron FFmpeg");
    for (const [source, target] of [
       ["LICENSE", "LICENSE"],
-      ["licenses/AttaCut-MIT.txt", "LICENSE-AttaCut"],
       ["THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"],
       ["build/icon.png", "icons/icon.png"],
    ]) {

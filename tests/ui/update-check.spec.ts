@@ -41,7 +41,7 @@ test("development checks fetch release metadata and offer only a release link", 
          };
       });
       await page.getByRole("button", { name: "Settings", exact: true }).click();
-      await page.getByRole("button", { name: "App & updates", exact: true }).click();
+      await page.getByRole("button", { name: "App & Updates", exact: true }).click();
       await page.getByRole("button", { name: "Check for updates", exact: true }).click();
       await expect(page.locator(".update-message")).toHaveText("An update is available");
       await expect(page.getByRole("button", { name: "Apply and restart", exact: true })).toHaveCount(0);

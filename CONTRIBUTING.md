@@ -65,4 +65,4 @@ Installers stay unpublished until the kit checks pass and the correspondence has
 
 ## License
 
-AcroClip is released under the [GPL-3.0-or-later license](LICENSE). Contributions are released under the same license. Code reused from AttaCut keeps its [MIT notice](licenses/AttaCut-MIT.txt). Run `bun run build:notices` to regenerate [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) after dependency changes.
+AcroClip is released under the [GPL-3.0-or-later license](LICENSE). Contributions are released under the same license. Code reused from AttaCut keeps its [MIT notice](THIRD_PARTY_NOTICES.md). Run `bun run build:notices` to regenerate bundled JavaScript dependency notices after dependency changes.

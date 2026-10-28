@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AlertCircle, Bell, Check, Download, Folder, Gamepad2, Keyboard, LoaderCircle, RefreshCw, Settings2, Share2, Video } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AlertCircle, Bell, Check, Download, Folder, FolderOpen, Gamepad2, Keyboard, LoaderCircle, RefreshCw, Settings2, Share2, Video } from "lucide-react";
 import type { AppState, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
 import { previewFilename, validFilenameTemplate } from "../../shared/filename";
@@ -13,18 +13,28 @@ import { ShortcutInput } from "./ShortcutInput";
 import { GameManagement } from "./GameManagement";
 import { PaneDivider, usePaneSize } from "./layout";
 import { FolderPicker } from "./FolderPicker";
+import { timeAgo } from "./format";
+import { AppLogo } from "./AppLogo";
 
 const sections = [
    { id: "recording", label: "Recording", icon: Video },
-   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
-   { id: "games", label: "Games", icon: Gamepad2 },
    { id: "collection", label: "Collection", icon: Folder },
    { id: "sharing", label: "Sharing", icon: Share2 },
+   { id: "games", label: "Games", icon: Gamepad2 },
    { id: "notifications", label: "Notifications", icon: Bell },
-   { id: "general", label: "App & updates", icon: Settings2 },
+   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
+   { id: "general", label: "App & Updates", icon: Settings2 },
 ] as const;
 type Section = (typeof sections)[number]["id"];
 const filenamePatterns = { "source-date": "{source} {date}T{time}", "date-source": "{date}T{time} {source}" } as const;
+function LastChecked({ timestamp }: { timestamp: number }) {
+   const [now, setNow] = useState(Date.now);
+   useEffect(() => {
+      const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+      return () => window.clearInterval(timer);
+   }, []);
+   return <>Last checked {timeAgo(timestamp, now)}</>;
+}
 function FilenameEditor({
    value,
    preset,
@@ -91,8 +101,39 @@ export interface SettingsTarget {
 }
 export function Settings({ state, run, target }: { state: AppState; run: Run; target: SettingsTarget | null }) {
    const layout = useRef<HTMLDivElement>(null);
+   const content = useRef<HTMLDivElement>(null);
    const sidebar = usePaneSize(layout, { key: "settings.sidebar", initial: 245, min: 210, max: 380, reserve: 520, axis: "x" });
-   const [section, setSection] = useState<Section>("recording");
+   const [{ section, direction }, setNavigation] = useState<{ section: Section; direction: "up" | "down" | null }>({ section: "recording", direction: null });
+   const setSection = useCallback((next: Section) => {
+      setNavigation((current) =>
+         current.section === next
+            ? current
+            : {
+                 section: next,
+                 direction: sections.findIndex((item) => item.id === next) < sections.findIndex((item) => item.id === current.section) ? "up" : "down",
+              }
+      );
+   }, []);
+   useLayoutEffect(() => {
+      const node = content.current;
+      const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+      if (!node || !direction || reducedMotion.matches) return;
+      const animation = node.animate(
+         [
+            { opacity: 0, transform: `translateY(${direction === "up" ? -16 : 16}px)` },
+            { opacity: 1, transform: "translateY(0)" },
+         ],
+         { duration: 280, easing: getComputedStyle(node).getPropertyValue("--ease").trim() }
+      );
+      const reduce = () => {
+         if (reducedMotion.matches) animation.cancel();
+      };
+      reducedMotion.addEventListener("change", reduce);
+      return () => {
+         animation.cancel();
+         reducedMotion.removeEventListener("change", reduce);
+      };
+   }, [section, direction]);
    const { draft, write, status, error: saveError, retry } = useSettingsAutosave(state.preferences);
    const recording = ["recording", "waiting", "starting"].includes(state.recorder.state);
    const captureSettings = section === "recording";
@@ -106,7 +147,7 @@ export function Settings({ state, run, target }: { state: AppState; run: Run; ta
    const [collectionHighlighted, setCollectionHighlighted] = useState(false);
    useLayoutEffect(() => {
       if (target && target.request !== handledNavigationRequest.current) setSection(target.section);
-   }, [target]);
+   }, [target, setSection]);
    useLayoutEffect(() => {
       if (!target || section !== target.section || target.request === handledNavigationRequest.current) return;
       const element = target.section === "collection" ? collectionFolder.current : gameSearch.current;
@@ -177,7 +218,7 @@ export function Settings({ state, run, target }: { state: AppState; run: Run; ta
             </div>
          </aside>
          <PaneDivider label="Settings sidebar width" pane={sidebar} />
-         <div className="settings-main">
+         <div className="settings-main" key={section} ref={content}>
             <header className="settings-heading">
                <h1>{title}</h1>
             </header>
@@ -223,7 +264,7 @@ export function Settings({ state, run, target }: { state: AppState; run: Run; ta
                               items: shortcutRegistry.filter((item) => item.scope === "local" && item.page === "all"),
                            },
                            { title: "Library", detail: "While browsing the Library.", items: shortcutRegistry.filter((item) => item.page === "library") },
-                           { title: "Clip viewer", detail: "While a clip is open.", items: shortcutRegistry.filter((item) => item.page === "viewer") },
+                           { title: "Player", detail: "While a clip is open.", items: shortcutRegistry.filter((item) => item.page === "viewer") },
                         ].map((group) => (
                            <section className="settings-group" key={group.title}>
                               <h2>{group.title}</h2>
@@ -377,11 +418,16 @@ export function Settings({ state, run, target }: { state: AppState; run: Run; ta
 
                         <div className="update-panel">
                            <div>
-                              <strong>AcroClip {state.version}</strong>
+                              <strong className="update-app-name">
+                                 <AppLogo size={24} />
+                                 AcroClip {state.version}
+                              </strong>
                               <span className="update-message" title={state.update.message}>
-                                 {state.update.state === "idle" && state.update.lastChecked
-                                    ? `Last checked ${new Date(state.update.lastChecked).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`
-                                    : state.update.message || "Not checked yet"}
+                                 {state.update.state === "idle" && state.update.lastChecked ? (
+                                    <LastChecked timestamp={state.update.lastChecked} />
+                                 ) : (
+                                    state.update.message || "Not checked yet"
+                                 )}
                               </span>
                            </div>
                            {["ready", "available", "downloaded"].includes(state.update.state) ||
@@ -400,7 +446,7 @@ export function Settings({ state, run, target }: { state: AppState; run: Run; ta
                                     )
                                  }
                               >
-                                 <Download size={16} />
+                                 {state.update.state === "downloaded" ? <FolderOpen size={16} /> : <Download size={16} />}
                                  {state.update.state === "ready"
                                     ? "Apply and restart"
                                     : state.update.state === "downloaded"

@@ -1,13 +1,14 @@
 // Copyright (c) 2026 NoomStuff
 // SPDX-License-Identifier: MIT
 // Adapted from AttaCut Player, Transport, AudioPicker and VolumeSlider.
-// See licenses/AttaCut-MIT.txt. No editor or trimming behavior is included.
-import { Headphones, Maximize, Minimize, Pause, Play, Volume2, VolumeX } from "lucide-react";
+// See THIRD_PARTY_NOTICES.md. No editor or trimming behavior is included.
+import { Gauge, Headphones, Maximize, Minimize, Pause, Play } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { AudioTrack } from "../../shared/types";
 import { DropdownSelect } from "./DropdownSelect";
 import { formatTime } from "./format";
 import { IconButton } from "./ui";
+import { ViewerVolume } from "./ViewerVolume";
 export function ViewerTransport({
    time,
    duration,
@@ -16,6 +17,8 @@ export function ViewerTransport({
    muted,
    tracks,
    track,
+   speed,
+   onSpeed,
    disabled,
    fullscreen,
    onSeek,
@@ -31,25 +34,26 @@ export function ViewerTransport({
    volume: number;
    muted: boolean;
    tracks: Pick<AudioTrack, "index" | "title">[];
-   track: number;
+   track: number[];
+   speed: number;
+   onSpeed: (value: number) => void;
    disabled: boolean;
    fullscreen: boolean;
    onSeek: (value: number) => void;
    onToggle: () => void;
-   onVolume: (value: number) => void;
+   onVolume: (value: number, restore: number) => void;
    onMute: () => void;
-   onTrack: (value: number) => void;
+   onTrack: (value: number[]) => void;
    onFullscreen: () => void;
 }) {
    const fraction = duration > 0 ? Math.min(1, Math.max(0, time / duration)) : 0;
-   const displayedVolume = muted ? 0 : volume;
-   const ordinal =
-      track < 0
-         ? 0
-         : Math.max(
-              0,
-              tracks.findIndex((item) => item.index === track)
-           );
+   const audioLabel = !tracks.length
+      ? "None"
+      : track.length === tracks.length
+        ? "All"
+        : track.length === 1
+          ? String(tracks.findIndex((item) => item.index === track[0]) + 1)
+          : `${track.length}/${tracks.length}`;
    return (
       <div className="player-controls">
          <label className="player-progress" style={{ "--played": `${fraction * 100}%` } as CSSProperties}>
@@ -94,36 +98,44 @@ export function ViewerTransport({
             </div>
             <div className="player-volume-controls">
                <DropdownSelect
-                  label="Audio track"
-                  className="player-audio-picker"
+                  label="Playback speed"
+                  className="player-speed-picker"
+                  menuWidth={112}
+                  iconOnly
+                  triggerContent={
+                     <>
+                        <Gauge size={16} />
+                        <b>
+                           {speed}
+                           {"\u00d7"}
+                        </b>
+                     </>
+                  }
                   placement="up"
-                  options={tracks.map((item, index) => ({ value: String(index === 0 ? -1 : item.index), label: item.title || `Track ${index + 1}` }))}
-                  value={String(track)}
-                  disabled={disabled || tracks.length <= 1}
-                  onChange={(value) => onTrack(Number(value))}
+                  options={[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => ({ value: String(value), label: `${value}\u00d7` }))}
+                  value={String(speed)}
+                  disabled={disabled}
+                  onChange={(value) => onSpeed(Number(value))}
+               />
+               <DropdownSelect
+                  label="Audio tracks"
+                  className="player-audio-picker"
+                  iconOnly
+                  placement="up"
+                  options={tracks.map((item, index) => ({ value: String(item.index), label: item.title || `Track ${index + 1}` }))}
+                  value={track.map(String)}
+                  multiple
+                  required
+                  disabled={tracks.length <= 1}
+                  onChange={(values) => onTrack(values.map(Number))}
                   triggerContent={
                      <>
                         <Headphones size={14} />
-                        <b>{tracks.length ? ordinal + 1 : ""}</b>
+                        <b>{audioLabel}</b>
                      </>
                   }
                />
-               <IconButton label={muted || volume === 0 ? "Unmute playback" : "Mute playback"} onClick={onMute} disabled={disabled}>
-                  {muted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
-               </IconButton>
-               <label className="player-volume-slider" style={{ "--fill": `${displayedVolume * 100}%`, "--volume": displayedVolume } as CSSProperties}>
-                  <i aria-hidden="true" />
-                  <input
-                     type="range"
-                     aria-label="Playback volume"
-                     min={0}
-                     max={1}
-                     step={0.01}
-                     value={displayedVolume}
-                     disabled={disabled}
-                     onChange={(event) => onVolume(Number(event.target.value))}
-                  />
-               </label>
+               <ViewerVolume volume={volume} muted={muted} onVolume={onVolume} onMute={onMute} disabled={disabled} />
                <span className="player-control-divider" />
                <IconButton label={fullscreen ? "Exit fullscreen" : "Fullscreen"} disabled={disabled} onClick={onFullscreen}>
                   {fullscreen ? <Minimize size={16} /> : <Maximize size={16} />}

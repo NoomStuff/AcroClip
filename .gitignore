@@ -21,6 +21,7 @@ native/generated/
 build/*.png
 build/*.ico
 build/*.icns
+build/*.bmp
 64bit/
 build-report/
 __pycache__/

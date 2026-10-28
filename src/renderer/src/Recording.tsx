@@ -15,7 +15,7 @@ import { portalScreenId, sourceChoices, selectedCaptureSource } from "../../shar
 export function Recording({ state, visible, run, pulse, openGames }: { state: AppState; visible: boolean; run: Run; pulse: number; openGames: () => void }) {
    const layout = useRef<HTMLDivElement>(null);
    const controls = usePaneSize(layout, { key: "recording.controls", initial: 310, min: 260, max: 440, reserve: 420, axis: "x", fromEnd: true });
-   const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 210, max: 380, reserve: 200, axis: "y", fromEnd: true });
+   const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 170, max: 380, reserve: 200, axis: "y", fromEnd: true });
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
    const [sourceRequest, setSourceRequest] = useState(0);
    const [sources, setSources] = useState<CaptureSource[]>([]);
@@ -416,11 +416,11 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
                         title={detectedName || (findingGames ? "Finding games" : "No game detected")}
                         icon={
                            detectedName ? (
-                              <ApplicationIcon size={20} src={detectedSource?.appIcon} />
+                              <ApplicationIcon size={28} src={detectedSource?.appIcon} />
                            ) : findingGames ? (
-                              <LoaderCircle size={20} className="spin" />
+                              <LoaderCircle size={28} className="spin" />
                            ) : (
-                              <Gamepad2 size={20} />
+                              <Gamepad2 size={28} />
                            )
                         }
                      />

@@ -215,13 +215,14 @@ export function Menu({
       const place = () => {
          if (!ref.current || !menu.current) return;
          const anchor = ref.current.getBoundingClientRect();
-         const bounds = menu.current.getBoundingClientRect();
+         const width = menu.current.offsetWidth;
+         const height = menu.current.offsetHeight;
          setPosition({
-            left: Math.max(8, Math.min(window.innerWidth - bounds.width - 8, contextAnchor?.left ?? anchor.right - bounds.width)),
+            left: Math.max(8, Math.min(window.innerWidth - width - 8, contextAnchor?.left ?? anchor.right - width)),
             top: contextAnchor
-               ? Math.max(8, Math.min(window.innerHeight - bounds.height - 8, contextAnchor.top))
-               : anchor.bottom + bounds.height + 8 > window.innerHeight
-                 ? Math.max(8, anchor.top - bounds.height - 5)
+               ? Math.max(8, Math.min(window.innerHeight - height - 8, contextAnchor.top))
+               : anchor.bottom + height + 8 > window.innerHeight
+                 ? Math.max(8, anchor.top - height - 5)
                  : anchor.bottom + 5,
          });
       };
@@ -233,7 +234,11 @@ export function Menu({
       };
       window.addEventListener("resize", place);
       window.addEventListener("scroll", scroll, true);
+      const observer = new ResizeObserver(place);
+      observer.observe(menu.current);
+      observer.observe(ref.current);
       return () => {
+         observer.disconnect();
          window.removeEventListener("resize", place);
          window.removeEventListener("scroll", scroll, true);
       };
@@ -326,7 +331,7 @@ export function Menu({
                >
                   {children}
                </div>,
-               document.body
+               document.fullscreenElement ?? document.body
             )}
       </div>
    );

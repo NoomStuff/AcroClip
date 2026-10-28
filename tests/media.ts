@@ -114,6 +114,27 @@ try {
    assert.ok(share);
    assert.ok(share.relativePath.replaceAll("\\", "/").startsWith("shareables/Existing game/"));
    assert.ok((await stat(share.path)).size <= 1_000_000);
+   const shareIdentity = await fileIdentity(share.path);
+   const renamedShare = join(root, "shareables", "Existing game", `Renamed group-1MB-${share.id.slice(0, 8)}.mp4`);
+   await copyFile(share.path, renamedShare);
+   await assert.rejects(service.rename(clip.id, "Renamed group"), /already exists/);
+   assert.equal(await fileIdentity(original), before, "shareable collision preserves the clip");
+   assert.equal(await fileIdentity(share.path), shareIdentity, "shareable collision preserves the shareable");
+   await assert.rejects(stat(join(root, "Existing game", "Renamed group.mp4")), /ENOENT/, "collision removes the prepared clip destination");
+   await rm(renamedShare);
+   await service.rename(clip.id, "Renamed group");
+   assert.equal(await fileIdentity(renamedShare), shareIdentity, "group rename preserves real shareable bytes");
+   assert.equal(service.clips.find((entry) => entry.id === clip.id)?.shareables[0]?.path, renamedShare);
+   assert.deepEqual(await service.filesForDeletion(clip.id, undefined, "shareables"), [renamedShare], "bulk shareable deletion excludes the clip");
+   assert.deepEqual(
+      new Set(await service.filesForDeletion(clip.id)),
+      new Set([join(root, "Existing game", "Renamed group.mp4"), renamedShare]),
+      "clip deletion includes its shareables"
+   );
+   await service.rename(clip.id, "A better display name");
+   assert.equal(await fileIdentity(original), before);
+   assert.equal(await fileIdentity(share.path), shareIdentity);
+
    const info = await probe(share.path);
    assert.equal(info.tracks.length, 1, "shareable keeps only the master track");
    assert.ok(Math.abs(info.duration - clip.duration) < 0.25, "shareable retains full clip duration");
@@ -142,6 +163,31 @@ try {
    }
    const frequency = crossings / ((endSample - startSample) / 48000);
    assert.ok(Math.abs(frequency - 880) < 3, `selected-track playback must contain the 880 Hz microphone tone, received ${frequency.toFixed(1)} Hz`);
+   const selectedAudio = clip.tracks.map((track) => track.index);
+   const mixed = await service.playback(original, selectedAudio);
+   assert.equal(await service.playback(original, [...selectedAudio].reverse()), mixed, "track order shares the same mixed playback cache");
+   await assert.rejects(service.playback(original, []), /at least one/);
+   await assert.rejects(service.playback(original, [63]), /no longer available/);
+   const mixedInfo = await probe(fileURLToPath(mixed));
+   assert.equal(mixedInfo.tracks.length, 1, "chosen tracks mix into one synchronized playback stream");
+   assert.ok(Math.abs(mixedInfo.duration - clip.duration) < 0.25, "mixed playback retains the complete clip");
+   const mixedAudio = join(workspace, "mixed-audio.pcm");
+   await runMedia("ffmpeg", [...ffmpegBase, "-i", fileURLToPath(mixed), "-vn", "-ac", "1", "-ar", "48000", "-f", "s16le", mixedAudio]);
+   const mixedSamples = await readFile(mixedAudio);
+   for (const tone of [440, 880]) {
+      let sine = 0,
+         cosine = 0;
+      const count = 48000;
+      for (let index = 0; index < count; index++) {
+         const value = mixedSamples.readInt16LE((index + 12000) * 2) / 32768;
+         const phase = (2 * Math.PI * tone * index) / 48000;
+         sine += value * Math.sin(phase);
+         cosine += value * Math.cos(phase);
+      }
+      const amplitude = (2 * Math.hypot(sine, cosine)) / count;
+      assert.ok(amplitude > 0.04 && amplitude < 0.09, `mixed playback contains normalized ${tone} Hz audio, received amplitude ${amplitude}`);
+   }
+   assert.equal(await fileIdentity(original), before, "audio preview mixing leaves the clip unchanged");
    const collision = join(root, "Existing game", "Collision.mp4");
    await copyFile(original, collision);
    await assert.rejects(service.rename(clip.id, "Collision"), /already exists/);
