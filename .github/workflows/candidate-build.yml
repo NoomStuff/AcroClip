@@ -40,6 +40,12 @@ jobs:
            env:
               GITHUB_TOKEN: ${{ github.token }}
            run: bun scripts/release-sources.ts --collect-only --dependencies --controlled-inputs
+         - name: Recover verified Electron source inputs
+           env:
+              GITHUB_TOKEN: ${{ github.token }}
+           run: |
+              python scripts/recover-release-inputs.py --platform windows-x64 --release latest --destination .cache/windows-source-inputs
+              "ACROCLIP_ELECTRON_SOURCE_CACHE=$((Get-Location).Path)/.cache/windows-source-inputs/evidence/electron-ffmpeg" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
          - name: Assemble exact Windows sources and native notices
            env:
               GITHUB_TOKEN: ${{ github.token }}

@@ -6,7 +6,7 @@ import path from "node:path";
 import { hashFile, type SourceKit } from "./release-sources";
 
 type FileRecord = NonNullable<SourceKit["evidence"]>["components"][number]["sourceArchives"][number];
-const pins = {
+export const electronSourcePins = {
    electronVersion: "44.7.0",
    electron: "61f55c4ce540416b3e43f75f6c0f125d22e5e908",
    chromiumVersion: "152.0.7977.130",
@@ -15,6 +15,13 @@ const pins = {
    opus: "55513e81d8f606bd75d0ff773d2144e5f2a732f5",
    nasm: "525a09a813be0f75b646ee93fc2a31c27b87d722",
 };
+const pins = electronSourcePins;
+
+export function hasPinnedElectronSources(value: unknown): boolean {
+   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+   const cached = value as Record<string, unknown>;
+   return Object.entries(pins).every(([name, expected]) => cached[name] === expected);
+}
 
 export async function collectElectronFfmpeg(
    project: string,
@@ -58,11 +65,18 @@ export async function collectElectronFfmpeg(
       sha256: await hashFile(file),
       size: (await stat(file)).size,
    });
+   let sourceCache = options.sourceCache;
+   if (sourceCache) {
+      try {
+         if (!hasPinnedElectronSources(JSON.parse(await readFile(path.join(sourceCache, "correspondence.json"), "utf8")))) sourceCache = undefined;
+      } catch {
+         sourceCache = undefined;
+      }
+   }
    const download = async (url: string, name: string): Promise<string> => {
       const file = path.join(folder, name);
       // Reuse pinned source responses only. Release archives still need their official checksum.
-      if (!existsSync(file) && options.sourceCache && existsSync(path.join(options.sourceCache, name)))
-         await copyFile(path.join(options.sourceCache, name), file);
+      if (!existsSync(file) && sourceCache && existsSync(path.join(sourceCache, name))) await copyFile(path.join(sourceCache, name), file);
       const decodedNames: Record<string, string> = {
          "chromium-DEPS.base64": "chromium-DEPS.txt",
          "chromium-root.gn.base64": "chromium-root.gn",
@@ -70,8 +84,8 @@ export async function collectElectronFfmpeg(
          "chromium-LICENSE.txt.base64": "chromium-LICENSE.txt",
       };
       const decodedName = decodedNames[name];
-      if (!existsSync(file) && options.sourceCache && decodedName && existsSync(path.join(options.sourceCache, decodedName)))
-         await writeFile(file, (await readFile(path.join(options.sourceCache, decodedName))).toString("base64"));
+      if (!existsSync(file) && sourceCache && decodedName && existsSync(path.join(sourceCache, decodedName)))
+         await writeFile(file, (await readFile(path.join(sourceCache, decodedName))).toString("base64"));
       const validate = (candidate: string): void => {
          if (name.endsWith(".tar.gz")) execFileSync("tar", ["-tf", candidate], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
       };

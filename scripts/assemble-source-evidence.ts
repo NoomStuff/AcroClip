@@ -127,7 +127,8 @@ export async function assembleSourceEvidence(project: string): Promise<SourceKit
    const kit = await collectKit(project, directory, true);
    if (kit.appDirty) throw new Error("Commit the release source before assembling installer evidence.");
    await collectObsStaticInputs(kit, directory);
-   const electronFfmpeg = await collectElectronFfmpeg(project, directory);
+   const sourceCache = process.env["ACROCLIP_ELECTRON_SOURCE_CACHE"];
+   const electronFfmpeg = await collectElectronFfmpeg(project, directory, sourceCache ? { sourceCache } : {});
    const media = JSON.parse(await readFile(path.join(project, "resources", "media", "provenance.json"), "utf8")) as { controlledBuild?: ControlledMediaBuild };
    const controlled = media.controlledBuild;
    if (!controlled) throw new Error("Automatic evidence assembly supports the captured controlled FFmpeg build only.");
