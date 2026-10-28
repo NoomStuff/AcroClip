@@ -159,7 +159,7 @@ def motion_evidence(request, identity, reduced, leaving=False):
     # animation-sampling interval. That real native endpoint still counts.
     # Exit also starts at the actual stable shown state. Its first timer sample
     # can arrive halfway through the fade, so it is not the phase's endpoint.
-    endpoints = ("shown", "hidden") if leaving and not reduced else ("hidden",) if leaving else ("shown",)
+    endpoints = ("shown", "hidden") if leaving and not reduced else ("hidden",) if leaving else ("entry", "shown")
     samples = [event for event in events["notifier"] if event.get("id") == request and
                (event["event"] in endpoints or event["event"] == "animation" and
                 (event["elapsed"] >= 2.4 if leaving else event["elapsed"] <= 0.25))]
