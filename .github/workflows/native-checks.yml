@@ -1,0 +1,130 @@
+name: Native checks
+"on":
+   workflow_call:
+      inputs:
+         candidate_sha:
+            type: string
+            required: true
+         linux:
+            type: boolean
+            default: true
+         mac:
+            type: boolean
+            default: true
+permissions:
+   contents: read
+jobs:
+   linux:
+      if: inputs.linux
+      runs-on: ubuntu-24.04
+      timeout-minutes: 45
+      env:
+         CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+         GITHUB_SHA: ${{ inputs.candidate_sha }}
+         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
+      steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: 1.4.2
+         - uses: ./.github/actions/setup-linux
+         - name: Build native X11 recorder
+           run: bun scripts/build-native-linux.ts
+         - name: Build isolated application audio fixtures
+           run: |
+              cmake -S native/tests -B .cache/native-tests-linux -DCMAKE_BUILD_TYPE=Release
+              cmake --build .cache/native-tests-linux -j2
+         - name: Verify device audio health, recovery, gain and synchronization
+           run: python3 scripts/smoke-linux-device-audio.py resources/recorder
+         - name: Verify selected application audio isolation and recovery
+           run: |
+              python3 scripts/audio_tone.test.py
+              python3 scripts/smoke-linux-app-audio.py resources/recorder
+         - name: Verify real Wine image identity and application capture
+           run: python3 scripts/smoke-wine.py resources/recorder
+         - name: Verify accepted saves and capture after process interruption
+           run: python3 scripts/smoke-interruption.py resources/recorder
+         - name: Record actual screen and audio
+           run: python3 scripts/smoke-linux.py resources/recorder
+           env:
+              ACROCLIP_TEST_X11_APP: "1"
+         - name: Build private monitor portal fixture
+           run: python3 scripts/build-wayland-fixture.py
+         - name: Verify actual Wayland pixels, audio, permission and stream loss
+           run: python3 scripts/smoke-wayland.py resources/recorder
+         - name: Verify exact XWayland and Wine pixels, audio privacy and target loss
+           run: python3 scripts/smoke-xwayland.py resources/recorder
+           env:
+              ACROCLIP_XWAYLAND_ADAPTER_TEST: "1"
+   mac:
+      if: inputs.mac
+      runs-on: macos-15
+      timeout-minutes: 60
+      env:
+         CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+         GITHUB_SHA: ${{ inputs.candidate_sha }}
+         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
+      steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: 1.4.2
+         - run: bun install --frozen-lockfile
+         - uses: ./.github/actions/setup-macos
+         - name: Recover verified immutable Mac source inputs
+           env:
+              GITHUB_TOKEN: ${{ github.token }}
+           run: |
+              python3 scripts/recover-release-inputs.py --platform darwin-arm64 --release v0.3.0 --destination .cache/macos-published-source-inputs
+              echo "ACROCLIP_ELECTRON_SOURCE_CACHE=$PWD/.cache/macos-published-source-inputs/evidence/electron-ffmpeg-darwin-arm64" >> "$GITHUB_ENV"
+         - name: Prepare hash-verified CLI and OBS source inputs
+           run: python3 scripts/prepare-linux-cli-inputs.py .cache/macos-published-source-inputs .
+         - name: Restore verified media for this architecture
+           id: media_cache
+           uses: actions/cache/restore@v6.1.0
+           with:
+              path: work/controlled-media/macos-arm64
+              key:
+                 controlled-macos-arm64-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts', 'scripts/smoke-controlled-media-macos.py')
+                 }}
+         - name: Verify the recorded media cache before executing it
+           if: steps.media_cache.outputs.cache-hit == 'true'
+           run: bun -e 'import {readControlledMacBuild} from "./scripts/controlled-media-macos"; await readControlledMacBuild("work/controlled-media/macos-" + process.arch);'
+         - name: Compile controlled macOS media
+           if: steps.media_cache.outputs.cache-hit != 'true'
+           env:
+              ACROCLIP_MEDIA_BUILD_JOBS: "3"
+           run: bash scripts/build-media-macos.sh
+         - name: Verify independent codec fixtures and record actual build
+           run: |
+              ACROCLIP_REFERENCE_FFMPEG="$FFMPEG_PATH" python3 scripts/smoke-controlled-media-macos.py
+              bun scripts/controlled-media-macos.ts
+              echo "FFMPEG_PATH=$PWD/work/controlled-media/macos-arm64/ffmpeg" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$PWD/work/controlled-media/macos-arm64/ffprobe" >> "$GITHUB_ENV"
+         - name: Cache verified media for this architecture
+           if: steps.media_cache.outputs.cache-hit != 'true'
+           uses: actions/cache/save@v6.1.0
+           with:
+              path: work/controlled-media/macos-arm64
+              key:
+                 controlled-macos-arm64-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts', 'scripts/smoke-controlled-media-macos.py')
+                 }}
+         - name: Stage verified media tools
+           run: bun run bundle:media
+         - name: Build and stage matching macOS recorder
+           run: bun scripts/build-recorder-macos.ts
+         - name: Compare actual provider binaries with official OBS and probe configuration
+           run: DYLD_LIBRARY_PATH="$PWD/resources/recorder/Frameworks" python3 scripts/probe-macos-source-runtime.py
+         - name: Verify actual screen and window recording with generated audio
+           run: caffeinate -di python3 scripts/smoke-macos.py
+         - name: Verify extra application and system audio
+           run: |
+              python3 scripts/macos_fixture_health.test.py
+              python3 scripts/audio_tone.test.py
+              caffeinate -di python3 scripts/smoke-macos-audio.py
+         - name: Verify native feedback focus, animation and capture behavior
+           run: caffeinate -di python3 scripts/smoke-macos-feedback.py --ci-motion-matrix

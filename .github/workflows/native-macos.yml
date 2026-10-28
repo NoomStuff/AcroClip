@@ -1,66 +1,32 @@
-name: macOS native capture
-on:
+name: Build macOS candidate
+"on":
    workflow_call:
       inputs:
+         candidate_sha:
+            type: string
+            required: true
          architecture:
             type: string
             required: true
-   workflow_dispatch:
-      inputs:
-         architecture:
-            type: choice
-            options: [arm64, x64]
-            default: arm64
-   push:
-      paths:
-         - native/macos/**
-         - native/recorder.cpp
-         - native/clip-writer.*
-         - native/CMakeLists.txt
-         - scripts/build-recorder-macos.ts
-         - scripts/smoke-macos.py
-         - scripts/smoke-macos-audio.py
-         - scripts/audio_tone*.py
-         - scripts/smoke-macos-feedback.py
-         - scripts/build-media-macos.sh
-         - scripts/controlled-media-macos.ts
-         - scripts/smoke-controlled-media-macos.py
-         - scripts/probe-macos-source-runtime.py
-         - scripts/collect-macos-electron.ts
-         - scripts/macos-*.ts
-         - scripts/verify-macos-release.ts
-         - scripts/package-macos-source-kit.ts
-         - scripts/package-macos-sources.py
-         - scripts/extract-macos-package.py
-         - scripts/test-macos-packaged.ts
-         - scripts/close-test-application.ts
-         - .github/workflows/native-macos.yml
 permissions:
    contents: read
 jobs:
-   capture:
+   build:
       runs-on: ${{ inputs.architecture == 'x64' && 'macos-15-intel' || 'macos-15' }}
       timeout-minutes: 120
       env:
+         CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+         GITHUB_SHA: ${{ inputs.candidate_sha }}
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
       steps:
          - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: "1.4.2"
+              bun-version: 1.4.2
          - run: bun install --frozen-lockfile
-         - name: Install build tools and independent fixture generator
-           run: |
-              brew install ffmpeg-full meson ninja pkg-config nasm
-              taskReference="$(brew --prefix ffmpeg-full)/bin"
-              echo "FFMPEG_PATH=$taskReference/ffmpeg" >> "$GITHUB_ENV"
-              echo "FFPROBE_PATH=$taskReference/ffprobe" >> "$GITHUB_ENV"
-              mkdir -p work/reference-media
-              brew info --json=v2 ffmpeg-full > work/reference-media/homebrew.json
-              "$taskReference/ffmpeg" -encoders > work/reference-media/encoders.txt
-              "$taskReference/ffmpeg" -version > work/reference-media/ffmpeg-version.txt
-              "$taskReference/ffprobe" -version > work/reference-media/ffprobe-version.txt
-              shasum -a 256 "$taskReference/ffmpeg" "$taskReference/ffprobe" > work/reference-media/SHA256SUMS.txt
+         - uses: ./.github/actions/setup-macos
          - name: Recover verified immutable Mac source inputs
            env:
               GITHUB_TOKEN: ${{ github.token }}
@@ -74,7 +40,9 @@ jobs:
            uses: actions/cache/restore@v6.1.0
            with:
               path: work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}
-              key: controlled-macos-${{ inputs.architecture || 'arm64' }}-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts', 'scripts/smoke-controlled-media-macos.py') }}
+              key:
+                 controlled-macos-${{ inputs.architecture || 'arm64' }}-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts',
+                 'scripts/smoke-controlled-media-macos.py') }}
          - name: Verify the recorded media cache before executing it
            if: steps.media_cache.outputs.cache-hit == 'true'
            run: bun -e 'import {readControlledMacBuild} from "./scripts/controlled-media-macos"; await readControlledMacBuild("work/controlled-media/macos-" + process.arch);'
@@ -94,7 +62,9 @@ jobs:
            uses: actions/cache/save@v6.1.0
            with:
               path: work/controlled-media/macos-${{ inputs.architecture || 'arm64' }}
-              key: controlled-macos-${{ inputs.architecture || 'arm64' }}-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts', 'scripts/smoke-controlled-media-macos.py') }}
+              key:
+                 controlled-macos-${{ inputs.architecture || 'arm64' }}-${{ hashFiles('scripts/build-media-macos.sh', 'scripts/controlled-media-macos.ts', 'scripts/controlled-media.ts',
+                 'scripts/smoke-controlled-media-macos.py') }}
          - name: Stage verified media tools
            run: bun run bundle:media
          - name: Build and stage matching macOS recorder
@@ -107,23 +77,6 @@ jobs:
               bun scripts/macos-source-validation.ts
          - name: Prepare Electron corresponding sources and full licenses before packaging
            run: bun scripts/collect-macos-electron.ts --prepare
-         - name: Verify actual screen and window recording with generated audio
-           run: caffeinate -di python3 scripts/smoke-macos.py
-         - name: Verify extra application and system audio
-           run: |
-              python3 scripts/macos_fixture_health.test.py
-              python3 scripts/audio_tone.test.py
-              caffeinate -di python3 scripts/smoke-macos-audio.py
-         - name: Verify native feedback focus, animation and capture behavior
-           run: caffeinate -di python3 scripts/smoke-macos-feedback.py --ci-motion-matrix
-         - name: Record native crash diagnostics
-           if: failure()
-           continue-on-error: true
-           run: |
-              if test -x resources/recorder/acroclip-recorder; then
-                 mkdir -p .cache/macos-native
-                 lldb --batch -o 'process launch -i /dev/null' -o 'thread backtrace all' -- resources/recorder/acroclip-recorder "$PWD/resources/recorder" > .cache/macos-native/crash-backtrace.txt 2>&1
-              fi
          - name: Build the actual macOS application
            run: |
               bun run build:icons
@@ -132,9 +85,6 @@ jobs:
               bunx electron-builder --mac zip --${{ inputs.architecture || 'arm64' }} --publish never
            env:
               CSC_IDENTITY_AUTO_DISCOVERY: "false"
-         - name: Verify packaged application capture and sharing
-           timeout-minutes: 8
-           run: caffeinate -di bun scripts/test-macos-packaged.ts
          - name: Capture matching Electron LGPL source evidence
            run: bun scripts/collect-macos-electron.ts
          - name: Assemble and verify the frozen Mac source packet
@@ -142,35 +92,22 @@ jobs:
               bun scripts/macos-source-kit.ts
               bun scripts/macos-source-kit.ts work/macos-release-sources --check
               bun scripts/package-macos-source-kit.ts
-         - name: Verify the complete application ZIP, independent rebuild and updater
-           run: |
-              taskSource=$(find work -maxdepth 1 -name 'AcroClip-*-darwin-${{ inputs.architecture || 'arm64' }}-sources-*.zip' -type f)
-              taskApp=$(find release -maxdepth 1 -name 'AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip' -type f)
-              test -n "$taskSource" && test -n "$taskApp"
-              bun scripts/verify-macos-release.ts work/macos-release-sources "$taskSource" "$taskApp"
-           env:
-              CSC_IDENTITY_AUTO_DISCOVERY: "false"
          - name: Package the verified application as DMG
            run: |
               taskApp=$(find release -maxdepth 1 -name 'AcroClip-*-mac-*.zip' -type f)
               taskHash=$(shasum -a 256 "$taskApp" | cut -d' ' -f1)
               bun scripts/package-macos-dmg.ts "$taskApp" "$taskHash" release
+         - name: Freeze package inputs for independent verification
+           run: |-
+              bun scripts/ci-stage.ts snapshot mac-${{ inputs.architecture }} .cache/ci-snapshot
+              bun scripts/ci-candidate.ts pack mac-${{ inputs.architecture }} .cache/ci-snapshot work/ci/candidate
          - uses: actions/upload-artifact@v7
-           if: success()
            with:
-              overwrite: true
-              name: macOS-verified-release-candidate-${{ inputs.architecture || 'arm64' }}
-              path: |
-                 release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.dmg
-                 release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.dmg.verification.json
-                 release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip
-                 release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip.blockmap
-                 release/AcroClip-*-mac-${{ inputs.architecture || 'arm64' }}.zip.release.json
-                 release/latest-mac.yml
-                 work/AcroClip-*-darwin-${{ inputs.architecture || 'arm64' }}-sources-*.zip
-                 work/AcroClip-*-darwin-${{ inputs.architecture || 'arm64' }}-sources-*.zip.json
+              name: candidate-mac-${{ inputs.architecture }}
+              path: work/ci/candidate/
               if-no-files-found: error
               retention-days: 14
+              compression-level: 0
          - uses: actions/upload-artifact@v7
            if: always()
            with:

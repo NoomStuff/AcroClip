@@ -1,0 +1,86 @@
+name: Build candidates
+"on":
+   workflow_call:
+      inputs:
+         candidate_sha:
+            type: string
+            required: true
+permissions:
+   contents: read
+jobs:
+   windows:
+      runs-on: windows-2025
+      timeout-minutes: 120
+      env:
+         CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+         GITHUB_SHA: ${{ inputs.candidate_sha }}
+         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
+         ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
+      steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: 1.4.2
+         - run: bun install --frozen-lockfile
+         - name: Install the locked Electron runtime for source inventory
+           run: node node_modules/electron/install.js
+         - uses: actions/download-artifact@v8
+           with:
+              name: controlled-windows-media
+              path: work/
+         - run: bun scripts/controlled-media.ts
+         - run: bun scripts/provision-media.ts
+         - run: bun run bundle:media
+         - run: bun run build:icons
+         - run: bun run build:native
+         - run: bun run build:notices
+         - run: bun run build
+         - name: Collect Windows runtime dependency sources
+           env:
+              GITHUB_TOKEN: ${{ github.token }}
+           run: bun scripts/release-sources.ts --collect-only --dependencies --controlled-inputs
+         - name: Assemble exact Windows sources and native notices
+           env:
+              GITHUB_TOKEN: ${{ github.token }}
+           run: bun scripts/assemble-source-evidence.ts
+         - name: Check Windows source closure
+           run: bun scripts/release-sources.ts --check
+         - name: Package the frozen Windows source packet
+           run: bun scripts/package-source-kit.ts
+         - name: Package without publishing
+           run: bunx electron-builder --win --x64 --publish never
+         - name: Freeze package inputs for independent verification
+           run: |-
+              bun scripts/ci-stage.ts snapshot win-x64 .cache/ci-snapshot
+              bun scripts/ci-candidate.ts pack win-x64 .cache/ci-snapshot work/ci/candidate
+         - uses: actions/upload-artifact@v7
+           with:
+              name: candidate-win-x64
+              path: work/ci/candidate/
+              if-no-files-found: error
+              retention-days: 14
+              compression-level: 0
+   linux:
+      strategy:
+         fail-fast: false
+         matrix:
+            architecture:
+               - x64
+               - arm64
+      uses: ./.github/workflows/native-linux.yml
+      with:
+         candidate_sha: ${{ inputs.candidate_sha }}
+         architecture: ${{ matrix.architecture }}
+   mac:
+      strategy:
+         fail-fast: false
+         matrix:
+            architecture:
+               - x64
+               - arm64
+      uses: ./.github/workflows/native-macos.yml
+      with:
+         candidate_sha: ${{ inputs.candidate_sha }}
+         architecture: ${{ matrix.architecture }}

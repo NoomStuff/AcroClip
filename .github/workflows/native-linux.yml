@@ -1,62 +1,33 @@
-name: Linux capture
-
-on:
+name: Build Linux candidate
+"on":
    workflow_call:
       inputs:
+         candidate_sha:
+            type: string
+            required: true
          architecture:
             type: string
             required: true
-         release_candidate:
-            type: boolean
-            default: true
-   push:
-   pull_request:
-   workflow_dispatch:
-      inputs:
-         architecture:
-            type: choice
-            options: [x64, arm64]
-            default: x64
-         release_candidate:
-            description: Verify and retain a complete release source packet
-            type: boolean
-            default: false
-
 permissions:
    contents: read
-
-concurrency:
-   group: linux-capture-${{ github.workflow }}-${{ github.ref }}-${{ inputs.architecture || 'x64' }}-${{ inputs.release_candidate || false }}
-   cancel-in-progress: true
-
 jobs:
-   actual-capture:
+   build:
       runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
       timeout-minutes: 180
       env:
+         CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+         GITHUB_SHA: ${{ inputs.candidate_sha }}
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
          ACROCLIP_SOURCE_DOWNLOAD_CACHE: ${{ github.workspace }}/.cache/linux-source-downloads
       steps:
          - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: "1.4.2"
-         - name: Install matching OBS headers and runtime
-           run: |
-              if [ "$(uname -m)" = aarch64 ]; then
-                 echo 'deb http://ports.ubuntu.com/ubuntu-ports noble-backports main universe' | sudo tee /etc/apt/sources.list.d/acroclip-backports.list
-              else
-                 sudo add-apt-repository -y ppa:obsproject/obs-studio
-              fi
-              sudo apt-get update
-              if [ "$(uname -m)" = aarch64 ]; then
-                 sudo apt-get install -y obs-studio=30.2.3+dfsg-3~bpo24.04.1 libobs-dev=30.2.3+dfsg-3~bpo24.04.1 libobs0t64=30.2.3+dfsg-3~bpo24.04.1 obs-plugins=30.2.3+dfsg-3~bpo24.04.1
-              else
-                 sudo apt-get install -y obs-studio=32.2.0-0obsproject1~noble gcc-mingw-w64-x86-64 wine64
-              fi
-              sudo apt-get install -y cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev xvfb openbox x11-apps x11-utils x11-xserver-utils ffmpeg pulseaudio pulseaudio-utils sway xwayland pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-wlr meson ninja-build libsystemd-dev libinih-dev wayland-protocols
+              bun-version: 1.4.2
+         - uses: ./.github/actions/setup-linux
          - name: Recover immutable corresponding-source inputs
-           if: inputs.release_candidate == true
            timeout-minutes: 10
            env:
               GITHUB_TOKEN: ${{ github.token }}
@@ -70,58 +41,24 @@ jobs:
               python3 scripts/collect-linux-static-sources.test.py
               python3 scripts/linux-source-inputs.test.py
               python3 scripts/controlled_wayland_sources.test.py
-         - name: Build isolated application audio fixtures
-           run: |
-              cmake -S native/tests -B .cache/native-tests-linux -DCMAKE_BUILD_TYPE=Release
-              cmake --build .cache/native-tests-linux -j2
-         - name: Verify device audio health, recovery, gain and synchronization
-           run: python3 scripts/smoke-linux-device-audio.py resources/recorder
-         - name: Verify selected application audio isolation and recovery
-           run: |
-              python3 scripts/audio_tone.test.py
-              python3 scripts/smoke-linux-app-audio.py resources/recorder
-         - name: Verify real Wine image identity and application capture
-           if: inputs.architecture != 'arm64'
-           run: python3 scripts/smoke-wine.py resources/recorder
-         - name: Verify accepted saves and capture after process interruption
-           run: python3 scripts/smoke-interruption.py resources/recorder
-         - name: Record actual screen and audio
-           run: python3 scripts/smoke-linux.py resources/recorder
-           env:
-              ACROCLIP_TEST_X11_APP: "1"
-         - name: Build private monitor portal fixture
-           run: python3 scripts/build-wayland-fixture.py
-         - name: Verify actual Wayland pixels, audio, permission and stream loss
-           run: python3 scripts/smoke-wayland.py resources/recorder
-         - name: Verify exact XWayland and Wine pixels, audio privacy and target loss
-           if: inputs.architecture != 'arm64'
-           run: python3 scripts/smoke-xwayland.py resources/recorder
-           env:
-              ACROCLIP_XWAYLAND_ADAPTER_TEST: "1"
          - run: bun install --frozen-lockfile
          - name: Install the locked Electron runtime for source inventory
-           if: inputs.release_candidate == true
            run: |
               node node_modules/electron/install.js
               test -f node_modules/electron/dist/libffmpeg.so
          - name: Stage pinned standalone media for the private package test
            run: bun scripts/provision-media.ts
          - name: Restore controlled media build
-           if: inputs.release_candidate == true
            id: controlled_media_cache
            uses: actions/cache/restore@v6.1.0
            with:
               path: work/controlled-media/linux-${{ inputs.architecture || 'x64' }}
               key: controlled-linux-${{ inputs.architecture || 'x64' }}-${{ hashFiles('scripts/build-media-linux.sh', 'scripts/controlled-media-linux.ts', 'scripts/controlled-media.ts') }}
          - name: Recover hash-verified controlled media source inputs
-           if: inputs.release_candidate == true
            env:
               GITHUB_TOKEN: ${{ github.token }}
-           # Both build recipes pin the same four source archives. Rebuild the
-           # Linux binaries from those sources, even when upstream is unavailable.
            run: python3 scripts/recover-release-inputs.py --platform windows-x64 --release v0.3.0 --destination work/release-sources
          - name: Build controlled release media
-           if: inputs.release_candidate == true
            env:
               ACROCLIP_MEDIA_BUILD_JOBS: "3"
            run: |
@@ -137,7 +74,7 @@ jobs:
               echo "FFMPEG_PATH=$PWD/work/controlled-media/linux-${{ inputs.architecture || 'x64' }}/ffmpeg" >> "$GITHUB_ENV"
               echo "FFPROBE_PATH=$PWD/work/controlled-media/linux-${{ inputs.architecture || 'x64' }}/ffprobe" >> "$GITHUB_ENV"
          - name: Cache verified controlled media build
-           if: inputs.release_candidate == true && steps.controlled_media_cache.outputs.cache-hit != 'true'
+           if: steps.controlled_media_cache.outputs.cache-hit != 'true'
            uses: actions/cache/save@v6.1.0
            with:
               path: work/controlled-media/linux-${{ inputs.architecture || 'x64' }}
@@ -146,36 +83,26 @@ jobs:
          - run: bun run build:icons
          - run: bun run build:notices
          - run: bun run build
-         - name: Build the AppImage without publishing
-           run: bunx electron-builder --linux AppImage --publish never
-         - name: Verify actual AppImage capture, playback and sharing
-           run: bun run test:packaged:linux release/*.AppImage
          - name: Restore verified source download cache
-           if: inputs.release_candidate == true
            uses: actions/cache/restore@v6.1.0
            with:
               path: .cache/linux-source-downloads
               key: linux-source-downloads-v1-${{ inputs.architecture || 'x64' }}-${{ github.run_id }}-${{ github.run_attempt }}
               restore-keys: linux-source-downloads-v1-${{ inputs.architecture || 'x64' }}-
          - name: Collect and verify native runtime package sources
-           if: inputs.release_candidate == true
            timeout-minutes: 30
            run: python3 -u scripts/collect-linux-sources.py --stage resources/recorder --output work/linux-release-sources
          - name: Collect exact static and header sources with four workers
-           if: inputs.release_candidate == true
            timeout-minutes: 90
            run: python3 -u scripts/linux-source-inputs.py --collect-only --sources work/linux-release-sources
          - name: Verify static source closure and assemble full notices
-           if: inputs.release_candidate == true
            timeout-minutes: 15
            run: python3 -u scripts/linux-source-inputs.py --sources work/linux-release-sources --notices work/linux-release-notices
          - name: Verify Electron sources and actual module bytes
-           if: inputs.release_candidate == true
            timeout-minutes: 15
            run: |
               bun -e 'import {collectElectronFfmpeg} from "./scripts/electron-source-evidence"; const root="work/linux-release-sources"; const component=await collectElectronFfmpeg(process.cwd(),root,{platform:"linux",sourceCache:root+"/evidence/electron-ffmpeg-linux",arch:process.arch === "arm64" ? "arm64" : "x64"}); await Bun.write(root+"/electron-component.json",JSON.stringify(component,null,2));'
-         - name: Stage full notices and bind the final AppImage to its source packet
-           if: inputs.release_candidate == true
+         - name: Stage full notices and package the final AppImage and source packet
            timeout-minutes: 20
            run: |
               if [ "$(uname -m)" = aarch64 ]; then
@@ -188,26 +115,19 @@ jobs:
               bun scripts/linux-source-kit.ts .
               bun scripts/linux-source-kit.ts . --check
               bun scripts/package-linux-source-kit.ts
-              taskSource=$(find work -maxdepth 1 -name 'AcroClip-*-linux-${{ inputs.architecture || 'x64' }}-sources-*.zip' -type f)
-              taskImage=$(find release -maxdepth 1 -name 'AcroClip-*-linux-*.AppImage' -type f)
-              bun scripts/verify-linux-release.ts "$PWD" "$PWD" "$taskSource" "$taskImage" work/linux-release-sources
-              bun run test:packaged:linux "$taskImage"
-         - name: Retain the verified Linux candidate
-           if: inputs.release_candidate == true
-           uses: actions/upload-artifact@v7
+         - name: Freeze package inputs for independent verification
+           run: |-
+              bun scripts/ci-stage.ts snapshot linux-${{ inputs.architecture }} .cache/ci-snapshot
+              bun scripts/ci-candidate.ts pack linux-${{ inputs.architecture }} .cache/ci-snapshot work/ci/candidate
+         - uses: actions/upload-artifact@v7
            with:
-              overwrite: true
-              name: Linux-verified-release-candidate-${{ inputs.architecture || 'x64' }}
-              path: |
-                 release/AcroClip-*.AppImage
-                 release/AcroClip-*.AppImage.release.json
-                 release/latest-linux*.yml
-                 work/AcroClip-*-linux-${{ inputs.architecture || 'x64' }}-sources-*.zip
-                 work/AcroClip-*-linux-${{ inputs.architecture || 'x64' }}-sources-*.zip.json
+              name: candidate-linux-${{ inputs.architecture }}
+              path: work/ci/candidate/
               if-no-files-found: error
               retention-days: 14
+              compression-level: 0
          - name: Checkpoint verified source downloads, including after a failed stage
-           if: always() && inputs.release_candidate == true
+           if: always()
            uses: actions/cache/save@v6.1.0
            with:
               path: .cache/linux-source-downloads

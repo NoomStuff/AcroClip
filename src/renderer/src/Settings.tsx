@@ -456,7 +456,7 @@ export function Settings({
                               >
                                  {state.update.state === "downloaded" ? <FolderOpen size={16} /> : <Download size={16} />}
                                  {state.update.state === "ready"
-                                    ? "Apply and restart"
+                                    ? "Restart to update"
                                     : state.update.state === "downloaded"
                                       ? "Show in Downloads"
                                       : state.update.mode === "download"

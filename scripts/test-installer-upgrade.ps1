@@ -188,6 +188,37 @@ try {
     Upgrade-Interactive $second
     if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'Upgrade moved the installation' }
     Assert-InstalledPayload 'interactive-upgrade'
+    # Match electron-updater's silent install and forced relaunch. The child
+    # inherits a private profile, collection and test identity on this runner.
+    $restartProfile = Join-Path $root 'restart-profile'
+    $restartCollection = Join-Path $root 'restart-collection'
+    New-Item -ItemType Directory -Path $restartProfile, $restartCollection | Out-Null
+    $previousEnvironment = @{}
+    foreach ($name in @('ACROCLIP_TEST', 'ACROCLIP_PROFILE', 'ACROCLIP_COLLECTION')) {
+        $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+    }
+    try {
+        $env:ACROCLIP_TEST = '1'
+        $env:ACROCLIP_PROFILE = $restartProfile
+        $env:ACROCLIP_COLLECTION = $restartCollection
+        Install-Test $second '/S --updated --force-run'
+        $deadline = [DateTime]::UtcNow.AddSeconds(45)
+        do {
+            $restarted = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $executable })
+            if ($restarted.Count -gt 0) { break }
+            Start-Sleep -Milliseconds 200
+        } while ([DateTime]::UtcNow -lt $deadline)
+        if ($restarted.Count -ne 1) { throw 'Silent update did not relaunch exactly one installed application' }
+        Assert-InstalledPayload 'silent-upgrade'
+        Write-UpgradeHealth 'silent-relaunch'
+    } finally {
+        # Only stop this test's installed executable under its GUID directory.
+        if (-not ([IO.Path]::GetFullPath($executable)).StartsWith([IO.Path]::GetFullPath($root) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Refusing to stop an executable outside the isolated installer directory'
+        }
+        Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $executable } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        foreach ($name in $previousEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name]) }
+    }
     if ((Get-FileHash -LiteralPath $executable).Hash -ne $before) { throw 'Upgrade changed the fixture executable unexpectedly' }
     $entries = @(Get-ChildItem 'HKCU:/Software/Microsoft/Windows/CurrentVersion/Uninstall' | Get-ItemProperty | Where-Object DisplayName -eq $product)
     if ($entries.Count -ne 1 -or $entries[0].DisplayVersion -ne '0.0.2') {
@@ -199,7 +230,7 @@ try {
     $env:ACROCLIP_PACKAGED_EXE = $executable
     & bun run test:packaged
     if ($LASTEXITCODE) { throw 'Installed application media check failed' }
-    Write-Output 'Verified first install, interactive newer-version upgrade without redundant pages, registry scope/path and installed application media.'
+    Write-Output 'Verified first install, interactive upgrade, silent updater relaunch, registry scope/path and installed application media.'
 } finally {
     Remove-Item Env:/ACROCLIP_PACKAGED_EXE -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $uninstaller) { Install-Test $uninstaller '/S' }

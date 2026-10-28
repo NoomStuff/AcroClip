@@ -1,8 +1,6 @@
 name: Checks
-on:
-   push:
-      branches: [main]
-   pull_request:
+"on":
+   pull_request: null
    workflow_dispatch:
       inputs:
          interactive_suite:
@@ -25,6 +23,9 @@ on:
          interactive_arguments:
             type: string
             default: "[]"
+         candidate_sha:
+            type: string
+            default: ""
 permissions:
    contents: read
 concurrency:
@@ -33,15 +34,19 @@ concurrency:
 jobs:
    controlled-media:
       uses: ./.github/workflows/controlled-media.yml
+      with:
+         candidate_sha: ${{ inputs.candidate_sha || github.sha }}
    verify:
       if: inputs.interactive_suite == ''
       runs-on: ubuntu-24.04
       timeout-minutes: 10
       steps:
          - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: "1.4.2"
+              bun-version: 1.4.2
          - run: bun install --frozen-lockfile
          - run: bun run verify
    media-and-ui:
@@ -54,9 +59,11 @@ jobs:
          ACROCLIP_NATIVE_TEST_SOFTWARE: "1"
       steps:
          - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: "1.4.2"
+              bun-version: 1.4.2
          - run: bun install --frozen-lockfile
          - uses: actions/download-artifact@v8
            with:
@@ -106,6 +113,8 @@ jobs:
                  throw 'Interactive checks require a separately isolated disposable hosted runner, not a personal desktop runner'
               }
          - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
          - name: Verify the exact requested revision
            run: |
               if ($env:ACROCLIP_EXPECTED_COMMIT -notmatch '^[0-9a-f]{40}$' -or (git rev-parse HEAD) -ne $env:ACROCLIP_EXPECTED_COMMIT) {
@@ -114,7 +123,7 @@ jobs:
               Write-Output "Testing exact committed revision $env:ACROCLIP_EXPECTED_COMMIT in a disposable Windows runner"
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: "1.4.2"
+              bun-version: 1.4.2
          - run: bun install --frozen-lockfile
          - run: node node_modules/electron/install.js
          - uses: actions/download-artifact@v8

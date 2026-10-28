@@ -1,0 +1,26 @@
+name: Checks
+"on":
+   workflow_call:
+      inputs:
+         candidate_sha:
+            type: string
+            required: true
+permissions:
+   contents: read
+jobs:
+   verify:
+      runs-on: ubuntu-24.04
+      timeout-minutes: 10
+      steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: 1.4.2
+         - run: bun install --frozen-lockfile
+         - name: Check release inputs before packaging
+           run: bun scripts/release-preflight.ts
+         - run: bun run verify
+         - name: Validate GitHub Actions workflows
+           run: bun scripts/lint-workflows.ts

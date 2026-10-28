@@ -1,6 +1,10 @@
 name: Controlled Windows media
-on:
+"on":
    workflow_call:
+      inputs:
+         candidate_sha:
+            type: string
+            required: true
 permissions:
    contents: read
 jobs:
@@ -9,9 +13,11 @@ jobs:
       timeout-minutes: 60
       steps:
          - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: "1.4.2"
+              bun-version: 1.4.2
          - name: Recover hash-verified immutable source inputs
            env:
               GITHUB_TOKEN: ${{ github.token }}
@@ -23,7 +29,9 @@ jobs:
            uses: actions/cache/restore@v6.1.0
            with:
               path: work/controlled-media/windows-x64
-              key: controlled-windows-x64-${{ hashFiles('scripts/build-media-windows.sh', 'scripts/controlled-media.ts', 'scripts/release-sources.ts', '.github/workflows/controlled-media.yml') }}
+              key:
+                 controlled-windows-x64-${{ hashFiles('scripts/build-media-windows.sh', 'scripts/controlled-media.ts', 'scripts/release-sources.ts', '.github/workflows/controlled-media.yml')
+                 }}
          - name: Check cached binaries and the exact build recipe
            if: steps.media_cache.outputs.cache-hit == 'true'
            run: |
@@ -33,8 +41,8 @@ jobs:
          - name: Install cross compiler
            if: steps.media_cache.outputs.cache-hit != 'true'
            run: |
-              sudo apt-get update
-              sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64 make nasm meson ninja-build pkg-config
+              sudo apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update
+              sudo apt-get -o Acquire::Retries=3 install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64 make nasm meson ninja-build pkg-config
          - name: Compile Windows media
            if: steps.media_cache.outputs.cache-hit != 'true'
            run: bash scripts/build-media-windows.sh

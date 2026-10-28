@@ -44,7 +44,7 @@ test("development checks fetch release metadata and offer only a release link", 
       await page.getByRole("button", { name: "App & Updates", exact: true }).click();
       await page.getByRole("button", { name: "Check for updates", exact: true }).click();
       await expect(page.locator(".update-message")).toHaveText("An update is available");
-      await expect(page.getByRole("button", { name: "Apply and restart", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Restart to update", exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Download update", exact: true })).toHaveCount(0);
       await page.locator(".update-panel").getByRole("button", { name: "View release", exact: true }).click();
       expect(await app.evaluate(() => (globalThis as typeof globalThis & { metadataChecks: number }).metadataChecks)).toBe(1);

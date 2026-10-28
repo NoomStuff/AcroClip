@@ -1,7 +1,7 @@
 // Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut UpdateChip.
 // See THIRD_PARTY_NOTICES.md.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, Download, FolderOpen, TriangleAlert } from "lucide-react";
+import { Download, FolderOpen, TriangleAlert } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { UpdateState } from "../../shared/types";
 import "./UpdateChip.css";
@@ -29,7 +29,7 @@ export function UpdateChip({ state, onDownload, onRestart, onRelease, onReveal }
          ? "Downloading update"
          : `Downloading ${Math.round(percent)}%`
       : phase === "ready"
-        ? "Apply and restart"
+        ? "Restart to update"
         : phase === "downloaded"
           ? "Show in Downloads"
           : phase === "error"
@@ -39,7 +39,7 @@ export function UpdateChip({ state, onDownload, onRestart, onRelease, onReveal }
             : state.mode === "releases"
               ? "View release"
               : "Download update";
-   const Icon = phase === "ready" ? Check : phase === "downloaded" ? FolderOpen : phase === "error" ? TriangleAlert : Download;
+   const Icon = phase === "downloaded" ? FolderOpen : phase === "error" ? TriangleAlert : Download;
    const action = downloading
       ? undefined
       : phase === "ready"

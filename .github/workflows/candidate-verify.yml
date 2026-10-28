@@ -1,0 +1,163 @@
+name: Verify retained candidates
+"on":
+   workflow_call:
+      inputs:
+         candidate_sha:
+            type: string
+            required: true
+permissions:
+   contents: read
+jobs:
+   verify:
+      strategy:
+         fail-fast: false
+         matrix:
+            include:
+               - target: win-x64
+                 os: windows-2025
+               - target: linux-x64
+                 os: ubuntu-24.04
+               - target: linux-arm64
+                 os: ubuntu-24.04-arm
+               - target: mac-x64
+                 os: macos-15-intel
+               - target: mac-arm64
+                 os: macos-15
+      runs-on: ${{ matrix.os }}
+      timeout-minutes: 90
+      env:
+         CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+         GITHUB_SHA: ${{ inputs.candidate_sha }}
+         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
+         ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
+      steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: 1.4.2
+         - run: bun install --frozen-lockfile
+         - name: Install the locked Electron runtime for independent source verification
+           run: node node_modules/electron/install.js
+         - uses: ./.github/actions/setup-linux
+           if: runner.os == 'Linux'
+         - uses: ./.github/actions/setup-macos
+           if: runner.os == 'macOS'
+         - uses: actions/download-artifact@v8
+           with:
+              name: candidate-${{ matrix.target }}
+              path: work/ci/candidate
+         - name: Restore hash-bound package and source inputs
+           shell: bash
+           env:
+              CI_TARGET: ${{ matrix.target }}
+           run: |-
+              bun scripts/ci-candidate.ts restore "$CI_TARGET" work/ci/candidate .
+              bun scripts/ci-stage.ts check
+              bun scripts/ci-stage.ts sources "$CI_TARGET"
+         - name: Verify Linux native capture and final AppImage
+           if: runner.os == 'Linux'
+           run: |-
+              cmake -S native/tests -B .cache/native-tests-linux -DCMAKE_BUILD_TYPE=Release
+              cmake --build .cache/native-tests-linux -j2
+              python3 scripts/smoke-linux-device-audio.py resources/recorder
+              python3 scripts/audio_tone.test.py
+              python3 scripts/smoke-linux-app-audio.py resources/recorder
+
+              python3 scripts/smoke-interruption.py resources/recorder
+              ACROCLIP_TEST_X11_APP=1 python3 scripts/smoke-linux.py resources/recorder
+              python3 scripts/build-wayland-fixture.py
+              python3 scripts/smoke-wayland.py resources/recorder
+              if [ "${{ matrix.target }}" = linux-x64 ]; then
+                python3 scripts/smoke-wine.py resources/recorder
+                ACROCLIP_XWAYLAND_ADAPTER_TEST=1 python3 scripts/smoke-xwayland.py resources/recorder
+              fi
+              taskSource=$(find work -maxdepth 1 -name "AcroClip-*-sources-*.zip" -type f)
+              taskImage=$(find release -maxdepth 1 -name "AcroClip-*.AppImage" -type f)
+              bun scripts/verify-linux-release.ts "$PWD" "$PWD" "$taskSource" "$taskImage" work/linux-release-sources
+              bun run test:packaged:linux "$taskImage"
+         - name: Verify macOS native capture and packaged application
+           if: runner.os == 'macOS'
+           run: |-
+              caffeinate -di python3 scripts/smoke-macos.py
+              python3 scripts/macos_fixture_health.test.py
+              python3 scripts/audio_tone.test.py
+              caffeinate -di python3 scripts/smoke-macos-audio.py
+
+              caffeinate -di python3 scripts/smoke-macos-feedback.py --ci-motion-matrix
+              caffeinate -di bun scripts/test-macos-packaged.ts
+              taskSource=$(find work -maxdepth 1 -name "AcroClip-*-sources-*.zip" -type f)
+              taskApp=$(find release -maxdepth 1 -name "AcroClip-*-mac-*.zip" -type f)
+              bun scripts/verify-macos-release.ts work/macos-release-sources "$taskSource" "$taskApp"
+           env:
+              CSC_IDENTITY_AUTO_DISCOVERY: "false"
+         - name: Verify Windows installer payloads and source correspondence
+           if: runner.os == 'Windows'
+           shell: pwsh
+           run: |
+              $env:ACROCLIP_7ZIP = (Get-Command 7z.exe -ErrorAction Stop).Source
+              $source = @(Get-ChildItem work/AcroClip-*-windows-x64-sources-*.zip)
+              if ($source.Count -ne 1) { throw 'Expected one Windows source packet' }
+              bun scripts/verify-release.ts $source[0].FullName
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+         - name: Prepare a signed virtual audio endpoint and independent tone
+           env:
+              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
+           run: pwsh -File scripts/setup-windows-runner-audio.ps1
+           if: runner.os == 'Windows'
+         - run: bun run test:packaged
+           if: runner.os == 'Windows'
+         - run: bun run test:portable
+           if: runner.os == 'Windows'
+         - name: Verify installed upgrade in an isolated installer identity
+           run: pwsh -File scripts/test-installer-upgrade.ps1
+           if: runner.os == 'Windows'
+         - name: Stop the private tone producer
+           if: always() && runner.os == 'Windows'
+           shell: pwsh
+           run: |
+              if ($env:ACROCLIP_AUDIO_FIXTURE_PID) {
+                 $fixtureProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $env:ACROCLIP_AUDIO_FIXTURE_PID"
+                 if ($fixtureProcess.CommandLine -like '*setup-windows-runner-audio.ps1*' -and $fixtureProcess.CommandLine -like '*-PlayTone*') {
+                    Stop-Process -Id $fixtureProcess.ProcessId -ErrorAction SilentlyContinue
+                 }
+              }
+         - name: Preserve isolated installer evidence
+           if: always() && runner.os == 'Windows'
+           shell: pwsh
+           run: |
+              New-Item -ItemType Directory -Path work/installer-evidence -Force | Out-Null
+              if ($env:ACROCLIP_INSTALLER_EVIDENCE) {
+                 Get-ChildItem -LiteralPath $env:ACROCLIP_INSTALLER_EVIDENCE -Filter 'upgrade-*.json*' | Copy-Item -Destination work/installer-evidence
+              }
+         - name: Record verification of unchanged package bytes
+           shell: bash
+           env:
+              CI_TARGET: ${{ matrix.target }}
+           run: |-
+              bun scripts/ci-candidate.ts verify "$CI_TARGET" work/ci/candidate
+              bun scripts/ci-stage.ts collect "$CI_TARGET" work/ci/candidate work/ci/verified
+         - uses: actions/upload-artifact@v7
+           with:
+              name: verified-${{ matrix.target }}
+              path: work/ci/verified/
+              if-no-files-found: error
+              retention-days: 14
+              compression-level: 0
+         - uses: actions/upload-artifact@v7
+           if: always()
+           with:
+              name: verification-evidence-${{ matrix.target }}
+              path: |-
+                 test-results/
+                 .cache/linux-smoke/
+                 .cache/linux-packaged/
+                 .cache/macos-packaged/
+                 .cache/macos-capture/
+                 .cache/macos-audio/
+                 .cache/macos-feedback/
+                 work/installer-evidence/
+              include-hidden-files: true
+              if-no-files-found: ignore
+              retention-days: 7

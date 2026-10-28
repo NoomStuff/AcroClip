@@ -68,7 +68,7 @@ it.skipIf(process.platform === "darwin")("handles automatic progress, readiness,
    automatic.emit("update-downloaded", { version: release.version });
    expect(updates.isReady).toBe(true);
    updates.install();
-   expect(automatic.quitAndInstall).toHaveBeenCalledWith(false, true);
+   expect(automatic.quitAndInstall).toHaveBeenCalledWith(true, true);
 });
 
 it.skipIf(process.platform === "darwin")("keeps one automatic download active and associates readiness with the downloaded version", async () => {
@@ -236,7 +236,7 @@ it.skipIf(process.platform === "darwin")("shares ready state and asks before res
    await updates.install(async () => false);
    expect(automatic.quitAndInstall).not.toHaveBeenCalled();
    await updates.install(async () => true);
-   expect(automatic.quitAndInstall).toHaveBeenCalledWith(false, true);
+   expect(automatic.quitAndInstall).toHaveBeenCalledWith(true, true);
 });
 
 it.skipIf(process.platform !== "win32").each(["destination", "temporary"])("keeps another download's %s created in flight", async (scope) => {

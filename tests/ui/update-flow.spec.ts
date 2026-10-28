@@ -142,8 +142,9 @@ test("verified portable update lifecycle shares state with Settings", async () =
          const updater = process.getBuiltinModule("module").createRequire(`${app.getAppPath()}/package.json`)("electron-updater") as typeof ElectronUpdater;
          updater.autoUpdater.checkForUpdates = async () =>
             ({ downloadPromise: new Promise<never>(() => {}) }) as unknown as Awaited<ReturnType<typeof updater.autoUpdater.checkForUpdates>>;
-         updater.autoUpdater.quitAndInstall = () => {
+         updater.autoUpdater.quitAndInstall = (isSilent, isForceRunAfter) => {
             (globalThis as typeof globalThis & { updateFixture: { installs: number } }).updateFixture.installs++;
+            (globalThis as typeof globalThis & { updateFixture: { installOptions: unknown } }).updateFixture.installOptions = [isSilent, isForceRunAfter];
          };
          (globalThis as typeof globalThis & { updateFixture: { version: string } }).updateFixture.version = "99.0.2";
       });
@@ -161,13 +162,17 @@ test("verified portable update lifecycle shares state with Settings", async () =
             releaseDate: "2026-10-18T12:00:00Z",
          });
       });
-      await expect(chip).toHaveAttribute("aria-label", "Apply and restart");
+      await expect(chip).toHaveAttribute("aria-label", "Restart to update");
+      await expect(chip.locator(".lucide-download")).toBeVisible();
       await chip.click();
       // The production shutdown callback waits for the native helper to exit
       // before invoking the installer. CI teardown can exceed the default 5s.
       await expect
          .poll(() => app.evaluate(() => (globalThis as typeof globalThis & { updateFixture: { installs: number } }).updateFixture.installs), { timeout: 20000 })
          .toBe(1);
+      expect(await app.evaluate(() => (globalThis as typeof globalThis & { updateFixture: { installOptions: unknown } }).updateFixture.installOptions)).toEqual(
+         [true, true]
+      );
    } finally {
       await app.close();
    }

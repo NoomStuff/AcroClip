@@ -1,189 +1,164 @@
 name: Release
-on:
+"on":
    push:
-      branches: [main]
+      branches:
+         - main
    workflow_dispatch:
+      inputs:
+         candidate_sha:
+            description: Optional exact commit for private candidate verification
+            type: string
+            default: ""
+         verify_candidate:
+            description: Verify all five targets without publishing
+            type: boolean
+            default: false
 permissions:
    contents: read
 concurrency:
-   group: release
+   group: release-${{ github.event_name == 'workflow_dispatch' && (inputs.verify_candidate || inputs.candidate_sha != '') && github.run_id || 'main' }}
    cancel-in-progress: false
 jobs:
-   select:
+   prepare:
       runs-on: ubuntu-24.04
+      timeout-minutes: 5
       outputs:
-         build: ${{ steps.select.outputs.build }}
+         candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
+         version: ${{ steps.prepare.outputs.version }}
+         native_linux: ${{ steps.prepare.outputs.native_linux }}
+         native_macos: ${{ steps.prepare.outputs.native_macos }}
+         build: ${{ steps.prepare.outputs.build }}
+         publish: ${{ steps.prepare.outputs.publish }}
+         tag: ${{ steps.prepare.outputs.tag }}
       steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha || github.sha }}
+              fetch-depth: 2
          - uses: actions/github-script@v9
-           id: select
+           id: prepare
+           with:
+              script: await require('./scripts/ci-preflight.cjs')({github, context, core});
+   checks:
+      needs: prepare
+      uses: ./.github/workflows/verify.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+   media:
+      needs:
+         - prepare
+         - checks
+      uses: ./.github/workflows/controlled-media.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+   app-checks:
+      needs:
+         - prepare
+         - checks
+         - media
+      uses: ./.github/workflows/app-checks.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+   native-checks:
+      needs:
+         - prepare
+         - checks
+      if: needs.prepare.outputs.build != 'true' && (needs.prepare.outputs.native_linux == 'true' || needs.prepare.outputs.native_macos == 'true')
+      uses: ./.github/workflows/native-checks.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         linux: ${{ needs.prepare.outputs.native_linux == 'true' }}
+         mac: ${{ needs.prepare.outputs.native_macos == 'true' }}
+   build:
+      needs:
+         - prepare
+         - checks
+         - media
+      if: needs.prepare.outputs.build == 'true'
+      uses: ./.github/workflows/candidate-build.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+   verify:
+      needs:
+         - prepare
+         - build
+      uses: ./.github/workflows/candidate-verify.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+      if: needs.prepare.outputs.build == 'true'
+   check:
+      needs:
+         - prepare
+         - checks
+         - media
+         - app-checks
+         - native-checks
+         - build
+         - verify
+      if: always()
+      runs-on: ubuntu-24.04
+      timeout-minutes: 30
+      env:
+         CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+         GITHUB_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      steps:
+         - name: Require all expected checks
+           uses: actions/github-script@v9
+           env:
+              RESULTS: ${{ toJSON(needs) }}
            with:
               script: |
-                 const pkg = (await github.rest.repos.getContent({...context.repo, path: 'package.json', ref: context.sha})).data;
-                 const version = JSON.parse(Buffer.from(pkg.content, 'base64')).version;
-                 if (!/^\d+\.\d+\.\d+$/.test(version)) throw Error('Stable package version required');
-                 if (context.ref !== 'refs/heads/main') throw Error('Release candidates must run on main');
-                 const main = (await github.rest.git.getRef({...context.repo, ref: 'heads/main'})).data.object.sha;
-                 if (main !== context.sha) throw Error('A newer main commit superseded this candidate');
-                 try {
-                   const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag: `v${version}`})).data;
-                   core.setOutput('build', release.draft ? 'true' : 'false');
-                   core.info(release.draft ? `Retrying private ${version} at ${context.sha}` : `v${version} is public and immutable; bump the version for further changes.`);
-                 } catch (error) {
-                   if (error.status !== 404) throw error;
-                   core.setOutput('build', 'true');
-                   core.info(`Verifying unpublished ${version} at ${context.sha}`);
+                 const jobs = JSON.parse(process.env.RESULTS);
+                 const candidate = jobs.prepare.outputs.build === 'true';
+                 const native = !candidate && (jobs.prepare.outputs.native_linux === 'true' || jobs.prepare.outputs.native_macos === 'true');
+                 for (const [name, job] of Object.entries(jobs)) {
+                   const expected = ['build', 'verify'].includes(name) ? candidate : name === 'native-checks' ? native : true;
+                   if (job.result !== (expected ? 'success' : 'skipped')) throw Error(`${name}: ${job.result}`);
                  }
-   checks:
-      needs: select
-      if: needs.select.outputs.build == 'true'
-      uses: ./.github/workflows/checks.yml
-   linux:
-      needs: select
-      if: needs.select.outputs.build == 'true'
-      strategy:
-         fail-fast: false
-         matrix:
-            architecture: [x64, arm64]
-      uses: ./.github/workflows/native-linux.yml
-      with:
-         architecture: ${{ matrix.architecture }}
-         release_candidate: true
-   mac:
-      needs: select
-      if: needs.select.outputs.build == 'true'
-      strategy:
-         fail-fast: false
-         matrix:
-            architecture: [x64, arm64]
-      uses: ./.github/workflows/native-macos.yml
-      with:
-         architecture: ${{ matrix.architecture }}
-   windows:
-      needs: checks
-      runs-on: windows-2025
-      timeout-minutes: 120
-      env:
-         ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
-         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
-      steps:
          - uses: actions/checkout@v7
+           if: needs.prepare.outputs.build == 'true'
+           with:
+              ref: ${{ needs.prepare.outputs.candidate_sha }}
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: "1.4.2"
+              bun-version: 1.4.2
+           if: needs.prepare.outputs.build == 'true'
          - run: bun install --frozen-lockfile
-         - name: Install the locked Electron runtime for source inventory
-           run: node node_modules/electron/install.js
+           if: needs.prepare.outputs.build == 'true'
          - uses: actions/download-artifact@v8
+           if: needs.prepare.outputs.build == 'true'
            with:
-              name: controlled-windows-media
-              path: work/
-         - run: bun scripts/controlled-media.ts
-         - run: bun scripts/provision-media.ts
-         - run: bun run bundle:media
-         - run: bun run build:icons
-         - run: bun run build:native
-         - run: bun run build:notices
-         - run: bun run build
-         - name: Collect Windows runtime dependency sources
-           env:
-              GITHUB_TOKEN: ${{ github.token }}
-           run: bun scripts/release-sources.ts --collect-only --dependencies --controlled-inputs
-         - name: Assemble exact Windows sources and native notices
-           env:
-              GITHUB_TOKEN: ${{ github.token }}
-           run: bun scripts/assemble-source-evidence.ts
-         - name: Check Windows source closure
-           run: bun scripts/release-sources.ts --check
-         - name: Package the frozen Windows source packet
-           run: bun scripts/package-source-kit.ts
-         - name: Package without publishing
-           run: bunx electron-builder --win --x64 --publish never
-         - name: Verify installer payloads and source correspondence
-           shell: pwsh
-           run: |
-              $source = @(Get-ChildItem work/AcroClip-*-windows-x64-sources-*.zip)
-              if ($source.Count -ne 1) { throw 'Expected one Windows source packet' }
-              bun scripts/verify-release.ts $source[0].FullName
-              if ($LASTEXITCODE) { exit $LASTEXITCODE }
-         - name: Prepare a signed virtual audio endpoint and independent tone
-           env:
-              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
-           run: pwsh -File scripts/setup-windows-runner-audio.ps1
-         - run: bun run test:packaged
-         - run: bun run test:portable
-         - name: Verify installed upgrade in an isolated installer identity
-           run: pwsh -File scripts/test-installer-upgrade.ps1
-         - name: Stop the private tone producer
-           if: always()
-           shell: pwsh
-           run: |
-              if ($env:ACROCLIP_AUDIO_FIXTURE_PID) {
-                 $fixtureProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $env:ACROCLIP_AUDIO_FIXTURE_PID"
-                 if ($fixtureProcess.CommandLine -like '*setup-windows-runner-audio.ps1*' -and $fixtureProcess.CommandLine -like '*-PlayTone*') {
-                    Stop-Process -Id $fixtureProcess.ProcessId -ErrorAction SilentlyContinue
-                 }
-              }
-         - name: Preserve isolated installer evidence
-           if: always()
-           shell: pwsh
-           run: |
-              New-Item -ItemType Directory -Path work/installer-evidence -Force | Out-Null
-              if ($env:ACROCLIP_INSTALLER_EVIDENCE) {
-                 Get-ChildItem -LiteralPath $env:ACROCLIP_INSTALLER_EVIDENCE -Filter 'upgrade-*.json*' | Copy-Item -Destination work/installer-evidence
-              }
-         - uses: actions/upload-artifact@v7
-           if: always()
-           with:
-              overwrite: true
-              name: windows-isolated-installer-evidence
-              path: work/installer-evidence/
-              retention-days: 30
+              pattern: verified-*
+              path: verified
+         - name: Seal exact verified candidate
+           if: needs.prepare.outputs.build == 'true'
+           run: |-
+              bun scripts/ci-stage.ts seal verified candidates
+              bun scripts/release-candidate.ts candidates candidate
          - uses: actions/upload-artifact@v7
            with:
-              overwrite: true
-              name: Windows-verified-release-candidate-x64
-              path: |
-                 release/AcroClip-*.exe
-                 release/AcroClip-*.exe.blockmap
-                 release/latest.yml
-                 release/*-windows-x64-release.json
-                 work/AcroClip-*-windows-x64-sources-*.zip
-                 work/AcroClip-*-windows-x64-sources-*.zip.json
-              if-no-files-found: error
-              retention-days: 30
-   seal:
-      needs: [checks, windows, linux, mac]
-      runs-on: ubuntu-24.04
-      steps:
-         - uses: actions/checkout@v7
-         - uses: oven-sh/setup-bun@v2
-           with:
-              bun-version: "1.4.2"
-         - run: bun install --frozen-lockfile
-         - uses: actions/download-artifact@v8
-           with:
-              pattern: "*-verified-release-candidate-*"
-              path: candidates
-         - run: bun scripts/release-candidate.ts candidates candidate
-         - uses: actions/upload-artifact@v7
-           with:
-              overwrite: true
               name: sealed-release-candidate
               path: candidate/
               if-no-files-found: error
-              retention-days: 30
+              retention-days: 14
+              compression-level: 0
+           if: needs.prepare.outputs.build == 'true'
    publish:
       name: Publish verified release
-      needs: seal
+      needs:
+         - prepare
+         - check
       permissions:
          contents: write
       runs-on: ubuntu-24.04
       timeout-minutes: 30
       steps:
          - uses: actions/checkout@v7
+           with:
+              ref: ${{ needs.prepare.outputs.candidate_sha }}
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: "1.4.2"
+              bun-version: 1.4.2
          - run: bun install --frozen-lockfile
          - uses: actions/download-artifact@v8
            with:
@@ -196,3 +171,4 @@ jobs:
               script: |
                  const publish = require('./scripts/publish-release.cjs');
                  await publish({github, context, core});
+      if: needs.prepare.outputs.publish == 'true' && needs.check.result == 'success'

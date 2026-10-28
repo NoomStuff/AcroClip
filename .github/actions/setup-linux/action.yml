@@ -1,0 +1,20 @@
+name: setup-linux
+description: Install matching build and verification dependencies
+runs:
+   using: composite
+   steps:
+      - name: Install matching OBS headers and runtime
+        run: |
+           if [ "$(uname -m)" = aarch64 ]; then
+              echo 'deb http://ports.ubuntu.com/ubuntu-ports noble-backports main universe' | sudo tee /etc/apt/sources.list.d/acroclip-backports.list
+           else
+              sudo add-apt-repository -n -y ppa:obsproject/obs-studio
+           fi
+           sudo apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update
+           if [ "$(uname -m)" = aarch64 ]; then
+              sudo apt-get -o Acquire::Retries=3 install -y obs-studio=30.2.3+dfsg-3~bpo24.04.1 libobs-dev=30.2.3+dfsg-3~bpo24.04.1 libobs0t64=30.2.3+dfsg-3~bpo24.04.1 obs-plugins=30.2.3+dfsg-3~bpo24.04.1
+           else
+              sudo apt-get -o Acquire::Retries=3 install -y obs-studio=32.2.0-0obsproject1~noble gcc-mingw-w64-x86-64 wine64
+           fi
+           sudo apt-get -o Acquire::Retries=3 install -y cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev xvfb openbox x11-apps x11-utils x11-xserver-utils ffmpeg pulseaudio pulseaudio-utils sway xwayland pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-wlr meson ninja-build libsystemd-dev libinih-dev wayland-protocols
+        shell: bash
