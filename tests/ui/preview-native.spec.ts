@@ -117,6 +117,9 @@ test("native capture survives preview teardown and saves the selected applicatio
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
       await page.evaluate(() => window.acroClip.saveClip());
       await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).clips.length), { timeout: 30000 }).toBe(1);
+      // Discovery can publish the clip while its accepted save is still adding
+      // application artwork. Check final metadata after registration finishes.
+      await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.pendingSaves), { timeout: 30000 }).toBe(0);
       const clip = (await page.evaluate(() => window.acroClip.state())).clips[0]!;
       expect(clip.width).toBe(Math.floor(source!.pixelSize!.width / 2) * 2);
       expect(clip.height).toBe(Math.floor(source!.pixelSize!.height / 2) * 2);
