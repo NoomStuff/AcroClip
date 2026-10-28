@@ -47,5 +47,9 @@ jobs:
            with:
               overwrite: true
               name: ui-verification
-              path: test-results/
+              path: |
+                 test-results/
+                 .cache/native-loss/**/events.json
+                 .cache/native-loss/**/native.log
+              include-hidden-files: true
               retention-days: 7

@@ -48,13 +48,10 @@ jobs:
               name: candidate-${{ matrix.target }}
               path: work/ci/candidate
          - name: Restore hash-bound package and source inputs
-           shell: bash
-           env:
-              CI_TARGET: ${{ matrix.target }}
            run: |-
-              bun scripts/ci-candidate.ts restore "$CI_TARGET" work/ci/candidate .
+              bun scripts/ci-candidate.ts restore "${{ matrix.target }}" work/ci/candidate .
               bun scripts/ci-stage.ts check
-              bun scripts/ci-stage.ts sources "$CI_TARGET"
+              bun scripts/ci-stage.ts sources "${{ matrix.target }}"
          - name: Verify Linux native capture and final AppImage
            if: runner.os == 'Linux'
            run: |-
