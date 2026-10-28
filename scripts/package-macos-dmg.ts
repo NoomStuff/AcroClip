@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,7 +20,20 @@ try {
    execFileSync("python3", ["scripts/extract-macos-package.py", "--archive", path.resolve(archive), "--destination", staging], { stdio: "inherit" });
    const expected = await macTree(path.join(staging, "AcroClip.app"));
    await symlink("/Applications", path.join(staging, "Applications"));
-   execFileSync("hdiutil", ["create", "-volname", "AcroClip", "-srcfolder", staging, "-fs", "HFS+", "-format", "UDZO", image], { stdio: "inherit" });
+   for (let attempt = 1; attempt <= 3; attempt++) {
+      const created = spawnSync("hdiutil", ["create", "-volname", "AcroClip", "-srcfolder", staging, "-fs", "HFS+", "-format", "UDZO", image], {
+         encoding: "utf8",
+      });
+      if (created.stdout) process.stdout.write(created.stdout);
+      if (created.stderr) process.stderr.write(created.stderr);
+      if (created.error) throw created.error;
+      if (created.status === 0) break;
+      if (attempt === 3 || !created.stderr.includes("Resource busy")) throw new Error(`Disk image creation failed with status ${created.status}`);
+      // DiskImages can briefly hold the source after extraction or scanning.
+      // Retry only that transient error; every resulting image is still verified.
+      await rm(image, { force: true });
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+   }
    execFileSync("hdiutil", ["verify", image], { stdio: "inherit" });
    await mkdir(mount);
    execFileSync("hdiutil", ["attach", "-readonly", "-nobrowse", "-mountpoint", mount, image], { stdio: "inherit" });
