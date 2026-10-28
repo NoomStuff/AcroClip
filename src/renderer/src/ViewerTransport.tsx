@@ -73,6 +73,12 @@ export function ViewerTransport({
          media.removeEventListener("seeked", update);
       };
    }, [video, visible, playing, initialTime, disabled]);
+   const seekTo = (next: number) => {
+      // Keep the controlled range at the requested position during the input
+      // event, before the media element emits its asynchronous seek events.
+      setTime(next);
+      onSeek(next);
+   };
    const fraction = duration > 0 ? Math.min(1, Math.max(0, time / duration)) : 0;
    const audioLabel = !tracks.length
       ? "None"
@@ -95,13 +101,13 @@ export function ViewerTransport({
                step={0.01}
                value={Math.min(time, duration || 0)}
                disabled={disabled}
-               onChange={(event) => onSeek(Number(event.target.value))}
+               onChange={(event) => seekTo(Number(event.target.value))}
                onKeyDown={(event) => {
                   if (event.altKey || event.ctrlKey || event.metaKey) return;
                   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
                      event.preventDefault();
                      event.stopPropagation();
-                     onSeek(Math.min(duration, Math.max(0, time + (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 5 : 1))));
+                     seekTo(Math.min(duration, Math.max(0, time + (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 5 : 1))));
                   }
                }}
             />

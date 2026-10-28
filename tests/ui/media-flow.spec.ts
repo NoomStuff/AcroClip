@@ -195,6 +195,12 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.playbackRate)).toBe(1.5);
       await page.getByRole("slider", { name: "Playback position", exact: true }).fill("2");
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
+      const position = page.getByRole("slider", { name: "Playback position", exact: true });
+      await expect(position).toHaveValue("2");
+      await position.press("ArrowRight");
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(2.9);
+      await position.press("ArrowLeft");
+      await expect(position).toHaveValue("2");
       await selectOption(page, "Audio tracks", "2");
       await expect(page.getByRole("listbox", { name: "Audio tracks", exact: true })).toHaveAttribute("aria-multiselectable", "true");
       await expect(page.getByRole("option", { name: "Master", exact: true })).toHaveAttribute("aria-selected", "true");
