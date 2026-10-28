@@ -165,7 +165,39 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await page.getByRole("button", { name: "Play", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThan(0.2);
       await page.getByRole("button", { name: "Pause", exact: true }).click();
+      const playbackVideo = page.locator(".viewer-main video");
+      for (const size of [
+         { width: 240, height: 240 },
+         { width: 400, height: 100 },
+      ]) {
+         await playbackVideo.evaluate((node, size) => {
+            node.style.width = `${size.width}px`;
+            node.style.height = `${size.height}px`;
+         }, size);
+         await playbackVideo.click({ position: { x: 5, y: 5 } });
+         expect(await playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
+         await playbackVideo.click({ position: { x: size.width / 2, y: size.height / 2 } });
+         await expect.poll(() => playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+         await playbackVideo.click({ position: { x: size.width - 5, y: size.height - 5 } });
+         expect(await playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+         await playbackVideo.click({ position: { x: size.width / 2, y: size.height / 2 } });
+         await expect.poll(() => playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
+      }
+      await playbackVideo.evaluate((node) => node.removeAttribute("style"));
       await page.getByRole("button", { name: "Mute playback", exact: true }).hover();
+      const playbackVolume = page.getByRole("slider", { name: "Playback volume", exact: true });
+      for (const [level, icon] of [
+         ["0", "volume-x"],
+         ["0.01", "volume"],
+         ["0.32", "volume"],
+         ["0.33", "volume-1"],
+         ["0.66", "volume-1"],
+         ["0.67", "volume-2"],
+         ["1", "volume-2"],
+      ] as const) {
+         await playbackVolume.fill(level);
+         await expect(page.locator(`.player-volume-control > button .lucide-${icon}`)).toBeVisible();
+      }
       await page.getByRole("slider", { name: "Playback volume", exact: true }).fill("0.37");
       await page.getByRole("button", { name: "Mute playback", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.muted)).toBe(true);

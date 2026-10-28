@@ -2,7 +2,7 @@
 // See THIRD_PARTY_NOTICES.md.
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { Volume2, VolumeX } from "lucide-react";
+import { Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import { IconButton } from "./ui";
 
 export function ViewerVolume({
@@ -26,6 +26,7 @@ export function ViewerVolume({
    };
    useEffect(() => () => clearTimeout(timer.current), []);
    const displayed = muted ? 0 : volume;
+   const VolumeIcon = muted || volume === 0 ? VolumeX : volume < 0.33 ? Volume : volume < 0.67 ? Volume1 : Volume2;
    return (
       <div
          className="player-volume-control"
@@ -42,7 +43,7 @@ export function ViewerVolume({
          }}
       >
          <IconButton label={muted || volume === 0 ? "Unmute playback" : "Mute playback"} onClick={onMute} disabled={disabled}>
-            {muted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            <VolumeIcon size={16} />
          </IconButton>
          <div className="player-volume-popover">
             <div className="player-volume-panel">

@@ -479,7 +479,16 @@ export function Viewer({
                         setPlaying(false);
                      }}
                      onError={() => setMediaError("This video could not be played. Try opening it in AttaCut or another player.")}
-                     onClick={() => {
+                     onClick={(event) => {
+                        const media = event.currentTarget;
+                        if (!media.videoWidth || !media.videoHeight) return;
+                        const bounds = media.getBoundingClientRect();
+                        const scale = Math.min(bounds.width / media.videoWidth, bounds.height / media.videoHeight);
+                        const width = media.videoWidth * scale;
+                        const height = media.videoHeight * scale;
+                        const left = bounds.left + (bounds.width - width) / 2;
+                        const top = bounds.top + (bounds.height - height) / 2;
+                        if (event.clientX < left || event.clientX > left + width || event.clientY < top || event.clientY > top + height) return;
                         if (fullscreen && !controlsShown) wakeControls();
                         else toggle();
                      }}
