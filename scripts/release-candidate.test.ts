@@ -97,6 +97,14 @@ it("rejects another commit's evidence even when the version is unchanged", async
    await expect(sealCandidate(input, output)).rejects.toThrow("Stale verification");
 });
 
+it("seals the selected private commit instead of the dispatching workflow commit", async () => {
+   const { input, output } = await fixture();
+   vi.stubEnv("GITHUB_SHA", "b".repeat(40));
+   vi.stubEnv("CANDIDATE_SHA", commit);
+   await sealCandidate(input, output);
+   expect((await verifyCandidate(output)).commit).toBe(commit);
+});
+
 it("rejects package bytes changed after native/source verification", async () => {
    const { input, output, names } = await fixture();
    await writeFile(path.join(input, names[0]!), "changed installer");

@@ -13,7 +13,6 @@ jobs:
       timeout-minutes: 120
       env:
          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-         GITHUB_SHA: ${{ inputs.candidate_sha }}
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
          ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
       steps:

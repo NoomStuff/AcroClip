@@ -74,7 +74,7 @@ async function check(root: string, file: z.infer<typeof record>): Promise<void> 
 
 export async function sealCandidate(input: string, output: string): Promise<void> {
    const version = (JSON.parse(await readFile("package.json", "utf8")) as { version: string }).version;
-   const commit = process.env["GITHUB_SHA"];
+   const commit = process.env["CANDIDATE_SHA"] ?? process.env["GITHUB_SHA"];
    const run = process.env["GITHUB_RUN_ID"];
    if (!commit || !run) throw new Error("Candidate sealing requires exact CI identity.");
    const names = appDownloadNames(version, ["x64", "arm64"], ["x64", "arm64"]);

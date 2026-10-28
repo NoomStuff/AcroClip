@@ -16,7 +16,6 @@ jobs:
       timeout-minutes: 180
       env:
          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-         GITHUB_SHA: ${{ inputs.candidate_sha }}
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
          ACROCLIP_SOURCE_DOWNLOAD_CACHE: ${{ github.workspace }}/.cache/linux-source-downloads
       steps:
@@ -128,6 +127,7 @@ jobs:
               compression-level: 0
          - name: Checkpoint verified source downloads, including after a failed stage
            if: always()
+           continue-on-error: true
            uses: actions/cache/save@v6.1.0
            with:
               path: .cache/linux-source-downloads
@@ -158,6 +158,7 @@ jobs:
               PY
          - name: Upload synthetic capture evidence
            if: always()
+           continue-on-error: true
            uses: actions/upload-artifact@v7
            with:
               overwrite: true
@@ -167,6 +168,7 @@ jobs:
               if-no-files-found: ignore
          - name: Retain source verification diagnostics
            if: always()
+           continue-on-error: true
            uses: actions/upload-artifact@v7
            with:
               overwrite: true

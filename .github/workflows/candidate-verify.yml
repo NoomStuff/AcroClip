@@ -27,7 +27,6 @@ jobs:
       timeout-minutes: 90
       env:
          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-         GITHUB_SHA: ${{ inputs.candidate_sha }}
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
          ACROCLIP_PACKAGED_TEST_SOFTWARE: "1"
       steps:
@@ -147,6 +146,7 @@ jobs:
               compression-level: 0
          - uses: actions/upload-artifact@v7
            if: always()
+           continue-on-error: true
            with:
               name: verification-evidence-${{ matrix.target }}
               path: |-

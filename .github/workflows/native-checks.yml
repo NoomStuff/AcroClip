@@ -20,7 +20,6 @@ jobs:
       timeout-minutes: 45
       env:
          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-         GITHUB_SHA: ${{ inputs.candidate_sha }}
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
       steps:
          - uses: actions/checkout@v7
@@ -64,7 +63,6 @@ jobs:
       timeout-minutes: 60
       env:
          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-         GITHUB_SHA: ${{ inputs.candidate_sha }}
          ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
       steps:
          - uses: actions/checkout@v7

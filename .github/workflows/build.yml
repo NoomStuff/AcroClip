@@ -100,7 +100,6 @@ jobs:
       timeout-minutes: 30
       env:
          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
-         GITHUB_SHA: ${{ needs.prepare.outputs.candidate_sha }}
       steps:
          - name: Require all expected checks
            uses: actions/github-script@v9
