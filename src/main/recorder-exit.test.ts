@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, link, copyFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, link, copyFile, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Recorder } from "./recorder";
@@ -25,12 +25,14 @@ async function fixture(
       join(root, "index.js"),
       `
 const readline = require('node:readline');
+const fs = require('node:fs');
 const emit = x => process.stdout.write(JSON.stringify(x)+'\\n');
 const mode = ${JSON.stringify(mode)};
 let active = false;
 emit({event:'ready',encoders:[]});
 readline.createInterface({input:process.stdin}).on('line',line=>{
  const v = JSON.parse(line);
+ fs.appendFileSync('commands.jsonl',JSON.stringify(v)+'\\n');
  if(v.action==='windows') emit({event:'windows',windows:[]});
  if(v.action==='start') {
   active=true; emit({event:'recording'});
@@ -74,6 +76,22 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
 // Real process startup can exceed five seconds on Windows, especially with two fixtures.
 const helperTestTimeout = process.platform === "win32" ? 15000 : 5000;
 describe("recorder helper termination", () => {
+   it(
+      "exits an already stopped helper without restarting native stop work",
+      async () => {
+         const { child, root, errors } = await fixture("normal");
+         await child.stop();
+         await child.close();
+         const commands = (await readFile(join(root, "commands.jsonl"), "utf8"))
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line) as { action: string });
+         expect(commands.filter((command) => command.action === "stop")).toHaveLength(1);
+         expect(commands.at(-1)?.action).toBe("exit");
+         expect(errors).toEqual([]);
+      },
+      helperTestTimeout
+   );
    it(
       "does not label earlier footage with a newly selected application's artwork",
       async () => {

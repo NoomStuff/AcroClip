@@ -102,8 +102,12 @@ struct Connection {
       pa_mainloop_free(loop);
   }
   void iterate() {
-    pa_mainloop_iterate(loop, 0, nullptr);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    // Wait only when there is no work. Sleeping after every dispatch throttles
+    // small monitor fragments and makes the audio sample clock fall behind.
+    // PulseAudio specifies this timeout in microseconds.
+    if (pa_mainloop_prepare(loop, 1000) < 0 || pa_mainloop_poll(loop) < 0 ||
+        pa_mainloop_dispatch(loop) < 0)
+      throw std::runtime_error("Application audio event loop failed");
   }
   bool operation(pa_operation *value) {
     if (!value)
