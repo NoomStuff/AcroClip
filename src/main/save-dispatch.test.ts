@@ -11,6 +11,7 @@ import { recordingDestination, recordingSourceLabel } from "./safety";
 import { withinRoot } from "./collection";
 import { defaultPreferences } from "../shared/defaults";
 import { bufferedCaptureSource } from "../shared/capture-policy";
+import { recordingArtwork } from "./recording-artwork";
 
 afterEach(() => vi.useRealTimers());
 it("dispatches the actual saveClip body without waiting for a stuck free-space read", async () => {
@@ -43,6 +44,7 @@ it("dispatches the actual saveClip body without waiting for a stuck free-space r
          recordingDestination,
          recordingSourceLabel,
          bufferedCaptureSource,
+         recordingArtwork,
          randomUUID,
          mkdirSync,
          dirname,
