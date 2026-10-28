@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Clapperboard, Circle, CircleStop, Gamepad2, LoaderCircle, Monitor, RefreshCw } from "lucide-react";
-import type { AppState, AudioLevels, CaptureSource, GameCandidate, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
+import type { AppState, CaptureSource, GameCandidate, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
 import { api, reportFeedback } from "./desktop";
 import { Button, ContextHeader, Empty, Field, Segmented, Select } from "./ui";
 import type { Run } from "./desktop";
@@ -12,7 +12,19 @@ import { AudioListening } from "./AudioListening";
 import { AdditionalAudio } from "./AdditionalAudio";
 import { portalScreenId, sourceChoices, selectedCaptureSource } from "../../shared/capture-policy";
 
-export function Recording({ state, visible, run, pulse, openGames }: { state: AppState; visible: boolean; run: Run; pulse: number; openGames: () => void }) {
+export function Recording({
+   state,
+   visible,
+   run,
+   pulse,
+   openGames,
+}: {
+   state: Pick<AppState, "preferences" | "recorder" | "platform">;
+   visible: boolean;
+   run: Run;
+   pulse: number;
+   openGames: () => void;
+}) {
    const layout = useRef<HTMLDivElement>(null);
    const controls = usePaneSize(layout, { key: "recording.controls", initial: 310, min: 260, max: 440, reserve: 420, axis: "x", fromEnd: true });
    const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 170, max: 380, reserve: 200, axis: "y", fromEnd: true });
@@ -25,7 +37,6 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
    const [gamesLoaded, setGamesLoaded] = useState(false);
    const [saving, setSaving] = useState(false);
    const [pulsing, setPulsing] = useState(false);
-   const [nativeLevels, setNativeLevels] = useState<AudioLevels>({ capture: 0, microphone: 0 });
    const latestPreferences = useRef(state.preferences);
    latestPreferences.current = state.preferences;
    const writes = useRef(Promise.resolve());
@@ -36,10 +47,7 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
    const active = state.recorder.state === "recording" || state.recorder.state === "waiting";
    const findingGames = !active && state.recorder.supported && !gamesLoaded;
    useEffect(() => {
-      if (!visible) {
-         setNativeLevels({ capture: 0, microphone: 0 });
-         return;
-      }
+      if (!visible) return;
       return api.onEvent((event) => {
          if (event.type === "capture-sources") {
             knownSources.current = event.sources;
@@ -47,20 +55,6 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
          }
          if (event.type === "audio-monitor") {
             setMonitorError(event.monitorError);
-            if (event.monitorError) setNativeLevels({ capture: 0, microphone: 0 });
-         }
-         if (event.type === "audio-levels") {
-            const levels = event.levels;
-            setNativeLevels((previous) => {
-               const additional = { ...previous.additional, ...levels.additional };
-               if (
-                  previous.capture === levels.capture &&
-                  previous.microphone === levels.microphone &&
-                  Object.entries(additional).every(([id, value]) => previous.additional?.[id] === value)
-               )
-                  return previous;
-               return { ...levels, additional };
-            });
          }
       });
    }, [visible, active]);
@@ -343,14 +337,6 @@ export function Recording({ state, visible, run, pulse, openGames }: { state: Ap
                               preferences={state.preferences}
                               active={active || state.recorder.state === "starting"}
                               visible={visible}
-                              levels={{
-                                 ...nativeLevels.additional,
-                                 ...Object.fromEntries(
-                                    state.preferences.audioSources
-                                       .filter((source) => source.kind === "source")
-                                       .map((source) => [source.id, nativeLevels.capture])
-                                 ),
-                              }}
                               save={preferences}
                            />
                         </AudioListening>

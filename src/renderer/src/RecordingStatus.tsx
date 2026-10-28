@@ -2,10 +2,20 @@ import { AlertCircle, LoaderCircle, Monitor } from "lucide-react";
 import type { AppState } from "../../shared/types";
 import { formatTime } from "./format";
 import { reportFeedback } from "./desktop";
+import { useEffect, useState } from "react";
 
-export function RecordingStatus({ state, elapsed, audioMessage = "" }: { state: AppState | null; elapsed: number; audioMessage?: string }) {
+export function RecordingStatus({ state, visible, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
+   const started = state?.recorder.startedAt;
+   const [elapsed, setElapsed] = useState(() => (started ? Math.max(0, (Date.now() - started) / 1000) : 0));
+   const active = state?.recorder.state === "recording";
+   useEffect(() => {
+      if (!active || !visible) return;
+      const update = () => setElapsed(started ? Math.max(0, (Date.now() - started) / 1000) : 0);
+      update();
+      const timer = window.setInterval(update, 1000);
+      return () => window.clearInterval(timer);
+   }, [started, active, visible]);
    const recorder = state?.recorder;
-   const active = recorder?.state === "recording";
    const audioWarning = recorder?.audioWarning || audioMessage;
    const status = active
       ? recorder?.message || "Recording"
@@ -35,7 +45,7 @@ export function RecordingStatus({ state, elapsed, audioMessage = "" }: { state: 
                <>
                   <span className="status-divider" />
                   <span className="tabular">{formatTime(elapsed)}</span>
-                  <span className="status-secondary">{Math.floor(recorder.availableSeconds)}s available</span>
+                  <span className="status-secondary">{Math.floor(recorder?.availableSeconds ?? 0)}s available</span>
                </>
             )}
          </div>

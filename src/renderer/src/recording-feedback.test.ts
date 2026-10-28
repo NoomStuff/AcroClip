@@ -25,7 +25,7 @@ describe("persistent recording feedback", () => {
       const html = renderToStaticMarkup(
          createElement(RecordingStatus, {
             state: { ...state, recorder: { ...state.recorder, state: "recording", availableSeconds: 42, audioWarning: "Microphone: device disconnected" } },
-            elapsed: 100,
+            visible: true,
          })
       );
       expect(html).toContain("status-dot recording");
@@ -36,7 +36,7 @@ describe("persistent recording feedback", () => {
    it("shows the actual waiting reason instead of claiming audio is recording", () => {
       for (const message of ["Microphone: selected device is unavailable", ""]) {
          const status = renderToStaticMarkup(
-            createElement(RecordingStatus, { state: { ...state, recorder: { ...state.recorder, state: "waiting", message } }, elapsed: 0 })
+            createElement(RecordingStatus, { state: { ...state, recorder: { ...state.recorder, state: "waiting", message } }, visible: true })
          );
          expect(status).toContain(message || "Waiting for application");
       }
@@ -47,9 +47,9 @@ describe("persistent recording feedback", () => {
             state: {
                ...state,
                storageWarning: "Low storage in clip folder",
-               recorder: { ...state.recorder, state: "recording", startedAt: 100, availableSeconds: 60, pendingSaves: 2 },
+               recorder: { ...state.recorder, state: "recording", startedAt: Date.now() - 125000, availableSeconds: 60, pendingSaves: 2 },
             },
-            elapsed: 125,
+            visible: true,
          })
       );
       expect(html).toContain("status-dot recording");
@@ -69,7 +69,7 @@ describe("persistent recording feedback", () => {
                   storageWarning: "Low storage in clip folder",
                   recorder: { ...state.recorder, state: status, message: "Selected microphone is unavailable" },
                },
-               elapsed: 0,
+               visible: true,
             })
          );
          expect(html).toContain("Selected microphone is unavailable");

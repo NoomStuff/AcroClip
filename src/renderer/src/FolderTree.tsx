@@ -1,16 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Folder, FolderOpen } from "lucide-react";
+import { groupFolders } from "./library-index";
 export function FolderTree({ paths, selected, onSelect }: { paths: string[]; selected: string | null; onSelect: (path: string) => void }) {
    const root = useRef<HTMLDivElement>(null);
    const [expanded, setExpanded] = useState(new Set<string>());
-   const children = useMemo(() => {
-      const result = new Map<string, string[]>();
-      for (const path of paths) {
-         const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-         result.set(parent, [...(result.get(parent) ?? []), path]);
-      }
-      return result;
-   }, [paths]);
+   const children = useMemo(() => groupFolders(paths), [paths]);
+   const selectedExists = selected !== null && paths.includes(selected);
    useEffect(() => {
       if (selected === null) return;
       setExpanded((current) => {
@@ -58,7 +53,7 @@ export function FolderTree({ paths, selected, onSelect }: { paths: string[]; sel
                      aria-selected={selected === path}
                      aria-expanded={hasChildren ? open : undefined}
                      data-path={path}
-                     tabIndex={selected === path || (!paths.includes(selected ?? "") && path === paths[0]) ? 0 : -1}
+                     tabIndex={selected === path || (!selectedExists && path === paths[0]) ? 0 : -1}
                      className={`sidebar-item ${selected === path ? "selected" : ""}`}
                      title={path}
                      onClick={() => onSelect(path)}

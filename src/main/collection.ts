@@ -11,6 +11,7 @@ import type { Category, Clip, Job, Shareable } from "../shared/types";
 import { encodeShareable, ffmpegBase, probe, runMedia } from "./media";
 import type { MediaInfo } from "./media";
 import { PlaybackCache } from "./playback";
+import { mapConcurrent } from "./concurrent";
 
 const categorySchema = z.object({ id: z.string(), name: z.string(), color: z.string(), icon: z.string().max(80).optional() });
 const fileSchema = z.object({ relativePath: z.string(), absolutePath: z.string(), identity: z.string() });
@@ -364,12 +365,16 @@ export class CollectionService {
                         "-y",
                         "-ss",
                         String(Math.min(info.duration * 0.2, 2)),
+                        "-threads",
+                        "2",
                         "-i",
                         actual,
                         "-frames:v",
                         "1",
                         "-vf",
                         "scale=480:-2",
+                        "-filter_threads",
+                        "1",
                         "-threads",
                         "1",
                         temporary,
@@ -466,12 +471,27 @@ export class CollectionService {
       if (!this.root) return "";
       const hash = createHash("sha256");
       const ownedShares = await this.shareablesOwned();
+      const registeredPaths = new Set(this.metadata.clips.map((clip) => normal(resolve(this.root, clip.relativePath))));
+      const fileRecord = async (path: string): Promise<string> => {
+         try {
+            return JSON.stringify([relative(this.root, path), fileStamp(await stat(path, { bigint: true }))]);
+         } catch (error) {
+            if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+            return JSON.stringify([relative(this.root, path), "missing"]);
+         }
+      };
       const walk = async (directory: string): Promise<void> => {
          if (!withinRoot(this.root, await realpath(directory))) return;
          hash.update(JSON.stringify([relative(this.root, directory), fileStamp(await stat(directory, { bigint: true }))]));
          const entries = await readdir(directory, { withFileTypes: true });
          entries.sort((a, b) => a.name.localeCompare(b.name));
-         for (const entry of entries) {
+         const records = await mapConcurrent(entries, 4, async (entry) => {
+            if (!entry.isFile() || !supported.has(extname(entry.name).toLowerCase()) || entry.name.startsWith(".acroclip-")) return;
+            const path = join(directory, entry.name);
+            if (/\.mkv\.saving\.mkv$/i.test(entry.name) && !registeredPaths.has(normal(path))) return;
+            return fileRecord(path);
+         });
+         for (const [index, entry] of entries.entries()) {
             if (entry.isSymbolicLink() || entry.name === ".acroclip") continue;
             const path = join(directory, entry.name);
             if (entry.isDirectory()) {
@@ -482,36 +502,19 @@ export class CollectionService {
                   if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
                   hash.update(JSON.stringify([relative(this.root, path), "missing"]));
                }
-            } else if (entry.isFile() && supported.has(extname(entry.name).toLowerCase()) && !entry.name.startsWith(".acroclip-")) {
-               // In-progress recorder output is imported only after publication.
-               if (
-                  /\.mkv\.saving\.mkv$/i.test(entry.name) &&
-                  !this.metadata.clips.some((clip) => normal(resolve(this.root, clip.relativePath)) === normal(path))
-               )
-                  continue;
-               try {
-                  hash.update(JSON.stringify([relative(this.root, path), fileStamp(await stat(path, { bigint: true }))]));
-               } catch (error) {
-                  if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
-                  hash.update(JSON.stringify([relative(this.root, path), "missing"]));
-               }
-            }
+            } else if (records[index]) hash.update(records[index]);
          }
       };
       await walk(this.root);
       // Owned shareables are excluded from discovery, but changes to registered
       // files still need to update their original clip's available exports.
-      for (const path of [...new Set(this.metadata.clips.flatMap((clip) => clip.shareables.map((share) => share.relativePath)))].sort()) {
-         if (!safeRelative(path)) continue;
+      const shares = [...new Set(this.metadata.clips.flatMap((clip) => clip.shareables.map((share) => share.relativePath)))].sort();
+      const records = await mapConcurrent(shares, 4, async (path) => {
+         if (!safeRelative(path)) return;
          const full = resolve(this.root, path);
-         if (!withinRoot(this.root, full)) continue;
-         try {
-            hash.update(JSON.stringify([path, fileStamp(await stat(full, { bigint: true }))]));
-         } catch (error) {
-            if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
-            hash.update(JSON.stringify([path, "missing"]));
-         }
-      }
+         return withinRoot(this.root, full) ? fileRecord(full) : undefined;
+      });
+      for (const record of records) if (record) hash.update(record);
       return hash.digest("hex");
    }
    private async scanWithStamp(): Promise<Clip[]> {

@@ -99,7 +99,15 @@ export interface SettingsTarget {
    section: "collection" | "games";
    request: number;
 }
-export function Settings({ state, run, target }: { state: AppState; run: Run; target: SettingsTarget | null }) {
+export function Settings({
+   state,
+   run,
+   target,
+}: {
+   state: Pick<AppState, "preferences" | "recorder" | "jobs" | "update" | "version">;
+   run: Run;
+   target: SettingsTarget | null;
+}) {
    const layout = useRef<HTMLDivElement>(null);
    const content = useRef<HTMLDivElement>(null);
    const sidebar = usePaneSize(layout, { key: "settings.sidebar", initial: 245, min: 210, max: 380, reserve: 520, axis: "x" });

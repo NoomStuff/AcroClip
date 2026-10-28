@@ -3,14 +3,17 @@
 // Adapted from AttaCut Player, Transport, AudioPicker and VolumeSlider.
 // See THIRD_PARTY_NOTICES.md. No editor or trimming behavior is included.
 import { Gauge, Headphones, Maximize, Minimize, Pause, Play } from "lucide-react";
-import type { CSSProperties } from "react";
+import { useEffect, useState } from "react";
+import type { CSSProperties, RefObject } from "react";
 import type { AudioTrack } from "../../shared/types";
 import { DropdownSelect } from "./DropdownSelect";
 import { formatTime } from "./format";
 import { IconButton } from "./ui";
 import { ViewerVolume } from "./ViewerVolume";
 export function ViewerTransport({
-   time,
+   time: initialTime,
+   video,
+   visible,
    duration,
    playing,
    volume,
@@ -29,6 +32,8 @@ export function ViewerTransport({
    onFullscreen,
 }: {
    time: number;
+   video: RefObject<HTMLVideoElement | null>;
+   visible: boolean;
    duration: number;
    playing: boolean;
    volume: number;
@@ -46,6 +51,28 @@ export function ViewerTransport({
    onTrack: (value: number[]) => void;
    onFullscreen: () => void;
 }) {
+   // The playback clock only redraws transport controls. Sidebar, menus and
+   // export controls do not need to reconcile on every video frame.
+   const [time, setTime] = useState(initialTime);
+   useEffect(() => {
+      const media = video.current;
+      if (!media || !visible || disabled) return;
+      let frame = 0;
+      const update = () => setTime(media.currentTime);
+      const tick = () => {
+         update();
+         frame = requestAnimationFrame(tick);
+      };
+      update();
+      media.addEventListener("timeupdate", update);
+      media.addEventListener("seeked", update);
+      if (playing) frame = requestAnimationFrame(tick);
+      return () => {
+         cancelAnimationFrame(frame);
+         media.removeEventListener("timeupdate", update);
+         media.removeEventListener("seeked", update);
+      };
+   }, [video, visible, playing, initialTime, disabled]);
    const fraction = duration > 0 ? Math.min(1, Math.max(0, time / duration)) : 0;
    const audioLabel = !tracks.length
       ? "None"

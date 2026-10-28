@@ -63,17 +63,20 @@ export class CaptureSources {
          }),
       ]);
       const previous = new Map(this.cached.map((source) => [source.id, source]));
-      const allowedWindows = process.platform === "win32" ? new Set(nativeWindows.map((item) => item.id.split(":")[1])) : null;
+      const windowsByHandle = new Map(nativeWindows.map((item) => [item.id.split(":")[1], item]));
+      const displays = new Map(screen.getAllDisplays().map((display) => [String(display.id), display]));
       this.previewSources = new Map(list.map((source) => [source.id, { ...source, thumbnail: nativeImage.createEmpty() }]));
       this.previewPids = new Map(nativeWindows.map((source) => [source.id.split(":")[1]!, source.pid]));
       this.cached = list
          .filter(
-            (s) => s.id.split(":")[1] !== this.ownWindow() && (!allowedWindows || s.id.startsWith("screen:") || allowedWindows.has(s.id.split(":")[1] ?? ""))
+            (s) =>
+               s.id.split(":")[1] !== this.ownWindow() &&
+               (process.platform !== "win32" || s.id.startsWith("screen:") || windowsByHandle.has(s.id.split(":")[1]))
          )
          .map((s) => {
-            const display = screen.getAllDisplays().find((item) => String(item.id) === s.display_id);
+            const display = displays.get(s.display_id);
             const bounds = display ? (process.platform === "win32" ? screen.dipToScreenRect(null, display.bounds) : display.bounds) : undefined;
-            const candidate = nativeWindows.find((item) => item.id.split(":")[1] === s.id.split(":")[1]);
+            const candidate = windowsByHandle.get(s.id.split(":")[1]);
             const prior = previous.get(s.id);
             let applicationId: string | undefined;
             if (s.id.startsWith("window:")) {
@@ -141,14 +144,10 @@ export class CaptureSources {
       return this.cached;
    }
    private hydrateIcons(candidates: GameCandidate[]): void {
-      const pending = candidates.filter(
-         (candidate) =>
-            candidate.executable &&
-            this.cached.some(
-               (source) =>
-                  source.kind === "app" && source.id.split(":")[1] === candidate.id.split(":")[1] && source.processId === candidate.pid && !source.appIcon
-            )
+      const missingIcons = new Map(
+         this.cached.filter((source) => source.kind === "app" && !source.appIcon).map((source) => [source.id.split(":")[1], source.processId])
       );
+      const pending = candidates.filter((candidate) => candidate.executable && missingIcons.get(candidate.id.split(":")[1]) === candidate.pid);
       void Promise.all(
          pending.map(async (candidate) => {
             const executable = candidate.executable.toLowerCase();

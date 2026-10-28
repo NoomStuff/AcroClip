@@ -22,7 +22,7 @@ export function Viewer({
    openLibrary,
    ask,
 }: {
-   state: AppState;
+   state: Pick<AppState, "applicationIcons" | "jobs" | "preferences">;
    clip: Clip | undefined;
    visible: boolean;
    run: Run;
@@ -179,19 +179,6 @@ export function Viewer({
          video.current.preservesPitch = true;
       }
    }, [speed, url]);
-   useEffect(() => {
-      if (!playing || !visible) return;
-      let frame = 0;
-      const tick = () => {
-         if (video.current && !switching.current) {
-            setTime(video.current.currentTime);
-            seek.current = video.current.currentTime;
-         }
-         frame = requestAnimationFrame(tick);
-      };
-      frame = requestAnimationFrame(tick);
-      return () => cancelAnimationFrame(frame);
-   }, [playing, visible]);
    const wakeControls = useCallback(() => {
       clearTimeout(controlsTimer.current);
       setControlsShown(true);
@@ -483,7 +470,6 @@ export function Viewer({
                      }}
                      onTimeUpdate={(event) => {
                         if (switching.current) return;
-                        setTime(event.currentTarget.currentTime);
                         seek.current = event.currentTarget.currentTime;
                      }}
                      onPlay={() => setPlaying(true)}
@@ -521,6 +507,8 @@ export function Viewer({
             </div>
             <ViewerTransport
                time={time}
+               video={video}
+               visible={visible}
                duration={duration || clip.duration}
                playing={playing}
                volume={volume}

@@ -214,6 +214,7 @@ export interface AppState {
 export type AppEvent =
    | { type: "capture-sources"; sources: CaptureSource[] }
    | { type: "state"; state: AppState }
+   | { type: "state-patch"; patch: Partial<AppState> }
    | { type: "recorder"; recorder: RecorderState }
    | { type: "notice"; message: string; error: boolean }
    | { type: "clip-action" }

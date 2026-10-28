@@ -35,6 +35,7 @@ export class PlaybackCache {
       const previous = this.metadata.get(source);
       const info = previous?.stamp === stamp ? previous.info : await probe(source);
       this.metadata.set(source, { stamp, info });
+      while (this.metadata.size > 256) this.metadata.delete(this.metadata.keys().next().value!);
       if (track?.some((index) => !info.tracks.some((entry) => entry.index === index))) throw new Error("That audio track is no longer available.");
       const compatibleVideo = ["h264", "av1", "vp9", "vp8"].includes(info.videoCodec);
       const compatibleAudio = info.tracks.every((entry) => ["aac", "opus", "vorbis", "mp3"].includes(entry.codec));
@@ -59,7 +60,9 @@ export class PlaybackCache {
                    "[audio]",
                 ];
       const input = [...ffmpegBase, "-y", "-threads", "2", "-i", source, "-map", "0:v:0", ...audio];
-      const output = ["-c:a", "aac", "-movflags", "+faststart", temporary];
+      const selectedAudio = track ? info.tracks.filter((entry) => track.includes(entry.index)) : info.tracks.slice(0, 1);
+      const copyAudio = selectedAudio.length <= 1 && selectedAudio.every((entry) => ["aac", "mp3"].includes(entry.codec));
+      const output = ["-c:a", copyAudio ? "copy" : "aac", "-movflags", "+faststart", temporary];
       const transcode = () =>
          runMedia("ffmpeg", [...input, "-c:v", "libx264", "-preset", "veryfast", "-threads", "2", "-pix_fmt", "yuv420p", ...output], { belowNormal: true });
       try {

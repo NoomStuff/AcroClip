@@ -10,14 +10,12 @@ export function AdditionalAudio({
    captureAvailable = true,
    active,
    visible,
-   levels,
    save,
 }: {
    preferences: Preferences;
    captureAvailable?: boolean;
    active: boolean;
    visible: boolean;
-   levels: Record<string, number>;
    save: (patch: Partial<Preferences> | ((current: Preferences) => Partial<Preferences>)) => Promise<void>;
 }) {
    const [open, setOpen] = useState(false),
@@ -118,7 +116,7 @@ export function AdditionalAudio({
                listenAvailable={(source.kind !== "source" || captureAvailable) && !(source.kind === "input" && source.muted)}
                muted={source.muted}
                volume={source.volume}
-               level={levels[source.id] ?? 0}
+               captureLevel={source.kind === "source"}
                active={active}
                onEnable={(enabled) => update(source.id, { enabled, muted: false })}
                onMute={() => update(source.id, (current) => ({ muted: !current.muted && current.volume > 0, volume: current.volume > 0 ? current.volume : 1 }))}

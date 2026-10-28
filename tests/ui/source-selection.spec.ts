@@ -38,6 +38,9 @@ test("mismatched and stale sources stay unselected without preview or capture fa
             if (channel === "app-event" && (args[0] as { type?: string })?.type === "state") {
                current = (args[0] as { state: AppState }).state;
                send(channel, { type: "state", state: supported(current) });
+            } else if (channel === "app-event" && (args[0] as { type?: string })?.type === "state-patch") {
+               current = { ...current, ...(args[0] as { patch: Partial<AppState> }).patch };
+               send(channel, { type: "state", state: supported(current) });
             } else send(channel, ...args);
          };
          ipcMain.removeHandler("state");

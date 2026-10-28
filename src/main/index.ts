@@ -28,6 +28,7 @@ import { bufferedCaptureSource, portalScreenId, selectedCaptureSource } from "..
 import { attaCutEnvironment, findAttaCut } from "./attacut";
 import { needsMicrophonePermission } from "../shared/audio-policy";
 import { StorageMonitor } from "./storage";
+import { StateChanges } from "./state-changes";
 
 protocol.registerSchemesAsPrivileged([{ scheme: "acroclip-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -50,6 +51,7 @@ let previewSourceId: string | null = null;
 let previewOwner: string | null = null;
 const mediaFiles = new Map<string, string>();
 const mediaKeys = new Map<string, string>();
+const stateChanges = new StateChanges();
 const collections = new CollectionService({
    scanConcurrency: () => (["recording", "waiting", "starting"].includes(recorder.status.state) || startingCapture ? 1 : 3),
    onChange: () => emitState(),
@@ -146,7 +148,10 @@ function send(event: AppEvent) {
 function emitState() {
    if (preferences) {
       updateStorageActivity();
-      send({ type: "state", state: state() });
+      // Do not advance the baseline while the renderer cannot receive updates.
+      if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible() || mainWindow.isMinimized()) return;
+      const event = stateChanges.event(state());
+      if (event) send(event);
    }
 }
 function updateStorageActivity() {
@@ -191,6 +196,7 @@ async function showFeedback(message: string, error: boolean, saving: boolean) {
 }
 let lastRecordingArtwork: RecordingArtwork | undefined;
 function createWindow() {
+   stateChanges.reset();
    mainWindow = new BrowserWindow({
       width: 1380,
       height: 900,
@@ -208,6 +214,7 @@ function createWindow() {
       mainWindow.setAppDetails({ appId: windowsAppId(), appIconPath: process.execPath, appIconIndex: 0 });
    }
    mainWindow.once("ready-to-show", () => mainWindow?.show());
+   mainWindow.webContents.on("did-start-loading", () => stateChanges.reset());
    const visibilityChanged = () => {
       const visible = !!mainWindow?.isVisible() && !mainWindow.isMinimized();
       if (!visible) {

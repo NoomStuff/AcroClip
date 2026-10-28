@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Check, Clapperboard, Film, Folder, Minus, Settings2, Square, Video, X } from "lucide-react";
 import { AppLogo } from "./AppLogo";
 import type { AppState, Clip, RecorderState } from "../../shared/types";
@@ -19,11 +19,19 @@ import { UpdateChip } from "./UpdateChip";
 import { Onboarding } from "./Onboarding";
 
 type Page = "recording" | "library" | "viewer" | "settings";
+const LibraryPage = memo(Library);
+const RecordingPage = memo(Recording);
+const ViewerPage = memo(Viewer);
+const SettingsPage = memo(Settings);
 const pageOrder: readonly Page[] = ["recording", "library", "viewer", "settings"];
 import type { Ask } from "./Dialog";
 export function App() {
    const [state, setState] = useState<AppState | null>(null);
-   const [{ page, direction }, setNavigation] = useState<{ page: Page; direction: "up" | "down" }>({ page: "recording", direction: "down" });
+   const [{ page, direction, visited }, setNavigation] = useState<{ page: Page; direction: "up" | "down"; visited: Page[] }>({
+      page: "recording",
+      direction: "down",
+      visited: ["recording"],
+   });
    const setPage = useCallback((next: Page) => {
       setNavigation((current) =>
          current.page === next
@@ -31,14 +39,21 @@ export function App() {
             : {
                  page: next,
                  direction: pageOrder.indexOf(next) < pageOrder.indexOf(current.page) ? "up" : "down",
+                 visited: current.visited.includes(next) ? current.visited : [...current.visited, next],
               }
       );
    }, []);
    const [settingsTarget, setSettingsTarget] = useState<SettingsTarget | null>(null);
-   const openSettings = (section: SettingsTarget["section"]) => {
-      setSettingsTarget((current) => ({ section, request: (current?.request ?? 0) + 1 }));
-      setPage("settings");
-   };
+   const openSettings = useCallback(
+      (section: SettingsTarget["section"]) => {
+         setSettingsTarget((current) => ({ section, request: (current?.request ?? 0) + 1 }));
+         setPage("settings");
+      },
+      [setPage]
+   );
+   const openGames = useCallback(() => openSettings("games"), [openSettings]);
+   const openCollectionSettings = useCallback(() => openSettings("collection"), [openSettings]);
+   const openLibrary = useCallback(() => setPage("library"), [setPage]);
    const [windowVisible, setWindowVisible] = useState(!document.hidden);
    useEffect(() => {
       const update = () => setWindowVisible(!document.hidden);
@@ -50,7 +65,6 @@ export function App() {
    const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
    const [dialog, setDialog] = useState<DialogRequest | null>(null);
    const [clipPulse, setClipPulse] = useState(0);
-   const [elapsed, setElapsed] = useState(0);
    const run: Run = useCallback(async (action) => {
       try {
          await action();
@@ -64,11 +78,13 @@ export function App() {
    useEffect(() => {
       let receivedState = false;
       let recorder: RecorderState | undefined;
+      let pendingPatch: Partial<AppState> = {};
       void run(async () => {
          const loaded = await api.state();
          if (receivedState) return;
-         setState(recorder ? { ...loaded, recorder } : loaded);
-         setWindowVisible(loaded.windowVisible);
+         const current = { ...loaded, ...pendingPatch, ...(recorder ? { recorder } : {}) };
+         setState(current);
+         setWindowVisible(current.windowVisible);
       });
       const unsubscribe = api.onEvent((event) => {
          if (event.type === "state") {
@@ -77,6 +93,11 @@ export function App() {
             setWindowVisible(event.state.windowVisible);
          }
          if (event.type === "visibility") setWindowVisible(event.visible);
+         if (event.type === "state-patch") {
+            pendingPatch = { ...pendingPatch, ...event.patch };
+            setState((current) => (current ? { ...current, ...event.patch } : current));
+            if (event.patch.windowVisible !== undefined) setWindowVisible(event.patch.windowVisible);
+         }
          if (event.type === "recorder") {
             recorder = event.recorder;
             setState((current) => (current ? { ...current, recorder: event.recorder } : current));
@@ -100,13 +121,6 @@ export function App() {
       const timer = window.setTimeout(() => setNotice(null), 5000);
       return () => window.clearTimeout(timer);
    }, [notice]);
-   useEffect(() => {
-      const started = state?.recorder.startedAt;
-      const update = () => setElapsed(started ? Math.max(0, (Date.now() - started) / 1000) : 0);
-      update();
-      const timer = window.setInterval(update, 1000);
-      return () => window.clearInterval(timer);
-   }, [state?.recorder.startedAt]);
    useEffect(() => {
       if (!state) return;
       const key = (event: KeyboardEvent) => {
@@ -142,16 +156,46 @@ export function App() {
       window.addEventListener("keydown", key);
       return () => window.removeEventListener("keydown", key);
    }, [state, page, setPage]);
-   const clip = state?.clips.find((item) => item.id === selected) ?? (selected === null ? state?.clips[0] : undefined);
+   const clip = useMemo(() => (selected === null ? state?.clips[0] : state?.clips.find((item) => item.id === selected)), [state?.clips, selected]);
    useEffect(() => {
       // An empty viewer may receive its first clip after opening. Retain that
       // clip once it exists, just as when choosing an existing clip from the rail.
       if (page === "viewer" && selected === null && clip) setSelected(clip.id);
    }, [page, selected, clip]);
-   const openClip = (value: Clip) => {
-      setSelected(value.id);
-      setPage("viewer");
-   };
+   const openClip = useCallback(
+      (value: Clip) => {
+         setSelected(value.id);
+         setPage("viewer");
+      },
+      [setPage]
+   );
+   const clips = state?.clips,
+      folders = state?.folders,
+      applicationIcons = state?.applicationIcons,
+      categories = state?.categories,
+      collectionStatus = state?.collectionStatus,
+      jobs = state?.jobs,
+      preferences = state?.preferences,
+      recorder = state?.recorder,
+      platform = state?.platform,
+      update = state?.update,
+      version = state?.version;
+   const libraryState = useMemo(
+      () =>
+         clips && folders && applicationIcons && categories && collectionStatus && jobs && preferences
+            ? { clips, folders, applicationIcons, categories, collectionStatus, jobs, preferences }
+            : null,
+      [clips, folders, applicationIcons, categories, collectionStatus, jobs, preferences]
+   );
+   const recordingState = useMemo(() => (preferences && recorder && platform ? { preferences, recorder, platform } : null), [preferences, recorder, platform]);
+   const viewerState = useMemo(
+      () => (applicationIcons && jobs && preferences ? { applicationIcons, jobs, preferences } : null),
+      [applicationIcons, jobs, preferences]
+   );
+   const settingsState = useMemo(
+      () => (preferences && recorder && jobs && update && version ? { preferences, recorder, jobs, update, version } : null),
+      [preferences, recorder, jobs, update, version]
+   );
    const pages = [
       { id: "recording", title: "Recording", icon: Video },
       { id: "library", title: "Library", icon: Folder },
@@ -226,39 +270,43 @@ export function App() {
             </button>
          </nav>
          <main className="workspace" data-direction={direction} inert={!!state && !state.preferences.setupComplete}>
-            {state ? (
+            {state && libraryState && recordingState && viewerState && settingsState ? (
                <>
                   <section className="page" hidden={page !== "recording"}>
-                     <Recording
-                        state={state}
+                     <RecordingPage
+                        state={recordingState}
                         visible={page === "recording" && windowVisible && state.preferences.setupComplete}
                         run={run}
                         pulse={clipPulse}
-                        openGames={() => openSettings("games")}
+                        openGames={openGames}
                      />
                   </section>
                   <section className="page" hidden={page !== "library"}>
-                     <Library
-                        state={state}
-                        visible={page === "library" && windowVisible}
-                        run={run}
-                        ask={ask}
-                        openClip={openClip}
-                        openSettings={() => openSettings("collection")}
-                     />
+                     {visited.includes("library") && (
+                        <LibraryPage
+                           state={libraryState}
+                           visible={page === "library" && windowVisible}
+                           run={run}
+                           ask={ask}
+                           openClip={openClip}
+                           openSettings={openCollectionSettings}
+                        />
+                     )}
                   </section>
                   <section className="page" hidden={page !== "viewer"}>
-                     <Viewer
-                        ask={ask}
-                        state={state}
-                        clip={clip}
-                        visible={page === "viewer" && windowVisible}
-                        run={run}
-                        openLibrary={() => setPage("library")}
-                     />
+                     {visited.includes("viewer") && (
+                        <ViewerPage
+                           ask={ask}
+                           state={viewerState}
+                           clip={clip}
+                           visible={page === "viewer" && windowVisible}
+                           run={run}
+                           openLibrary={openLibrary}
+                        />
+                     )}
                   </section>
                   <section className="page" hidden={page !== "settings"}>
-                     <Settings state={state} run={run} target={settingsTarget} />
+                     {visited.includes("settings") && <SettingsPage state={settingsState} run={run} target={settingsTarget} />}
                   </section>
                </>
             ) : (
@@ -270,7 +318,7 @@ export function App() {
                </div>
             )}
          </main>
-         <RecordingStatus state={state} elapsed={elapsed} audioMessage={page === "recording" ? audioStatus : ""} />
+         <RecordingStatus state={state} visible={windowVisible} audioMessage={page === "recording" ? audioStatus : ""} />
          {notice && (
             <div className={`toast ${notice.error ? "error" : ""}`} role={notice.error ? "alert" : "status"}>
                {notice.error ? <AlertCircle size={18} /> : <Check size={18} />}

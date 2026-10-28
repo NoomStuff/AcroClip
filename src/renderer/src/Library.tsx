@@ -1,34 +1,16 @@
-import { shareableTargetAllowed } from "../../shared/shareable-target";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import {
-   AlertCircle,
-   Check,
-   Clapperboard,
-   Folder,
-   FolderOpen,
-   Grid2X2,
-   List,
-   LoaderCircle,
-   MoreHorizontal,
-   Pencil,
-   Plus,
-   Search,
-   Scissors,
-   Share2,
-   Tag,
-   Trash2,
-   X,
-} from "lucide-react";
+import { AlertCircle, Check, Folder, FolderOpen, Grid2X2, List, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import type { AppState, Category, Clip } from "../../shared/types";
 import { DialogPanel } from "./Dialog";
 import type { Ask } from "./Dialog";
 import { SelectionIndicator } from "./SelectionIndicator";
 import { ContextHeader, Button, Empty, IconButton, Menu, MenuItem, Select } from "./ui";
-import { fileDragProps, api } from "./desktop";
-import { age, folderName, formatSize, formatTime } from "./format";
+import { api } from "./desktop";
+import { age, folderName, formatSize } from "./format";
 import type { Run } from "./desktop";
 import { ApplicationIcon } from "./ApplicationIcon";
+import { ClipCard } from "./ClipCard";
 import { FolderTree } from "./FolderTree";
 import { categoryColors, categoryStyle } from "./category-color";
 import { CategoryEditor, CategoryMark } from "./CategoryEditor";
@@ -37,10 +19,7 @@ import { PaneDivider, usePaneSize } from "./layout";
 import { useApplicationColors } from "./useApplicationColors";
 import type { ContextMenuRequest } from "./ui";
 import { useAttaCutAvailable } from "./useAttaCutAvailable";
-
-function applicationStyle(color: string | undefined): CSSProperties {
-   return color ? ({ "--application-color": color } as CSSProperties) : {};
-}
+import { summarizeClips } from "./library-index";
 
 export function Library({
    state,
@@ -50,7 +29,7 @@ export function Library({
    openClip,
    openSettings,
 }: {
-   state: AppState;
+   state: Pick<AppState, "clips" | "folders" | "applicationIcons" | "categories" | "collectionStatus" | "jobs" | "preferences">;
    visible?: boolean;
    run: Run;
    ask: Ask;
@@ -111,25 +90,42 @@ export function Library({
       };
    }, [visible, collectionRoot]);
    const [query, setQuery] = useState("");
+   const [, refreshAges] = useState(0);
+   useEffect(() => {
+      if (!visible) return;
+      refreshAges((value) => value + 1);
+      // Relative dates still advance when unchanged app state is suppressed.
+      const timer = window.setInterval(() => refreshAges((value) => value + 1), 5000);
+      return () => window.clearInterval(timer);
+   }, [visible]);
+   const search = query.toLowerCase();
+   const summary = useMemo(() => summarizeClips(state.clips), [state.clips]);
+   const activeJobs = useMemo(() => {
+      const result = new Map<string, AppState["jobs"][number]>();
+      for (const job of state.jobs)
+         if (job.kind === "shareable" && ["running", "queued"].includes(job.state) && !result.has(job.clipId)) result.set(job.clipId, job);
+      return result;
+   }, [state.jobs]);
    const [filter, setFilter] = useState("all");
    const [order, setOrder] = useState("newest");
    const applicationColors = useApplicationColors(state.applicationIcons, visible);
    const selectedApplicationColor = filter.startsWith("source:") ? applicationColors[filter.slice(7)] : undefined;
    const [contextMenu, setContextMenu] = useState<(ContextMenuRequest & { clipId: string }) | null>(null);
    const [categoryContextMenu, setCategoryContextMenu] = useState<(ContextMenuRequest & { categoryId: string }) | null>(null);
-   const requestMenu = (clipId: string, element: HTMLElement, left: number, top: number) => {
+   const requestMenu = useCallback((clipId: string, element: HTMLElement, left: number, top: number) => {
       setContextMenu({ clipId, left, top, restoreFocus: element.querySelector("button") ?? element });
-   };
+   }, []);
+   const closeMenu = useCallback((clipId: string) => setContextMenu((current) => (current?.clipId === clipId ? null : current)), []);
    useEffect(() => {
       setFilter("all");
       setQuery("");
    }, [collectionRoot]);
    const [categoryClip, setCategoryClip] = useState<Clip | null>(null);
    const categoryEdit = useRef<{ clip: Clip; persisted: string[]; pending: Promise<void> } | null>(null);
-   const openCategories = (clip: Clip) => {
+   const openCategories = useCallback((clip: Clip) => {
       categoryEdit.current = { clip, persisted: clip.categories, pending: Promise.resolve() };
       setCategoryClip(clip);
-   };
+   }, []);
    const closeCategories = () => {
       categoryEdit.current = null;
       setCategoryClip(null);
@@ -161,7 +157,7 @@ export function Library({
       const result = new Map<string, { newest: number; oldest: number; matches: boolean }>();
       for (const clip of state.clips) {
          const parts = clip.relativePath.replaceAll("\\", "/").split("/");
-         const matches = !query || `${clip.name} ${clip.source}`.toLowerCase().includes(query.toLowerCase());
+         const matches = !search || `${clip.name} ${clip.source}`.toLowerCase().includes(search);
          for (let i = 1; i < parts.length; i++) {
             const path = parts.slice(0, i).join("/"),
                previous = result.get(path);
@@ -173,7 +169,7 @@ export function Library({
          }
       }
       return result;
-   }, [state.clips, query]);
+   }, [state.clips, search]);
    const childFolders = useMemo(
       () =>
          folderPath === null
@@ -181,10 +177,7 @@ export function Library({
             : folders
                  .filter((path) => {
                     const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-                    return (
-                       parent === folderPath &&
-                       (!query || path.split("/").at(-1)!.toLowerCase().includes(query.toLowerCase()) || folderStats.get(path)?.matches)
-                    );
+                    return parent === folderPath && (!search || path.split("/").at(-1)!.toLowerCase().includes(search) || folderStats.get(path)?.matches);
                  })
                  .sort((a, b) => {
                     if (order === "name") return a.localeCompare(b);
@@ -194,21 +187,21 @@ export function Library({
                        (order === "oldest" ? (first?.oldest ?? 0) - (second?.oldest ?? 0) : (second?.newest ?? 0) - (first?.newest ?? 0)) || a.localeCompare(b)
                     );
                  }),
-      [folderPath, folders, query, folderStats, order]
+      [folderPath, folders, search, folderStats, order]
    );
    const clips = useMemo(
       () =>
          state.clips
             .filter(
                (item) =>
-                  (!query || `${item.name} ${item.source}`.toLowerCase().includes(query.toLowerCase())) &&
+                  (!search || `${item.name} ${item.source}`.toLowerCase().includes(search)) &&
                   (filter === "all" ||
                      (filter.startsWith("category:") && item.categories.includes(filter.slice(9))) ||
                      (filter.startsWith("source:") && (item.applicationId ?? `label:${item.source}`) === filter.slice(7)) ||
                      (folderPath !== null && item.relativePath.replaceAll("\\", "/").split("/").slice(0, -1).join("/") === folderPath))
             )
             .sort((a, b) => (order === "name" ? a.name.localeCompare(b.name) : order === "oldest" ? a.createdAt - b.createdAt : b.createdAt - a.createdAt)),
-      [state.clips, query, filter, folderPath, order]
+      [state.clips, search, filter, folderPath, order]
    );
    useEffect(() => {
       if (contextMenu && !clips.some((clip) => clip.id === contextMenu.clipId)) setContextMenu(null);
@@ -256,14 +249,6 @@ export function Library({
       ) {
          if (await run(() => api.category("delete", { id }))) setFilter("all");
       }
-   };
-   const rename = async (clip: Clip) => {
-      const name = await ask({ title: "Rename clip", confirm: "Rename", initial: clip.name });
-      if (typeof name === "string" && name) await run(() => api.renameClip(clip.id, name));
-   };
-   const remove = async (clip: Clip) => {
-      // The main process owns confirmation and trashing, so every entry point gets one prompt.
-      await run(() => api.deleteClip(clip.id));
    };
    const assign = (id: string) => {
       const edit = categoryEdit.current;
@@ -351,7 +336,7 @@ export function Library({
                         <span className="sidebar-label" title={item.name}>
                            {item.name}
                         </span>
-                        <span className="count">{state.clips.filter((clip) => clip.categories.includes(item.id)).length}</span>
+                        <span className="count">{summary.categories.get(item.id) ?? 0}</span>
                      </button>
                      <Menu
                         label={`Actions for ${item.name}`}
@@ -378,7 +363,7 @@ export function Library({
                         <button
                            key={source.id}
                            className={`sidebar-item application-filter ${filter === `source:${source.id}` ? "selected" : ""}`}
-                           style={applicationStyle(applicationColors[source.id])}
+                           style={{ "--application-color": applicationColors[source.id] } as CSSProperties}
                            aria-pressed={filter === `source:${source.id}`}
                            onClick={() => setFilter(`source:${source.id}`)}
                         >
@@ -402,7 +387,7 @@ export function Library({
                   <span aria-hidden="true">&nbsp;</span>
                ) : (
                   <>
-                     {state.clips.length} {state.clips.length === 1 ? "clip" : "clips"} · {formatSize(state.clips.reduce((sum, item) => sum + item.size, 0))}
+                     {state.clips.length} {state.clips.length === 1 ? "clip" : "clips"} · {formatSize(summary.size)}
                   </>
                )}
             </div>
@@ -502,150 +487,26 @@ export function Library({
                            </button>
                         </article>
                      ))}
-                     {clips.map((clip) => {
-                        const job = state.jobs.find(
-                           (item) => item.clipId === clip.id && item.kind === "shareable" && ["running", "queued"].includes(item.state)
-                        );
-                        const shareable = clip.shareables.at(-1);
-                        return (
-                           <article
-                              className="clip-card"
-                              key={clip.id}
-                              data-layout-key={clip.id}
-                              style={applicationStyle(clip.applicationId ? applicationColors[clip.applicationId] : undefined)}
-                              onContextMenu={(event) => {
-                                 event.preventDefault();
-                                 requestMenu(clip.id, event.currentTarget, event.clientX, event.clientY);
-                              }}
-                              onKeyDown={(event) => {
-                                 if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
-                                 event.preventDefault();
-                                 event.stopPropagation();
-                                 const bounds = event.currentTarget.getBoundingClientRect();
-                                 requestMenu(clip.id, event.currentTarget, bounds.left + 20, bounds.top + 30);
-                              }}
-                           >
-                              <button
-                                 className="clip-open"
-                                 {...fileDragProps(clip.originalMissing ? shareable?.path : clip.path)}
-                                 onClick={() => openClip(clip)}
-                                 aria-label={`Open ${clip.name}`}
-                                 title={clip.availability === "unverified" ? "Checking file availability" : undefined}
-                              >
-                                 <div className="clip-thumbnail">
-                                    {clip.thumbnail ? (
-                                       <img
-                                          src={clip.thumbnail}
-                                          alt=""
-                                          loading="lazy"
-                                          className={clip.height > clip.width ? "portrait-thumbnail" : undefined}
-                                       />
-                                    ) : (
-                                       <div className="thumbnail-fallback">
-                                          <Clapperboard size={34} />
-                                       </div>
-                                    )}
-                                    {clip.duration > 0 && <span className="duration">{formatTime(clip.duration)}</span>}
-                                    {shareable && (
-                                       <span className="copy-indicator" title={`${clip.shareables.length} shareable${clip.shareables.length === 1 ? "" : "s"}`}>
-                                          <Share2 size={12} />
-                                       </span>
-                                    )}
-                                    {job && (
-                                       <div className="thumbnail-progress">
-                                          <span style={{ width: `${job.progress * 100}%` }} />
-                                       </div>
-                                    )}
-                                 </div>
-                                 <div className="clip-card-info">
-                                    <h3 title={clip.name}>{clip.name}</h3>
-                                    <p>
-                                       {!filter.startsWith("source:") && clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown" && (
-                                          <>
-                                             <span className="clip-source-label">
-                                                {clip.applicationId && state.applicationIcons[clip.applicationId] && (
-                                                   <ApplicationIcon src={state.applicationIcons[clip.applicationId]} size={14} />
-                                                )}
-                                                <span>{clip.source}</span>
-                                             </span>
-                                          </>
-                                       )}
-                                       <span className="clip-age">{age(clip.createdAt)}</span>
-                                       <span className="clip-grid-size">
-                                          <span aria-hidden="true">&middot;</span>{" "}
-                                          {formatSize(clip.originalMissing ? (shareable?.size ?? clip.size) : clip.size)}
-                                       </span>
-                                    </p>
-                                 </div>
-                                 <span className="clip-file-facts">
-                                    <span>{clip.duration > 0 ? formatTime(clip.duration) : ""}</span>
-                                    <span>{formatSize(clip.originalMissing ? (shareable?.size ?? clip.size) : clip.size)}</span>
-                                 </span>
-                              </button>
-                              <div className="card-menu">
-                                 <Menu
-                                    label={`Actions for ${clip.name}`}
-                                    trigger={<MoreHorizontal size={17} />}
-                                    contextRequest={contextMenu?.clipId === clip.id ? contextMenu : undefined}
-                                    onContextClose={() => setContextMenu((current) => (current?.clipId === clip.id ? null : current))}
-                                 >
-                                    <MenuItem onClick={() => openClip(clip)}>
-                                       <Clapperboard size={15} />
-                                       Open clip
-                                    </MenuItem>
-                                    <MenuItem
-                                       disabled={!!job || !!clip.originalMissing || !shareableTargetAllowed(clip.size, state.preferences.shareSizeMB)}
-                                       onClick={() => void run(() => api.createShareable(clip.id))}
-                                    >
-                                       <Share2 size={15} />
-                                       {job ? "Creating shareable…" : "Create shareable"}
-                                    </MenuItem>
-                                    <div className="menu-separator" role="separator" />
-                                    <MenuItem disabled={!!clip.originalMissing || !!job} onClick={() => void rename(clip)}>
-                                       <Pencil size={15} />
-                                       Rename clip
-                                    </MenuItem>
-                                    <MenuItem onClick={() => openCategories(clip)}>
-                                       <Tag size={15} />
-                                       Categories
-                                    </MenuItem>
-                                    <div className="menu-separator" role="separator" />
-                                    <MenuItem disabled={!!clip.originalMissing} onClick={() => void run(() => api.reveal(clip.path))}>
-                                       <FolderOpen size={15} />
-                                       Show clip in folder
-                                    </MenuItem>
-                                    {shareable && (
-                                       <MenuItem onClick={() => void run(() => api.reveal(shareable.path))}>
-                                          <FolderOpen size={15} />
-                                          Show shareable in folder
-                                       </MenuItem>
-                                    )}
-                                    {attaCutAvailable && !clip.originalMissing && (
-                                       <MenuItem onClick={() => void run(() => api.openInAttaCut(clip.id))}>
-                                          <Scissors size={15} />
-                                          Open in AttaCut
-                                       </MenuItem>
-                                    )}
-                                    <div className="menu-separator" role="separator" />
-                                    <MenuItem danger onClick={() => void remove(clip)}>
-                                       <Trash2 size={15} />
-                                       Delete clip
-                                    </MenuItem>
-                                 </Menu>
-                              </div>
-                              {job && (
-                                 <div className="card-job">
-                                    <LoaderCircle size={12} className="spin" />
-                                    <span>{job.state === "queued" ? "Queued" : "Creating shareable"}</span>
-                                    <span className="tabular">{Math.round(job.progress * 100)}%</span>
-                                    <IconButton label="Cancel shareable" onClick={() => void run(() => api.cancelJob(job.id))}>
-                                       <X size={12} />
-                                    </IconButton>
-                                 </div>
-                              )}
-                           </article>
-                        );
-                     })}
+                     {clips.map((clip) => (
+                        <ClipCard
+                           key={clip.id}
+                           clip={clip}
+                           ageText={age(clip.createdAt)}
+                           job={activeJobs.get(clip.id)}
+                           applicationColor={clip.applicationId ? applicationColors[clip.applicationId] : undefined}
+                           appIcon={clip.applicationId ? state.applicationIcons[clip.applicationId] : undefined}
+                           showSource={!filter.startsWith("source:")}
+                           shareSizeMB={state.preferences.shareSizeMB}
+                           attaCutAvailable={attaCutAvailable}
+                           contextRequest={contextMenu?.clipId === clip.id ? contextMenu : undefined}
+                           requestMenu={requestMenu}
+                           closeMenu={closeMenu}
+                           openClip={openClip}
+                           openCategories={openCategories}
+                           run={run}
+                           ask={ask}
+                        />
+                     ))}
                      {Array.from({ length: remainingSlots }, (_, index) => (
                         <div className="clip-placeholder" key={`pending:${index}`} aria-hidden="true">
                            <div />

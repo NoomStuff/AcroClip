@@ -151,6 +151,26 @@ try {
    const playbackInfo = await probe(fileURLToPath(playback));
    assert.equal(playbackInfo.tracks.length, 1, "track preview contains only the requested audio stream");
    assert.ok(Math.abs(playbackInfo.duration - clip.duration) < 0.25, "track preview preserves clip duration");
+   const audioPackets = (path: string, stream: string) =>
+      runMedia("ffprobe", [
+         "-v",
+         "error",
+         "-select_streams",
+         stream,
+         "-show_packets",
+         "-show_data_hash",
+         "sha256",
+         "-show_entries",
+         "packet=data_hash",
+         "-of",
+         "csv=p=0",
+         path,
+      ]);
+   assert.equal(
+      await audioPackets(fileURLToPath(playback), "a:0"),
+      await audioPackets(original, "a:1"),
+      "compatible single-track playback preserves encoded audio packets instead of encoding them again"
+   );
    await runMedia("ffmpeg", [...ffmpegBase, "-i", fileURLToPath(playback), "-f", "null", process.platform === "win32" ? "NUL" : "/dev/null"]);
    const previewAudio = join(workspace, "preview-audio.pcm");
    await runMedia("ffmpeg", [...ffmpegBase, "-i", fileURLToPath(playback), "-vn", "-ac", "1", "-ar", "48000", "-f", "s16le", previewAudio]);

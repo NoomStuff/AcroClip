@@ -44,7 +44,7 @@ test("cached loading states, enumeration retry, and interrupted library movement
          (globalThis as typeof globalThis & { publishFixture?: (snapshot: unknown) => void }).publishFixture = (snapshot) =>
             publish("app-event", { type: "state", state: snapshot });
          web.send = (channel, ...args) => {
-            if (channel === "app-event" && (args[0] as { type?: string })?.type === "state") return;
+            if (channel === "app-event" && ["state", "state-patch"].includes((args[0] as { type?: string })?.type ?? "")) return;
             publish(channel, ...args);
          };
       });

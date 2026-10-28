@@ -11,7 +11,7 @@ export function AudioMixerRow({
    listenAvailable = true,
    muted,
    volume,
-   level,
+   captureLevel,
    active,
    visible,
    onEnable,
@@ -25,7 +25,7 @@ export function AudioMixerRow({
    listenAvailable?: boolean;
    muted: boolean;
    volume: number;
-   level: number;
+   captureLevel: boolean;
    active: boolean;
    visible: boolean;
    onEnable: (enabled: boolean) => void;
@@ -56,7 +56,7 @@ export function AudioMixerRow({
          </div>
          <div className="audio-meter-controls">
             <ListenButton id={sourceId} name={name} enabled={enabled && listenAvailable} />
-            <AudioMeter name={name} level={level} muted={muted && !listening} enabled={enabled} visible={visible} />
+            <AudioMeter name={name} sourceId={sourceId} captureLevel={captureLevel} muted={muted && !listening} enabled={enabled} visible={visible} />
          </div>
       </div>
    );
