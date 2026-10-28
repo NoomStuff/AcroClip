@@ -386,7 +386,9 @@ export class Recorder {
          }
       });
       // Diagnostic text remains local and is never forwarded as user-facing errors.
-      child.stderr.on("data", () => undefined);
+      child.stderr.on("data", (data: Buffer) => {
+         if (process.env["ACROCLIP_TEST"] === "1" && this.expectedExit) console.log(`Test shutdown: native ${data.toString("utf8").slice(-8000)}`);
+      });
       child.on("error", (error) => {
          this.readyReject?.(error);
          this.update({ state: "error", message: error.message });
@@ -816,7 +818,7 @@ export class Recorder {
          await exited;
          return;
       }
-      this.send({ action: "stop" });
+      if (this.current.state !== "stopped" || this.requests.size) this.send({ action: "stop" });
       while (this.requests.size && this.process) await new Promise<void>((resolve) => setTimeout(resolve, 100));
       if (this.process) {
          this.expectedExit = true;

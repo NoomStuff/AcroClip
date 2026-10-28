@@ -529,11 +529,14 @@ public:
         });
   }
   ~Recorder() {
-    stop();
+    blog(LOG_INFO, "Recorder shutdown: stopping capture");
+    stop(true);
+    blog(LOG_INFO, "Recorder shutdown: finishing clip writes");
     clipWriter->finish();
     release();
     obs_volmeter_destroy(captureMeter);
     obs_volmeter_destroy(microphoneMeter);
+    blog(LOG_INFO, "Recorder shutdown: resources released");
   }
 private:
   void releaseEncoders() {
@@ -635,7 +638,7 @@ private:
     obs_wait_for_destroy_queue();
   }
 public:
-  void stop() {
+  void stop(bool shuttingDown = false) {
     // Drain accepted requests to their original timestamps before stopping.
     for (int i = 0; i < 100 && active; i++) {
       {
@@ -668,7 +671,10 @@ public:
       recoveryBoundary = 0;
     }
     release();
-    idleVideo();
+    // A normal stop keeps OBS ready for monitoring and another recording.
+    // Process shutdown must not initialize a fresh graphics pipeline.
+    if (!shuttingDown)
+      idleVideo();
   }
 private:
   bool targetAvailable() {
