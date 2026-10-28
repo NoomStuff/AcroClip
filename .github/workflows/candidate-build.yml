@@ -1,4 +1,4 @@
-name: Build candidates
+name: Build Windows candidate
 "on":
    workflow_call:
       inputs:
@@ -61,25 +61,3 @@ jobs:
               if-no-files-found: error
               retention-days: 14
               compression-level: 0
-   linux:
-      strategy:
-         fail-fast: false
-         matrix:
-            architecture:
-               - x64
-               - arm64
-      uses: ./.github/workflows/native-linux.yml
-      with:
-         candidate_sha: ${{ inputs.candidate_sha }}
-         architecture: ${{ matrix.architecture }}
-   mac:
-      strategy:
-         fail-fast: false
-         matrix:
-            architecture:
-               - x64
-               - arm64
-      uses: ./.github/workflows/native-macos.yml
-      with:
-         candidate_sha: ${{ inputs.candidate_sha }}
-         architecture: ${{ matrix.architecture }}

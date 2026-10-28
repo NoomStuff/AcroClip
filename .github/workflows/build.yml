@@ -82,6 +82,8 @@ jobs:
       needs:
          - prepare
          - build
+         - build-linux
+         - build-mac
       uses: ./.github/workflows/candidate-verify.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
@@ -95,6 +97,8 @@ jobs:
          - native-checks
          - build
          - verify
+         - build-linux
+         - build-mac
       if: always()
       runs-on: ubuntu-24.04
       timeout-minutes: 30
@@ -111,7 +115,7 @@ jobs:
                  const candidate = jobs.prepare.outputs.build === 'true';
                  const native = !candidate && (jobs.prepare.outputs.native_linux === 'true' || jobs.prepare.outputs.native_macos === 'true');
                  for (const [name, job] of Object.entries(jobs)) {
-                   const expected = ['build', 'verify'].includes(name) ? candidate : name === 'native-checks' ? native : true;
+                   const expected = ['build', 'build-linux', 'build-mac', 'verify'].includes(name) ? candidate : name === 'native-checks' ? native : true;
                    if (job.result !== (expected ? 'success' : 'skipped')) throw Error(`${name}: ${job.result}`);
                  }
          - uses: actions/checkout@v7
@@ -171,3 +175,33 @@ jobs:
                  const publish = require('./scripts/publish-release.cjs');
                  await publish({github, context, core});
       if: needs.prepare.outputs.publish == 'true' && needs.check.result == 'success'
+   build-linux:
+      strategy:
+         fail-fast: false
+         matrix:
+            architecture:
+               - x64
+               - arm64
+      uses: ./.github/workflows/native-linux.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         architecture: ${{ matrix.architecture }}
+      needs:
+         - prepare
+         - checks
+      if: needs.prepare.outputs.build == 'true'
+   build-mac:
+      strategy:
+         fail-fast: false
+         matrix:
+            architecture:
+               - x64
+               - arm64
+      uses: ./.github/workflows/native-macos.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         architecture: ${{ matrix.architecture }}
+      needs:
+         - prepare
+         - checks
+      if: needs.prepare.outputs.build == 'true'
