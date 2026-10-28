@@ -152,6 +152,8 @@ struct MonitoredInput {
   std::atomic<bool> quit{false};
   std::atomic<bool> ended{false};
   uint64_t nextTimestamp = 0;
+  uint64_t silentFrames = 0;
+  uint64_t clockResets = 0;
   std::thread thread;
   MonitoredInput(obs_data_t *settings, obs_source_t *value)
       : source(value), index(uint32_t(obs_data_get_int(settings, "index"))),
@@ -209,8 +211,17 @@ struct MonitoredInput {
             size_t bytes = 0;
             if (pa_stream_peek(stream, &frames, &bytes) < 0 || !bytes)
               return;
-            if (frames && !self->quit &&
+            if (!self->quit &&
                 process(self->pid).started == self->processStarted) {
+              // PulseAudio holes represent elapsed silence, not absent time.
+              // Dropping them compresses this input's clock and shifts later
+              // samples against the other inputs in the OBS mixer.
+              std::vector<float> silence;
+              if (!frames) {
+                silence.resize(bytes / sizeof(float), 0.f);
+                frames = silence.data();
+                self->silentFrames += bytes / (sizeof(float) * 2);
+              }
               obs_source_audio audio{};
               audio.data[0] = reinterpret_cast<const uint8_t *>(frames);
               audio.frames = uint32_t(bytes / (sizeof(float) * 2));
@@ -225,8 +236,11 @@ struct MonitoredInput {
               // only after an actual interruption.
               if (!self->nextTimestamp ||
                   std::abs(int64_t(arrival) - int64_t(self->nextTimestamp)) >
-                      200000000)
+                      200000000) {
+                if (self->nextTimestamp)
+                  self->clockResets++;
                 self->nextTimestamp = arrival;
+              }
               audio.timestamp = self->nextTimestamp;
               self->nextTimestamp += duration;
               obs_source_output_audio(self->source, &audio);
@@ -264,6 +278,10 @@ struct MonitoredInput {
       pa_stream_set_read_callback(stream, nullptr, nullptr);
       pa_stream_disconnect(stream);
       pa_stream_unref(stream);
+      blog(LOG_INFO,
+           "Application audio input %u: %llu silent frames, %llu clock resets",
+           index, static_cast<unsigned long long>(silentFrames),
+           static_cast<unsigned long long>(clockResets));
     } catch (const std::exception &error) {
       blog(LOG_WARNING, "Application audio input failed: %s", error.what());
     }
