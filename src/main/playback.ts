@@ -62,13 +62,15 @@ export class PlaybackCache {
       const input = [...ffmpegBase, "-y", "-threads", "2", "-i", source, "-map", "0:v:0", ...audio];
       const selectedAudio = track ? info.tracks.filter((entry) => track.includes(entry.index)) : info.tracks.slice(0, 1);
       const copyAudio = selectedAudio.length <= 1 && selectedAudio.every((entry) => ["aac", "mp3"].includes(entry.codec));
-      const output = ["-c:a", copyAudio ? "copy" : "aac", "-movflags", "+faststart", temporary];
+      const output = ["-movflags", "+faststart", temporary];
       const transcode = () =>
-         runMedia("ffmpeg", [...input, "-c:v", "libx264", "-preset", "veryfast", "-threads", "2", "-pix_fmt", "yuv420p", ...output], { belowNormal: true });
+         runMedia("ffmpeg", [...input, "-c:v", "libx264", "-preset", "veryfast", "-threads", "2", "-pix_fmt", "yuv420p", "-c:a", "aac", ...output], {
+            belowNormal: true,
+         });
       try {
          if (compatibleVideo) {
             try {
-               await runMedia("ffmpeg", [...input, "-c:v", "copy", ...output], { belowNormal: true });
+               await runMedia("ffmpeg", [...input, "-c:v", "copy", "-c:a", copyAudio ? "copy" : "aac", ...output], { belowNormal: true });
             } catch {
                // A playable codec can still require a container conversion.
                await transcode();
