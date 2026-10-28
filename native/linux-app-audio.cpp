@@ -154,6 +154,9 @@ struct MonitoredInput {
   uint64_t nextTimestamp = 0;
   uint64_t silentFrames = 0;
   uint64_t clockResets = 0;
+  uint64_t measuredFrames = 0;
+  uint64_t zeroCrossings = 0;
+  float previousSample = 0;
   std::thread thread;
   MonitoredInput(obs_data_t *settings, obs_source_t *value)
       : source(value), index(uint32_t(obs_data_get_int(settings, "index"))),
@@ -247,7 +250,15 @@ struct MonitoredInput {
                     std::abs(int64_t(arrival) - int64_t(self->nextTimestamp)) >
                         200000000) {
                   if (self->nextTimestamp)
+                  {
                     self->clockResets++;
+                    blog(LOG_INFO,
+                         "Application audio clock %u: drift %lld ns, queued %zu bytes, packet %zu bytes, frames %llu",
+                         self->index,
+                         static_cast<long long>(int64_t(arrival) - int64_t(self->nextTimestamp)),
+                         queuedBytes, bytes,
+                         static_cast<unsigned long long>(self->measuredFrames));
+                  }
                   self->nextTimestamp = arrival;
                 }
                 audio.timestamp = self->nextTimestamp;
@@ -255,6 +266,13 @@ struct MonitoredInput {
                 obs_source_output_audio(self->source, &audio);
                 float peak = 0;
                 auto *samples = static_cast<const float *>(frames);
+                for (size_t frame = 0; frame < audio.frames; frame++) {
+                  const float sample = samples[frame * 2];
+                  if ((sample >= 0) != (self->previousSample >= 0))
+                    self->zeroCrossings++;
+                  self->previousSample = sample;
+                }
+                self->measuredFrames += audio.frames;
                 for (size_t index = 0; index < bytes / sizeof(float); index++)
                   if (std::isfinite(samples[index]))
                     peak = std::max(peak, std::abs(samples[index]));
@@ -289,9 +307,11 @@ struct MonitoredInput {
       pa_stream_disconnect(stream);
       pa_stream_unref(stream);
       blog(LOG_INFO,
-           "Application audio input %u: %llu silent frames, %llu clock resets",
+           "Application audio input %u: %llu silent frames, %llu clock resets, %llu total frames, %.2f input zero-crossing Hz",
            index, static_cast<unsigned long long>(silentFrames),
-           static_cast<unsigned long long>(clockResets));
+           static_cast<unsigned long long>(clockResets),
+           static_cast<unsigned long long>(measuredFrames),
+           measuredFrames ? double(zeroCrossings) * 48000 / (2 * measuredFrames) : 0.0);
     } catch (const std::exception &error) {
       blog(LOG_WARNING, "Application audio input failed: %s", error.what());
     }
