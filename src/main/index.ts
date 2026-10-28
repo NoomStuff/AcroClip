@@ -7,7 +7,8 @@ import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { ApplicationArtwork, AppEvent, AppState, Preferences, RecorderState } from "../shared/types";
+import type { AppEvent, AppState, Preferences, RecorderState } from "../shared/types";
+import { recordingArtwork, type RecordingArtwork } from "./recording-artwork";
 import { categoryRequest, idSchema } from "../shared/validation";
 import { assertDistinctAudioSources } from "./audio-sources";
 import { audioTopology, synchronizeLegacyAudio, monitoringPreferences } from "../shared/audio-model";
@@ -88,10 +89,7 @@ const recorder = new Recorder({
       : resolve(here, "../../resources/recorder", process.platform === "win32" ? "acroclip-recorder.exe" : "acroclip-recorder"),
    onState: (current) => {
       const footage = bufferedCaptureSource(current);
-      if (current.state === "recording" && footage.kind === "app") {
-         const actual = captureSources.cached.find((source) => source.kind === "app" && source.id.split(":")[1] === footage.id?.split(":")[1]);
-         lastRecordingArtwork = actual?.applicationId ? { id: actual.applicationId, icon: actual.appIcon ?? "" } : undefined;
-      } else if (current.state === "recording" && footage.kind === "screen") lastRecordingArtwork = undefined;
+      if (current.state === "recording") lastRecordingArtwork = recordingArtwork(footage, captureSources.cached, lastRecordingArtwork);
       updateStorageActivity();
       send({ type: "recorder", recorder: recorderState() });
       updateTray();
@@ -191,7 +189,7 @@ async function showFeedback(message: string, error: boolean, saving: boolean) {
    if (preferences.notifications === "outside-fullscreen" && (await recorder.foregroundFullscreen())) return;
    feedback.show(message, error, saving);
 }
-let lastRecordingArtwork: ApplicationArtwork | undefined;
+let lastRecordingArtwork: RecordingArtwork | undefined;
 function createWindow() {
    mainWindow = new BrowserWindow({
       width: 1380,
@@ -335,13 +333,8 @@ async function saveClip() {
    if (!withinRoot(collections.root, realpathSync(dirname(destination))))
       throw new Error("The recording folder points outside this collection. Choose another folder.");
    void storage.check(collections.root);
-   const actual =
-      footage.kind === "app"
-         ? captureSources.cached.find((source) => source.kind === "app" && source.id.split(":")[1] === footage.id?.split(":")[1])
-         : undefined;
-   if (actual?.applicationId) lastRecordingArtwork = { id: actual.applicationId, icon: actual.appIcon ?? "" };
-   if (footage.kind === "screen") lastRecordingArtwork = undefined;
-   await recorder.save(destination, requestedAt, lastRecordingArtwork);
+   lastRecordingArtwork = recordingArtwork(footage, captureSources.cached, lastRecordingArtwork);
+   await recorder.save(destination, requestedAt, lastRecordingArtwork?.application);
    notice("Saving clip…", false, "saving");
 }
 function pendingJobs() {

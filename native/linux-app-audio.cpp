@@ -207,51 +207,61 @@ struct MonitoredInput {
           stream,
           [](pa_stream *stream, size_t, void *data) {
             auto *self = static_cast<MonitoredInput *>(data);
-            const void *frames = nullptr;
-            size_t bytes = 0;
-            if (pa_stream_peek(stream, &frames, &bytes) < 0 || !bytes)
-              return;
-            if (!self->quit &&
-                process(self->pid).started == self->processStarted) {
-              // PulseAudio holes represent elapsed silence, not absent time.
-              // Dropping them compresses this input's clock and shifts later
-              // samples against the other inputs in the OBS mixer.
-              std::vector<float> silence;
-              if (!frames) {
-                silence.resize(bytes / sizeof(float), 0.f);
-                frames = silence.data();
-                self->silentFrames += bytes / (sizeof(float) * 2);
+            // A notification can cover several queued fragments. Leaving any
+            // behind makes old audio wait for another notification and forces
+            // repeated clock resets as the backlog grows.
+            while (!self->quit) {
+              auto queuedBytes = pa_stream_readable_size(stream);
+              if (queuedBytes == size_t(-1))
+                return;
+              const void *frames = nullptr;
+              size_t bytes = 0;
+              if (pa_stream_peek(stream, &frames, &bytes) < 0 || !bytes)
+                return;
+              if (!self->quit &&
+                  process(self->pid).started == self->processStarted) {
+                // PulseAudio holes represent elapsed silence, not absent time.
+                // Dropping them compresses this input's clock and shifts later
+                // samples against the other inputs in the OBS mixer.
+                std::vector<float> silence;
+                if (!frames) {
+                  silence.resize(bytes / sizeof(float), 0.f);
+                  frames = silence.data();
+                  self->silentFrames += bytes / (sizeof(float) * 2);
+                }
+                obs_source_audio audio{};
+                audio.data[0] = reinterpret_cast<const uint8_t *>(frames);
+                audio.frames = uint32_t(bytes / (sizeof(float) * 2));
+                audio.speakers = SPEAKERS_STEREO;
+                audio.format = AUDIO_FORMAT_FLOAT;
+                audio.samples_per_sec = 48000;
+                auto duration = uint64_t(audio.frames) * 1000000000ULL / 48000;
+                auto queuedFrames = queuedBytes / (sizeof(float) * 2);
+                auto arrival = os_gettime_ns() -
+                               uint64_t(queuedFrames) * 1000000000ULL / 48000;
+                // Arrival callbacks can jitter by milliseconds. Recomputing each
+                // packet's clock from arrival would cut samples when OBS mixes
+                // several inputs. Keep a continuous sample clock, resynchronizing
+                // only after an actual interruption.
+                if (!self->nextTimestamp ||
+                    std::abs(int64_t(arrival) - int64_t(self->nextTimestamp)) >
+                        200000000) {
+                  if (self->nextTimestamp)
+                    self->clockResets++;
+                  self->nextTimestamp = arrival;
+                }
+                audio.timestamp = self->nextTimestamp;
+                self->nextTimestamp += duration;
+                obs_source_output_audio(self->source, &audio);
+                float peak = 0;
+                auto *samples = static_cast<const float *>(frames);
+                for (size_t index = 0; index < bytes / sizeof(float); index++)
+                  if (std::isfinite(samples[index]))
+                    peak = std::max(peak, std::abs(samples[index]));
+                self->levels->report(peak);
               }
-              obs_source_audio audio{};
-              audio.data[0] = reinterpret_cast<const uint8_t *>(frames);
-              audio.frames = uint32_t(bytes / (sizeof(float) * 2));
-              audio.speakers = SPEAKERS_STEREO;
-              audio.format = AUDIO_FORMAT_FLOAT;
-              audio.samples_per_sec = 48000;
-              auto duration = uint64_t(audio.frames) * 1000000000ULL / 48000;
-              auto arrival = os_gettime_ns() - duration;
-              // Arrival callbacks can jitter by milliseconds. Recomputing each
-              // packet's clock from arrival would cut samples when OBS mixes
-              // several inputs. Keep a continuous sample clock, resynchronizing
-              // only after an actual interruption.
-              if (!self->nextTimestamp ||
-                  std::abs(int64_t(arrival) - int64_t(self->nextTimestamp)) >
-                      200000000) {
-                if (self->nextTimestamp)
-                  self->clockResets++;
-                self->nextTimestamp = arrival;
-              }
-              audio.timestamp = self->nextTimestamp;
-              self->nextTimestamp += duration;
-              obs_source_output_audio(self->source, &audio);
-              float peak = 0;
-              auto *samples = static_cast<const float *>(frames);
-              for (size_t index = 0; index < bytes / sizeof(float); index++)
-                if (std::isfinite(samples[index]))
-                  peak = std::max(peak, std::abs(samples[index]));
-              self->levels->report(peak);
+              pa_stream_drop(stream);
             }
-            pa_stream_drop(stream);
           },
           this);
       pa_buffer_attr buffer{};
