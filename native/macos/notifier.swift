@@ -115,7 +115,6 @@ final class Feedback {
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main else { return }
         let area = screen.visibleFrame
         target = NSRect(x: area.maxX - 386, y: area.maxY - 118, width: 368, height: 100)
-        started = ProcessInfo.processInfo.systemUptime
         panel.setFrame(target.offsetBy(dx: 0, dy: reducedMotion ? 0 : 10), display: false)
         panel.alphaValue = reducedMotion ? 1 : 0
         view.needsDisplay = true
@@ -123,6 +122,10 @@ final class Feedback {
         timer?.invalidate()
         timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(timer!, forMode: .common)
+        // Window ordering can block. Start timing after it completes so the
+        // first tick does not skip most of the entry animation on a busy host.
+        started = ProcessInfo.processInfo.systemUptime
+        if tracking { metrics("entry") }
         tick()
     }
     func tick() {
