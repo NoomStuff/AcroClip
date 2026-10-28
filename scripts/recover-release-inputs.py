@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
@@ -12,7 +13,7 @@ import urllib.error
 import zipfile
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--platform", required=True, choices=["windows-x64", "linux-x64", "darwin-arm64"])
+parser.add_argument("--platform", required=True, choices=["windows-x64", "linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64"])
 parser.add_argument("--release", default="v0.2.0")
 parser.add_argument("--destination", required=True)
 args = parser.parse_args()
@@ -22,6 +23,13 @@ if root.exists() and any(root.iterdir()):
 headers = {"User-Agent": "AcroClip-source-inputs", "Accept": "application/vnd.github+json"}
 if os.environ.get("GITHUB_TOKEN"):
     headers["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
+if args.release == "latest":
+    request = urllib.request.Request("https://api.github.com/repos/NoomStuff/AcroClip/releases/latest", headers=headers)
+    with urllib.request.urlopen(request, timeout=60) as response:
+        current = json.load(response)
+    if current.get("draft") or current.get("prerelease") or not re.fullmatch(r"v\d+\.\d+\.\d+", current.get("tag_name", "")):
+        raise ValueError("Recover inputs only from a published stable release")
+    args.release = current["tag_name"]
 release = None
 tags = [args.release + "-sources", args.release]
 # New releases record their commit-specific source tag in the updater provenance.

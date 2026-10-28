@@ -30,7 +30,7 @@ jobs:
            timeout-minutes: 10
            env:
               GITHUB_TOKEN: ${{ github.token }}
-           run: python3 scripts/recover-release-inputs.py --platform linux-x64 --destination work/linux-release-sources
+           run: python3 scripts/recover-release-inputs.py --platform linux-${{ inputs.architecture }} --release latest --destination work/linux-release-sources
          - name: Build native X11 recorder
            run: bun scripts/build-native-linux.ts
          - name: Verify source exception rejects tampered module evidence
