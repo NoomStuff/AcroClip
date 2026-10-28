@@ -6,10 +6,18 @@ import { finished } from "node:stream/promises";
 import { createHash } from "node:crypto";
 import { buildBlockMap } from "app-builder-lib/out/targets/blockmap/blockmap";
 import { describe, expect, it } from "vitest";
-import { archivePaths, compareFiles, verifyAsar, verifyPackagedResources, verifyUpdaterAssets } from "./verify-release";
+import { archivePaths, compareFiles, installerPayloadArchive, verifyAsar, verifyPackagedResources, verifyUpdaterAssets } from "./verify-release";
 import { inventory, type SourceKit } from "./release-sources";
 
 describe("final release correspondence", () => {
+   it("locates one x64 payload in an NSIS wrapper and rejects ambiguous or wrong-architecture archives", () => {
+      const file = (name: string) => ({ path: name, size: 1, sha256: "fixture" });
+      expect(installerPayloadArchive([file("AcroClip.exe"), file("resources/app.asar")])).toBeUndefined();
+      expect(installerPayloadArchive([file("$PLUGINSDIR/System.dll"), file("$PLUGINSDIR/app-64.7z")])).toBe("$PLUGINSDIR/app-64.7z");
+      expect(installerPayloadArchive([file("app-64.7z")])).toBe("app-64.7z");
+      for (const names of [["app-32.7z"], ["app-arm64.7z"], ["app-64.7z", "$PLUGINSDIR/app-64.7z"], ["app-64.7z", "app-32.7z"]])
+         expect(() => installerPayloadArchive(names.map(file))).toThrow("exactly one Windows x64");
+   });
    it("rejects stale updater hashes, sizes, names and differential blockmaps", async () => {
       const root = await mkdtemp(path.join(os.tmpdir(), "acroclip-release-updater-"));
       try {

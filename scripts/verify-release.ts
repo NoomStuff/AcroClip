@@ -162,6 +162,27 @@ async function extractChecked(extractor: string, archive: string, destination: s
    await inventory(destination); // Reject extracted symlinks before hashing them.
 }
 
+export function installerPayloadArchive(files: FileRecord[]): string | undefined {
+   const archives = files.filter((file) => /(?:^|\/)app-[^/]+\.7z$/.test(file.path));
+   if (!archives.length) return undefined;
+   if (archives.length !== 1 || path.posix.basename(archives[0]!.path) !== "app-64.7z")
+      throw new Error("Expected exactly one Windows x64 application payload.");
+   return archives[0]!.path;
+}
+
+export async function extractInstallerPayload(extractor: string, archive: string, destination: string): Promise<string> {
+   await mkdir(destination);
+   await extractChecked(extractor, archive, destination);
+   // Full 7z extracts the NSIS wrapper. The reduced builder 7za may expose its
+   // embedded archive directly. Both must lead to the same complete app bytes.
+   const nested = installerPayloadArchive(await inventory(destination));
+   if (!nested) return destination;
+   const payload = `${destination}-payload`;
+   await mkdir(payload);
+   await extractChecked(extractor, path.join(destination, nested), payload);
+   return payload;
+}
+
 export async function verifyRelease(project: string, sourceArchive: string): Promise<string> {
    if (process.platform !== "win32") throw new Error("This verifier covers Windows x64 releases only.");
    const git = (...args: string[]) => execFileSync("git", args, { cwd: project, encoding: "utf8", windowsHide: true }).trim();
@@ -205,9 +226,8 @@ export async function verifyRelease(project: string, sourceArchive: string): Pro
    for (const name of [`AcroClip-${version}-win-x64-Installer.exe`, `AcroClip-${version}-win-x64.exe`]) {
       const file = path.join(project, "release", name);
       const folder = path.join(scratch, name.replace(/\.exe$/, ""));
-      await mkdir(folder);
-      await extractChecked(extractor, file, folder);
-      compareFiles(payload, await inventory(folder), `Installer payload ${name}`);
+      const extracted = await extractInstallerPayload(extractor, file, folder);
+      compareFiles(payload, await inventory(extracted), `Installer payload ${name}`);
       assets.push(await fileRecord(file, name));
    }
    assets.push(...(await verifyUpdaterAssets(path.join(project, "release"), path.join(project, "release", assets[0]!.path), version, scratch)));
