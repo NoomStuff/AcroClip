@@ -99,6 +99,9 @@ test("incremental updates preserve large libraries, meter routing, visibility an
       await expect(page.locator(".card-job")).toHaveCount(0);
       await expect(page.getByRole("textbox", { name: "Search clips", exact: true })).toHaveValue("Moment 999");
       await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await expect(sourceMeter).toHaveAttribute("data-muted", "true");
+      await publish({ type: "state-patch", patch: { preferences: state.preferences } });
+      await expect(sourceMeter).not.toHaveAttribute("data-muted", "true");
       await publish({ type: "audio-levels", levels: { capture: 40, microphone: 0, additional: {} } });
       await expect.poll(async () => Number(await sourceMeter.getAttribute("aria-valuenow"))).toBeGreaterThan(-42);
       await expect(microphoneMeter).toHaveAttribute("aria-valuenow", "-60");
