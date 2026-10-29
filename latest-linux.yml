@@ -1,12 +1,12 @@
-version: 0.5.0
+version: 0.6.0
 path: >-
-  https://github.com/NoomStuff/AcroClip/releases/download/v0.5.0/AcroClip-0.5.0-linux-x86_64.AppImage
+  https://github.com/NoomStuff/AcroClip/releases/download/v0.6.0/AcroClip-0.6.0-linux-x86_64.AppImage
 sha512: >-
-  8i5mljdF0D4Su7RPVpvAdNb3bJk+Jb7toIhP0/YruQ6Nr43zGavF3Q1Xwn3Bkd+ZIPVFvnVvAQ0BIZxTGQV4Wg==
+  sO1voJcQq9Cf6cDhmOKCZjNXtmRUUaZ17vltodEBbQbXzytdJ3GSYC+PYMD24Hwc7cCQXrXzenGGKFAENW85QQ==
 files:
   - url: >-
-      https://github.com/NoomStuff/AcroClip/releases/download/v0.5.0/AcroClip-0.5.0-linux-x86_64.AppImage
+      https://github.com/NoomStuff/AcroClip/releases/download/v0.6.0/AcroClip-0.6.0-linux-x86_64.AppImage
     sha512: >-
-      8i5mljdF0D4Su7RPVpvAdNb3bJk+Jb7toIhP0/YruQ6Nr43zGavF3Q1Xwn3Bkd+ZIPVFvnVvAQ0BIZxTGQV4Wg==
-    size: 266293196
-releaseDate: '2026-10-28T05:20:13.685Z'
+      sO1voJcQq9Cf6cDhmOKCZjNXtmRUUaZ17vltodEBbQbXzytdJ3GSYC+PYMD24Hwc7cCQXrXzenGGKFAENW85QQ==
+    size: 266297222
+releaseDate: '2026-10-29T14:06:30.198Z'
