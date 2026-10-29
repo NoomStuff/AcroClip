@@ -121,7 +121,7 @@ test("Listen is one direct default-output toggle and survives gain changes with 
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await expect(page.getByRole("combobox", { name: "Resolution limit", exact: true })).toBeDisabled();
-      await page.getByRole("button", { name: "Sharing", exact: true }).click();
+      await page.getByRole("button", { name: "Collection", exact: true }).click();
       await expect(page.getByRole("spinbutton", { name: "Default shareable size in MB", exact: true })).toBeEnabled();
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
       await page.evaluate(() => window.acroClip.stopRecording());

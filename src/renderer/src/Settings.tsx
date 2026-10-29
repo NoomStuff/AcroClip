@@ -1,10 +1,28 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AlertCircle, Bell, Check, Download, Folder, FolderOpen, Gamepad2, Keyboard, LoaderCircle, RefreshCw, Settings2, Share2, Video } from "lucide-react";
+import {
+   AlertCircle,
+   TriangleAlert,
+   CircleAlert,
+   Info,
+   Bell,
+   Check,
+   Download,
+   FileText,
+   Folder,
+   FolderOpen,
+   Gamepad2,
+   Keyboard,
+   LoaderCircle,
+   RefreshCw,
+   Settings2,
+   Video,
+} from "lucide-react";
 import type { AppState, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
-import { previewFilename, validFilenameTemplate } from "../../shared/filename";
+import { previewFilename, filenamePatterns, filenameTemplateError, filenameTemplateWarning } from "../../shared/filename";
 import { SelectionIndicator } from "./SelectionIndicator";
-import { HeaderActions, Button, Field, Select, Toggle, NumberInput } from "./ui";
+import { HeaderActions, Button, Select, NumberInput } from "./ui";
+import { Field, Toggle } from "./SettingsControls";
 import { api } from "./desktop";
 import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
@@ -14,20 +32,17 @@ import { GameManagement } from "./GameManagement";
 import { PaneDivider, usePaneSize } from "./layout";
 import { FolderPicker } from "./FolderPicker";
 import { timeAgo } from "./format";
-import { AppLogo } from "./AppLogo";
 import { updateAction, updateDownloading, updateDownloadLabel } from "./update-action";
 
 const sections = [
    { id: "recording", label: "Recording", icon: Video },
    { id: "collection", label: "Collection", icon: Folder },
-   { id: "sharing", label: "Sharing", icon: Share2 },
    { id: "games", label: "Games", icon: Gamepad2 },
    { id: "notifications", label: "Notifications", icon: Bell },
    { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
-   { id: "general", label: "App & Updates", icon: Settings2 },
+   { id: "general", label: "App & updates", icon: Settings2 },
 ] as const;
 type Section = (typeof sections)[number]["id"];
-const filenamePatterns = { "source-date": "{source} {date}T{time}", "date-source": "{date}T{time} {source}" } as const;
 function LastChecked({ timestamp }: { timestamp: number }) {
    const [now, setNow] = useState(Date.now);
    useEffect(() => {
@@ -35,6 +50,30 @@ function LastChecked({ timestamp }: { timestamp: number }) {
       return () => window.clearInterval(timer);
    }, []);
    return <>Last checked {timeAgo(timestamp, now)}</>;
+}
+function FilenameWarning({ message, error }: { message: string; error: boolean }) {
+   const [hasAppeared, setHasAppeared] = useState(!!message);
+   useEffect(() => {
+      if (message) setHasAppeared(true);
+   }, [message]);
+   return (
+      <span
+         className="filename-warning-icon"
+         data-state={message ? "visible" : hasAppeared ? "leaving" : "hidden"}
+         data-tone={error ? "danger" : "warning"}
+         role="img"
+         aria-label={message || undefined}
+         aria-hidden={!message}
+         tabIndex={message ? 0 : -1}
+      >
+         {error ? <TriangleAlert size={16} /> : <CircleAlert size={16} />}
+         {message && (
+            <span className="filename-warning-tooltip" role="tooltip" id="filename-pattern-message">
+               {message}
+            </span>
+         )}
+      </span>
+   );
 }
 function FilenameEditor({
    value,
@@ -48,6 +87,9 @@ function FilenameEditor({
    onPreset: (value: Preferences["filenamePreset"]) => void;
 }) {
    const input = useRef<HTMLInputElement>(null);
+   const error = filenameTemplateError(value);
+   const warning = filenameTemplateWarning(value);
+   const message = error || warning;
    useEffect(() => {
       if (input.current && document.activeElement !== input.current && input.current.value !== value) input.current.value = value;
    }, [value]);
@@ -65,6 +107,7 @@ function FilenameEditor({
    return (
       <div className="filename-editor">
          <div className="filename-heading">
+            <FileText className="settings-row-icon" size={21} aria-hidden="true" />
             <label htmlFor="filename-pattern">File name</label>
             <Select label="Filename preset" value={preset} onChange={(next) => onPreset(next as Preferences["filenamePreset"])}>
                <option value="source-date">App + date</option>
@@ -72,15 +115,24 @@ function FilenameEditor({
                <option value="custom">Custom</option>
             </Select>
          </div>
-         <input
-            id="filename-pattern"
-            aria-label="Name pattern"
-            ref={input}
-            defaultValue={value}
-            onInput={(event) => onChange(event.currentTarget.value)}
-            maxLength={160}
-            spellCheck={false}
-         />
+         <div className="filename-pattern-input" data-invalid={!!error || undefined}>
+            <input
+               id="filename-pattern"
+               aria-invalid={!!error || undefined}
+               aria-describedby={message ? "filename-pattern-message" : undefined}
+               aria-label="Name pattern"
+               ref={input}
+               defaultValue={value}
+               onInput={(event) => onChange(event.currentTarget.value)}
+               onBlur={(event) => {
+                  const trimmed = event.currentTarget.value.trim();
+                  if (trimmed !== event.currentTarget.value) onChange(trimmed);
+               }}
+               maxLength={160}
+               spellCheck={false}
+            />
+            <FilenameWarning message={message} error={!!error} />
+         </div>
          <div className="filename-tokens">
             {[
                { token: "{source}", name: "Application" },
@@ -163,7 +215,7 @@ export function Settings({
       if (!element) return;
       handledNavigationRequest.current = target.request;
       element.scrollIntoView({ block: "center" });
-      const button = target.section === "collection" ? element.querySelector<HTMLButtonElement>("button") : null;
+      const button = target.section === "collection" ? element.querySelector<HTMLButtonElement>("button[data-choose-folder]") : null;
       (button && !button.disabled ? button : element).focus({ preventScroll: true });
       clearTimeout(highlightTimer.current);
       setCollectionHighlighted(target.section === "collection");
@@ -171,12 +223,8 @@ export function Settings({
    }, [target, section]);
    useEffect(() => () => clearTimeout(highlightTimer.current), []);
    const qualityError = customQualityError(draft);
-   const filenameError =
-      draft.filenamePreset === "custom" && !validFilenameTemplate(draft.filenameTemplate)
-         ? draft.filenameTemplate.trim()
-            ? "Use supported fields and leave out folder paths."
-            : "Enter a filename pattern."
-         : "";
+   const filenamePattern = draft.filenamePreset === "custom" ? draft.filenameTemplate : filenamePatterns[draft.filenamePreset];
+   const filenameError = filenameTemplateError(filenamePattern);
    const change = <K extends keyof Preferences>(key: K, value: Preferences[K]) => write({ ...draft, [key]: value });
    const switchSection = (id: Section) => setSection(id);
    const chooseFolder = async () => {
@@ -234,28 +282,38 @@ export function Settings({
                <h1>{title}</h1>
             </header>
             <div className="settings-scroll">
-               <fieldset className="settings-body" disabled={locked}>
+               <fieldset className="settings-body" disabled={captureSettings && locked}>
                   {section === "recording" && (
                      <>
-                        <h2>Recording presets</h2>
-                        <RecordingPresets
-                           value={draft}
-                           onChange={(next) => {
-                              if (!locked) write(next);
-                           }}
-                        />
-                        <h2>Recent footage</h2>
-                        <Field label="Clip length">
-                           <NumberInput
-                              min={5}
-                              max={1800}
-                              value={draft.clipSeconds}
-                              aria-label="Clip length in seconds"
-                              onValueChange={(value) => change("clipSeconds", value)}
-                              unit="seconds"
+                        <section className="settings-group">
+                           <h2>Quality</h2>
+                           <RecordingPresets
+                              compact
+                              value={draft}
+                              onChange={(next) => {
+                                 if (!locked) write(next);
+                              }}
                            />
-                        </Field>
-                        <Toggle checked={draft.avoidOverlap} onChange={(value) => change("avoidOverlap", value)} label="Reduce clip overlap" />
+                        </section>
+                        <section className="settings-group">
+                           <h2>Clip</h2>
+                           <Field label="Clip length" detail="Save this much recent footage when you clip.">
+                              <NumberInput
+                                 min={5}
+                                 max={1800}
+                                 value={draft.clipSeconds}
+                                 aria-label="Clip length in seconds"
+                                 onValueChange={(value) => change("clipSeconds", value)}
+                                 unit="seconds"
+                              />
+                           </Field>
+                           <Toggle
+                              checked={draft.avoidOverlap}
+                              onChange={(value) => change("avoidOverlap", value)}
+                              label="Reduce clip overlap"
+                              detail="Leave out footage already saved in the previous clip."
+                           />
+                        </section>
                      </>
                   )}
                   {section === "shortcuts" && (
@@ -294,176 +352,179 @@ export function Settings({
                   )}
                   {section === "games" && (
                      <>
-                        <h2>Known games</h2>
-                        <GameManagement preferences={draft} searchRef={gameSearch} change={(customGames) => write({ ...draft, customGames })} />
+                        <section className="settings-group">
+                           <h2>Known games</h2>
+                           <GameManagement preferences={draft} searchRef={gameSearch} change={(customGames) => write({ ...draft, customGames })} />
+                        </section>
                      </>
                   )}
                   {section === "collection" && (
                      <>
-                        <h2>Collection folder</h2>
-                        <FolderPicker
-                           path={draft.collection}
-                           ref={collectionFolder}
-                           navigationHighlighted={collectionHighlighted}
-                           onChoose={() => void chooseFolder()}
-                           revealDisabled={draft.collection !== state.preferences.collection}
-                           onReveal={() => void run(() => api.reveal(state.preferences.collection))}
-                        />
-                        <h2>New recordings</h2>
-                        <Field label="Folder layout" detail="Only affects future clips. Existing files aren't reorganized.">
-                           <Select
-                              label="Folder layout"
-                              value={draft.folderLayout}
-                              onChange={(value) => change("folderLayout", value as Preferences["folderLayout"])}
-                           >
-                              <option value="flat">Single folder</option>
-                              <option value="application">Application folders</option>
-                           </Select>
-                        </Field>
-                        <FilenameEditor
-                           preset={draft.filenamePreset}
-                           value={draft.filenamePreset === "custom" ? draft.filenameTemplate : filenamePatterns[draft.filenamePreset]}
-                           onChange={(value) => write({ ...draft, filenamePreset: "custom", filenameTemplate: value })}
-                           onPreset={(preset) =>
-                              write({
-                                 ...draft,
-                                 filenamePreset: preset,
-                                 filenameTemplate:
-                                    preset === "custom"
-                                       ? draft.filenamePreset === "custom"
-                                          ? draft.filenameTemplate
-                                          : filenamePatterns[draft.filenamePreset]
-                                       : filenamePatterns[preset],
-                              })
-                           }
-                        />
-                        <div className="filename-preview">
-                           <span>{filenameError ? "Check pattern" : "Example"}</span>
-                           {filenameError ? (
-                              <span className="filename-error">{filenameError}</span>
-                           ) : (
-                              <code>{previewFilename(draft, "Desktop", new Date("2026-10-08T19:42:10Z"))}</code>
-                           )}
-                        </div>
-                     </>
-                  )}
-                  {section === "sharing" && (
-                     <>
-                        <p className="section-description">Shareables use the full clip and master audio mix.</p>
-                        <Field label="Default maximum size" detail="Override this for individual clips in the viewer.">
-                           <NumberInput
-                              min={1}
-                              max={2000}
-                              value={draft.shareSizeMB}
-                              aria-label="Default shareable size in MB"
-                              onValueChange={(value) => change("shareSizeMB", value)}
-                              unit="MB"
+                        <fieldset className="settings-group" disabled={locked}>
+                           <h2>Location</h2>
+                           <FolderPicker
+                              path={draft.collection}
+                              ref={collectionFolder}
+                              navigationHighlighted={collectionHighlighted}
+                              onChoose={() => void chooseFolder()}
+                              revealDisabled={draft.collection !== state.preferences.collection}
+                              onReveal={() => void run(() => api.reveal(state.preferences.collection))}
                            />
-                        </Field>
-                        <div className="size-presets">
-                           {[10, 20, 50, 100].map((size) => (
-                              <button
-                                 className={draft.shareSizeMB === size ? "selected" : ""}
-                                 aria-pressed={draft.shareSizeMB === size}
-                                 key={size}
-                                 onClick={() => change("shareSizeMB", size)}
-                              >
-                                 {size} MB
-                              </button>
-                           ))}
-                        </div>
-                        <Toggle
-                           label="Automatically create shareables"
-                           detail="Create a copy after each clip saves. Compression uses extra resources during recording."
-                           checked={draft.autoShare}
-                           onChange={(value) => change("autoShare", value)}
-                        />
+                        </fieldset>
+                        <fieldset className="settings-group" disabled={locked}>
+                           <h2>New clips</h2>
+                           <Toggle
+                              label="Group clips by application"
+                              detail="Save new clips in application folders. Existing files stay where they are."
+                              checked={draft.folderLayout === "application"}
+                              onChange={(enabled) => change("folderLayout", enabled ? "application" : "flat")}
+                           />
+                           <div className="settings-filename-row">
+                              <FilenameEditor
+                                 preset={draft.filenamePreset}
+                                 value={filenamePattern}
+                                 onChange={(value) => write({ ...draft, filenamePreset: "custom", filenameTemplate: value })}
+                                 onPreset={(preset) =>
+                                    write({
+                                       ...draft,
+                                       filenamePreset: preset,
+                                       filenameTemplate:
+                                          preset === "custom"
+                                             ? draft.filenamePreset === "custom"
+                                                ? draft.filenameTemplate
+                                                : filenamePatterns[draft.filenamePreset]
+                                             : filenamePatterns[preset],
+                                    })
+                                 }
+                              />
+                              {!filenameError && (
+                                 <>
+                                    <div className="filename-preview">
+                                       <span>Example</span>
+                                       <code>{previewFilename(draft, "Desktop", new Date("2026-10-08T19:42:10Z"))}</code>
+                                    </div>
+                                 </>
+                              )}
+                           </div>
+                        </fieldset>
+                        <section className="settings-group">
+                           <h2>Sharables</h2>
+                           <Field label="Default maximum size" detail="You can choose a different limit for each clip.">
+                              <NumberInput
+                                 min={1}
+                                 max={2000}
+                                 value={draft.shareSizeMB}
+                                 aria-label="Default shareable size in MB"
+                                 onValueChange={(value) => change("shareSizeMB", value)}
+                                 unit="MB"
+                              />
+                              <div className="size-presets">
+                                 {[10, 20, 50, 100].map((size) => (
+                                    <button
+                                       className={draft.shareSizeMB === size ? "selected" : ""}
+                                       aria-pressed={draft.shareSizeMB === size}
+                                       key={size}
+                                       onClick={() => change("shareSizeMB", size)}
+                                    >
+                                       {size} MB
+                                    </button>
+                                 ))}
+                              </div>
+                           </Field>
+                           <Toggle
+                              label="Automatically create shareables"
+                              detail="Compress a copy after each save. Uses extra resources while recording."
+                              checked={draft.autoShare}
+                              onChange={(value) => change("autoShare", value)}
+                           />
+                        </section>
                      </>
                   )}
                   {section === "notifications" && (
                      <>
-                        <h2>When a clip saves</h2>
-                        <Field label="Show notifications">
-                           <Select
-                              label="Notification visibility"
-                              value={draft.notifications}
-                              onChange={(value) => change("notifications", value as Preferences["notifications"])}
-                           >
-                              <option value="everywhere">Everywhere</option>
-                              <option value="outside-fullscreen">Outside fullscreen</option>
-                              <option value="off">Off</option>
-                           </Select>
-                        </Field>
-                        <Toggle
-                           checked={draft.sound}
-                           onChange={(value) => change("sound", value)}
-                           label="Play a sound"
-                           detail="Independent of visual notifications."
-                        />
+                        <section className="settings-group">
+                           <Field label="Show notifications" detail="Choose when to show a saved clip notification.">
+                              <Select
+                                 label="Notification visibility"
+                                 value={draft.notifications}
+                                 onChange={(value) => change("notifications", value as Preferences["notifications"])}
+                              >
+                                 <option value="everywhere">Everywhere</option>
+                                 <option value="outside-fullscreen">Outside fullscreen</option>
+                                 <option value="off">Off</option>
+                              </Select>
+                           </Field>
+                           <Toggle
+                              checked={draft.sound}
+                              onChange={(value) => change("sound", value)}
+                              label="Play a sound"
+                              detail="Play a confirmation even when visual notifications are off."
+                           />
+                        </section>
                      </>
                   )}
                   {section === "general" && (
                      <>
-                        <h2>Startup</h2>
-                        <p className="section-description">Closing the window keeps AcroClip running in the tray.</p>
-                        <Toggle label="Start with your computer" checked={draft.startWithOS} onChange={(value) => change("startWithOS", value)} />
-                        <Toggle
-                           label="Start recording when AcroClip opens"
-                           detail="Uses your saved source. Application capture waits if its target is unavailable."
-                           checked={draft.autoRecord}
-                           onChange={(value) => change("autoRecord", value)}
-                        />
-                        <h2>Updates</h2>
-                        <Toggle
-                           label="Check for updates at startup"
-                           detail="Look for new releases when AcroClip starts. You can check manually below."
-                           checked={draft.updateCheck}
-                           onChange={(updateCheck) => change("updateCheck", updateCheck)}
-                        />
+                        <section className="settings-group">
+                           <h2>Startup</h2>
+                           <p className="section-description">Closing the window keeps AcroClip running in the tray.</p>
+                           <Toggle label="Start with your computer" checked={draft.startWithOS} onChange={(value) => change("startWithOS", value)} />
+                           <Toggle
+                              label="Start recording when AcroClip opens"
+                              detail="Use your saved source, or wait for its application to open."
+                              checked={draft.autoRecord}
+                              onChange={(value) => change("autoRecord", value)}
+                           />
+                        </section>
+                        <section className="settings-group">
+                           <h2>Updates</h2>
+                           <Toggle
+                              label="Check for updates at startup"
+                              checked={draft.updateCheck}
+                              onChange={(updateCheck) => change("updateCheck", updateCheck)}
+                           />
 
-                        <div className="update-panel">
-                           <div>
-                              <strong className="update-app-name">
-                                 <AppLogo size={24} />
-                                 AcroClip {state.version}
-                              </strong>
-                              <span className="update-message" title={state.update.message}>
-                                 {state.update.state === "idle" && state.update.lastChecked ? (
+                           <Field
+                              className="update-panel"
+                              icon={Info}
+                              label={`AcroClip ${state.version}`}
+                              detail={
+                                 state.update.state === "idle" && state.update.lastChecked ? (
                                     <LastChecked timestamp={state.update.lastChecked} />
                                  ) : (
                                     state.update.message || "Not checked yet"
-                                 )}
-                              </span>
-                           </div>
-                           {update ? (
-                              <Button className="primary" onClick={() => void run(() => api[update.method]())}>
-                                 {update.method === "revealUpdate" ? <FolderOpen size={16} /> : <Download size={16} />}
-                                 {update.label}
-                              </Button>
-                           ) : (
-                              <Button
-                                 busy={state.update.state === "checking" || downloading}
-                                 busyIndicator="content"
-                                 onClick={() => void run(() => api.checkUpdate())}
-                              >
-                                 <RefreshCw size={15} className={state.update.state === "checking" ? "spin" : undefined} />
-                                 {downloading ? updateDownloadLabel(state.update) : "Check for updates"}
-                              </Button>
-                           )}
-                        </div>
+                                 )
+                              }
+                           >
+                              {update ? (
+                                 <Button className="primary" onClick={() => void run(() => api[update.method]())}>
+                                    {update.method === "revealUpdate" ? <FolderOpen size={16} /> : <Download size={16} />}
+                                    {update.label}
+                                 </Button>
+                              ) : (
+                                 <Button
+                                    busy={state.update.state === "checking" || downloading}
+                                    busyIndicator="content"
+                                    onClick={() => void run(() => api.checkUpdate())}
+                                 >
+                                    <RefreshCw size={15} className={state.update.state === "checking" ? "spin" : undefined} />
+                                    {downloading ? updateDownloadLabel(state.update) : "Check for updates"}
+                                 </Button>
+                              )}
+                           </Field>
+                        </section>
                      </>
                   )}
                </fieldset>
             </div>
-            {(qualityError || filenameError || saveError || locked) && (
+            {(qualityError || (!filenameError && saveError) || locked) && (
                <div className="settings-save-feedback" role="status">
                   <span>
                      {qualityError ||
-                        filenameError ||
                         saveError ||
                         (recording ? "Stop recording to change recording or collection settings." : "Finish pending work before changing the collection.")}
                   </span>
-                  {saveError && <Button onClick={retry}>Retry save</Button>}
+                  {saveError && !filenameError && <Button onClick={retry}>Retry save</Button>}
                </div>
             )}
          </div>

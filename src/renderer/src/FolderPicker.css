@@ -21,3 +21,30 @@
 .folder-picker[data-navigation-highlight] {
    box-shadow: 0 0 0 2px var(--accent-border);
 }
+
+.folder-picker-path {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   flex: 1;
+   min-width: 0;
+   padding: 8px;
+   margin: -8px;
+   border-radius: 6px;
+   color: var(--muted);
+   text-align: left;
+   font-size: 12px;
+}
+.folder-picker-path > span {
+   min-width: 0;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+.folder-picker-path > svg {
+   flex-shrink: 0;
+}
+.folder-picker-path:hover:not(:disabled) {
+   background: var(--raised);
+   color: var(--text);
+}

@@ -315,8 +315,8 @@ async function saveClip() {
    const destination = recordingDestination(
       { ...preferences, collection: collections.root },
       footage.name || (preferences.sourceKind === "auto" ? "Game" : recordingSourceLabel(preferences, captureSources.cached)),
-      randomUUID().slice(0, 8),
-      new Date(requestedAt)
+      new Date(requestedAt),
+      recorder.pendingSavePaths
    );
    mkdirSync(dirname(destination), { recursive: true });
    if (!withinRoot(collections.root, realpathSync(dirname(destination))))

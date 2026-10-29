@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import type { RefObject } from "react";
 
 // Bound measurements and animations so filtering a large collection stays cheap.
-export function useGridMotion(root: RefObject<HTMLDivElement | null>, signature: string, visible: boolean) {
+export function useGridMotion<T extends HTMLElement>(root: RefObject<T | null>, signature: string, visible: boolean) {
    const positions = useRef(new Map<string, { left: number; top: number }>());
    const animations = useRef(new Map<HTMLElement, Animation>());
    useLayoutEffect(() => {

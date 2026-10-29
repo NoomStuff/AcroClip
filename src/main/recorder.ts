@@ -84,7 +84,7 @@ export class Recorder {
    private readyResolve: (() => void) | null = null;
    private readyReject: ((reason: Error) => void) | null = null;
    private source = "Screen";
-   private requests = new Set<string>();
+   private requests = new Map<string, string>();
    private fullscreen = false;
    private windowsResolve: (() => void) | null = null;
    private devicesResolve: ((devices: Array<{ id: string; name: string }>) => void) | null = null;
@@ -789,11 +789,14 @@ export class Recorder {
          this.autoKey = this.configurationKey(configuration);
       }
    }
+   get pendingSavePaths(): readonly string[] {
+      return [...this.requests.values()];
+   }
    async save(file?: string, requestedAt = Date.now(), application?: ApplicationArtwork): Promise<void> {
       if (this.current.state !== "recording" && this.current.state !== "waiting") throw new Error("Start recording before saving a clip");
       if (!file) throw new Error("A destination path is required for the clip");
       const requestId = randomUUID();
-      this.requests.add(requestId);
+      this.requests.set(requestId, file);
       if (application) this.requestArtwork.set(requestId, { application, sourceId: this.current.bufferedSourceId || this.current.sourceId || "" });
       this.update({ pendingSaves: this.requests.size });
       await this.command({ action: "save", path: file, requestId, requestedAt, requestAgeMs: Math.max(0, Date.now() - requestedAt) }, () => {

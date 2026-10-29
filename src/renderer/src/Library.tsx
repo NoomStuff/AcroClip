@@ -420,7 +420,13 @@ export function Library({
                   </span>
                   <div className="search-input">
                      <Search size={16} />
-                     <input aria-label="Search clips" placeholder="Search clips" value={query} onChange={(event) => setQuery(event.target.value)} />
+                     <input
+                        aria-label="Search clips"
+                        spellCheck={false}
+                        placeholder="Search clips"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                     />
                      {query && (
                         <IconButton label="Clear search" onClick={() => setQuery("")}>
                            <X size={13} />

@@ -33,7 +33,7 @@ it("dispatches the actual saveClip body without waiting for a stuck free-space r
       const saveClip = new Script(`(${functionNode.getText(parsed)})`).runInNewContext({
          Date,
          closingRequested: false,
-         recorder: { status: { state: "recording" }, save },
+         recorder: { status: { state: "recording" }, pendingSavePaths: [], save },
          storage,
          collections: { root },
          preferences: { ...defaultPreferences, collection: root },

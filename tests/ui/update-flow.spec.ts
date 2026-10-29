@@ -40,7 +40,7 @@ test("verified portable update lifecycle shares state with Settings", async () =
    try {
       const page = await app.firstWindow();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
-      await page.getByRole("button", { name: "App & Updates", exact: true }).click();
+      await page.getByRole("button", { name: "App & updates", exact: true }).click();
       await app.evaluate(
          ({ app, net, shell }, { downloads, bytes, digest }) => {
             const getPath = app.getPath.bind(app);

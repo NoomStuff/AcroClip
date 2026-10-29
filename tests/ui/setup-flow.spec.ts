@@ -96,14 +96,14 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect(page.getByRole("button", { name: "Custom", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("spinbutton", { name: "Recording frame rate" }).fill("48");
       await page.getByRole("slider", { name: "Recording compression" }).fill("25");
-      await page.locator(".quality-advanced > summary").click();
+      await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).toBeVisible();
       await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).not.toBeChecked();
       await page.getByRole("checkbox", { name: /Allow software encoding/ }).check();
       await page.waitForTimeout(300);
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences)
          .toMatchObject({ resolutionLimit: 1440, customFPS: 48, customCQ: 25, allowSoftwareEncoder: true });
-      await page.getByRole("button", { name: "Sharing", exact: true }).click();
+      await page.getByRole("button", { name: "Collection", exact: true }).click();
       await expect(page.getByRole("spinbutton", { name: "Default shareable size in MB" })).toHaveValue("20");
       await page.getByRole("spinbutton", { name: "Default shareable size in MB" }).fill("50");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.shareSizeMB).toBe(50);
@@ -116,11 +116,11 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await pattern.press("Control+Z");
       await expect(pattern).toHaveValue("Moment ");
       await pattern.fill("{unknown}");
-      await expect(page.locator(".settings-save-feedback")).toBeVisible();
+      await expect(pattern).toHaveAttribute("aria-invalid", "true");
       await pattern.fill("../outside");
-      await expect(page.locator(".settings-save-feedback")).toBeVisible();
+      await expect(pattern).toHaveAttribute("aria-invalid", "true");
       await pattern.fill("Moment {source} {date} {time}");
-      await expect(page.locator(".filename-preview")).toContainText("Moment Desktop 2026-10-08 19-42-10-a1b2c3d4.mkv");
+      await expect(page.locator(".filename-preview")).toContainText("Moment Desktop 2026-10-08 19-42-10.mkv");
       await page.waitForTimeout(300);
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences)

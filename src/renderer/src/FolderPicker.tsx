@@ -1,6 +1,6 @@
 import type { Ref } from "react";
-import { FolderOpen, Folder } from "lucide-react";
-import { Button, IconButton } from "./ui";
+import { ExternalLink, Folder } from "lucide-react";
+import { Button } from "./ui";
 
 export function FolderPicker({
    path,
@@ -27,13 +27,24 @@ export function FolderPicker({
          data-navigation-highlight={navigationHighlighted || undefined}
       >
          <Folder size={22} />
-         <span title={path}>{path || "No folder selected"}</span>
-         <Button onClick={onChoose}>Choose folder</Button>
-         {onReveal && (
-            <IconButton label="Open collection folder" disabled={revealDisabled} onClick={onReveal}>
-               <FolderOpen size={17} />
-            </IconButton>
+         {onReveal ? (
+            <button
+               type="button"
+               className="folder-picker-path"
+               aria-label="Open collection folder"
+               title={path}
+               disabled={revealDisabled || !path}
+               onClick={onReveal}
+            >
+               <span>{path || "No folder selected"}</span>
+               <ExternalLink size={16} aria-hidden="true" />
+            </button>
+         ) : (
+            <span title={path}>{path || "No folder selected"}</span>
          )}
+         <Button data-choose-folder onClick={onChoose}>
+            Choose folder
+         </Button>
       </div>
    );
 }

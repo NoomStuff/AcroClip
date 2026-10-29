@@ -11,13 +11,32 @@ export function safeFileStem(value: string): string {
    return result;
 }
 
-export function validFilenameTemplate(template: string): boolean {
-   if (!template.trim() || template.length > 160 || /[<>:"/\\|?*]/.test(template) || [...template].some((character) => character.charCodeAt(0) < 32))
-      return false;
-   return !/[{}]/.test(template.replace(/\{(?:source|date|time)\}/g, ""));
+export const filenamePatterns = { "source-date": "{source} {date} {time}", "date-source": "{date} {time} {source}" } as const;
+
+export function filenameTemplateError(template: string): string {
+   if (!template.trim()) return "Enter a file name pattern.";
+   if (template.length > 160) return "Keep the pattern under 161 characters.";
+   if (/[<>:"/\\|?*]/.test(template) || [...template].some((character) => character.charCodeAt(0) < 32))
+      return 'File names cannot contain < > : " / \\ | ? * or control characters.';
+   if (/[{}]/.test(template.replace(/\{(?:source|date|time)\}/g, ""))) return "Use only {source}, {date}, and {time} fields.";
+   return "";
 }
 
-export function previewFilename(preferences: Pick<Preferences, "filenamePreset" | "filenameTemplate">, source: string, now: Date, unique = "a1b2c3d4"): string {
+export function validFilenameTemplate(template: string): boolean {
+   return !filenameTemplateError(template);
+}
+
+export function filenameTemplateWarning(template: string): string {
+   if (filenameTemplateError(template)) return "";
+   if (/[.]$/.test(template.trim())) return "Trailing periods will be removed from saved names.";
+   const expanded = template.replace(/\{(?:source|date|time)\}/g, "Example").trim();
+   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(expanded)) return "Windows reserves this name. AcroClip will use Clip instead.";
+   if (!template.includes("{time}")) return "This pattern can give several clips the same name.";
+   if (!template.includes("{date}")) return "This pattern can repeat on different days.";
+   return "";
+}
+
+export function previewFilename(preferences: Pick<Preferences, "filenamePreset" | "filenameTemplate">, source: string, now: Date): string {
    const label = safeFileStem(source);
    const stamp = now
       .toISOString()
@@ -27,7 +46,13 @@ export function previewFilename(preferences: Pick<Preferences, "filenamePreset" 
    let name: string;
    if (preferences.filenamePreset === "custom") {
       if (!validFilenameTemplate(preferences.filenameTemplate)) throw new Error("Use {source}, {date}, or {time} in a filename without folder separators.");
-      name = safeFileStem(preferences.filenameTemplate.replace(/\{(source|date|time)\}/g, (_token: string, key: string) => values[key as keyof typeof values]));
-   } else name = preferences.filenamePreset === "date-source" ? `${stamp} ${label}` : `${label} ${stamp}`;
-   return `${name}-${safeFileStem(unique)}.mkv`;
+      name = safeFileStem(
+         preferences.filenameTemplate.trim().replace(/\{(source|date|time)\}/g, (_token: string, key: string) => values[key as keyof typeof values])
+      );
+   } else
+      name = filenamePatterns[preferences.filenamePreset].replace(
+         /\{(source|date|time)\}/g,
+         (_token: string, key: string) => values[key as keyof typeof values]
+      );
+   return `${name}.mkv`;
 }

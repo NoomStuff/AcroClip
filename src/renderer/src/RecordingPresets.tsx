@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, Cpu } from "lucide-react";
+import { Check, Cpu } from "lucide-react";
 import type { Preferences, RecordingCapabilities } from "../../shared/types";
 import { applyRecordingPreset } from "../../shared/recording-presets";
 import { api } from "./desktop";
 import { Field, Select, Toggle, NumberInput } from "./ui";
+import { Field as SettingsField, Toggle as SettingsToggle } from "./SettingsControls";
 import { Slider } from "./Slider";
 function QualityPicker({
    value,
@@ -49,10 +50,20 @@ export function customQualityError(value: Preferences): string {
    if (!Number.isInteger(value.customFPS) || value.customFPS < 1 || value.customFPS > 120) return "Frame rate must be between 1 and 120 fps.";
    return "";
 }
-function CustomQualityControls({ value, onChange }: { value: Preferences; onChange: (patch: Partial<Preferences>) => void }) {
+function CustomQualityControls({
+   value,
+   onChange,
+   compact = false,
+}: {
+   value: Preferences;
+   onChange: (patch: Partial<Preferences>) => void;
+   compact?: boolean;
+}) {
+   const ControlField = compact ? SettingsField : Field;
+   const ControlToggle = compact ? SettingsToggle : Toggle;
    return (
       <div className="custom-quality">
-         <Field label="Resolution limit">
+         <ControlField label="Resolution limit" {...(compact ? { detail: "Screens scale to this limit. Apps keep their original size." } : {})}>
             <Select label="Resolution limit" value={String(value.resolutionLimit)} onChange={(limit) => onChange({ resolutionLimit: Number(limit) })}>
                {[720, 1080, 1440, 2160].map((limit) => (
                   <option key={limit} value={limit}>
@@ -64,8 +75,8 @@ function CustomQualityControls({ value, onChange }: { value: Preferences; onChan
                )}
                <option value="0">Source</option>
             </Select>
-         </Field>
-         <Field label="Frame rate">
+         </ControlField>
+         <ControlField label="Frame rate">
             <NumberInput
                min={1}
                max={120}
@@ -75,8 +86,8 @@ function CustomQualityControls({ value, onChange }: { value: Preferences; onChan
                onValueChange={(customFPS) => onChange({ customFPS })}
                unit="fps"
             />
-         </Field>
-         <Field label="Compression" detail="Lower values keep more detail and use more space.">
+         </ControlField>
+         <ControlField label="Compression" detail="Lower values keep more detail and use more space.">
             <div className="compression-slider">
                <div>
                   <span>More detail</span>
@@ -94,23 +105,18 @@ function CustomQualityControls({ value, onChange }: { value: Preferences; onChan
                   onValueChange={(next) => onChange({ customCQ: next })}
                />
             </div>
-         </Field>
-         <details className="quality-advanced">
-            <summary>
-               Advanced <ChevronDown size={14} aria-hidden="true" />
-            </summary>
-            <Toggle
-               label="Allow software encoding"
-               detail="Uses your CPU if no supported hardware encoder is available."
-               checked={value.allowSoftwareEncoder}
-               onChange={(enabled) => onChange({ allowSoftwareEncoder: enabled })}
-            />
-         </details>
+         </ControlField>
+         <ControlToggle
+            label="Allow software encoding"
+            detail="Uses your CPU if no supported hardware encoder is available."
+            checked={value.allowSoftwareEncoder}
+            onChange={(enabled) => onChange({ allowSoftwareEncoder: enabled })}
+         />
       </div>
    );
 }
 
-export function RecordingPresets({ value, onChange }: { value: Preferences; onChange: (value: Preferences) => void }) {
+export function RecordingPresets({ value, onChange, compact = false }: { value: Preferences; onChange: (value: Preferences) => void; compact?: boolean }) {
    const [capabilities, setCapabilities] = useState<RecordingCapabilities | null>(null);
    useEffect(() => {
       void api
@@ -125,10 +131,12 @@ export function RecordingPresets({ value, onChange }: { value: Preferences; onCh
             {...(capabilities?.supported ? { recommended: capabilities.recommended } : {})}
             onChange={(quality) => onChange(applyRecordingPreset(value, quality))}
          />
-         <p className="preset-source-note">
-            Screens use the resolution limit. Apps start at their original size. The recording size stays fixed until you stop.
-         </p>
-         <CustomQualityControls value={value} onChange={(patch) => onChange({ ...value, ...patch, quality: "custom" })} />
+         {!compact && (
+            <p className="preset-source-note">
+               Screens use the resolution limit. Apps start at their original size. The recording size stays fixed until you stop.
+            </p>
+         )}
+         <CustomQualityControls compact={compact} value={value} onChange={(patch) => onChange({ ...value, ...patch, quality: "custom" })} />
       </>
    );
 }

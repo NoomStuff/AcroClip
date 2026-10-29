@@ -195,8 +195,7 @@ describe("collection scan cost and fresh action checks", () => {
             previewFilename(
                { ...defaultPreferences, filenamePreset: "custom", filenameTemplate: "{source}.saving.{date}" },
                "Desktop",
-               new Date("2026-10-12T12:00:00Z"),
-               "completed"
+               new Date("2026-10-12T12:00:00Z")
             )
          );
          await writeFile(completed, "complete recording");

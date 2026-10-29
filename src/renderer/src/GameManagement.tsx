@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gamepad2, Plus, Search, Trash2 } from "lucide-react";
 import type { RefObject } from "react";
 import type { CaptureSource, CustomGame, GameCandidate, GameCatalogSnapshot, Preferences } from "../../shared/types";
 import { api, describeError } from "./desktop";
 import { Button, IconButton, Select } from "./ui";
 import { DialogPanel } from "./Dialog";
+import { useGridMotion } from "./useGridMotion";
 import { ApplicationIcon } from "./ApplicationIcon";
 const executableKey = (value: string) => value.replaceAll("\\", "/").toLowerCase();
 const withAddedGame = (games: CustomGame[], game: CustomGame): CustomGame[] => [
@@ -166,6 +167,9 @@ export function GameManagement({
    }, [entries, query]);
    const totalPages = Math.max(1, Math.ceil(filtered.length / 80)),
       currentPage = Math.min(page, totalPages - 1);
+   const list = useRef<HTMLUListElement>(null);
+   const visibleEntries = filtered.slice(currentPage * 80, (currentPage + 1) * 80);
+   useGridMotion(list, JSON.stringify(visibleEntries.map((game) => game.id)), true);
    return (
       <div className="game-settings">
          <div className="game-toolbar">
@@ -174,6 +178,7 @@ export function GameManagement({
                <input
                   ref={searchRef}
                   aria-label="Search games"
+                  spellCheck={false}
                   placeholder="Search games or applications"
                   value={query}
                   onChange={(event) => {
@@ -196,9 +201,9 @@ export function GameManagement({
                {error}
             </p>
          )}
-         <ul className="game-list" aria-label="Games">
-            {filtered.slice(currentPage * 80, (currentPage + 1) * 80).map((game) => (
-               <li key={game.id}>
+         <ul className="game-list" aria-label="Games" ref={list}>
+            {visibleEntries.map((game) => (
+               <li key={game.id} data-layout-key={game.id}>
                   <Gamepad2 size={20} />
                   <div>
                      <span className="game-entry-name" title={game.name}>
