@@ -690,3 +690,9 @@
    color: var(--text);
    transition: none;
 }
+
+.section-description {
+   font-size: 12px;
+   margin: 9px 0 22px;
+   max-width: 550px;
+}

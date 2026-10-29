@@ -1,11 +1,12 @@
-/* Global defaults load first, followed by shared controls and screen styles.
-   Keep Settings before Onboarding so setup overrides its reused quality controls.
-   All styles load eagerly so navigation does not change the cascade. */
+/* Shared controls load before screen styles. All styles load eagerly so navigation does not change the cascade. */
 @import "./global.css";
 @import "./ui.css";
 @import "./FolderPicker.css";
 @import "./DropdownSelect.css";
 @import "./Slider.css";
+@import "./ShortcutInput.css";
+@import "./RecordingPresets.css";
+@import "./CategoryEditor.css";
 @import "./layout.css";
 @import "./App.css";
 @import "./Recording.css";

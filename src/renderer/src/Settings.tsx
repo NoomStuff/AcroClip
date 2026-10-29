@@ -4,7 +4,7 @@ import type { AppState, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
 import { previewFilename, validFilenameTemplate } from "../../shared/filename";
 import { SelectionIndicator } from "./SelectionIndicator";
-import { HeaderActions, Button, Field, Select, Toggle } from "./ui";
+import { HeaderActions, Button, Field, Select, Toggle, NumberInput } from "./ui";
 import { api } from "./desktop";
 import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
@@ -15,6 +15,7 @@ import { PaneDivider, usePaneSize } from "./layout";
 import { FolderPicker } from "./FolderPicker";
 import { timeAgo } from "./format";
 import { AppLogo } from "./AppLogo";
+import { updateAction, updateDownloading, updateDownloadLabel } from "./update-action";
 
 const sections = [
    { id: "recording", label: "Recording", icon: Video },
@@ -184,6 +185,8 @@ export function Settings({
          if (path) change("collection", path);
       });
    };
+   const update = updateAction(state.update);
+   const downloading = updateDownloading(state.update);
    const title = sections.find((item) => item.id === section)?.label;
    return (
       <div className="settings-page" ref={layout}>
@@ -243,17 +246,14 @@ export function Settings({
                         />
                         <h2>Recent footage</h2>
                         <Field label="Clip length">
-                           <div className="number-unit">
-                              <input
-                                 type="number"
-                                 min={5}
-                                 max={1800}
-                                 value={Number.isNaN(draft.clipSeconds) ? "" : draft.clipSeconds}
-                                 aria-label="Clip length in seconds"
-                                 onChange={(event) => change("clipSeconds", event.target.value === "" ? Number.NaN : Number(event.target.value))}
-                              />
-                              <span>seconds</span>
-                           </div>
+                           <NumberInput
+                              min={5}
+                              max={1800}
+                              value={draft.clipSeconds}
+                              aria-label="Clip length in seconds"
+                              onValueChange={(value) => change("clipSeconds", value)}
+                              unit="seconds"
+                           />
                         </Field>
                         <Toggle checked={draft.avoidOverlap} onChange={(value) => change("avoidOverlap", value)} label="Reduce clip overlap" />
                      </>
@@ -351,17 +351,14 @@ export function Settings({
                      <>
                         <p className="section-description">Shareables use the full clip and master audio mix.</p>
                         <Field label="Default maximum size" detail="Override this for individual clips in the viewer.">
-                           <div className="number-unit">
-                              <input
-                                 type="number"
-                                 min={1}
-                                 max={2000}
-                                 value={Number.isNaN(draft.shareSizeMB) ? "" : draft.shareSizeMB}
-                                 aria-label="Default shareable size in MB"
-                                 onChange={(event) => change("shareSizeMB", event.target.value === "" ? Number.NaN : Number(event.target.value))}
-                              />
-                              <span>MB</span>
-                           </div>
+                           <NumberInput
+                              min={1}
+                              max={2000}
+                              value={draft.shareSizeMB}
+                              aria-label="Default shareable size in MB"
+                              onValueChange={(value) => change("shareSizeMB", value)}
+                              unit="MB"
+                           />
                         </Field>
                         <div className="size-presets">
                            {[10, 20, 50, 100].map((size) => (
@@ -438,45 +435,19 @@ export function Settings({
                                  )}
                               </span>
                            </div>
-                           {["ready", "available", "downloaded"].includes(state.update.state) ||
-                           (state.update.state === "error" && state.update.mode && state.update.version) ? (
-                              <Button
-                                 className="primary"
-                                 onClick={() =>
-                                    void run(() =>
-                                       state.update.state === "ready"
-                                          ? api.installUpdate()
-                                          : state.update.state === "downloaded"
-                                            ? api.revealUpdate()
-                                            : state.update.mode === "download"
-                                              ? api.downloadUpdate()
-                                              : api.openUpdateRelease()
-                                    )
-                                 }
-                              >
-                                 {state.update.state === "downloaded" ? <FolderOpen size={16} /> : <Download size={16} />}
-                                 {state.update.state === "ready"
-                                    ? "Restart to update"
-                                    : state.update.state === "downloaded"
-                                      ? "Show in Downloads"
-                                      : state.update.mode === "download"
-                                        ? state.update.state === "error"
-                                           ? "Retry download"
-                                           : "Download update"
-                                        : "View release"}
+                           {update ? (
+                              <Button className="primary" onClick={() => void run(() => api[update.method]())}>
+                                 {update.method === "revealUpdate" ? <FolderOpen size={16} /> : <Download size={16} />}
+                                 {update.label}
                               </Button>
                            ) : (
                               <Button
-                                 busy={["checking", "downloading"].includes(state.update.state)}
+                                 busy={state.update.state === "checking" || downloading}
                                  busyIndicator="content"
                                  onClick={() => void run(() => api.checkUpdate())}
                               >
                                  <RefreshCw size={15} className={state.update.state === "checking" ? "spin" : undefined} />
-                                 {state.update.state === "downloading"
-                                    ? state.update.indeterminate
-                                       ? "Downloading"
-                                       : `${Math.round(state.update.progress)}%`
-                                    : "Check for updates"}
+                                 {downloading ? updateDownloadLabel(state.update) : "Check for updates"}
                               </Button>
                            )}
                         </div>

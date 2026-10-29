@@ -10,7 +10,7 @@ import { bindingFor, formatBinding } from "../../shared/shortcuts";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { AudioListening } from "./AudioListening";
 import { AdditionalAudio } from "./AdditionalAudio";
-import { portalScreenId, sourceChoices, selectedCaptureSource } from "../../shared/capture-policy";
+import { portalScreenId, sourceChoices, previewCaptureSource } from "../../shared/capture-policy";
 
 export function Recording({
    state,
@@ -64,15 +64,7 @@ export function Recording({
       : (detectedGames.find((game) => game.foreground) ?? detectedGames[0]);
    const detectedSource = sources.find((item) => item.id.split(":")[1] === (detectedGame?.id ?? state.recorder.sourceId)?.split(":")[1]);
    const detectedName = active && state.recorder.sourceKind === "app" ? state.recorder.sourceName : detectedGame?.gameName;
-   const source =
-      state.preferences.sourceKind === "auto"
-         ? active && (state.recorder.sourceKind === "app" || state.preferences.desktopFallback)
-            ? sources.find(
-                 (item) =>
-                    item.id === state.recorder.sourceId || (item.id.startsWith("window:") && item.id.split(":")[1] === state.recorder.sourceId?.split(":")[1])
-              )
-            : undefined
-         : selectedCaptureSource(sources, state.preferences);
+   const source = previewCaptureSource(sources, state.preferences, state.recorder);
    const captureAvailable = state.preferences.sourceKind === "auto" || !!source;
    const recordShortcut = bindingFor(state.preferences, active ? "stopRecording" : "startRecording") || bindingFor(state.preferences, "toggleRecording");
    const portal = sources.some((item) => item.id === portalScreenId);

@@ -14,28 +14,18 @@ export function useSettingsAutosave(preferences: Preferences) {
    const alive = useRef(true);
    const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
    const checkTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-   const serialized = JSON.stringify(preferences);
    const publish = (value: Preferences) => {
       current.current = value;
       if (alive.current) setDraft(value);
    };
    useEffect(() => {
-      const next = JSON.parse(serialized) as Preferences;
-      const merged = { ...next };
+      const merged = { ...preferences };
       for (const key of edits.current.keys()) Object.assign(merged, { [key]: current.current[key] });
       publish(merged);
-   }, [serialized]);
+   }, [preferences]);
    const flush = async () => {
       clearTimeout(timer.current);
       if (running.current || !edits.current.size) return;
-      const parsed = preferencesSchema.safeParse(current.current);
-      if (!parsed.success) {
-         if (alive.current) {
-            setError(parsed.error.issues[0]?.message ?? "Check your settings.");
-            setStatus("error");
-         }
-         return;
-      }
       running.current = true;
       if (alive.current) {
          setStatus("saving");
@@ -44,11 +34,7 @@ export function useSettingsAutosave(preferences: Preferences) {
       try {
          while (edits.current.size) {
             const snapshot = new Map(edits.current);
-            const values = { ...current.current };
-            const latest = (await api.state()).preferences;
-            const candidate = { ...latest };
-            for (const key of snapshot.keys()) Object.assign(candidate, { [key]: values[key] });
-            const valid = preferencesSchema.safeParse(candidate);
+            const valid = preferencesSchema.safeParse(current.current);
             if (!valid.success) throw new Error(valid.error.issues[0]?.message ?? "Check your settings.");
             const result = await api.savePreferences(valid.data, [...snapshot.keys()]);
             for (const [key, version] of snapshot) if (edits.current.get(key) === version) edits.current.delete(key);

@@ -38,6 +38,7 @@ import { Button, Menu } from "./ui";
 import { DialogPanel } from "./Dialog";
 import { api } from "./desktop";
 import type { Run } from "./desktop";
+import { categoryColors } from "./category-color";
 const icons = {
    tag: Tag,
    game: Gamepad2,
@@ -70,11 +71,10 @@ const icons = {
    video: Video,
    zap: Zap,
 };
+const colors = ["#b197fc", "#77b9ef", "#73c6a1", "#e3bd68", "#ed9579", "#db8eb9"];
 export function CategoryMark({ category, size = 16 }: { category: Pick<Category, "color" | "icon">; size?: number }) {
    const Icon = icons[category.icon as keyof typeof icons] ?? Tag;
-   const rgb = /^#[0-9a-f]{6}$/i.test(category.color) ? [1, 3, 5].map((index) => parseInt(category.color.slice(index, index + 2), 16)) : [177, 151, 252];
-   const color = Math.max(...rgb) < 110 ? `rgb(${rgb.map((channel) => Math.round(channel * 0.45 + 255 * 0.55)).join(",")})` : category.color;
-   return <Icon size={size} style={{ color: `var(--category-ink, ${color})` }} aria-hidden="true" />;
+   return <Icon size={size} style={{ color: `var(--category-ink, ${categoryColors(category.color).ink})` }} aria-hidden="true" />;
 }
 export function CategoryEditor({ category, close, run }: { category?: Category | undefined; close: () => void; run: Run }) {
    const [name, setName] = useState(category?.name ?? ""),
@@ -131,16 +131,12 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
                </Menu>
             </div>
             <div className="category-color-choices" role="group" aria-label="Category color">
-               {["#b197fc", "#77b9ef", "#73c6a1", "#e3bd68", "#ed9579", "#db8eb9"].map((value) => (
+               {colors.map((value) => (
                   <button type="button" key={value} aria-label={`Color ${value}`} aria-pressed={color === value} onClick={() => setColor(value)}>
                      <span aria-hidden="true" style={{ background: value }} />
                   </button>
                ))}
-               <label
-                  className="category-custom-swatch"
-                  title="Choose a custom color"
-                  data-selected={!["#b197fc", "#77b9ef", "#73c6a1", "#e3bd68", "#ed9579", "#db8eb9"].includes(color) || undefined}
-               >
+               <label className="category-custom-swatch" title="Choose a custom color" data-selected={!colors.includes(color) || undefined}>
                   <span aria-hidden="true" style={{ background: color }}>
                      <Pipette size={16} />
                   </span>

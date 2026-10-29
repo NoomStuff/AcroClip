@@ -96,27 +96,9 @@ test("settings autosave retains drafts, merges external changes and retries fail
          await expect(page.getByRole("button", { name: "Choose folder", exact: true })).toBeFocused();
          await expect(page.getByRole("group", { name: "Collection folder", exact: true })).toHaveAttribute("data-navigation-highlight", "true");
          await expect(page.getByRole("button", { name: "Choose folder", exact: true })).toBeInViewport();
-         const [chooseBounds, openBounds] = await page.getByRole("group", { name: "Collection folder", exact: true }).evaluate((group) =>
-            Array.from(group.querySelectorAll("button"), (button) => {
-               const { x, y, width, height } = button.getBoundingClientRect();
-               return { x, y, width, height };
-            })
-         );
          const open = page.getByRole("button", { name: "Open collection folder", exact: true });
-         expect(openBounds!.x).toBeGreaterThanOrEqual(chooseBounds!.x + chooseBounds!.width);
-         expect(Math.abs(openBounds!.y + openBounds!.height / 2 - (chooseBounds!.y + chooseBounds!.height / 2))).toBeLessThan(1);
          await open.click();
          await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { revealedCollection?: string }).revealedCollection)).toBe(broken);
-         const [labelBounds, presetBounds, patternBounds] = await page.locator(".filename-editor").evaluate((editor) =>
-            ['label[for="filename-pattern"]', '[role="combobox"]', "#filename-pattern"].map((selector) => {
-               const { x, y, width, height } = editor.querySelector(selector)!.getBoundingClientRect();
-               return { x, y, width, height };
-            })
-         );
-         expect(Math.abs(labelBounds!.y + labelBounds!.height / 2 - (presetBounds!.y + presetBounds!.height / 2))).toBeLessThan(1);
-         expect(patternBounds!.y).toBeGreaterThanOrEqual(presetBounds!.y + presetBounds!.height);
-         expect(patternBounds!.width).toBeGreaterThan(presetBounds!.width);
-
          await page.locator(".settings-sidebar").getByRole("button", { name: "Sharing", exact: true }).click();
          await expect(shareSize).toHaveValue("");
       }

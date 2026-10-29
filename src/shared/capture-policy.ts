@@ -38,3 +38,15 @@ export function selectedCaptureSource(sources: CaptureSource[], preferences: Pic
       (!preferences.sourceId && preferences.sourceKind === "screen" ? sources.find((source) => source.kind === "screen") : undefined)
    );
 }
+
+export function previewCaptureSource(
+   sources: CaptureSource[],
+   preferences: Pick<Preferences, "sourceKind" | "sourceId" | "desktopFallback">,
+   recorder: RecorderState
+): CaptureSource | undefined {
+   if (preferences.sourceKind !== "auto") return selectedCaptureSource(sources, preferences);
+   if ((recorder.state !== "recording" && recorder.state !== "waiting") || (recorder.sourceKind !== "app" && !preferences.desktopFallback)) return undefined;
+   return sources.find(
+      (source) => source.id === recorder.sourceId || (source.id.startsWith("window:") && source.id.split(":")[1] === recorder.sourceId?.split(":")[1])
+   );
+}

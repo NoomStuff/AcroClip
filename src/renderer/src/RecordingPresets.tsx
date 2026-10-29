@@ -3,7 +3,7 @@ import { Check, ChevronDown, Cpu } from "lucide-react";
 import type { Preferences, RecordingCapabilities } from "../../shared/types";
 import { applyRecordingPreset } from "../../shared/recording-presets";
 import { api } from "./desktop";
-import { Field, Select, Toggle } from "./ui";
+import { Field, Select, Toggle, NumberInput } from "./ui";
 import { Slider } from "./Slider";
 function QualityPicker({
    value,
@@ -66,18 +66,15 @@ function CustomQualityControls({ value, onChange }: { value: Preferences; onChan
             </Select>
          </Field>
          <Field label="Frame rate">
-            <div className="number-unit">
-               <input
-                  type="number"
-                  min={1}
-                  max={120}
-                  step={1}
-                  aria-label="Recording frame rate"
-                  value={Number.isNaN(value.customFPS) ? "" : value.customFPS}
-                  onChange={(event) => onChange({ customFPS: event.target.valueAsNumber })}
-               />
-               <span>fps</span>
-            </div>
+            <NumberInput
+               min={1}
+               max={120}
+               step={1}
+               aria-label="Recording frame rate"
+               value={value.customFPS}
+               onValueChange={(customFPS) => onChange({ customFPS })}
+               unit="fps"
+            />
          </Field>
          <Field label="Compression" detail="Lower values keep more detail and use more space.">
             <div className="compression-slider">
@@ -113,29 +110,19 @@ function CustomQualityControls({ value, onChange }: { value: Preferences; onChan
    );
 }
 
-export function RecordingPresets({
-   value,
-   onChange,
-   capabilities: providedCapabilities,
-}: {
-   value: Preferences;
-   onChange: (value: Preferences) => void;
-   capabilities?: RecordingCapabilities | null;
-}) {
-   const [capabilities, setCapabilities] = useState<RecordingCapabilities | null>(providedCapabilities ?? null);
+export function RecordingPresets({ value, onChange }: { value: Preferences; onChange: (value: Preferences) => void }) {
+   const [capabilities, setCapabilities] = useState<RecordingCapabilities | null>(null);
    useEffect(() => {
-      if (!providedCapabilities)
-         void api
-            .recordingCapabilities()
-            .then(setCapabilities)
-            .catch(() => undefined);
-   }, [providedCapabilities]);
-   const detected = providedCapabilities ?? capabilities;
+      void api
+         .recordingCapabilities()
+         .then(setCapabilities)
+         .catch(() => undefined);
+   }, []);
    return (
       <>
          <QualityPicker
             value={value.quality}
-            {...(detected?.supported ? { recommended: detected.recommended } : {})}
+            {...(capabilities?.supported ? { recommended: capabilities.recommended } : {})}
             onChange={(quality) => onChange(applyRecordingPreset(value, quality))}
          />
          <p className="preset-source-note">

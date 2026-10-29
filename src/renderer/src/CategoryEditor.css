@@ -1,0 +1,121 @@
+.category-name-input {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   min-height: 42px;
+   padding: 0 12px;
+   margin: 20px 0 16px;
+   border: 1px solid var(--border-control);
+   border-radius: var(--radius-control);
+   background: var(--raised);
+}
+.category-name-input:focus-within {
+   border-color: var(--accent-border);
+}
+.category-name-input > svg {
+   flex: 0 0 20px;
+}
+.category-name-input input {
+   flex: 1;
+   min-width: 0;
+   padding: 10px 0;
+   background: transparent;
+   border: 0;
+}
+:root[data-keyboard] .category-name-input input:focus-visible {
+   outline: none;
+}
+.category-icon-choices,
+.category-color-choices {
+   display: grid;
+   grid-template-columns: repeat(7, minmax(0, 1fr));
+   gap: 6px;
+}
+.category-icon-choices {
+   margin-bottom: 8px;
+}
+.category-icon-choices > button,
+.category-icon-choices .category-icon-more > button,
+.category-color-choices > button,
+.category-custom-swatch {
+   width: 100%;
+   min-width: 0;
+   height: 42px;
+   padding: 0;
+   border-radius: 8px;
+   display: grid;
+   place-items: center;
+}
+.category-icon-choices > button,
+.category-icon-more > button {
+   color: var(--muted);
+}
+.category-icon-choices > button:is(:hover, [aria-pressed="true"]),
+.category-icon-more > button:hover {
+   color: var(--accent);
+   background: var(--accent-soft);
+}
+.category-icon-more {
+   min-width: 0;
+}
+.category-icon-more-popup {
+   display: grid;
+   grid-template-columns: repeat(6, minmax(0, 1fr));
+   width: min(280px, calc(100vw - 24px));
+   max-height: 260px;
+   overflow-y: auto;
+   gap: 4px;
+   z-index: 1000;
+}
+.category-icon-more-popup > button {
+   display: grid;
+   place-items: center;
+   min-width: 0;
+   padding: 7px;
+   height: 38px;
+}
+.category-icon-more-popup > button[aria-checked="true"] {
+   background: var(--accent-soft);
+   color: var(--accent);
+}
+.category-color-choices > button:hover,
+.category-custom-swatch:hover {
+   background: #ffffff08;
+}
+.category-color-choices > button > span,
+.category-custom-swatch > span {
+   display: grid;
+   place-items: center;
+   width: 28px;
+   height: 28px;
+   border-radius: 50%;
+   box-shadow: inset 0 0 0 1px #ffffff18;
+   pointer-events: none;
+}
+.category-color-choices > button[aria-pressed="true"] > span,
+.category-custom-swatch[data-selected] > span {
+   outline: 2px solid var(--text);
+   outline-offset: 3px;
+}
+.category-custom-swatch {
+   position: relative;
+   cursor: pointer;
+   color: white;
+}
+.category-custom-swatch svg {
+   filter: drop-shadow(0 1px 1px #000);
+}
+.category-custom-swatch input {
+   position: absolute;
+   inset: 0;
+   width: 100%;
+   height: 100%;
+   padding: 0;
+   opacity: 0;
+   cursor: pointer;
+}
+:root[data-keyboard] .category-color-choices > button:focus-visible,
+:root[data-keyboard] .category-custom-swatch:has(input:focus-visible) {
+   outline: 2px solid var(--accent);
+   outline-offset: 0;
+}

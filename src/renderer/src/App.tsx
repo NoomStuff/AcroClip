@@ -213,15 +213,7 @@ export function App() {
                {page === "viewer" ? "" : page.slice(1)}
             </span>
             <div className="titlebar-drag" />
-            {state?.update.version && state.update.mode && !["idle", "checking"].includes(state.update.state) && (
-               <UpdateChip
-                  state={state.update}
-                  onDownload={() => void run(() => api.downloadUpdate())}
-                  onRestart={() => void run(() => api.installUpdate())}
-                  onRelease={() => void run(() => api.openUpdateRelease())}
-                  onReveal={() => void run(() => api.revealUpdate())}
-               />
-            )}
+            {state?.update.version && state.update.mode && !["idle", "checking"].includes(state.update.state) && <UpdateChip state={state.update} run={run} />}
             {state?.platform !== "darwin" && (
                <div className="window-controls">
                   <IconButton label="Minimize" onClick={() => api.window("minimize")}>

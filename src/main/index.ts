@@ -1,6 +1,6 @@
 import { shareableTargetAllowed } from "../shared/shareable-target";
 import { isPackagedApp, registerWindowsIdentity, windowsAppId } from "./identity";
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, protocol, shell, Tray, session, systemPreferences } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, nativeImage, protocol, shell, Tray, session, systemPreferences } from "electron";
 import { mkdirSync, realpathSync } from "node:fs";
 import { appendFile, mkdir, realpath, stat, rename as renameFile, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -24,11 +24,12 @@ import { Updates } from "./updates";
 import { linuxDesktopIdentity, linuxStartup } from "./startup";
 import { pendingExitDecision } from "./lifecycle";
 import { Feedback } from "./feedback";
-import { bufferedCaptureSource, portalScreenId, selectedCaptureSource } from "../shared/capture-policy";
+import { bufferedCaptureSource, portalScreenId, selectedCaptureSource, previewCaptureSource } from "../shared/capture-policy";
 import { attaCutEnvironment, findAttaCut } from "./attacut";
 import { needsMicrophonePermission } from "../shared/audio-policy";
 import { StorageMonitor } from "./storage";
 import { StateChanges } from "./state-changes";
+import { updateTray as renderTray } from "./tray";
 
 protocol.registerSchemesAsPrivileged([{ scheme: "acroclip-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -267,34 +268,15 @@ function trayIcon() {
 function updateTray() {
    if (!tray) return;
    const active = recorder.status.state === "recording" || recorder.status.state === "waiting";
-   const detail =
-      recorder.status.state === "waiting"
-         ? recorder.status.message || "Waiting for capture"
-         : recorder.status.state === "error"
-           ? recorder.status.message || "Recording stopped"
-           : active
-             ? "Recording"
-             : "";
-   tray.setToolTip(detail ? `AcroClip · ${detail}` : "AcroClip");
-   tray.setContextMenu(
-      Menu.buildFromTemplate([
-         {
-            label: "Open AcroClip",
-            click: () => {
-               mainWindow?.show();
-               mainWindow?.focus();
-            },
-         },
-         {
-            label: active ? "Stop recording" : "Start recording",
-            enabled: !startingCapture,
-            click: () => void (active ? recorder.stop() : startRecording()).catch((e) => notice(errorMessage(e), true)),
-         },
-         { label: "Save clip", enabled: active, click: () => void saveClip().catch((e) => notice(errorMessage(e), true)) },
-         { type: "separator" },
-         { label: "Exit", click: () => void requestExit() },
-      ])
-   );
+   renderTray(tray, recorder.status, !!startingCapture, {
+      open: () => {
+         mainWindow?.show();
+         mainWindow?.focus();
+      },
+      toggleRecording: () => void (active ? recorder.stop() : startRecording()).catch((e) => notice(errorMessage(e), true)),
+      saveClip: () => void saveClip().catch((e) => notice(errorMessage(e), true)),
+      exit: () => void requestExit(),
+   });
 }
 async function ensureMicrophoneAccess(value: Preferences): Promise<void> {
    if (process.platform === "darwin" && needsMicrophonePermission(value) && systemPreferences.getMediaAccessStatus("microphone") !== "granted") {
@@ -534,17 +516,7 @@ function registerIPC() {
       if (process.platform === "linux" && (await recorder.capabilities()).captureBackend === "wayland-portal")
          throw new Error("Live preview is unavailable in this Wayland session. Recording uses the selected application directly.");
       if (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete) throw new Error("Open Recording to preview the capture source.");
-      const selected =
-         preferences.sourceKind === "auto"
-            ? ["recording", "waiting"].includes(recorder.status.state) && (recorder.status.sourceKind === "app" || preferences.desktopFallback)
-               ? captureSources.cached.find(
-                    (source) =>
-                       source.id === recorder.status.sourceId ||
-                       (source.id.startsWith("window:") && source.id.split(":")[1] === recorder.status.sourceId?.split(":")[1])
-                 )
-               : undefined
-            : (captureSources.cached.find((source) => source.id === preferences.sourceId && source.kind === preferences.sourceKind) ??
-              (!preferences.sourceId && preferences.sourceKind === "screen" ? captureSources.cached.find((source) => source.kind === "screen") : undefined));
+      const selected = previewCaptureSource(captureSources.cached, preferences, recorder.status);
       if (!selected || selected.id !== requested) throw new Error("The selected preview source is unavailable.");
       previewSourceId = requested;
       previewOwner = owner ?? null;
@@ -709,12 +681,10 @@ function registerIPC() {
       if (!clip || clip.originalMissing) throw new Error("Clip not found");
       const executable = await detectAttaCut();
       if (!executable) throw new Error("AttaCut is no longer available. Install it to open this clip there.");
-      if (executable) {
-         const { spawn } = await import("node:child_process");
-         const child = spawn(executable, [clip.path], { detached: true, stdio: "ignore", windowsHide: true, env: attaCutEnvironment(process.env) });
-         child.once("error", () => notice("AttaCut could not open. Show the clip in your file manager and open it there.", true));
-         child.unref();
-      }
+      const { spawn } = await import("node:child_process");
+      const child = spawn(executable, [clip.path], { detached: true, stdio: "ignore", windowsHide: true, env: attaCutEnvironment(process.env) });
+      child.once("error", () => notice("AttaCut could not open. Show the clip in your file manager and open it there.", true));
+      child.unref();
    });
    handle("playback", (path, track) =>
       collections.playback(

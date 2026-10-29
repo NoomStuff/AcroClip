@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Clapperboard, Monitor } from "lucide-react";
 import type { AppState, CaptureSource, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
 import { api, describeError } from "./desktop";
-import { Button, Segmented, Select, Toggle } from "./ui";
+import { Button, Segmented, Select, Toggle, NumberInput } from "./ui";
 import type { Run } from "./desktop";
 import { ShortcutInput } from "./ShortcutInput";
 import { applyRecordingPreset } from "../../shared/recording-presets";
@@ -330,18 +330,16 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                         </div>
                         <div className="setup-row">
                            <label htmlFor="setup-length">Save the last</label>
-                           <div className="number-unit">
-                              <input
-                                 id="setup-length"
-                                 type="number"
-                                 aria-label="Setup clip length in seconds"
-                                 min={5}
-                                 max={1800}
-                                 value={Number.isNaN(draft.clipSeconds) ? "" : draft.clipSeconds}
-                                 onChange={(event) => change("clipSeconds", event.target.value === "" ? Number.NaN : Number(event.target.value))}
-                              />
-                              <span>seconds</span>
-                           </div>
+                           <NumberInput
+                              id="setup-length"
+
+                              aria-label="Setup clip length in seconds"
+                              min={5}
+                              max={1800}
+                              value={draft.clipSeconds}
+                              onValueChange={(value) => change("clipSeconds", value)}
+                              unit="seconds"
+                           />
                         </div>
                         {!lengthValid && (
                            <p className="setup-validation" role="alert">

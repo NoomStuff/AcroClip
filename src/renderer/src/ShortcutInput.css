@@ -1,0 +1,14 @@
+.shortcut-input {
+   border-radius: var(--radius-control);
+   border: 1px solid var(--border-control);
+   min-height: var(--control-height);
+   padding: 8px 12px;
+   background: var(--raised);
+   color: var(--text);
+   font-size: 13px;
+   min-width: 160px;
+}
+
+.shortcut-input.editing {
+   box-shadow: 0 0 0 2px var(--accent);
+}

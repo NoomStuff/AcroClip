@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { bufferedCaptureSource, portalScreenId, portalSources, sourceChoices, selectedCaptureSource } from "./capture-policy";
-import { stoppedRecorder } from "./defaults";
+import { bufferedCaptureSource, portalScreenId, portalSources, sourceChoices, selectedCaptureSource, previewCaptureSource } from "./capture-policy";
+import { defaultPreferences, stoppedRecorder } from "./defaults";
 import type { RecordingCapabilities } from "./types";
 
 const ready: RecordingCapabilities = {
@@ -75,6 +75,17 @@ describe("saved capture selection", () => {
       { id: "screen:0", kind: "screen" as const, name: "Screen", thumbnail: "" },
       { id: "window:1:0", kind: "app" as const, name: "App", thumbnail: "" },
    ];
+   it("previews only the current auto capture, allowing a screen only with desktop fallback", () => {
+      const preferences = { ...defaultPreferences, sourceKind: "auto" as const, desktopFallback: false };
+      const recorder = { ...stoppedRecorder, state: "recording" as const, sourceKind: "app" as const, sourceId: "window:1:99" };
+      expect(previewCaptureSource(sources, preferences, recorder)).toBe(sources[1]);
+      expect(previewCaptureSource(sources, preferences, { ...recorder, state: "stopped" })).toBeUndefined();
+      expect(previewCaptureSource(sources, preferences, { ...recorder, sourceId: "window:gone:0" })).toBeUndefined();
+      const screen = { ...recorder, sourceKind: "screen" as const, sourceId: "screen:0" };
+      expect(previewCaptureSource(sources, preferences, screen)).toBeUndefined();
+      expect(previewCaptureSource(sources, { ...preferences, desktopFallback: true }, screen)).toBe(sources[0]);
+      expect(previewCaptureSource(sources, { ...preferences, sourceKind: "app", sourceId: "window:1:0" }, stoppedRecorder)).toBe(sources[1]);
+   });
    it("requires both the selected ID and capture mode to match", () => {
       expect(selectedCaptureSource(sources, { sourceKind: "app", sourceId: "screen:0" })).toBeUndefined();
       expect(selectedCaptureSource(sources, { sourceKind: "screen", sourceId: "window:1:0" })).toBeUndefined();
