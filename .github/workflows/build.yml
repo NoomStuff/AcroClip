@@ -174,7 +174,8 @@ jobs:
               script: |
                  const publish = require('./scripts/publish-release.cjs');
                  await publish({github, context, core});
-      if: needs.prepare.outputs.publish == 'true' && needs.check.result == 'success'
+      # Override the implicit success() check after the optional native job is skipped.
+      if: ${{ !cancelled() && needs.prepare.outputs.publish == 'true' && needs.check.result == 'success' }}
    build-linux:
       strategy:
          fail-fast: false
