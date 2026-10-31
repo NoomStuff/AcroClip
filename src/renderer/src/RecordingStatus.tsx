@@ -1,21 +1,39 @@
 import { AlertCircle, LoaderCircle, Monitor } from "lucide-react";
-import type { AppState } from "../../shared/types";
-import { formatTime } from "./format";
-import { reportFeedback } from "./desktop";
 import { useEffect, useState } from "react";
+import type { AppState, CaptureSource } from "../../shared/types";
+import { formatTime } from "./format";
+import { api, reportFeedback } from "./desktop";
+import { ApplicationIcon } from "./ApplicationIcon";
 
-export function RecordingStatus({ state, visible, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
-   const started = state?.recorder.startedAt;
-   const [elapsed, setElapsed] = useState(() => (started ? Math.max(0, (Date.now() - started) / 1000) : 0));
-   const active = state?.recorder.state === "recording";
+export function RecordingStatus({ state, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
+   const [sources, setSources] = useState<CaptureSource[]>([]);
+   const sourceId = state?.recorder.sourceId;
    useEffect(() => {
-      if (!active || !visible) return;
-      const update = () => setElapsed(started ? Math.max(0, (Date.now() - started) / 1000) : 0);
-      update();
-      const timer = window.setInterval(update, 1000);
-      return () => window.clearInterval(timer);
-   }, [started, active, visible]);
+      let disposed = false;
+      const unsubscribe = api.onEvent((event) => {
+         if (event.type === "capture-sources") setSources(event.sources);
+      });
+      void api
+         .sources()
+         .then((value) => {
+            if (!disposed) setSources(value);
+         })
+         .catch(() => undefined);
+      return () => {
+         disposed = true;
+         unsubscribe();
+      };
+   }, [sourceId]);
+   const capacity = state?.preferences.clipSeconds ?? 60;
+   const available = Math.max(0, Math.min(capacity, state?.recorder.availableSeconds ?? 0));
+   const fill = capacity > 0 ? Math.min(1, available / capacity) : 0;
+   const active = state?.recorder.state === "recording";
    const recorder = state?.recorder;
+   const captured = sources.find(
+      (source) => source.id === sourceId || (source.kind === "app" && sourceId?.startsWith("window:") && source.id.split(":")[1] === sourceId.split(":")[1])
+   );
+   const appIcon = captured?.appIcon || state?.applicationIcons[captured?.applicationId ?? ""];
+   const isApplication = recorder?.sourceKind === "app";
    const audioWarning = recorder?.audioWarning || audioMessage;
    const status = active
       ? recorder?.message || "Recording"
@@ -31,12 +49,12 @@ export function RecordingStatus({ state, visible, audioMessage = "" }: { state: 
    return (
       <footer className={`status-strip ${recorder?.state === "error" ? "has-error" : ""}`}>
          <div className="status-primary">
-            {recorder?.state === "starting" ? (
+            {recorder?.state === "starting" || recorder?.state === "waiting" || !recorder ? (
                <LoaderCircle size={12} className="spin" />
             ) : recorder?.state === "error" ? (
                <AlertCircle size={13} />
             ) : (
-               <span className={`status-dot ${active ? "recording" : ""}`} />
+               <span className={`status-dot ${active ? "recording" : ""}`} aria-hidden="true" />
             )}
             <span className="status-summary" title={status}>
                {status}
@@ -44,8 +62,30 @@ export function RecordingStatus({ state, visible, audioMessage = "" }: { state: 
             {active && (
                <>
                   <span className="status-divider" />
-                  <span className="tabular">{formatTime(elapsed)}</span>
-                  <span className="status-secondary">{Math.floor(recorder?.availableSeconds ?? 0)}s available</span>
+                  <svg
+                     className={`buffer-ring${fill >= 1 ? " rolling" : ""}`}
+                     style={{ animationDuration: `${Math.max(1, capacity) / 0.94}s` }}
+                     viewBox="0 0 20 20"
+                     role="img"
+                     aria-label={`Buffer ${Math.round(fill * 100)}% full${fill >= 1 ? ", rolling" : ""}`}
+                  >
+                     <circle cx="10" cy="10" r="8" fill="none" stroke="var(--border-control)" strokeWidth="2" />
+                     <circle
+                        className="buffer-ring-fill"
+                        cx="10"
+                        cy="10"
+                        r="8"
+                        fill="none"
+                        stroke="var(--accent)"
+                        strokeWidth="2"
+                        strokeOpacity={fill > 0 ? 1 : 0}
+                        strokeLinecap="round"
+                        pathLength="100"
+                        strokeDasharray="94 100"
+                        strokeDashoffset={94 * (1 - fill)}
+                     />
+                  </svg>
+                  <span className="tabular">{formatTime(available)} available</span>
                </>
             )}
          </div>
@@ -74,7 +114,7 @@ export function RecordingStatus({ state, visible, audioMessage = "" }: { state: 
             )}
             {active && (
                <span className="status-secondary">
-                  <Monitor size={12} />
+                  {isApplication ? <ApplicationIcon src={appIcon} size={14} /> : <Monitor size={14} />}
                   {captureName}
                </span>
             )}

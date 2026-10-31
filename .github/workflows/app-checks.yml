@@ -41,6 +41,8 @@ jobs:
            run: pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
          - run: bun run test:ui
          - run: bun run test:ui:native
+         - name: Verify real input monitoring before any recording
+           run: bun scripts/run-interactive-tests.ts audio-monitor
          - run: bun run test:capture-loss
          - uses: actions/upload-artifact@v7
            if: always()

@@ -39,6 +39,190 @@ vi.mock("./media", async (original) => {
    };
 });
 
+describe("collection folder operations", () => {
+   it("repairs a known application's name and missing artwork without losing clip metadata", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-app-repair-"));
+      try {
+         const file = join(root, "Moment.mp4"),
+            id = "1".repeat(64);
+         await writeFile(file, "original video");
+         const service = new CollectionService();
+         await service.open(root);
+         const clip = await service.registerRecording(file, "Home ─ Explorer", { id, icon: "" });
+         await service.createCategory("Keep");
+         const category = service.categories[0]!.id;
+         await service.assignCategories(clip.id, [category]);
+         const icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=";
+         await service.enrichApplications([{ id, icon, name: "Explorer" }]);
+         expect(service.clips[0]).toMatchObject({ id: clip.id, source: "Explorer", categories: [category] });
+         expect(service.applicationIcons[id]).toBe(icon);
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.clips[0]).toMatchObject({ id: clip.id, source: "Explorer", categories: [category] });
+         expect(reopened.applicationIcons[id]).toBe(icon);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("retains rapid category toggles without opening a separate editor", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-category-toggles-"));
+      try {
+         await writeFile(join(root, "Moment.mp4"), "moment");
+         const service = new CollectionService();
+         await service.open(root);
+         await service.createCategory("First");
+         await service.createCategory("Second");
+         const clip = service.clips[0]!,
+            first = service.categories[0]!.id,
+            second = service.categories[1]!.id;
+         await Promise.all([service.toggleCategory(clip.id, first), service.toggleCategory(clip.id, second)]);
+         expect(new Set(service.clips[0]!.categories)).toEqual(new Set([first, second]));
+         await service.toggleCategory(clip.id, first);
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.clips[0]!.categories).toEqual([second]);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("moves mixed folder contents and preserves clip and shareable associations after reopening", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-folder-move-"));
+      try {
+         await mkdir(join(root, "Games", "Empty"), { recursive: true });
+         await writeFile(join(root, "Games", "Moment.mp4"), "original moment");
+         await writeFile(join(root, "Games", "notes.txt"), "keep these notes");
+         const service = new CollectionService();
+         await service.open(root);
+         const id = service.clips[0]!.id;
+         await service.createCategory("Keep");
+         const category = service.categories[0]!.id;
+         await service.assignCategories(id, [category]);
+         await service.createShareable(id, 1);
+         const share = service.clips[0]!.shareables[0]!;
+         const destination = await service.createFolder("", "Archive");
+         expect(await service.renameFolder("Games", "Highlights")).toBe("Highlights");
+         expect(await service.moveFolder("Highlights", destination)).toBe("Archive/Highlights");
+         expect(await readFile(join(root, "Archive", "Highlights", "notes.txt"), "utf8")).toBe("keep these notes");
+         expect((await stat(join(root, "Archive", "Highlights", "Empty"))).isDirectory()).toBe(true);
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.clips[0]).toMatchObject({ id, categories: [category], path: join(root, "Archive", "Highlights", "Moment.mp4") });
+         expect(reopened.clips[0]!.shareables).toMatchObject([{ id: share.id, path: share.path }]);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("requires a fresh contents review before moving a changed folder", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-reviewed-move-"));
+      try {
+         await mkdir(join(root, "Source"));
+         await mkdir(join(root, "Target"));
+         await writeFile(join(root, "Source", "notes.txt"), "original");
+         const service = new CollectionService();
+         await service.open(root);
+         const reviewed = await service.inspectFolder("Source");
+         await writeFile(join(root, "Source", "new.txt"), "added after review");
+         await expect(service.moveFolder("Source", "Target", reviewed.fingerprint)).rejects.toThrow("contents changed");
+         expect(await readFile(join(root, "Source", "notes.txt"), "utf8")).toBe("original");
+         const fresh = await service.inspectFolder("Source");
+         expect(await service.moveFolder("Source", "Target", fresh.fingerprint)).toBe("Target/Source");
+         expect(await readFile(join(root, "Target", "Source", "new.txt"), "utf8")).toBe("added after review");
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("persists category ordering and IDs, and rejects stale targets", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-category-order-"));
+      try {
+         const service = new CollectionService();
+         await service.open(root);
+         await service.createCategory("First");
+         await service.createCategory("Second");
+         await service.createCategory("Third");
+         const [first, second, third] = service.categories.map((category) => category.id);
+         await service.reorderCategory(third!, first!);
+         expect(service.categories.map((category) => category.name)).toEqual(["Third", "First", "Second"]);
+         await service.reorderCategory(first!, null);
+         expect(service.categories.map((category) => category.id)).toEqual([third, second, first]);
+         await expect(service.reorderCategory(first!, "missing")).rejects.toThrow("no longer exists");
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.categories.map((category) => category.id)).toEqual([third, second, first]);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("moves one clip without overwriting a conflict and keeps shareables linked", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-single-move-"));
+      try {
+         await mkdir(join(root, "Target"));
+         await writeFile(join(root, "First.mp4"), "first original");
+         await writeFile(join(root, "Second.mp4"), "second original");
+         await writeFile(join(root, "Target", "Second.mp4"), "existing destination");
+         const service = new CollectionService();
+         await service.open(root);
+         const first = service.clips.find((clip) => clip.path === join(root, "First.mp4"))!;
+         const second = service.clips.find((clip) => clip.path === join(root, "Second.mp4"))!;
+         await service.createShareable(first.id, 1);
+         const share = service.clips.find((clip) => clip.id === first.id)!.shareables[0]!;
+         expect(await service.moveClip(first.id, "Target")).toBe(true);
+         await expect(service.moveClip(second.id, "Target")).rejects.toThrow("already exists");
+         expect(await readFile(second.path, "utf8")).toBe("second original");
+         expect(await readFile(join(root, "Target", "Second.mp4"), "utf8")).toBe("existing destination");
+         expect(service.clips.find((clip) => clip.id === first.id)!.shareables[0]!.path).toBe(share.path);
+         expect(await service.moveClip(first.id, "Target")).toBe(false);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("rechecks deletion contents and trashes the entire directory, including unsupported files", async () => {
+      const workspace = await mkdtemp(join(os.tmpdir(), "acroclip-folder-trash-"));
+      const root = join(workspace, "collection");
+      try {
+         await mkdir(join(root, "Folder", "Empty"), { recursive: true });
+         await writeFile(join(root, "Folder", "Moment.mp4"), "moment");
+         await writeFile(join(root, "Folder", "notes.txt"), "notes");
+         const service = new CollectionService();
+         await service.open(root);
+         const before = await service.inspectFolder("Folder");
+         expect(before).toMatchObject({ clips: 1, otherFiles: 1, folders: 1 });
+         await writeFile(join(root, "Folder", "new.txt"), "new file after confirmation");
+         const trash = vi.fn((path: string) => rename(path, join(workspace, "trashed")));
+         await expect(service.trashFolder("Folder", before.fingerprint, trash)).rejects.toThrow("contents changed");
+         expect(trash).not.toHaveBeenCalled();
+         const current = await service.inspectFolder("Folder");
+         await service.trashFolder("Folder", current.fingerprint, trash);
+         expect(await readFile(join(workspace, "trashed", "notes.txt"), "utf8")).toBe("notes");
+         expect(service.clips).toHaveLength(0);
+         expect(service.folders).not.toContain("Folder");
+      } finally {
+         await rm(workspace, { recursive: true, force: true });
+      }
+   });
+   it("rejects traversal, metadata folders, links, self moves and existing destinations", async () => {
+      const workspace = await mkdtemp(join(os.tmpdir(), "acroclip-folder-boundaries-"));
+      const root = join(workspace, "collection");
+      try {
+         await mkdir(join(root, "Games", "Nested"), { recursive: true });
+         await mkdir(join(root, "Existing"));
+         await mkdir(join(workspace, "outside"));
+         await symlink(join(workspace, "outside"), join(root, "Link"), process.platform === "win32" ? "junction" : "dir");
+         const service = new CollectionService();
+         await service.open(root);
+         await expect(service.createFolder("../outside", "New")).rejects.toThrow("inside");
+         await expect(service.createFolder(".acroclip", "New")).rejects.toThrow("inside");
+         await expect(service.createFolder("Link", "New")).rejects.toThrow("real folder");
+         await expect(service.renameFolder("", "Root")).rejects.toThrow("inside");
+         await expect(service.renameFolder("Games", "Existing")).rejects.toThrow("already exists");
+         await expect(service.moveFolder("Games", "Games/Nested")).rejects.toThrow("itself");
+         await expect(service.createFolder("", "Existing")).rejects.toThrow("already exists");
+         expect((await stat(join(root, "Games", "Nested"))).isDirectory()).toBe(true);
+      } finally {
+         await rm(workspace, { recursive: true, force: true });
+      }
+   });
+});
+
 describe("damaged metadata action identity", () => {
    it("retains separate identities for identical copies while recovering a moved original", async () => {
       const root = await mkdtemp(join(os.tmpdir(), "acroclip-identical-copies-"));
@@ -160,7 +344,7 @@ describe("damaged metadata action identity", () => {
          await recovered.open(root);
          expect(new Set(recovered.clips.map((clip) => clip.id)).size).toBe(2);
          expect(recovered.warnings).toContain(
-            "Collection metadata is damaged. Videos remain available, but categories and shareable changes are disabled to preserve recovery information."
+            "Collection metadata is damaged. Videos remain available, but tags and shareable changes are disabled to preserve recovery information."
          );
          await expect(recovered.rename(recovered.clips[0]!.id, "Changed")).rejects.toThrow("metadata");
          await expect(recovered.createShareable(recovered.clips[0]!.id, 1)).rejects.toThrow("metadata");

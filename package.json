@@ -1,6 +1,6 @@
 {
    "name": "acroclip",
-   "version": "0.6.0",
+   "version": "0.7.0",
    "description": "Clip it. Watch it. Share It.",
    "license": "GPL-3.0-or-later",
    "type": "module",
@@ -38,6 +38,9 @@
       "release:feeds": "bun scripts/prepare-update-feed.ts"
    },
    "build": {
+      "releaseInfo": {
+         "releaseName": "Major UI improvements"
+      },
       "appId": "dev.acroclip.app",
       "productName": "AcroClip",
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",

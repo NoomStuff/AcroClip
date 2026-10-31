@@ -440,7 +440,7 @@ private:
   std::atomic<bool> active{false};
   std::atomic<bool> monitoring{false};
   std::string listeningSource, listeningDevice, listeningRequestedDevice, listeningFailure;
-  json sessionConfiguration;
+  json sessionConfiguration = json::object();
   std::atomic<bool> waitingForPresetSize{false};
   int sessionCQ = 23;
   bool presetRecording = false;
@@ -1447,6 +1447,7 @@ public:
     release();
     if (!config.value("enabled", false))
       return;
+    sessionConfiguration = config;
     monitoring = true;
     try {
       setupAdditionalAudio(config);

@@ -15,7 +15,11 @@ export function recordingArtwork(
    const sourceId = footage.id.split(":")[1];
    if (!sourceId) return undefined;
    const actual = sources.find((source) => source.kind === "app" && source.id.split(":")[1] === sourceId);
-   if (actual?.applicationId) return { sourceId, application: { id: actual.applicationId, icon: actual.appIcon ?? "" } };
+   if (actual?.applicationId)
+      return {
+         sourceId,
+         application: { id: actual.applicationId, icon: actual.appIcon ?? "", ...(actual.applicationName ? { name: actual.applicationName } : {}) },
+      };
    // Hidden and minimized windows can disappear from desktop enumeration while
    // their buffered footage still belongs to the same application.
    return previous?.sourceId === sourceId ? previous : undefined;

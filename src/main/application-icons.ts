@@ -22,11 +22,12 @@ function validPng(bytes: Buffer): boolean {
 }
 export interface StoredApplicationArtwork {
    id: string;
+   name?: string | undefined;
    iconFile?: string | undefined;
 }
 export async function storeApplicationArtwork(root: string, art: ApplicationArtwork): Promise<StoredApplicationArtwork | undefined> {
    if (!/^[a-f0-9]{64}$/.test(art.id)) return undefined;
-   const stored: StoredApplicationArtwork = { id: art.id };
+   const stored: StoredApplicationArtwork = { id: art.id, ...(art.name ? { name: art.name.slice(0, 256) } : {}) };
    const match = /^data:image\/png;base64,([a-z0-9+/]+={0,2})$/i.exec(art.icon);
    if (!match || art.icon.length > 45000) return stored;
    const bytes = Buffer.from(match[1]!, "base64");

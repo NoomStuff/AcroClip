@@ -21,6 +21,7 @@ type Event = {
    id?: string;
    message?: string;
    windows?: Array<{ id: string; name: string; pid: number; pixelSize?: { width: number; height: number } }>;
+   devices?: Array<{ id: string; name: string }>;
    additional?: Record<string, number>;
    sources?: number;
    attached?: number;
@@ -92,6 +93,25 @@ try {
    }
    assert.ok(target, `The controlled application must be available, fixture exit ${fixture.exitCode}`);
    const baseline = await lifecycle();
+   const deviceMark = events.length;
+   await command("audio-devices", { kind: "input" });
+   const input = events
+      .slice(deviceMark)
+      .find((event) => event.event === "audio-devices")
+      ?.devices?.find((device) => /CABLE Output.*VB-Audio/i.test(device.name));
+   assert.ok(input, "The private Windows input endpoint must be available");
+   // Use a real input before any recording. The test-tone shortcut bypasses
+   // microphone configuration and cannot catch an uninitialized session.
+   const idleInput = { id: "idle-input", name: "Private input", kind: "input", deviceId: input.id, enabled: true, volume: 1, muted: false };
+   await command("monitor-audio", { enabled: true, audioSources: [idleInput] });
+   assert.equal((await lifecycle()).monitoring, true);
+   assert.equal((await lifecycle()).attached, baseline.attached! + 1);
+   await command("audio", { source: idleInput.id, volume: 1, muted: true });
+   assert.equal((await lifecycle()).attached, baseline.attached);
+   await command("audio", { source: idleInput.id, volume: 1, muted: false });
+   assert.equal((await lifecycle()).attached, baseline.attached! + 1);
+   await command("monitor-audio", { enabled: false });
+   assert.equal((await lifecycle()).sources, baseline.sources);
    const mutedInput = {
       id: "closed-input",
       name: "Muted microphone",

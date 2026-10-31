@@ -1,4 +1,6 @@
 .pane-divider {
+   z-index: 5;
+   -webkit-app-region: no-drag;
    position: relative;
    flex: 0 0 12px;
    align-self: stretch;

@@ -157,12 +157,19 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
             await element.play();
          } catch (reason) {
             stop(false);
-            if (sourceId) images.current.delete(sourceId);
-            setCachedSource(null);
             await api.previewSource(null, owner).catch(() => undefined);
             if (!disposed) {
+               if (sourceId) images.current.delete(sourceId);
+               setCachedSource(null);
                const message = describeError(reason);
-               setError(message === "Permission denied" ? "Allow screen capture in your system settings, then retry." : message);
+               const name = reason && typeof reason === "object" && "name" in reason ? reason.name : "";
+               setError(
+                  name === "NotAllowedError" || message === "Permission denied"
+                     ? "Capture permission was denied or the source changed. Select the source again, then retry."
+                     : name === "NotReadableError" || name === "AbortError"
+                       ? "This window could not be captured. Keep it open and visible, then retry or capture its screen."
+                       : message
+               );
                setStatus("error");
             }
          }

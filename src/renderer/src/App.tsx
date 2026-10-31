@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, Check, Clapperboard, Film, Folder, Minus, Settings2, Square, Video, X } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, Check, Clapperboard, LibraryBig, Play, Minus, Settings2, Square, Video, X } from "lucide-react";
 import { AppLogo } from "./AppLogo";
 import type { AppState, Clip, RecorderState } from "../../shared/types";
 import { SelectionIndicator, TabMarker } from "./SelectionIndicator";
@@ -17,6 +17,7 @@ import { Settings } from "./Settings";
 import type { SettingsTarget } from "./Settings";
 import { UpdateChip } from "./UpdateChip";
 import { Onboarding } from "./Onboarding";
+import { useNavigationHistory } from "./navigation-history";
 
 type Page = "recording" | "library" | "viewer" | "settings";
 const LibraryPage = memo(Library);
@@ -61,6 +62,17 @@ export function App() {
       return () => document.removeEventListener("visibilitychange", update);
    }, []);
    const [selected, setSelected] = useState<string | null>(null);
+   const pendingLibraryAction = useRef<string | null>(null);
+   useEffect(() => {
+      if (page !== "library" || !pendingLibraryAction.current) return;
+      const action = pendingLibraryAction.current;
+      pendingLibraryAction.current = null;
+      window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: action }));
+   }, [page]);
+   useNavigationHistory(page, selected, (location) => {
+      setPage(location.page);
+      setSelected(location.clipId);
+   });
    const [audioStatus, setAudioStatus] = useState("");
    const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
    const [dialog, setDialog] = useState<DialogRequest | null>(null);
@@ -128,7 +140,10 @@ export function App() {
          if (
             event.defaultPrevented ||
             event.repeat ||
-            target?.closest("input,textarea,select,[contenteditable=true],[role=textbox],[role=slider],[role=combobox],.shortcut-input.editing") ||
+            (target?.closest("input,textarea,select,[contenteditable=true],[role=textbox],[role=slider],[role=combobox],.shortcut-input.editing") &&
+               !event.ctrlKey &&
+               !event.metaKey &&
+               !event.altKey) ||
             document.querySelector('[role="dialog"]')
          )
             return;
@@ -151,7 +166,10 @@ export function App() {
             return;
          event.preventDefault();
          if (["recording", "library", "viewer", "settings"].includes(action.id)) setPage(action.id as Page);
-         else window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: action.id }));
+         else if ((action.id === "newCategory" || action.id === "newFolder") && page !== "library") {
+            pendingLibraryAction.current = action.id === "newFolder" ? "newFolderRoot" : action.id;
+            setPage("library");
+         } else window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: action.id }));
       };
       window.addEventListener("keydown", key);
       return () => window.removeEventListener("keydown", key);
@@ -189,8 +207,8 @@ export function App() {
    );
    const recordingState = useMemo(() => (preferences && recorder && platform ? { preferences, recorder, platform } : null), [preferences, recorder, platform]);
    const viewerState = useMemo(
-      () => (applicationIcons && jobs && preferences ? { applicationIcons, jobs, preferences } : null),
-      [applicationIcons, jobs, preferences]
+      () => (applicationIcons && jobs && preferences && categories ? { applicationIcons, jobs, preferences, categories } : null),
+      [applicationIcons, jobs, preferences, categories]
    );
    const settingsState = useMemo(
       () => (preferences && recorder && jobs && update && version ? { preferences, recorder, jobs, update, version } : null),
@@ -198,8 +216,8 @@ export function App() {
    );
    const pages = [
       { id: "recording", title: "Recording", icon: Video },
-      { id: "library", title: "Library", icon: Folder },
-      { id: "viewer", title: "Player", icon: Film },
+      { id: "library", title: "Library", icon: LibraryBig },
+      { id: "viewer", title: "Player", icon: Play },
    ] as const;
    return (
       <div className="app-shell">

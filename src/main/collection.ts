@@ -1,13 +1,15 @@
 import { constants } from "node:fs";
 import type { BigIntStats } from "node:fs";
-import { copyFile, link, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { storeApplicationArtwork, readApplicationArtwork } from "./application-icons";
 import type { ApplicationArtwork } from "../shared/types";
-import type { Category, Clip, Job, Shareable } from "../shared/types";
+import type { Category, Clip, FolderContents, Job, Shareable } from "../shared/types";
+import { collectionFolder, folderContents, folderName } from "./collection-folders";
+import { normalizeApplicationLabel } from "./application-identity";
 import { encodeShareable, ffmpegBase, probe, runMedia } from "./media";
 import type { MediaInfo } from "./media";
 import { PlaybackCache } from "./playback";
@@ -31,7 +33,7 @@ const previewSchema = z.object({
 const clipSchema = fileSchema.extend({
    preview: previewSchema.optional().catch(undefined),
    previewUnavailable: z.boolean().optional(),
-   application: z.object({ id: z.string().max(512), iconFile: z.string().max(4096).optional() }).optional(),
+   application: z.object({ id: z.string().max(512), name: z.string().max(256).optional(), iconFile: z.string().max(4096).optional() }).optional(),
    id: z.string(),
    name: z.string(),
    source: z.string(),
@@ -101,6 +103,8 @@ export async function fileIdentity(path: string): Promise<string> {
 }
 
 export interface CollectionOptions {
+   applications?: () => ApplicationArtwork[];
+   beforeFolderChange?: () => void;
    onChange?: () => void;
    onJob?: (job: Job) => void;
    onWarning?: (message: string) => void;
@@ -132,6 +136,8 @@ export class CollectionService {
    private changeStamp: string | undefined;
    private scanRetryNeeded = false;
    private metadataWritable = true;
+   private fileChanges: Promise<void> = Promise.resolve();
+   private fileMutation: Promise<void> | undefined;
    private cache = new Map<string, { stamp: string; info: MediaInfo; thumbnail: string }>();
    // Scanning may reuse sampled identities. Export, rename and deletion always
    // read a fresh identity through resolveFile instead of trusting this cache.
@@ -143,8 +149,36 @@ export class CollectionService {
    get categories(): Category[] {
       return this.metadata.categories;
    }
+   async enrichApplications(artworks: ApplicationArtwork[]): Promise<void> {
+      if (this.opening || !this.scanned || !this.metadataWritable) return;
+      await this.fileChanges;
+      if (this.scanRunning) await this.scanRunning;
+      const root = this.root;
+      let changed = false;
+      for (const art of artworks) {
+         const clips = this.metadata.clips.filter((clip) => clip.application?.id === art.id);
+         if (
+            !clips.length ||
+            (clips.every((clip) => !art.name || clip.application?.name === art.name) && (!art.icon || this.applicationIcons[art.id] === art.icon))
+         )
+            continue;
+         const saved = await storeApplicationArtwork(root, art);
+         if (this.root !== root || !saved) return;
+         for (const clip of clips) clip.application = { ...clip.application!, ...saved };
+         this.clips = this.clips.map((clip) => (clip.applicationId === art.id && art.name ? { ...clip, source: art.name } : clip));
+         if (saved.iconFile) this.applicationIcons = { ...this.applicationIcons, [art.id]: art.icon };
+         changed = true;
+      }
+      if (changed) {
+         await this.writeMetadata();
+         this.notify();
+      }
+   }
    get pendingJobs(): Job[] {
       return this.jobs.filter((job) => job.state === "queued" || job.state === "running");
+   }
+   finishFileChanges(): Promise<void> {
+      return this.fileChanges;
    }
    private notify() {
       this.options.onChange?.();
@@ -174,8 +208,10 @@ export class CollectionService {
       } finally {
          this.opening = false;
       }
+      await this.enrichApplications(this.options.applications?.() ?? []);
    }
    private async openCollection(root: string): Promise<void> {
+      await this.fileChanges;
       if (this.pendingJobs.length) throw new Error("Finish or cancel shareable creation before changing folders.");
       if (this.refreshRunning) await this.refreshRunning.catch(() => undefined);
       if (this.scanRunning) await this.scanRunning;
@@ -218,9 +254,7 @@ export class CollectionService {
       }
       if (broken) {
          this.metadataWritable = false;
-         this.warn(
-            "Collection metadata is damaged. Videos remain available, but categories and shareable changes are disabled to preserve recovery information."
-         );
+         this.warn("Collection metadata is damaged. Videos remain available, but tags and shareable changes are disabled to preserve recovery information.");
       }
       // Render the collection's own indexed previews before touching the video files.
       let previewsSafe = true;
@@ -258,7 +292,7 @@ export class CollectionService {
          path,
          relativePath: stored.relativePath,
          name: stored.name,
-         source: stored.source,
+         source: stored.application?.name ?? normalizeApplicationLabel(stored.source),
          createdAt: stored.createdAt,
          ...(stored.application ? { applicationId: stored.application.id } : {}),
          size: stored.preview?.size ?? 0,
@@ -526,6 +560,7 @@ export class CollectionService {
       return clips;
    }
    scan(): Promise<Clip[]> {
+      if (this.fileMutation) return this.fileMutation.then(() => this.scan());
       if (this.scanRunning) return this.scanRunning;
       this.phase = this.scanned ? "refreshing" : "loading";
       this.scanError = "";
@@ -687,7 +722,7 @@ export class CollectionService {
                   path: actual,
                   relativePath: rel,
                   name: stored.name,
-                  source: stored.source,
+                  source: stored.application?.name ?? normalizeApplicationLabel(stored.source),
                   ...(stored.application ? { applicationId: stored.application.id } : {}),
                   size: Number(fileStat.size),
                   duration: cached.info.duration,
@@ -750,7 +785,7 @@ export class CollectionService {
                path: originalPath,
                relativePath: stored.relativePath,
                name: stored.name,
-               source: stored.source,
+               source: stored.application?.name ?? normalizeApplicationLabel(stored.source),
                ...(stored.application ? { applicationId: stored.application.id } : {}),
                size: original ? Number(actualStat.size) : 0,
                duration: cached.info.duration,
@@ -814,6 +849,132 @@ export class CollectionService {
       const clip = this.clips.find((entry) => entry.id === id);
       if (!clip) throw new Error("This video is missing.");
       return clip;
+   }
+   private changeFiles<T>(action: () => Promise<T>): Promise<T> {
+      const root = this.root;
+      const result = this.fileChanges.then(async () => {
+         if (root !== this.root || this.opening || !this.scanned) throw new Error("Wait for the collection to finish opening.");
+         if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing files.");
+         if (this.scanRunning) await this.scanRunning;
+         let release!: () => void;
+         this.fileMutation = new Promise<void>((resolve) => {
+            release = resolve;
+         });
+         try {
+            const value = await action();
+            await this.writeMetadata();
+            return value;
+         } finally {
+            this.fileMutation = undefined;
+            release();
+            await this.scan();
+         }
+      });
+      this.fileChanges = result.then(
+         () => undefined,
+         () => undefined
+      );
+      return result;
+   }
+   private async checkedFolder(path: string, allowRoot = true): Promise<string> {
+      const folder = await collectionFolder(this.root, path, allowRoot);
+      if (relative(this.root, folder).split(sep)[0]?.toLowerCase() === "shareables" && (await this.shareablesOwned()))
+         throw new Error("AcroClip manages this shareables folder. Choose another folder.");
+      return folder;
+   }
+   private checkFolderJobs(): void {
+      this.options.beforeFolderChange?.();
+      if (this.pendingJobs.length) throw new Error("Finish or cancel shareable exports before changing folders.");
+   }
+   createFolder(parent: string, name: string): Promise<string> {
+      return this.changeFiles(async () => {
+         const destination = join(await this.checkedFolder(parent), folderName(name));
+         try {
+            await mkdir(destination);
+         } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("A file or folder with that name already exists.", { cause: error });
+            throw error;
+         }
+         return relative(this.root, destination).replaceAll("\\", "/");
+      });
+   }
+   renameFolder(path: string, name: string): Promise<string> {
+      return this.relocateFolder(path, undefined, folderName(name));
+   }
+   moveFolder(path: string, destination: string, fingerprint?: string): Promise<string> {
+      return this.relocateFolder(path, destination, undefined, fingerprint);
+   }
+   private relocateFolder(path: string, parent?: string, name?: string, fingerprint?: string): Promise<string> {
+      return this.changeFiles(async () => {
+         this.checkFolderJobs();
+         const source = await this.checkedFolder(path, false);
+         if (fingerprint && (await folderContents(source, supported)).fingerprint !== fingerprint)
+            throw new Error("The folder contents changed. Review the folder and try moving it again.");
+         const targetParent = parent === undefined ? dirname(source) : await this.checkedFolder(parent);
+         if (withinRoot(source, targetParent)) throw new Error("A folder cannot be moved into itself or one of its subfolders.");
+         const destination = join(targetParent, name ?? basename(source));
+         if (normal(source) === normal(destination)) return relative(this.root, source).replaceAll("\\", "/");
+         try {
+            await lstat(destination);
+            throw new Error("A file or folder with that name already exists. Choose another name or destination.");
+         } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+         }
+         await rename(source, destination);
+         for (const clip of this.metadata.clips) {
+            for (const file of [clip, ...clip.shareables]) {
+               const original = resolve(this.root, file.relativePath);
+               if (!withinRoot(source, original)) continue;
+               const moved = join(destination, relative(source, original));
+               file.relativePath = relative(this.root, moved);
+               file.absolutePath = moved;
+            }
+         }
+         return relative(this.root, destination).replaceAll("\\", "/");
+      });
+   }
+   async inspectFolder(path: string): Promise<FolderContents> {
+      return folderContents(await this.checkedFolder(path, false), supported);
+   }
+   trashFolder(path: string, fingerprint: string, trash: (path: string) => Promise<void>): Promise<void> {
+      return this.changeFiles(async () => {
+         this.checkFolderJobs();
+         const directory = await this.checkedFolder(path, false);
+         if ((await folderContents(directory, supported)).fingerprint !== fingerprint)
+            throw new Error("The folder contents changed. Review the folder and try deleting it again.");
+         await trash(directory);
+         this.metadata.clips = this.metadata.clips.filter((clip) => {
+            clip.shareables = clip.shareables.filter((share) => !withinRoot(directory, resolve(this.root, share.relativePath)));
+            return !withinRoot(directory, resolve(this.root, clip.relativePath)) || clip.shareables.length > 0;
+         });
+      });
+   }
+   moveClip(id: string, destination: string): Promise<boolean> {
+      return this.changeFiles(async () => {
+         const target = await this.checkedFolder(destination);
+         if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's export before moving it.");
+         const stored = this.stored(id);
+         const source = await this.resolveFile(stored);
+         if (!source) throw new Error("The original video moved or changed. Refresh the library and try again.");
+         const moved = join(target, basename(source));
+         if (normal(moved) === normal(source)) return false;
+         try {
+            await publishWithoutOverwrite(source, moved);
+         } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "EEXIST")
+               throw new Error("A file with this name already exists in the destination.", { cause: error });
+            throw error;
+         }
+         try {
+            await rm(source);
+         } catch (error) {
+            await rm(moved);
+            throw error;
+         }
+         stored.relativePath = relative(this.root, moved);
+         stored.absolutePath = moved;
+         return true;
+      });
    }
    async rename(id: string, name: string): Promise<void> {
       const cleaned = name.trim();
@@ -909,43 +1070,57 @@ export class CollectionService {
       return this.visible(clip.id);
    }
    async createCategory(name: string, color = "#b197fc", icon = "tag"): Promise<void> {
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing categories.");
+      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing tags.");
       const cleaned = name.trim();
-      if (!cleaned || cleaned.length > 80) throw new Error("Choose a category name between 1 and 80 characters.");
-      if (icon.length > 80) throw new Error("Choose a valid category icon.");
-      if (!/^#[\da-f]{6}$/i.test(color)) throw new Error("Choose a valid category color.");
-      if (this.categories.some((category) => category.name.toLowerCase() === cleaned.toLowerCase()))
-         throw new Error("A category with that name already exists.");
+      if (!cleaned || cleaned.length > 80) throw new Error("Choose a tag name between 1 and 80 characters.");
+      if (icon.length > 80) throw new Error("Choose a valid tag icon.");
+      if (!/^#[\da-f]{6}$/i.test(color)) throw new Error("Choose a valid tag color.");
+      if (this.categories.some((category) => category.name.toLowerCase() === cleaned.toLowerCase())) throw new Error("A tag with that name already exists.");
       this.metadata.categories.push({ id: randomUUID(), name: cleaned, color, icon });
       await this.writeMetadata();
       this.notify();
    }
    async updateCategory(id: string, name: string, color: string, icon: string): Promise<void> {
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing categories.");
+      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing tags.");
       const category = this.metadata.categories.find((item) => item.id === id);
-      if (!category) throw new Error("That category no longer exists.");
+      if (!category) throw new Error("That tag no longer exists.");
       const cleaned = name.trim();
-      if (!cleaned || cleaned.length > 80 || !/^#[\da-f]{6}$/i.test(color) || icon.length > 80)
-         throw new Error("Choose a valid category name, color and icon.");
+      if (!cleaned || cleaned.length > 80 || !/^#[\da-f]{6}$/i.test(color) || icon.length > 80) throw new Error("Choose a valid tag name, color and icon.");
       if (this.categories.some((item) => item.id !== id && item.name.toLowerCase() === cleaned.toLowerCase()))
-         throw new Error("A category with that name already exists.");
+         throw new Error("A tag with that name already exists.");
       Object.assign(category, { name: cleaned, color, icon });
       await this.writeMetadata();
       this.notify();
    }
+   async reorderCategory(id: string, beforeId: string | null): Promise<void> {
+      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing tags.");
+      const category = this.categories.find((item) => item.id === id);
+      if (!category || (beforeId !== null && !this.categories.some((item) => item.id === beforeId))) throw new Error("That tag no longer exists.");
+      if (id === beforeId) return;
+      const next = this.categories.filter((item) => item.id !== id);
+      const index = beforeId === null ? next.length : next.findIndex((item) => item.id === beforeId);
+      next.splice(index, 0, category);
+      this.metadata.categories = next;
+      await this.writeMetadata();
+      this.notify();
+   }
    async deleteCategory(id: string): Promise<void> {
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing categories.");
+      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing tags.");
       this.metadata.categories = this.categories.filter((category) => category.id !== id);
       for (const clip of this.metadata.clips) clip.categories = clip.categories.filter((category) => category !== id);
       await this.writeMetadata();
       await this.scan();
    }
    async assignCategories(id: string, ids: string[]): Promise<void> {
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing categories.");
-      if (ids.some((category) => !this.categories.some((entry) => entry.id === category))) throw new Error("That category no longer exists.");
+      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing tags.");
+      if (ids.some((category) => !this.categories.some((entry) => entry.id === category))) throw new Error("That tag no longer exists.");
       this.stored(id).categories = [...new Set(ids)];
       await this.writeMetadata();
       await this.scan();
+   }
+   toggleCategory(clipId: string, categoryId: string): Promise<void> {
+      const current = this.stored(clipId).categories;
+      return this.assignCategories(clipId, current.includes(categoryId) ? current.filter((id) => id !== categoryId) : [...current, categoryId]);
    }
 
    async filesForDeletion(id: string, shareableId?: string, scope?: "shareables"): Promise<string[]> {

@@ -12,9 +12,10 @@ import { withinRoot } from "./collection";
 import { defaultPreferences } from "../shared/defaults";
 import { bufferedCaptureSource } from "../shared/capture-policy";
 import { recordingArtwork } from "./recording-artwork";
+import { normalizeApplicationLabel } from "./application-identity";
 
 afterEach(() => vi.useRealTimers());
-it("dispatches the actual saveClip body without waiting for a stuck free-space read", async () => {
+it.each([false, true])("dispatches saves without waiting for space reads, with pending file changes: %s", async (pendingMove) => {
    const root = await mkdtemp(join(tmpdir(), "acroclip-save-dispatch-"));
    const content = await readFile(join(import.meta.dirname, "index.ts"), "utf8");
    const parsed = ts.createSourceFile("index.ts", content, ts.ScriptTarget.Latest, true);
@@ -27,6 +28,12 @@ it("dispatches the actual saveClip body without waiting for a stuck free-space r
    const storage = new StorageMonitor({ readSpace: read, onChange: () => undefined, onWarning: () => undefined });
    storage.setActivity(root, false);
    const save = vi.fn<(path: string, requestedAt: number) => Promise<void>>(async () => undefined);
+   let finishMove = () => {};
+   const fileChanges = pendingMove
+      ? new Promise<void>((resolve) => {
+           finishMove = resolve;
+        })
+      : Promise.resolve();
    try {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-10-11T06:00:00Z"));
@@ -35,7 +42,7 @@ it("dispatches the actual saveClip body without waiting for a stuck free-space r
          closingRequested: false,
          recorder: { status: { state: "recording" }, pendingSavePaths: [], save },
          storage,
-         collections: { root },
+         collections: { root, finishFileChanges: () => fileChanges },
          preferences: { ...defaultPreferences, collection: root },
          captureSources: { cached: [] },
          lastRecordingArtwork: undefined,
@@ -45,6 +52,7 @@ it("dispatches the actual saveClip body without waiting for a stuck free-space r
          recordingSourceLabel,
          bufferedCaptureSource,
          recordingArtwork,
+         normalizeApplicationLabel,
          randomUUID,
          mkdirSync,
          dirname,
@@ -56,6 +64,12 @@ it("dispatches the actual saveClip body without waiting for a stuck free-space r
          returned = true;
       });
       await vi.advanceTimersByTimeAsync(0);
+      if (pendingMove) {
+         expect(save).not.toHaveBeenCalled();
+         vi.setSystemTime(new Date("2026-10-11T06:00:02Z"));
+         finishMove();
+         await vi.advanceTimersByTimeAsync(0);
+      }
       expect(read).toHaveBeenCalledTimes(1);
       expect(save).toHaveBeenCalledTimes(1);
       expect(returned).toBe(true);

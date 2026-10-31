@@ -12,6 +12,7 @@ type SliderProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" 
    onCommit?: (value: number) => void;
    defaultValue?: number;
    snapPoints?: readonly number[];
+   variant?: "default" | "compact";
    numeric?: boolean;
    unit?: string;
    displayScale?: number;
@@ -26,6 +27,7 @@ export function Slider({
    onCommit,
    defaultValue,
    snapPoints = [],
+   variant = "default",
    numeric = false,
    unit = "",
    displayScale = 1,
@@ -77,7 +79,7 @@ export function Slider({
    };
    return (
       <span
-         className={`slider ${numeric ? "slider-with-number" : ""} ${className}`}
+         className={`slider ${variant === "compact" ? "slider-compact" : ""} ${numeric ? "slider-with-number" : ""} ${className}`}
          data-disabled={disabled || undefined}
          data-default={(defaultValue !== undefined && Math.abs(value - defaultValue) < step / 2) || undefined}
          ref={motion}

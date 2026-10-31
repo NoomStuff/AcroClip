@@ -31,23 +31,33 @@ test("settings autosave retains drafts, merges external changes and retries fail
       const page = await app.firstWindow();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await expect(page.getByRole("button", { name: "Apply", exact: true })).toHaveCount(0);
-      const length = page.getByRole("spinbutton", { name: "Clip length in seconds", exact: true });
+      const length = page.getByRole("spinbutton", { name: "Clip length", exact: true });
       await length.fill("");
       await page.waitForTimeout(550);
       await expect(length).toHaveValue("");
       expect((await page.evaluate(() => window.acroClip.state())).preferences.clipSeconds).toBe(60);
-      await length.fill("72");
-      await length.fill("73");
-      await length.fill("74");
+      await length.fill("1:12");
+      await length.fill("1:13");
+      await length.fill("1:14");
       await page.evaluate(async () => {
          const state = await window.acroClip.state();
          await window.acroClip.savePreferences({ ...state.preferences, sound: false });
       });
-      await expect(length).toHaveValue("74");
+      await expect(length).toHaveValue("1:14");
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.clipSeconds).toBe(74);
       expect((await page.evaluate(() => window.acroClip.state())).preferences.sound).toBe(false);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.getByRole("button", { name: "Collection", exact: true }).click();
+      await page.getByRole("button", { name: "Recording", exact: true }).last().click();
+      await page.dispatchEvent("body", "mouseup", { button: 3 });
+      await expect(page.locator(".settings-heading h1")).toHaveText("Collection");
+      await page.dispatchEvent("body", "mouseup", { button: 4 });
+      await expect(page.locator(".settings-heading h1")).toHaveText("Recording");
+      await length.press("ArrowUp");
+      await expect(length).toHaveValue("1:19");
+      await length.press("ArrowDown");
+      await expect(length).toHaveValue("1:14");
       await page.getByRole("button", { name: "Collection", exact: true }).click();
       const pattern = page.getByRole("textbox", { name: "Name pattern", exact: true });
       await expect(pattern).toBeVisible();
@@ -69,7 +79,7 @@ test("settings autosave retains drafts, merges external changes and retries fail
          ipcMain.removeHandler("choose-folder");
          ipcMain.handle("choose-folder", () => folder);
       }, broken);
-      await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+      await page.getByRole("button", { name: "Choose collection folder", exact: true }).click();
       await expect(page.getByRole("button", { name: "Retry save", exact: true })).toBeVisible({ timeout: 15000 });
       expect((await page.evaluate(() => window.acroClip.state())).preferences.collection).toBe(collection);
       await expect(page.locator(".toast.error")).toHaveCount(0);
@@ -91,11 +101,11 @@ test("settings autosave retains drafts, merges external changes and retries fail
          if (narrow) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
          await page.getByRole("button", { name: "Library", exact: true }).click();
          await page.getByRole("button", { name: "Collection actions", exact: true }).click();
-         await page.getByRole("menuitem", { name: "Choose folder in settings", exact: true }).click();
+         await page.getByRole("menuitem", { name: "Choose collection folder", exact: true }).click();
          await expect(page.locator(".settings-heading h1")).toHaveText("Collection");
-         await expect(page.getByRole("button", { name: "Choose folder", exact: true })).toBeFocused();
+         await expect(page.getByRole("button", { name: "Choose collection folder", exact: true })).toBeFocused();
          await expect(page.getByRole("group", { name: "Collection folder", exact: true })).toHaveAttribute("data-navigation-highlight", "true");
-         await expect(page.getByRole("button", { name: "Choose folder", exact: true })).toBeInViewport();
+         await expect(page.getByRole("button", { name: "Choose collection folder", exact: true })).toBeInViewport();
          const [openBounds, chooseBounds] = await page.getByRole("group", { name: "Collection folder", exact: true }).evaluate((group) =>
             Array.from(group.querySelectorAll("button"), (button) => {
                const { x, y, width, height } = button.getBoundingClientRect();

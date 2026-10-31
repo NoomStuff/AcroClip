@@ -5,6 +5,8 @@ import { bindingFor, normalizeBinding, shortcutConflict, eventBinding } from "./
 describe("shortcut defaults and conflicts", () => {
    it("defaults to Alt+C for saving with no recording shortcut", () => {
       expect(bindingFor(defaultPreferences, "saveClip")).toBe("Alt+C");
+      expect(bindingFor(defaultPreferences, "newCategory")).toBe("CommandOrControl+N");
+      expect(bindingFor(defaultPreferences, "newFolder")).toBe("CommandOrControl+Shift+N");
       for (const action of ["toggleRecording", "startRecording", "stopRecording"] as const) expect(bindingFor(defaultPreferences, action)).toBe("");
       expect(shortcutConflict(defaultPreferences, false)).toBeNull();
       expect(shortcutConflict(defaultPreferences, true)).toBeNull();

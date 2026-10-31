@@ -47,7 +47,7 @@ export function SelectionIndicator({ value, selector = "button.selected" }: { va
          { request: (callback) => requestAnimationFrame(callback), cancel: (frame) => cancelAnimationFrame(frame) }
       );
       const update = (resize: boolean) => {
-         const selected = parent.querySelector<HTMLElement>(selector);
+         const selected = Array.from(parent.querySelectorAll<HTMLElement>(selector)).find((node) => !node.closest("[inert]"));
          if (!selected || !parent.getClientRects().length) {
             element.style.opacity = "0";
             shown = false;
@@ -76,7 +76,10 @@ export function SelectionIndicator({ value, selector = "button.selected" }: { va
          shown = true;
       };
       refresh.current = update;
-      const resize = new ResizeObserver(() => update(true));
+      // Observing newly expanded rows also fires here. Snap only when the
+      // selected control's geometry changes, so unrelated resizes do not
+      // interrupt a selection animation.
+      const resize = new ResizeObserver(() => update(false));
       const observe = () => {
          resize.observe(parent);
          for (const child of parent.querySelectorAll("button")) resize.observe(child);
@@ -89,6 +92,18 @@ export function SelectionIndicator({ value, selector = "button.selected" }: { va
       });
       mutations.observe(parent, { subtree: true, attributes: true, attributeFilter: ["class", "hidden"], childList: true, characterData: true });
       const layout = () => update(true);
+      let followFrame = 0;
+      let followUntil = 0;
+      const follow = (time: number) => {
+         followFrame = 0;
+         update(true);
+         if (time < followUntil) followFrame = requestAnimationFrame(follow);
+      };
+      const listMotion = () => {
+         followUntil = performance.now() + 340;
+         if (!followFrame) followFrame = requestAnimationFrame(follow);
+      };
+      parent.addEventListener("list-motion", listMotion);
       parent.addEventListener("scroll", layout, { passive: true });
       media.addEventListener("change", layout);
       document.fonts.addEventListener("loadingdone", layout);
@@ -98,6 +113,8 @@ export function SelectionIndicator({ value, selector = "button.selected" }: { va
          resize.disconnect();
          mutations.disconnect();
          parent.removeEventListener("scroll", layout);
+         parent.removeEventListener("list-motion", listMotion);
+         cancelAnimationFrame(followFrame);
          media.removeEventListener("change", layout);
          document.fonts.removeEventListener("loadingdone", layout);
       };

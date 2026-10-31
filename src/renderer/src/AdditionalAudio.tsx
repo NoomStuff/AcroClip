@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import type { AdditionalAudioSource, GameCandidate, Preferences } from "../../shared/types";
 import { api, describeError, reportFeedback } from "./desktop";
 import { Button, MenuItem, Select } from "./ui";
@@ -7,12 +7,14 @@ import { DialogPanel } from "./Dialog";
 import { AudioMixerRow } from "./AudioMixerRow";
 export function AdditionalAudio({
    preferences,
+   captureKind = preferences.sourceKind,
    captureAvailable = true,
    active,
    visible,
    save,
 }: {
    preferences: Preferences;
+   captureKind?: Preferences["sourceKind"] | "waiting" | undefined;
    captureAvailable?: boolean;
    active: boolean;
    visible: boolean;
@@ -27,6 +29,7 @@ export function AdditionalAudio({
       [loading, setLoading] = useState(false),
       [saving, setSaving] = useState(false);
    const existing = preferences.audioSources.find((source) => source.id === editing);
+   const captureName = captureKind === "screen" ? "Desktop" : captureKind === "app" ? "Application" : "Source audio";
    useEffect(() => {
       if (!open || !visible || active) return;
       let cancelled = false;
@@ -111,7 +114,7 @@ export function AdditionalAudio({
                key={source.id}
                visible={visible}
                sourceId={source.id}
-               name={source.name}
+               name={source.kind === "source" ? captureName : source.name}
                enabled={source.enabled}
                listenAvailable={(source.kind !== "source" || captureAvailable) && !(source.kind === "input" && source.muted)}
                muted={source.muted}
@@ -124,12 +127,14 @@ export function AdditionalAudio({
                options={
                   <>
                      <MenuItem disabled={active} onClick={() => show(source)}>
+                        <Pencil size={15} />
                         Edit source
                      </MenuItem>
                      <MenuItem
                         disabled={active}
                         onClick={() => save((current) => ({ audioSources: current.audioSources.filter((item) => item.id !== source.id) }))}
                      >
+                        <Trash2 size={15} />
                         Remove source
                      </MenuItem>
                   </>
@@ -147,7 +152,7 @@ export function AdditionalAudio({
                <div className="audio-source-form">
                   <Select label="Audio source type" value={kind} onChange={(value) => setKind(value as AdditionalAudioSource["kind"])}>
                      <option value="source" disabled={preferences.audioSources.some((source) => source.kind === "source" && source.id !== editing)}>
-                        Source audio
+                        {captureName}
                      </option>
                      <option value="application">Application</option>
                      <option value="input">Input device</option>

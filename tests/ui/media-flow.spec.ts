@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { defaultPreferences } from "../../src/shared/defaults";
 
-test("real media plays, creates a verified shareable, and supports overlapping categories", async () => {
+test("real media plays, creates a verified shareable, and supports overlapping tags", async () => {
    test.setTimeout(120000);
    const profile = await realpath(await mkdtemp(join(tmpdir(), "acroclip-media-ui-")));
    const collection = join(profile, "clips");
@@ -102,23 +102,24 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await page.keyboard.press("Escape");
       await expect(clipButton).toBeFocused();
       await page.getByRole("button", { name: "Grid view", exact: true }).click();
-      await page.getByRole("button", { name: "New category", exact: true }).first().click();
-      await page.getByRole("textbox", { name: "Category name", exact: true }).fill("Best moments");
+      await page.getByRole("button", { name: "New tag", exact: true }).first().click();
+      await page.getByRole("textbox", { name: "Tag name", exact: true }).fill("Best moments");
       await page.getByRole("button", { name: "Create", exact: true }).click();
       await expect(page.getByRole("button", { name: /Best moments/ }).first()).toBeVisible();
-      await page.getByRole("button", { name: "New category", exact: true }).first().click();
-      await page.getByRole("textbox", { name: "Category name", exact: true }).fill("Funny");
+      await page.getByRole("button", { name: "New tag", exact: true }).first().click();
+      await page.getByRole("textbox", { name: "Tag name", exact: true }).fill("Funny");
       await page.getByRole("button", { name: "Create", exact: true }).click();
       await page.locator(".clip-card").hover();
       await page.getByRole("button", { name: "Actions for Desktop moment", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Categories", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "Clip categories" });
-      await dialog.evaluate((node) => {
-         const choices = [...node.querySelectorAll<HTMLButtonElement>("button.category-option")];
-         choices.find((button) => button.textContent?.trim() === "Best moments")!.click();
-         choices.find((button) => button.textContent?.trim() === "Funny")!.click();
-      });
-      await dialog.getByRole("button", { name: "Done", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Tags", exact: true }).hover();
+      const categories = page.getByRole("menu", { name: "Tags", exact: true });
+      await expect(categories).toBeVisible();
+      await categories.getByRole("menuitemcheckbox", { name: "Best moments", exact: true }).click();
+      await categories.getByRole("menuitemcheckbox", { name: "Funny", exact: true }).click();
+      await expect(categories.getByRole("menuitemcheckbox", { name: "Best moments", exact: true })).toBeChecked();
+      await expect(categories.getByRole("menuitemcheckbox", { name: "Funny", exact: true })).toBeChecked();
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips[0]?.categories.length).toBe(2);
       await desktop.evaluate(({ ipcMain }) => {
          ipcMain.removeAllListeners("drag");
@@ -131,13 +132,18 @@ test("real media plays, creates a verified shareable, and supports overlapping c
       await page.getByRole("button", { name: "Open Desktop moment", exact: true }).click();
       await expect(page.locator(".viewer-title")).not.toContainText("Unknown");
       await expect(page.locator(".viewer-title time")).toBeVisible();
+      await expect(page.locator(".viewer-categories")).toContainText("Best moments");
+      await expect(page.locator(".viewer-categories")).toContainText("Funny");
       await page.getByRole("button", { name: "File actions", exact: true }).click();
       await expect(page.getByRole("menuitem", { name: "Delete clip", exact: true })).toBeVisible();
       const fileMenu = page.getByRole("menu", { name: "File actions", exact: true });
       const fileActions = await fileMenu.getByRole("menuitem").allTextContents();
       await expect(fileMenu.getByRole("menuitem", { name: "Show clip in folder", exact: true })).toBeVisible();
       await expect(fileMenu.getByRole("menuitem", { name: "Create shareable", exact: true })).toBeVisible();
-      await expect(fileMenu.getByRole("separator")).toHaveCount(2);
+      await expect(fileMenu.getByRole("menuitem", { name: "Tags", exact: true })).toBeVisible();
+      await expect(fileMenu.getByRole("menuitem", { name: "Open clip", exact: true })).toHaveCount(0);
+      await expect(fileMenu.getByRole("menuitem", { name: "Move to folder", exact: true })).toHaveCount(0);
+      await expect(fileMenu.getByRole("separator")).toHaveCount(3);
       await page.keyboard.press("Escape");
       await page.locator(".viewer-main video").click({ button: "right" });
       await expect(fileMenu).toBeVisible();

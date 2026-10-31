@@ -27,6 +27,7 @@ const publish = createRequire(import.meta.url)("./publish-release.cjs") as (args
    context: unknown;
    core: unknown;
    directory: string;
+   releaseName?: string;
 }) => Promise<void>;
 const roots: string[] = [];
 afterEach(async () => {
@@ -143,6 +144,13 @@ it("automatically publishes sources before app downloads and feeds, with blank d
    const provenance = JSON.parse(tree.tree.find((file) => file.path === "releases/v0.3.1.json")!.content) as Record<string, unknown>;
    expect(provenance).toMatchObject({ commit: sha, run: "123", sourceRelease: releases[0]!.html_url });
    expect(provenance).not.toHaveProperty("attempt");
+});
+
+it("sets the requested app release title at creation without renaming the corresponding sources", async () => {
+   const { args, repos } = await fixture();
+   await publish({ ...args, releaseName: "Major UI improvements" });
+   expect(repos.createRelease).toHaveBeenCalledWith(expect.objectContaining({ prerelease: false, name: "Major UI improvements", draft: true }));
+   expect(repos.createRelease).toHaveBeenCalledWith(expect.objectContaining({ prerelease: true, name: "AcroClip 0.3.1 corresponding sources" }));
 });
 
 it("refuses a stale main commit before creating a release or feed", async () => {

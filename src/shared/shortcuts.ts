@@ -6,10 +6,11 @@ export const shortcutRegistry = [
    { id: "stopRecording", label: "Stop recording", scope: "global", page: "all", binding: "" },
    { id: "recording", label: "Recording page", scope: "local", page: "all", binding: "CommandOrControl+1" },
    { id: "library", label: "Library page", scope: "local", page: "all", binding: "CommandOrControl+2" },
-   { id: "viewer", label: "Player", scope: "local", page: "all", binding: "CommandOrControl+3" },
-   { id: "settings", label: "Settings", scope: "local", page: "all", binding: "CommandOrControl+," },
+   { id: "viewer", label: "Player page", scope: "local", page: "all", binding: "CommandOrControl+3" },
+   { id: "settings", label: "Settings page", scope: "local", page: "all", binding: "CommandOrControl+," },
    { id: "search", label: "Search clips", scope: "local", page: "library", binding: "CommandOrControl+F" },
-   { id: "newCategory", label: "New category", scope: "local", page: "library", binding: "CommandOrControl+Shift+N" },
+   { id: "newCategory", label: "New tag", scope: "local", page: "all", group: "library", binding: "CommandOrControl+N" },
+   { id: "newFolder", label: "New folder", scope: "local", page: "all", group: "library", binding: "CommandOrControl+Shift+N" },
    { id: "openClip", label: "Open first matching clip", scope: "local", page: "library", binding: "CommandOrControl+Enter" },
    { id: "playPause", label: "Play / pause", scope: "local", page: "viewer", binding: "Space" },
    { id: "seekBack", label: "Seek back 5 seconds", scope: "local", page: "viewer", binding: "Left" },
@@ -19,6 +20,9 @@ export const shortcutRegistry = [
    { id: "createShareable", label: "Create shareable", scope: "local", page: "viewer", binding: "CommandOrControl+E" },
    { id: "showFile", label: "Show clip file", scope: "local", page: "viewer", binding: "CommandOrControl+Shift+O" },
 ] as const;
+export function shortcutGroup(item: (typeof shortcutRegistry)[number]) {
+   return "group" in item ? item.group : item.page;
+}
 export type ShortcutAction = (typeof shortcutRegistry)[number]["id"];
 export type ShortcutBindings = Partial<Record<ShortcutAction, string>>;
 export function bindingFor(preferences: Pick<Preferences, "shortcut" | "shortcuts">, id: ShortcutAction): string {

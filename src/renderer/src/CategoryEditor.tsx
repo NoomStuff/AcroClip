@@ -87,7 +87,7 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
       setBusy(false);
    };
    return (
-      <DialogPanel title={category ? "Edit category" : "New category"} close={close} className="category-editor" closeLabel="Close category editor">
+      <DialogPanel title={category ? "Edit tag" : "New tag"} close={close} className="category-editor" closeLabel="Close tag editor">
          <form
             onSubmit={(event) => {
                event.preventDefault();
@@ -98,15 +98,15 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
                <CategoryMark category={{ color, icon }} size={20} />
                <input
                   autoFocus
-                  aria-label="Category name"
-                  placeholder="Category name"
+                  aria-label="Tag name"
+                  placeholder="Tag name"
                   maxLength={80}
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   required
                />
             </label>
-            <div className="category-icon-choices" role="group" aria-label="Category icon">
+            <div className="category-icon-choices" role="group" aria-label="Tag icon">
                {Object.entries(icons)
                   .slice(0, 6)
                   .map(([id, Icon]) => (
@@ -114,7 +114,7 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
                         <Icon size={20} />
                      </button>
                   ))}
-               <Menu label="More category icons" className="category-icon-more" columns={6} trigger={<ChevronDown size={18} />}>
+               <Menu label="More tag icons" className="category-icon-more" columns={6} trigger={<ChevronDown size={18} />}>
                   {Object.entries(icons).map(([id, Icon]) => (
                      <button
                         type="button"
@@ -130,7 +130,7 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
                   ))}
                </Menu>
             </div>
-            <div className="category-color-choices" role="group" aria-label="Category color">
+            <div className="category-color-choices" role="group" aria-label="Tag color">
                {colors.map((value) => (
                   <button type="button" key={value} aria-label={`Color ${value}`} aria-pressed={color === value} onClick={() => setColor(value)}>
                      <span aria-hidden="true" style={{ background: value }} />
@@ -140,7 +140,7 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
                   <span aria-hidden="true" style={{ background: color }}>
                      <Pipette size={16} />
                   </span>
-                  <input type="color" aria-label="Custom category color" value={color} onChange={(event) => setColor(event.target.value)} />
+                  <input type="color" aria-label="Custom tag color" value={color} onChange={(event) => setColor(event.target.value)} />
                </label>
             </div>
             <div className="dialog-actions">

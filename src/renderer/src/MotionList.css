@@ -1,0 +1,32 @@
+.motion-list {
+   position: relative;
+   isolation: isolate;
+}
+.motion-list-item {
+   position: relative;
+   display: flow-root;
+}
+.motion-list-content {
+   display: flow-root;
+}
+.motion-list-status {
+   position: absolute;
+   width: 1px;
+   height: 1px;
+   overflow: hidden;
+   clip-path: inset(50%);
+   white-space: nowrap;
+}
+.motion-list-item[data-dragging] {
+   z-index: 3;
+}
+.motion-list-item[data-dragging] [data-list-control] {
+   cursor: grabbing;
+   background: var(--raised);
+}
+.motion-list-item[data-exiting] {
+   position: absolute;
+   left: 0;
+   right: 0;
+   pointer-events: none;
+}

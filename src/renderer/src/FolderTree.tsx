@@ -1,10 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, HTMLAttributes } from "react";
 import { ChevronRight, Folder, FolderOpen } from "lucide-react";
-import { groupFolders } from "./library-index";
-export function FolderTree({ paths, selected, onSelect }: { paths: string[]; selected: string | null; onSelect: (path: string) => void }) {
+import { groupFolders, visibleFolderRows } from "./library-index";
+import { MotionList } from "./MotionList";
+export function FolderTree({
+   paths,
+   selected,
+   onSelect,
+   renderActions,
+   requestMenu,
+   dropProps,
+}: {
+   paths: string[];
+   selected: string | null;
+   onSelect: (path: string) => void;
+   dropProps?: ((path: string) => Pick<HTMLAttributes<HTMLDivElement>, "onDragOver" | "onDragLeave" | "onDrop">) | undefined;
+   renderActions?: (path: string) => ReactNode;
+   requestMenu?: (path: string, element: HTMLElement, left: number, top: number) => void;
+}) {
    const root = useRef<HTMLDivElement>(null);
    const [expanded, setExpanded] = useState(new Set<string>());
    const children = useMemo(() => groupFolders(paths), [paths]);
+   const rows = useMemo(() => visibleFolderRows(children, expanded), [children, expanded]);
    const selectedExists = selected !== null && paths.includes(selected);
    useEffect(() => {
       if (selected === null) return;
@@ -22,54 +39,63 @@ export function FolderTree({ paths, selected, onSelect }: { paths: string[]; sel
          else next.delete(path);
          return next;
       });
+   const treeItems = () => Array.from(root.current?.querySelectorAll<HTMLButtonElement>('[role="treeitem"]') ?? []).filter((node) => !node.closest("[inert]"));
    const focus = (path: string) =>
       requestAnimationFrame(() =>
-         Array.from(root.current?.querySelectorAll<HTMLButtonElement>('[role="treeitem"]') ?? [])
+         treeItems()
             .find((node) => node.dataset["path"] === path)
             ?.focus()
       );
-   const render = (parent: string, level: number) =>
-      (children.get(parent) ?? []).map((path) => {
-         const hasChildren = children.has(path),
-            open = expanded.has(path),
-            name = path.split("/").at(-1)!;
-         return (
-            <div key={path} role="none">
-               <div className="folder-tree-row">
-                  <button
-                     type="button"
-                     className="folder-expand"
-                     tabIndex={-1}
-                     aria-label={`${open ? "Collapse" : "Expand"} folder ${path}`}
-                     disabled={!hasChildren}
-                     onClick={() => expand(path, !open)}
-                  >
-                     <ChevronRight size={13} style={{ rotate: open ? "90deg" : undefined }} />
-                  </button>
-                  <button
-                     type="button"
-                     role="treeitem"
-                     aria-level={level}
-                     aria-selected={selected === path}
-                     aria-expanded={hasChildren ? open : undefined}
-                     data-path={path}
-                     tabIndex={selected === path || (!selectedExists && path === paths[0]) ? 0 : -1}
-                     className={`sidebar-item ${selected === path ? "selected" : ""}`}
-                     title={path}
-                     onClick={() => onSelect(path)}
-                  >
-                     {open ? <FolderOpen size={16} /> : <Folder size={16} />}
-                     <span>{name}</span>
-                  </button>
-               </div>
-               {hasChildren && open && (
-                  <div role="group" className="folder-tree-children">
-                     {render(path, level + 1)}
-                  </div>
-               )}
-            </div>
-         );
-      });
+   const render = ({ id: path, level, hasChildren, open, position, siblings }: (typeof rows)[number]) => (
+      <div
+         className="folder-tree-row"
+         style={{ marginLeft: (level - 1) * 16 }}
+         {...dropProps?.(path)}
+         onContextMenu={(event) => {
+            if (!requestMenu) return;
+            event.preventDefault();
+            requestMenu(path, event.currentTarget.querySelector<HTMLButtonElement>('[role="treeitem"]')!, event.clientX, event.clientY);
+         }}
+         onKeyDown={(event) => {
+            if (!requestMenu || (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const item = event.currentTarget.querySelector<HTMLButtonElement>('[role="treeitem"]')!;
+            const bounds = item.getBoundingClientRect();
+            requestMenu(path, item, bounds.left + 20, bounds.bottom);
+         }}
+      >
+         <button
+            type="button"
+            className="folder-expand"
+            tabIndex={-1}
+            aria-label={`${open ? "Collapse" : "Expand"} folder ${path}`}
+            disabled={!hasChildren}
+            onClick={() => expand(path, !open)}
+         >
+            <ChevronRight size={13} style={{ rotate: open ? "90deg" : undefined }} />
+         </button>
+         <button
+            type="button"
+            role="treeitem"
+            data-list-control=""
+            aria-level={level}
+            aria-posinset={position}
+            aria-setsize={siblings}
+            aria-selected={selected === path}
+            aria-expanded={hasChildren ? open : undefined}
+            data-path={path}
+            tabIndex={selected === path || (!selectedExists && path === rows[0]?.id) ? 0 : -1}
+            className={`sidebar-item ${selected === path ? "selected" : ""}`}
+            title={path}
+            onClick={() => onSelect(path)}
+         >
+            {open ? <FolderOpen size={16} /> : <Folder size={16} />}
+            <span>{path.split("/").at(-1)!}</span>
+         </button>
+         {renderActions?.(path)}
+      </div>
+   );
    return (
       <div
          ref={root}
@@ -79,7 +105,7 @@ export function FolderTree({ paths, selected, onSelect }: { paths: string[]; sel
             const item = (event.target as HTMLElement).closest<HTMLButtonElement>('[role="treeitem"]');
             if (!item) return;
             const path = item.dataset["path"]!,
-               nodes = Array.from(root.current!.querySelectorAll<HTMLButtonElement>('[role="treeitem"]')),
+               nodes = treeItems(),
                index = nodes.indexOf(item);
             if (["ArrowDown", "ArrowUp", "Home", "End", "ArrowLeft", "ArrowRight"].includes(event.key)) {
                event.preventDefault();
@@ -99,7 +125,7 @@ export function FolderTree({ paths, selected, onSelect }: { paths: string[]; sel
             }
          }}
       >
-         {render("", 1)}
+         <MotionList items={rows}>{render}</MotionList>
       </div>
    );
 }

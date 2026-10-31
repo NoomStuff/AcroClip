@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { defaultPreferences } from "../../src/shared/defaults";
-test("category appearance, local shortcuts, conflicts and global capture bindings persist", async () => {
+test("tag appearance, local shortcuts, conflicts and global capture bindings persist", async () => {
    test.setTimeout(90000);
    const profile = await mkdtemp(join(tmpdir(), "acroclip-features-")),
       collection = join(profile, "clips");
@@ -52,14 +52,14 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       await expect(page.locator(".library-page")).toBeVisible();
       await search.clear();
       await search.blur();
-      await expect(page.getByRole("button", { name: "New category", exact: true })).toHaveCount(1);
-      await page.keyboard.press("Control+Shift+n");
-      const category = page.getByRole("dialog", { name: "New category", exact: true });
+      await expect(page.getByRole("button", { name: "New tag", exact: true })).toHaveCount(1);
+      await page.keyboard.press("Control+n");
+      const category = page.getByRole("dialog", { name: "New tag", exact: true });
       await expect(category).toBeVisible();
-      await category.getByRole("textbox", { name: "Category name" }).fill("Highlights");
-      await category.getByRole("button", { name: "More category icons", exact: true }).click();
+      await category.getByRole("textbox", { name: "Tag name" }).fill("Highlights");
+      await category.getByRole("button", { name: "More tag icons", exact: true }).click();
       await page.getByRole("menuitemradio", { name: "Icon: rocket", exact: true }).click();
-      await category.getByLabel("Custom category color").fill("#112233");
+      await category.getByLabel("Custom tag color").fill("#112233");
       await category.getByRole("button", { name: "Create", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.length).toBe(1);
       const original = (await page.evaluate(() => window.acroClip.state())).categories[0]!;
@@ -76,13 +76,15 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       expect(Math.abs(countBounds!.x + countBounds!.width / 2 - menuBounds!.x - menuBounds!.width / 2)).toBeLessThan(1);
       await highlightRow.click({ button: "right" });
       await expect(page.getByRole("menu", { name: "Actions for Highlights", exact: true })).toBeVisible();
-      await expect(page.getByRole("menuitem", { name: "Edit category", exact: true })).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "Edit tag", exact: true })).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "Move up", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("menuitem", { name: "Move down", exact: true })).toHaveCount(0);
       await page.keyboard.press("Escape");
       await expect(highlightRow.locator(".sidebar-item")).toBeFocused();
       await page.getByRole("button", { name: "Actions for Highlights", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Edit category", exact: true }).click();
-      const edit = page.getByRole("dialog", { name: "Edit category", exact: true });
-      await edit.getByRole("textbox", { name: "Category name" }).fill("Matches");
+      await page.getByRole("menuitem", { name: "Edit tag", exact: true }).click();
+      const edit = page.getByRole("dialog", { name: "Edit tag", exact: true });
+      await edit.getByRole("textbox", { name: "Tag name" }).fill("Matches");
       await edit.getByRole("button", { name: "Icon: game", exact: true }).click();
       await edit.getByRole("button", { name: "Color #73c6a1", exact: true }).click();
       await edit.getByRole("button", { name: "Save", exact: true }).click();
@@ -92,9 +94,9 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       const categoryActions = page.getByRole("button", { name: "Actions for Matches", exact: true });
       await page.locator(".category-item").filter({ hasText: "Matches" }).hover();
       await categoryActions.click();
-      await expect(page.getByRole("menuitem", { name: "Edit category", exact: true })).toBeFocused();
+      await expect(page.getByRole("menuitem", { name: "Edit tag", exact: true })).toBeFocused();
       await page.keyboard.press("ArrowDown");
-      await expect(page.getByRole("menuitem", { name: "Delete category", exact: true })).toBeFocused();
+      await expect(page.getByRole("menuitem", { name: "Delete tag", exact: true })).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(categoryActions).toBeFocused();
       await categoryActions.press("ArrowDown");
@@ -109,6 +111,67 @@ test("category appearance, local shortcuts, conflicts and global capture binding
       await expect(page.getByRole("button", { name: "List view", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("button", { name: "Grid view", exact: true }).click();
       await expect(page.getByRole("button", { name: "Grid view", exact: true })).toHaveAttribute("aria-pressed", "true");
+      for (const name of ["Second", "Third"]) {
+         await page.getByRole("button", { name: "New tag", exact: true }).click();
+         const editor = page.getByRole("dialog", { name: "New tag", exact: true });
+         await editor.getByRole("textbox", { name: "Tag name" }).fill(name);
+         await editor.getByRole("button", { name: "Create", exact: true }).click();
+         await expect(editor).not.toBeVisible();
+      }
+      const labels = page.locator(".category-item .sidebar-label");
+      await expect(labels).toHaveText(["Matches", "Second", "Third"]);
+      const third = page.locator(".category-item").filter({ hasText: "Third" });
+      const thirdBounds = (await third.boundingBox())!;
+      const firstBounds = (await page.locator(".category-item").first().boundingBox())!;
+      const grab = thirdBounds.height / 2;
+      await page.mouse.move(thirdBounds.x + 60, thirdBounds.y + grab);
+      await page.mouse.down();
+      await page.mouse.move(firstBounds.x + 90, firstBounds.y + 7, { steps: 12 });
+      await expect(labels).toHaveText(["Third", "Matches", "Second"]);
+      // The row follows only Y, and the preview must not write metadata yet.
+      await expect.poll(async () => Math.abs((await third.boundingBox())!.y - (firstBounds.y + 7 - grab))).toBeLessThan(2);
+      expect(Math.abs((await third.boundingBox())!.x - thirdBounds.x)).toBeLessThan(1);
+      expect((await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name)).toEqual(["Matches", "Second", "Third"]);
+      await page.mouse.up();
+      await expect
+         .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
+         .toEqual(["Third", "Matches", "Second"]);
+      await third.click();
+      await expect(third.locator(".sidebar-item")).toHaveAttribute("aria-pressed", "true");
+      const movedBounds = (await third.boundingBox())!;
+      const lastBounds = (await page.locator(".category-item").last().boundingBox())!;
+      await page.mouse.move(movedBounds.x + 60, movedBounds.y + grab);
+      await page.mouse.down();
+      await page.mouse.move(lastBounds.x + 60, lastBounds.y + lastBounds.height - 5, { steps: 12 });
+      await expect(labels).toHaveText(["Matches", "Second", "Third"]);
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      await expect(labels).toHaveText(["Third", "Matches", "Second"]);
+      expect((await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name)).toEqual(["Third", "Matches", "Second"]);
+      const thirdControl = third.locator("[data-list-control]");
+      await thirdControl.focus();
+      await thirdControl.press("Alt+ArrowDown");
+      await expect
+         .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
+         .toEqual(["Matches", "Third", "Second"]);
+      await thirdControl.press("Alt+ArrowUp");
+      await expect
+         .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
+         .toEqual(["Third", "Matches", "Second"]);
+      await expect(thirdControl).toBeFocused();
+      await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await expect(page.locator(".library-page")).toBeHidden();
+      const tags = (await page.evaluate(() => window.acroClip.state())).categories;
+      const secondId = tags.find((item) => item.name === "Second")!.id;
+      const thirdId = tags.find((item) => item.name === "Third")!.id;
+      // Real metadata updates while the retained page has no layout must not
+      // turn zero offsets into the next visible animation's starting positions.
+      await page.evaluate(({ id, before }) => window.acroClip.reorderCategory(id, before), { id: secondId, before: thirdId });
+      await page.getByRole("button", { name: "Library", exact: true }).click();
+      await page.evaluate(({ id, before }) => window.acroClip.reorderCategory(id, before), { id: thirdId, before: secondId });
+      await expect(labels).toHaveText(["Third", "Second", "Matches"]);
+      const unchanged = page.locator(".category-item").filter({ hasText: "Matches" });
+      expect(await unchanged.evaluate((row) => row.closest(".motion-list-item")!.getAnimations().length)).toBe(0);
       await page.keyboard.press("Control+,");
       await expect(page.locator(".settings-page")).toBeVisible();
       await page.getByRole("button", { name: "Shortcuts", exact: true }).click();

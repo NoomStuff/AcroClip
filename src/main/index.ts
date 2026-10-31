@@ -1,4 +1,5 @@
 import { shareableTargetAllowed } from "../shared/shareable-target";
+import { normalizeApplicationLabel } from "./application-identity";
 import { isPackagedApp, registerWindowsIdentity, windowsAppId } from "./identity";
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, nativeImage, protocol, shell, Tray, session, systemPreferences } from "electron";
 import { mkdirSync, realpathSync } from "node:fs";
@@ -54,6 +55,13 @@ const mediaFiles = new Map<string, string>();
 const mediaKeys = new Map<string, string>();
 const stateChanges = new StateChanges();
 const collections = new CollectionService({
+   applications: () =>
+      captureSources.cached
+         .filter((source) => source.applicationId)
+         .map((source) => ({ id: source.applicationId!, icon: source.appIcon ?? "", ...(source.applicationName ? { name: source.applicationName } : {}) })),
+   beforeFolderChange: () => {
+      if (recorder.status.pendingSaves) throw new Error("Wait for clips to finish saving before changing folders.");
+   },
    scanConcurrency: () => (["recording", "waiting", "starting"].includes(recorder.status.state) || startingCapture ? 1 : 3),
    onChange: () => emitState(),
    onJob: (job) => {
@@ -110,10 +118,27 @@ const recorder = new Recorder({
 const captureSources = new CaptureSources(
    recorder,
    () => (process.platform === "win32" && mainWindow ? mainWindow.getNativeWindowHandle().readBigUInt64LE().toString() : ""),
-   (sources) => send({ type: "capture-sources", sources })
+   (sources) => {
+      send({ type: "capture-sources", sources });
+      void collections
+         .enrichApplications(
+            sources
+               .filter((source) => source.applicationId)
+               .map((source) => ({
+                  id: source.applicationId!,
+                  icon: source.appIcon ?? "",
+                  ...(source.applicationName ? { name: source.applicationName } : {}),
+               }))
+         )
+         .catch(() => undefined);
+   }
 );
 function errorMessage(error: unknown): string {
-   return error instanceof Error ? error.message : "Something went wrong. Try again.";
+   return typeof error === "string"
+      ? error
+      : error && typeof error === "object" && "message" in error && typeof error.message === "string"
+        ? error.message
+        : "Something went wrong. Try again.";
 }
 function recorderState(): RecorderState {
    const current = recorder.status;
@@ -312,9 +337,14 @@ async function saveClip() {
    if (recorder.status.state !== "recording" && recorder.status.state !== "waiting") throw new Error("Start recording before saving a clip.");
    send({ type: "clip-action" });
    const footage = bufferedCaptureSource(recorder.status);
+   await collections.finishFileChanges();
+   lastRecordingArtwork = recordingArtwork(footage, captureSources.cached, lastRecordingArtwork);
+   const applicationName =
+      lastRecordingArtwork?.application.name ??
+      normalizeApplicationLabel(footage.name || (preferences.sourceKind === "auto" ? "Game" : recordingSourceLabel(preferences, captureSources.cached)));
    const destination = recordingDestination(
       { ...preferences, collection: collections.root },
-      footage.name || (preferences.sourceKind === "auto" ? "Game" : recordingSourceLabel(preferences, captureSources.cached)),
+      applicationName,
       new Date(requestedAt),
       recorder.pendingSavePaths
    );
@@ -322,7 +352,6 @@ async function saveClip() {
    if (!withinRoot(collections.root, realpathSync(dirname(destination))))
       throw new Error("The recording folder points outside this collection. Choose another folder.");
    void storage.check(collections.root);
-   lastRecordingArtwork = recordingArtwork(footage, captureSources.cached, lastRecordingArtwork);
    await recorder.save(destination, requestedAt, lastRecordingArtwork?.application);
    notice("Saving clip…", false, "saving");
 }
@@ -342,6 +371,7 @@ async function prepareExit(): Promise<boolean> {
    exiting = (async () => {
       await preferenceWrites.catch(() => undefined);
       await startingCapture?.catch(() => undefined);
+      await collections.finishFileChanges();
       const saves = recorder.status.pendingSaves;
       if (saves || pendingJobs().length) {
          const decision = await pendingExitDecision(
@@ -432,13 +462,30 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown) {
       try {
          if (!["state", "sources", "choose-folder", "update-check", "update-download", "update-release", "update-reveal", "exit"].includes(channel))
             await collectionReady;
-         if (closingRequested && ["preferences", "share", "rename", "delete", "category", "record-start", "record-save"].includes(channel))
+         if (
+            closingRequested &&
+            [
+               "preferences",
+               "share",
+               "rename",
+               "delete",
+               "category",
+               "record-start",
+               "record-save",
+               "folder-create",
+               "folder-rename",
+               "folder-move",
+               "folder-delete",
+               "clip-move",
+            ].includes(channel)
+         )
             throw new Error("AcroClip is preparing to exit. Keep the app open to make changes.");
          return await fn(...args);
       } catch (e) {
-         // The viewer owns playback errors and discards obsolete requests when
-         // switching files. A global notice would outlive that failed request.
-         if (channel !== "playback" && channel !== "monitor-audio" && channel !== "listen-audio" && channel !== "preferences") notice(errorMessage(e), true);
+         // Playback and preview report errors locally and discard obsolete requests.
+         // A global notice would outlive a source or file switch.
+         if (!["playback", "preview-source", "monitor-audio", "listen-audio", "preferences"].includes(channel)) notice(errorMessage(e), true);
+         else void log(`${channel}: ${errorMessage(e)}`);
          throw e;
       }
    });
@@ -622,6 +669,50 @@ function registerIPC() {
    });
    handle("cancel-job", (id) => collections.cancelJob(idSchema.parse(id)));
    handle("rename", (id, name) => collections.rename(idSchema.parse(id), z.string().trim().min(1).max(150).parse(name)));
+   const folderPathSchema = z.string().max(4096);
+   const folderChangesAvailable = () => {
+      if (recorder.status.pendingSaves) throw new Error("Wait for clips to finish saving before changing folders.");
+   };
+   handle("folder-create", (parent, name) => collections.createFolder(folderPathSchema.parse(parent), z.string().max(150).parse(name)));
+   handle("folder-rename", (path, name) => {
+      folderChangesAvailable();
+      return collections.renameFolder(folderPathSchema.parse(path), z.string().max(150).parse(name));
+   });
+   handle("folder-move", async (path, destination) => {
+      folderChangesAvailable();
+      const selected = folderPathSchema.parse(path);
+      const target = folderPathSchema.parse(destination);
+      const contents = await collections.inspectFolder(selected);
+      const result = await dialog.showMessageBox({
+         type: "question",
+         message: `Move "${selected.split(/[\\/]/).at(-1)}" to "${target || "Collection"}"?`,
+         detail: `${contents.clips} ${contents.clips === 1 ? "clip" : "clips"}, ${contents.otherFiles} other ${contents.otherFiles === 1 ? "file" : "files"}, ${contents.folders} ${contents.folders === 1 ? "subfolder" : "subfolders"}. All contents will move.`,
+         buttons: ["Cancel", "Move folder"],
+         defaultId: 0,
+         cancelId: 0,
+      });
+      if (result.response !== 1) return null;
+      folderChangesAvailable();
+      return collections.moveFolder(selected, target, contents.fingerprint);
+   });
+   handle("clip-move", (id, destination) => collections.moveClip(idSchema.parse(id), folderPathSchema.parse(destination)));
+   handle("folder-delete", async (path) => {
+      folderChangesAvailable();
+      const selected = folderPathSchema.parse(path);
+      const contents = await collections.inspectFolder(selected);
+      const result = await dialog.showMessageBox({
+         type: "warning",
+         message: `Move "${selected.split(/[\\/]/).at(-1)}" and all its contents to the trash?`,
+         detail: `${contents.clips} ${contents.clips === 1 ? "clip" : "clips"}, ${contents.otherFiles} other ${contents.otherFiles === 1 ? "file" : "files"}, ${contents.folders} ${contents.folders === 1 ? "subfolder" : "subfolders"}.`,
+         buttons: ["Cancel", "Move to trash"],
+         defaultId: 0,
+         cancelId: 0,
+      });
+      if (result.response !== 1) return false;
+      folderChangesAvailable();
+      await collections.trashFolder(selected, contents.fingerprint, (directory) => shell.trashItem(directory));
+      return true;
+   });
    handle("delete", async (id, shareId, scope) => {
       const clipId = idSchema.parse(id);
       const shareableId = shareId === undefined ? undefined : idSchema.parse(shareId);
@@ -649,17 +740,20 @@ function registerIPC() {
          await collections.removeDeleted(clipId, deleted);
       }
    });
+   handle("category-reorder", (id, beforeId) => collections.reorderCategory(idSchema.parse(id), idSchema.nullable().parse(beforeId)));
    handle("category", async (action, value) => {
       const request = categoryRequest.parse(value);
-      switch (z.enum(["create", "update", "delete", "assign"]).parse(action)) {
+      switch (z.enum(["create", "update", "delete", "assign", "toggle"]).parse(action)) {
          case "create":
-            return collections.createCategory(request.name ?? "New category", request.color ?? "#b197fc", request.icon ?? "tag");
+            return collections.createCategory(request.name ?? "New tag", request.color ?? "#b197fc", request.icon ?? "tag");
          case "update":
             return collections.updateCategory(idSchema.parse(request.id), request.name ?? "", request.color ?? "#b197fc", request.icon ?? "tag");
          case "delete":
             return collections.deleteCategory(idSchema.parse(request.id));
          case "assign":
             return collections.assignCategories(idSchema.parse(request.clipId), request.categoryIds ?? []);
+         case "toggle":
+            return collections.toggleCategory(idSchema.parse(request.clipId), idSchema.parse(request.id));
       }
    });
    handle("reveal", (path) => {
@@ -793,7 +887,10 @@ else {
                      const selected = available.find((source) => source.id === requested);
                      callback(selected ? { video: selected } : null);
                   })
-                  .catch(() => callback(null));
+                  .catch((error: unknown) => {
+                     void log(`Preview source failed: ${errorMessage(error)}`);
+                     callback(null);
+                  });
             },
             { useSystemPicker: false }
          );

@@ -21,17 +21,21 @@ import type { AppState, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
 import { previewFilename, filenamePatterns, filenameTemplateError, filenameTemplateWarning } from "../../shared/filename";
 import { SelectionIndicator } from "./SelectionIndicator";
+import { MotionList } from "./MotionList";
 import { HeaderActions, Button, Select, NumberInput } from "./ui";
 import { Field, Toggle } from "./SettingsControls";
 import { api } from "./desktop";
 import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
-import { shortcutRegistry, bindingFor } from "../../shared/shortcuts";
+import { shortcutRegistry, shortcutGroup, bindingFor } from "../../shared/shortcuts";
 import { ShortcutInput } from "./ShortcutInput";
 import { GameManagement } from "./GameManagement";
 import { PaneDivider, usePaneSize } from "./layout";
 import { FolderPicker } from "./FolderPicker";
 import { timeAgo } from "./format";
+import { TimeInput } from "./TimeInput";
+import { initialLocation, reportLocation } from "./navigation-history";
+import type { NavigationLocation } from "./navigation-history";
 import { updateAction, updateDownloading, updateDownloadLabel } from "./update-action";
 
 const sections = [
@@ -163,8 +167,11 @@ export function Settings({
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const content = useRef<HTMLDivElement>(null);
-   const sidebar = usePaneSize(layout, { key: "settings.sidebar", initial: 245, min: 210, max: 380, reserve: 520, axis: "x" });
-   const [{ section, direction }, setNavigation] = useState<{ section: Section; direction: "up" | "down" | null }>({ section: "recording", direction: null });
+   const sidebar = usePaneSize(layout, { key: "settings.sidebar", initial: 270, min: 210, max: 400, reserve: 520, axis: "x" });
+   const [{ section, direction }, setNavigation] = useState<{ section: Section; direction: "up" | "down" | null }>(() => ({
+      section: sections.find((item) => item.id === initialLocation("settings", "recording"))?.id ?? "recording",
+      direction: null,
+   }));
    const setSection = useCallback((next: Section) => {
       setNavigation((current) =>
          current.section === next
@@ -175,6 +182,16 @@ export function Settings({
               }
       );
    }, []);
+   useEffect(() => reportLocation("settings", section), [section]);
+   useEffect(() => {
+      const restore = (event: Event) => {
+         const next = (event as CustomEvent<NavigationLocation>).detail.settings;
+         const found = sections.find((item) => item.id === next);
+         if (found) setSection(found.id);
+      };
+      window.addEventListener("acroclip-restore-location", restore);
+      return () => window.removeEventListener("acroclip-restore-location", restore);
+   }, [setSection]);
    useLayoutEffect(() => {
       const node = content.current;
       const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -260,17 +277,20 @@ export function Settings({
             </div>
             <div className="settings-nav moving-selection">
                <SelectionIndicator value={section} />
-               {sections.map((item) => (
-                  <button
-                     key={item.id}
-                     className={`sidebar-item ${section === item.id ? "selected" : ""}`}
-                     aria-current={section === item.id ? "page" : undefined}
-                     onClick={() => void switchSection(item.id)}
-                  >
-                     <item.icon size={17} />
-                     {item.label}
-                  </button>
-               ))}
+               <MotionList items={sections}>
+                  {(item) => (
+                     <button
+                        data-list-control=""
+                        key={item.id}
+                        className={`sidebar-item ${section === item.id ? "selected" : ""}`}
+                        aria-current={section === item.id ? "page" : undefined}
+                        onClick={() => void switchSection(item.id)}
+                     >
+                        <item.icon size={17} />
+                        {item.label}
+                     </button>
+                  )}
+               </MotionList>
             </div>
             <div className="settings-sidebar-bottom">
                <span>AcroClip {state.version}</span>
@@ -298,13 +318,12 @@ export function Settings({
                         <section className="settings-group">
                            <h2>Clip</h2>
                            <Field label="Clip length" detail="Save this much recent footage when you clip.">
-                              <NumberInput
+                              <TimeInput
                                  min={5}
                                  max={1800}
                                  value={draft.clipSeconds}
-                                 aria-label="Clip length in seconds"
+                                 label="Clip length"
                                  onValueChange={(value) => change("clipSeconds", value)}
-                                 unit="seconds"
                               />
                            </Field>
                            <Toggle
@@ -327,9 +346,13 @@ export function Settings({
                            {
                               title: "Navigation",
                               detail: "While AcroClip is open.",
-                              items: shortcutRegistry.filter((item) => item.scope === "local" && item.page === "all"),
+                              items: shortcutRegistry.filter((item) => item.scope === "local" && shortcutGroup(item) === "all"),
                            },
-                           { title: "Library", detail: "While browsing the Library.", items: shortcutRegistry.filter((item) => item.page === "library") },
+                           {
+                              title: "Library",
+                              detail: "Search clips while browsing, or create a tag or folder from any page.",
+                              items: shortcutRegistry.filter((item) => shortcutGroup(item) === "library"),
+                           },
                            { title: "Player", detail: "While a clip is open.", items: shortcutRegistry.filter((item) => item.page === "viewer") },
                         ].map((group) => (
                            <section className="settings-group" key={group.title}>

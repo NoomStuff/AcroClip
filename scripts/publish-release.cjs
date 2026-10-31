@@ -1,7 +1,7 @@
 /* global module, Buffer */
 // Publication consumes the sealed artifact. It never packages application code.
 
-module.exports = async function publish({ github, context, core, directory = "candidate" }) {
+module.exports = async function publish({ github, context, core, directory = "candidate", releaseName }) {
    const fs = await import("node:fs/promises");
    const crypto = await import("node:crypto");
    const repo = context.repo;
@@ -44,7 +44,7 @@ module.exports = async function publish({ github, context, core, directory = "ca
                ...repo,
                tag_name: releaseTag,
                target_commitish: manifest.commit,
-               name: prerelease ? `AcroClip ${manifest.version} corresponding sources` : `AcroClip ${manifest.version}`,
+               name: prerelease ? `AcroClip ${manifest.version} corresponding sources` : releaseName?.trim() || `AcroClip ${manifest.version}`,
                body,
                draft: true,
                prerelease,

@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { CaptureSource, GameCandidate } from "../shared/types";
 import { portalSources } from "../shared/capture-policy";
 import type { Recorder } from "./recorder";
+import { applicationLabel, executableLabel } from "./application-identity";
 type SourceRecorder = Pick<Recorder, "capabilities" | "applicationCandidates" | "capturableApplications">;
 
 export class CaptureSources {
@@ -14,6 +15,7 @@ export class CaptureSources {
    private thumbnailQuery: Promise<CaptureSource[]> | null = null;
    private loadedAt = 0;
    private readonly icons = new Map<string, Promise<string | undefined>>();
+   private iconFallbackAt = 0;
    private readonly recorder: SourceRecorder;
    private readonly ownWindow: () => string;
    private readonly onChange: (sources: CaptureSource[]) => void;
@@ -55,11 +57,11 @@ export class CaptureSources {
       // Discovery needs identities, not captured images. Run the independent
       // enumerations together, and fetch Windows executable icons afterwards.
       const [nativeWindows, list] = await Promise.all([
-         process.platform === "win32" ? this.recorder.capturableApplications() : Promise.resolve([]),
+         process.platform === "win32" ? this.recorder.capturableApplications() : this.recorder.applicationCandidates().catch(() => []),
          desktopCapturer.getSources({
             types: ["screen", "window"],
             thumbnailSize: { width: 0, height: 0 },
-            fetchWindowIcons: process.platform !== "win32",
+            fetchWindowIcons: true,
          }),
       ]);
       const previous = new Map(this.cached.map((source) => [source.id, source]));
@@ -99,6 +101,7 @@ export class CaptureSources {
             }
             return {
                ...(applicationId ? { applicationId } : {}),
+               ...(candidate?.executable ? { applicationName: candidate.gameName ?? executableLabel(candidate.executable) } : {}),
                ...(appIcon ? { appIcon } : {}),
                id: s.id,
                name: s.name,
@@ -120,7 +123,33 @@ export class CaptureSources {
             };
          });
       if (process.platform === "win32") this.hydrateIcons(nativeWindows);
+      this.hydrateNames(nativeWindows);
       return this.cached;
+   }
+   private hydrateNames(candidates: GameCandidate[]): void {
+      void Promise.all(
+         candidates
+            .filter((candidate) => candidate.executable)
+            .map(
+               async (candidate) =>
+                  [
+                     createHash("sha256")
+                        .update(process.platform === "win32" ? candidate.executable.toLowerCase() : candidate.executable)
+                        .digest("hex"),
+                     candidate.gameName ?? (await applicationLabel(candidate.executable)),
+                  ] as const
+            )
+      ).then((entries) => {
+         const names = new Map(entries);
+         let changed = false;
+         this.cached = this.cached.map((source) => {
+            const name = source.applicationId ? names.get(source.applicationId) : undefined;
+            if (!name || name === source.applicationName) return source;
+            changed = true;
+            return { ...source, applicationName: name };
+         });
+         if (changed) this.onChange(this.cached);
+      });
    }
    private async loadThumbnails(): Promise<CaptureSource[]> {
       if (this.cached.some((source) => source.id.startsWith("portal:")) || (process.platform === "linux" && process.env["WAYLAND_DISPLAY"])) return this.cached;
@@ -154,7 +183,7 @@ export class CaptureSources {
             let icon = this.icons.get(executable);
             if (!icon) {
                icon = app
-                  .getFileIcon(candidate.executable, { size: "small" })
+                  .getFileIcon(candidate.executable, { size: "normal" })
                   .then((image) => {
                      if (image.isEmpty()) return undefined;
                      const value = image.resize({ width: 32, height: 32 }).toDataURL();
@@ -162,20 +191,49 @@ export class CaptureSources {
                   })
                   .catch(() => undefined);
                this.icons.set(executable, icon);
+               void icon.then((value) => {
+                  if (!value) {
+                     const timer = setTimeout(() => this.icons.delete(executable), 30_000);
+                     timer.unref();
+                  }
+               });
                while (this.icons.size > 128) this.icons.delete(this.icons.keys().next().value!);
             }
             return [createHash("sha256").update(executable).digest("hex"), await icon] as const;
          })
-      ).then((entries) => {
+      ).then(async (entries) => {
          const icons = new Map(entries);
          let changed = false;
          this.cached = this.cached.map((source) => {
             const appIcon = source.applicationId ? icons.get(source.applicationId) : undefined;
-            if (!appIcon || appIcon === source.appIcon) return source;
+            if (source.appIcon || !appIcon) return source;
             changed = true;
             return { ...source, appIcon };
          });
          if (changed) this.onChange(this.cached);
+         if (this.cached.some((source) => source.kind === "app" && !source.appIcon) && Date.now() - this.iconFallbackAt >= 15_000) {
+            this.iconFallbackAt = Date.now();
+            const windows = await desktopCapturer
+               .getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: true })
+               .catch(() => []);
+            const fallback = new Map(windows.map((window) => [window.id.split(":")[1], window]));
+            const identities = new Map(candidates.map((candidate) => [candidate.id.split(":")[1], candidate.pid]));
+            let recovered = false;
+            this.cached = this.cached.map((source) => {
+               if (source.appIcon || source.processId !== identities.get(source.id.split(":")[1])) return source;
+               const icon = fallback.get(source.id.split(":")[1])?.appIcon;
+               if (!icon || icon.isEmpty()) return source;
+               try {
+                  const value = icon.resize({ width: 32, height: 32 }).toDataURL();
+                  if (value.length > 45000) return source;
+                  recovered = true;
+                  return { ...source, appIcon: value };
+               } catch {
+                  return source;
+               }
+            });
+            if (recovered) this.onChange(this.cached);
+         }
       });
    }
    async preview(id: string): Promise<DesktopCapturerSource[]> {

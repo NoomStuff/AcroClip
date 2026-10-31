@@ -168,9 +168,9 @@
    color: var(--text);
    transition:
       transform 260ms var(--spring),
-      background 180ms var(--ease),
-      color 180ms var(--ease),
-      opacity 180ms var(--ease);
+      background-color 380ms var(--ease),
+      color 320ms var(--ease),
+      opacity 320ms var(--ease);
 }
 .capture-actions > button > svg {
    width: 64px;
@@ -199,13 +199,13 @@
 }
 .record-action.is-recording {
    color: var(--red);
-   background: #241a1e;
+   background-color: color-mix(in srgb, var(--red) 10%, var(--surface));
 }
 .record-action > span {
    color: var(--text);
 }
 .record-action.is-recording:hover:not(:disabled) {
-   background: #302024;
+   background-color: color-mix(in srgb, var(--red) 17%, var(--surface));
 }
 .clip-action {
    color: var(--accent);
@@ -254,8 +254,14 @@
 }
 
 .source-list {
-   padding-top: 13px;
+   margin-top: 13px;
    flex: 0 0 auto;
+}
+.capture-source-content {
+   display: flex;
+   flex-direction: column;
+   flex: 1;
+   min-height: 0;
 }
 
 .source-loading {
@@ -306,6 +312,9 @@
    color: var(--muted);
    margin-bottom: 4px;
    font-size: 14px;
+   transition:
+      background-color 240ms var(--ease),
+      color 240ms var(--ease);
 }
 
 .source-row:hover {
@@ -318,20 +327,11 @@
    color: var(--accent);
 }
 
-.source-row span {
+.source-row > span {
    overflow: hidden;
    text-overflow: ellipsis;
    white-space: nowrap;
    font-size: 12px;
-}
-
-.source-selected {
-   width: 5px;
-   height: 5px;
-   background: var(--accent);
-   margin-left: auto;
-   border-radius: 50%;
-   flex-shrink: 0;
 }
 
 .source-empty {
@@ -574,6 +574,10 @@
 }
 .mixer-gain-value:focus-within {
    border-color: var(--accent);
+   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+:root[data-keyboard] .mixer-gain-value input:focus-visible {
+   outline: none;
 }
 .mixer-gain-value input {
    width: 100%;
@@ -733,4 +737,15 @@
    width: fit-content;
    margin: auto;
    font-size: 12px;
+}
+
+.source-list > .selection-indicator {
+   transition: background-color 220ms;
+}
+@media (prefers-reduced-motion: reduce) {
+   .record-action,
+   .clip-action,
+   .source-row {
+      transition: none;
+   }
 }

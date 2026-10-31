@@ -43,7 +43,7 @@ export function FolderPicker({
             <span title={path}>{path || "No folder selected"}</span>
          )}
          <Button data-choose-folder onClick={onChoose}>
-            Choose folder
+            Choose collection folder
          </Button>
       </div>
    );

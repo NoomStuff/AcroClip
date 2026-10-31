@@ -305,3 +305,31 @@
 .titlebar > .update-chip-wrap {
    margin-right: 16px;
 }
+
+.buffer-ring {
+   width: 20px;
+   height: 20px;
+   flex-shrink: 0;
+   transform: rotate(-90deg);
+   transform-origin: center;
+   transform-box: view-box;
+}
+.buffer-ring-fill {
+   transition: stroke-dashoffset 1s linear;
+}
+.buffer-ring.rolling {
+   animation: buffer-roll 60s linear 1s infinite;
+}
+@keyframes buffer-roll {
+   to {
+      transform: rotate(270deg);
+   }
+}
+@media (prefers-reduced-motion: reduce) {
+   .buffer-ring-fill {
+      transition: none;
+   }
+   .buffer-ring.rolling {
+      animation: none;
+   }
+}

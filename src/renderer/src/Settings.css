@@ -287,6 +287,7 @@
    min-width: 180px;
 }
 .settings-body .settings-toggle > .toggle-row {
+   align-items: center;
    flex: 1;
    padding: 0;
    min-height: 0;

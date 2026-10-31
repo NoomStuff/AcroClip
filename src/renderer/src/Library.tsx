@@ -1,12 +1,46 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
-import { AlertCircle, Check, Folder, FolderOpen, Grid2X2, List, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import type { CSSProperties, DragEvent } from "react";
+import {
+   AlertCircle,
+   Folder,
+   FolderInput,
+   FolderOpen,
+   FolderPlus,
+   Grid2X2,
+   List,
+   MoreHorizontal,
+   Pencil,
+   Plus,
+   Search,
+   Trash2,
+   X,
+   ZoomIn,
+   ZoomOut,
+} from "lucide-react";
 import type { AppState, Category, Clip } from "../../shared/types";
-import { DialogPanel } from "./Dialog";
 import type { Ask } from "./Dialog";
+import { clipDragType, readCollectionDrag } from "./clip-drag";
+import { useThumbnailSize } from "./useThumbnailSize";
+import { gridZoomTarget } from "./thumbnail-scale";
+import { Slider } from "./Slider";
 import { SelectionIndicator } from "./SelectionIndicator";
+import { MotionList } from "./MotionList";
 import { ContextHeader, Button, Empty, IconButton, Menu, MenuItem, Select } from "./ui";
-import { api } from "./desktop";
+import { api, reportFeedback } from "./desktop";
+import { MoveDialog } from "./MoveDialog";
+import { initialLocation, reportLocation } from "./navigation-history";
+import type { NavigationLocation } from "./navigation-history";
+
+function readThumbnailSize(view: "grid" | "list"): number {
+   const fallback = view === "grid" ? 300 : 128;
+   try {
+      const stored = localStorage.getItem(`acroclip.library.scale.${view}`);
+      const value = stored === null ? fallback : Number(stored);
+      return Number.isFinite(value) ? Math.max(view === "grid" ? 220 : 80, Math.min(view === "grid" ? 440 : 192, value)) : fallback;
+   } catch {
+      return fallback;
+   }
+}
 import { age, folderName, formatSize } from "./format";
 import type { Run } from "./desktop";
 import { ApplicationIcon } from "./ApplicationIcon";
@@ -19,7 +53,7 @@ import { PaneDivider, usePaneSize } from "./layout";
 import { useApplicationColors } from "./useApplicationColors";
 import type { ContextMenuRequest } from "./ui";
 import { useAttaCutAvailable } from "./useAttaCutAvailable";
-import { summarizeClips } from "./library-index";
+import { applicationKeys, summarizeClips } from "./library-index";
 
 export function Library({
    state,
@@ -46,6 +80,29 @@ export function Library({
          return "grid";
       }
    });
+   const [gridMetrics, setGridMetrics] = useState({ width: 0, gap: 18 });
+   const [thumbnailSizes, setThumbnailSizes] = useState(() => ({ grid: readThumbnailSize("grid"), list: readThumbnailSize("list") }));
+   const listSizing = useThumbnailSize(layout, thumbnailSizes.list, visible && view === "list");
+   const resizeThumbnails = (size: number) => {
+      const next = Math.max(view === "grid" ? 220 : 80, Math.min(view === "grid" ? 440 : 192, size));
+      setThumbnailSizes((current) => ({ ...current, [view]: next }));
+      try {
+         localStorage.setItem(`acroclip.library.scale.${view}`, String(next));
+      } catch {
+         /* Scaling still works without storage. */
+      }
+   };
+   const smallerGridSize = gridZoomTarget(gridMetrics.width, gridMetrics.gap, thumbnailSizes.grid, -1);
+   const largerGridSize = gridZoomTarget(gridMetrics.width, gridMetrics.gap, thumbnailSizes.grid, 1);
+   const stepThumbnails = (direction: -1 | 1) => {
+      if (view === "grid") {
+         const target = direction > 0 ? largerGridSize : smallerGridSize;
+         if (target !== null) resizeThumbnails(target);
+         return;
+      }
+      const position = (thumbnailSizes.list - 80) / 16;
+      resizeThumbnails(80 + (direction > 0 ? Math.floor(position) + 1 : Math.ceil(position) - 1) * 16);
+   };
    useEffect(() => {
       try {
          localStorage.setItem("acroclip.library.view", view);
@@ -60,17 +117,21 @@ export function Library({
          if (!entry || entry.contentRect.width < 1) return;
          const { width, height } = entry.contentRect;
          if (view === "list") {
-            setPlaceholderCount(Math.min(24, Math.max(1, Math.ceil(height / 82))));
+            setGridMetrics((current) => (current.width === width ? current : { ...current, width }));
+            setPlaceholderCount(Math.min(24, Math.max(1, Math.ceil(height / ((thumbnailSizes.list * 9) / 16 + 20)))));
             return;
          }
-         const columns = Math.max(1, Math.floor((width + 18) / 248));
-         const cardHeight = Math.max(205, (((width - (columns - 1) * 18) / columns) * 9) / 16 + 68);
-         setPlaceholderCount(Math.min(24, columns * Math.max(1, Math.ceil(height / (cardHeight + 18)))));
+         const gridElement = node.querySelector<HTMLElement>(".clip-grid");
+         const gap = gridElement ? Number.parseFloat(getComputedStyle(gridElement).columnGap) || 0 : 18;
+         setGridMetrics((current) => (current.width === width && current.gap === gap ? current : { width, gap }));
+         const columns = Math.max(1, Math.floor((width + gap) / (thumbnailSizes.grid + gap)));
+         const cardHeight = Math.max(205, (((width - (columns - 1) * gap) / columns) * 9) / 16 + 68);
+         setPlaceholderCount(Math.min(24, columns * Math.max(1, Math.ceil(height / (cardHeight + gap)))));
       });
       observer.observe(node);
       return () => observer.disconnect();
-   }, [visible, view]);
-   const sidebar = usePaneSize(layout, { key: "library.sidebar", initial: 245, min: 200, max: 380, reserve: 440, axis: "x" });
+   }, [visible, view, thumbnailSizes]);
+   const sidebar = usePaneSize(layout, { key: "library.sidebar", initial: 275, min: 200, max: 400, reserve: 440, axis: "x" });
    const pending = state.collectionStatus.phase === "loading" || state.collectionStatus.phase === "refreshing";
    const unavailable = state.collectionStatus.phase === "error";
    const initial = state.collectionStatus.phase === "loading" && !state.clips.length;
@@ -100,13 +161,23 @@ export function Library({
    }, [visible]);
    const search = query.toLowerCase();
    const summary = useMemo(() => summarizeClips(state.clips), [state.clips]);
+   const appKeys = useMemo(() => applicationKeys(state.clips), [state.clips]);
    const activeJobs = useMemo(() => {
       const result = new Map<string, AppState["jobs"][number]>();
       for (const job of state.jobs)
          if (job.kind === "shareable" && ["running", "queued"].includes(job.state) && !result.has(job.clipId)) result.set(job.clipId, job);
       return result;
    }, [state.jobs]);
-   const [filter, setFilter] = useState("all");
+   const [filter, setFilter] = useState(() => initialLocation("library", "all"));
+   useEffect(() => reportLocation("library", filter), [filter]);
+   useEffect(() => {
+      const restore = (event: Event) => setFilter((event as CustomEvent<NavigationLocation>).detail.library);
+      window.addEventListener("acroclip-restore-location", restore);
+      return () => window.removeEventListener("acroclip-restore-location", restore);
+   }, []);
+   const [moveRequest, setMoveRequest] = useState<{ kind: "clip"; id: string } | { kind: "folder"; path: string } | null>(null);
+   const [folderContext, setFolderContext] = useState<(ContextMenuRequest & { path: string; origin: "tree" | "tile" }) | null>(null);
+   const moveClip = useCallback((id: string) => setMoveRequest({ kind: "clip", id }), []);
    const [order, setOrder] = useState("newest");
    const applicationColors = useApplicationColors(state.applicationIcons, visible);
    const selectedApplicationColor = filter.startsWith("source:") ? applicationColors[filter.slice(7)] : undefined;
@@ -116,30 +187,22 @@ export function Library({
       setContextMenu({ clipId, left, top, restoreFocus: element.querySelector("button") ?? element });
    }, []);
    const closeMenu = useCallback((clipId: string) => setContextMenu((current) => (current?.clipId === clipId ? null : current)), []);
+   const previousCollection = useRef(collectionRoot);
    useEffect(() => {
+      if (previousCollection.current === collectionRoot) return;
+      previousCollection.current = collectionRoot;
       setFilter("all");
       setQuery("");
    }, [collectionRoot]);
-   const [categoryClip, setCategoryClip] = useState<Clip | null>(null);
-   const categoryEdit = useRef<{ clip: Clip; persisted: string[]; pending: Promise<void> } | null>(null);
-   const openCategories = useCallback((clip: Clip) => {
-      categoryEdit.current = { clip, persisted: clip.categories, pending: Promise.resolve() };
-      setCategoryClip(clip);
-   }, []);
-   const closeCategories = () => {
-      categoryEdit.current = null;
-      setCategoryClip(null);
-   };
    const sources = useMemo(() => {
       const apps = new Map<string, { id: string; name: string; icon?: string | undefined }>();
       for (const clip of state.clips)
          if (clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown") {
-            const id = clip.applicationId ?? `label:${clip.source}`;
-            if (!apps.has(id))
-               apps.set(id, { id, name: clip.source.trim(), icon: clip.applicationId ? state.applicationIcons[clip.applicationId] : undefined });
+            const id = appKeys.get(clip.id)!;
+            if (!apps.has(id)) apps.set(id, { id, name: clip.source.trim(), icon: state.applicationIcons[id] });
          }
       return [...apps.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-   }, [state.clips, state.applicationIcons]);
+   }, [state.clips, state.applicationIcons, appKeys]);
    useEffect(() => {
       if (filter.startsWith("source:") && !sources.some((source) => `source:${source.id}` === filter)) setFilter("all");
       if (filter.startsWith("category:") && !state.categories.some((category) => `category:${category.id}` === filter)) setFilter("all");
@@ -153,18 +216,54 @@ export function Library({
       }
       return [...found].sort((a, b) => a.localeCompare(b));
    }, [state.folders, state.clips]);
+   useEffect(() => {
+      if (state.collectionStatus.phase !== "ready" || folderPath === null || !folderPath || folders.includes(folderPath)) return;
+      let parent = folderPath;
+      do {
+         parent = parent.includes("/") ? parent.slice(0, parent.lastIndexOf("/")) : "";
+      } while (parent && !folders.includes(parent));
+      reportLocation("library", `folder:${parent}`, true);
+      setFilter(`folder:${parent}`);
+   }, [folderPath, folders, state.collectionStatus.phase]);
+   const folderDropProps = (destination: string) => ({
+      onDragOver: (event: DragEvent<HTMLElement>) => {
+         if (!event.dataTransfer.types.includes(clipDragType)) return;
+         event.preventDefault();
+         event.stopPropagation();
+         event.dataTransfer.dropEffect = "move";
+         event.currentTarget.classList.add("clip-drop-active");
+      },
+      onDragLeave: (event: DragEvent<HTMLElement>) => {
+         if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget))
+            event.currentTarget.classList.remove("clip-drop-active");
+      },
+      onDrop: (event: DragEvent<HTMLElement>) => {
+         event.currentTarget.classList.remove("clip-drop-active");
+         if (!event.dataTransfer.types.includes(clipDragType)) return;
+         event.preventDefault();
+         event.stopPropagation();
+         const id = readCollectionDrag(event.dataTransfer.getData(clipDragType), collectionRoot);
+         if (!id || !state.clips.some((clip) => clip.id === id && !clip.originalMissing)) return;
+         void run(async () => {
+            const moved = await api.moveClip(id, destination);
+            reportFeedback({ kind: "notice", message: moved ? "Clip moved" : "Clip is already in this folder", error: false });
+         });
+      },
+   });
    const folderStats = useMemo(() => {
-      const result = new Map<string, { newest: number; oldest: number; matches: boolean }>();
+      const result = new Map<string, { newest: number; oldest: number; matches: boolean; count: number; matchingCount: number }>();
       for (const clip of state.clips) {
          const parts = clip.relativePath.replaceAll("\\", "/").split("/");
          const matches = !search || `${clip.name} ${clip.source}`.toLowerCase().includes(search);
-         for (let i = 1; i < parts.length; i++) {
+         for (let i = 0; i < parts.length; i++) {
             const path = parts.slice(0, i).join("/"),
                previous = result.get(path);
             result.set(path, {
                newest: Math.max(previous?.newest ?? 0, clip.createdAt),
                oldest: Math.min(previous?.oldest ?? Infinity, clip.createdAt),
                matches: (previous?.matches ?? false) || matches,
+               count: (previous?.count ?? 0) + 1,
+               matchingCount: (previous?.matchingCount ?? 0) + (matches ? 1 : 0),
             });
          }
       }
@@ -197,16 +296,17 @@ export function Library({
                   (!search || `${item.name} ${item.source}`.toLowerCase().includes(search)) &&
                   (filter === "all" ||
                      (filter.startsWith("category:") && item.categories.includes(filter.slice(9))) ||
-                     (filter.startsWith("source:") && (item.applicationId ?? `label:${item.source}`) === filter.slice(7)) ||
+                     (filter.startsWith("source:") && appKeys.get(item.id) === filter.slice(7)) ||
                      (folderPath !== null && item.relativePath.replaceAll("\\", "/").split("/").slice(0, -1).join("/") === folderPath))
             )
             .sort((a, b) => (order === "name" ? a.name.localeCompare(b.name) : order === "oldest" ? a.createdAt - b.createdAt : b.createdAt - a.createdAt)),
-      [state.clips, search, filter, folderPath, order]
+      [state.clips, search, filter, folderPath, order, appKeys]
    );
    useEffect(() => {
       if (contextMenu && !clips.some((clip) => clip.id === contextMenu.clipId)) setContextMenu(null);
    }, [clips, contextMenu]);
    const selectedCategory = state.categories.find((item) => `category:${item.id}` === filter);
+   const headingClipCount = folderPath !== null ? (folderStats.get(folderPath)?.matchingCount ?? 0) : clips.length;
    const discovering = state.collectionStatus.phase === "loading";
    const discovery = state.collectionStatus.discovery;
    const discoveredCount =
@@ -219,7 +319,14 @@ export function Library({
    const remainingSlots = discovering && !query && discoveredCount !== undefined ? Math.max(0, discoveredCount - clips.length) : 0;
    const showPlaceholders = discovering && !clips.length && !childFolders.length && !query;
    const grid = useRef<HTMLDivElement>(null);
-   useGridMotion(grid, JSON.stringify([collectionRoot, view, childFolders, clips.map((clip) => clip.id)]), visible);
+   const captureLayout = useGridMotion(
+      grid,
+      JSON.stringify([view, gridMetrics.width, thumbnailSizes[view], childFolders, clips.map((clip) => clip.id)]),
+      visible,
+      JSON.stringify([collectionRoot, filter]),
+      view,
+      view === "list" && listSizing
+   );
    const heading =
       filter === "all"
          ? "All clips"
@@ -228,44 +335,86 @@ export function Library({
            : (selectedCategory?.name ?? sources.find((source) => `source:${source.id}` === filter)?.name ?? filter.slice(filter.indexOf(":") + 1));
    const [editingCategory, setEditingCategory] = useState<Category | "new" | null>(null);
    const createCategory = () => setEditingCategory("new");
-   useEffect(() => {
-      const command = (event: Event) => {
-         const id = (event as CustomEvent<string>).detail;
-         if (id === "search") layout.current?.querySelector<HTMLInputElement>('input[aria-label="Search clips"]')?.focus();
-         else if (id === "newCategory") setEditingCategory("new");
-         else if (id === "openClip" && clips[0]) openClip(clips[0]);
-      };
-      window.addEventListener("acroclip-shortcut", command);
-      return () => window.removeEventListener("acroclip-shortcut", command);
-   }, [clips, openClip, run]);
    const removeCategory = async (id: string, name: string) => {
       if (
          await ask({
             title: `Delete ${name}?`,
-            detail: "Deletes the category without deleting its clips or shareables.",
-            confirm: "Delete category",
+            detail: "Deletes the tag. Clips and shareables are kept.",
+            confirm: "Delete tag",
             danger: true,
          })
       ) {
          if (await run(() => api.category("delete", { id }))) setFilter("all");
       }
    };
-   const assign = (id: string) => {
-      const edit = categoryEdit.current;
-      if (!edit) return;
-      const ids = edit.clip.categories.includes(id) ? edit.clip.categories.filter((item) => item !== id) : [...edit.clip.categories, id];
-      edit.clip = { ...edit.clip, categories: ids };
-      setCategoryClip(edit.clip);
-      // Keep accepted selections ordered even if the dialog closes before disk writes finish.
-      edit.pending = edit.pending.then(async () => {
-         if (await run(() => api.category("assign", { clipId: edit.clip.id, categoryIds: ids }))) {
-            edit.persisted = ids;
-         } else if (categoryEdit.current === edit && edit.clip.categories === ids) {
-            edit.clip = { ...edit.clip, categories: edit.persisted };
-            setCategoryClip(edit.clip);
+   const followFolder = (previous: string, next: string) => {
+      if (folderPath === previous || folderPath?.startsWith(`${previous}/`)) setFilter(`folder:${next}${folderPath.slice(previous.length)}`);
+   };
+   const createFolder = useCallback(
+      async (parent: string) => {
+         const name = await ask({ title: "New folder", initial: "", confirm: "Create" });
+         if (typeof name !== "string" || !name) return;
+         await run(async () => {
+            setFilter(`folder:${await api.createFolder(parent, name)}`);
+         });
+      },
+      [ask, run]
+   );
+   useEffect(() => {
+      const command = (event: Event) => {
+         const id = (event as CustomEvent<string>).detail;
+         if (id === "search") layout.current?.querySelector<HTMLInputElement>('input[aria-label="Search clips"]')?.focus();
+         else if (id === "newCategory") setEditingCategory("new");
+         else if (id === "newFolder") void createFolder(folderPath ?? "");
+         else if (id === "newFolderRoot") void createFolder("");
+         else if (id === "openClip" && clips[0]) openClip(clips[0]);
+      };
+      window.addEventListener("acroclip-shortcut", command);
+      return () => window.removeEventListener("acroclip-shortcut", command);
+   }, [clips, openClip, createFolder, folderPath]);
+   const renameFolder = async (path: string) => {
+      const name = await ask({ title: "Rename folder", initial: path.split("/").at(-1)!, confirm: "Rename" });
+      if (typeof name !== "string" || !name) return;
+      await run(async () => followFolder(path, await api.renameFolder(path, name)));
+   };
+   const deleteFolder = (path: string) =>
+      run(async () => {
+         if (await api.deleteFolder(path)) {
+            if (folderPath === path || folderPath?.startsWith(`${path}/`)) setFilter(`folder:${path.split("/").slice(0, -1).join("/")}`);
          }
       });
-   };
+   const requestFolderMenu = (path: string, origin: "tree" | "tile", element: HTMLElement, left: number, top: number) =>
+      setFolderContext({ path, origin, left, top, restoreFocus: element });
+   const folderMenu = (path: string, origin: "tree" | "tile" | "heading") => (
+      <Menu
+         label={origin === "heading" ? "Folder actions" : `Actions for folder ${path}`}
+         trigger={<MoreHorizontal size={16} />}
+         contextRequest={folderContext?.path === path && folderContext.origin === origin ? folderContext : undefined}
+         onContextClose={() => setFolderContext((current) => (current?.path === path && current.origin === origin ? null : current))}
+      >
+         <MenuItem onClick={() => void createFolder(path)}>
+            <FolderPlus size={15} />
+            New folder
+         </MenuItem>
+         {path && (
+            <>
+               <MenuItem onClick={() => void renameFolder(path)}>
+                  <Pencil size={15} />
+                  Rename folder
+               </MenuItem>
+               <MenuItem onClick={() => setMoveRequest({ kind: "folder", path })}>
+                  <FolderInput size={15} />
+                  Move to folder
+               </MenuItem>
+               <div className="menu-separator" role="separator" />
+               <MenuItem danger onClick={() => void deleteFolder(path)}>
+                  <Trash2 size={15} />
+                  Delete folder
+               </MenuItem>
+            </>
+         )}
+      </Menu>
+   );
    return (
       <div className="library-page" ref={layout}>
          <aside
@@ -279,26 +428,28 @@ export function Library({
                     : {}),
             }}
          >
-            <ContextHeader
-               className="collection-home"
-               label="Collection"
-               title={folderName(collectionRoot)}
-               icon={<Folder size={17} />}
-               hint={collectionRoot}
-               onTitleClick={() => setFilter("folder:")}
-               actions={
-                  <Menu label="Collection actions" trigger={<MoreHorizontal size={17} />}>
-                     <MenuItem onClick={() => void run(() => api.reveal(collectionRoot))}>
-                        <FolderOpen size={15} />
-                        Show in file manager
-                     </MenuItem>
-                     <MenuItem onClick={openSettings}>
-                        <Folder size={15} />
-                        Choose folder in settings
-                     </MenuItem>
-                  </Menu>
-               }
-            />
+            <div className="collection-drop" {...folderDropProps("")}>
+               <ContextHeader
+                  className="collection-home"
+                  label="Collection"
+                  title={folderName(collectionRoot)}
+                  icon={<Folder size={17} />}
+                  hint={collectionRoot}
+                  onTitleClick={() => setFilter("folder:")}
+                  actions={
+                     <Menu label="Collection actions" trigger={<MoreHorizontal size={17} />}>
+                        <MenuItem onClick={() => void run(() => api.reveal(collectionRoot))}>
+                           <FolderOpen size={15} />
+                           Show in file manager
+                        </MenuItem>
+                        <MenuItem onClick={openSettings}>
+                           <Folder size={15} />
+                           Choose collection folder
+                        </MenuItem>
+                     </Menu>
+                  }
+               />
+            </div>
             <div className="sidebar-scroll moving-selection">
                <SelectionIndicator value={filter} />
                <button className={`sidebar-item ${filter === "all" ? "selected" : ""}`} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>
@@ -307,79 +458,94 @@ export function Library({
                   <span className="count">{initial ? "" : state.clips.length}</span>
                </button>
                <div className="sidebar-group-title">
-                  <span>Categories</span>
-                  <IconButton label="New category" onClick={() => void createCategory()}>
+                  <span>Tags</span>
+                  <IconButton label="New tag" onClick={() => void createCategory()}>
                      <Plus size={16} />
                   </IconButton>
                </div>
-               {state.categories.map((item) => (
-                  <div
-                     className="category-item"
-                     key={item.id}
-                     onContextMenu={(event) => {
-                        event.preventDefault();
-                        setCategoryContextMenu({
-                           categoryId: item.id,
-                           left: event.clientX,
-                           top: event.clientY,
-                           restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
-                        });
-                     }}
-                  >
-                     <button
-                        className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`}
-                        aria-pressed={filter === `category:${item.id}`}
-                        style={categoryStyle(item.color)}
-                        onClick={() => setFilter(`category:${item.id}`)}
+               <MotionList items={state.categories} identity={collectionRoot} onReorder={(id, beforeId) => run(() => api.reorderCategory(id, beforeId))}>
+                  {(item) => (
+                     <div
+                        className="category-item"
+                        key={item.id}
+                        onContextMenu={(event) => {
+                           event.preventDefault();
+                           setCategoryContextMenu({
+                              categoryId: item.id,
+                              left: event.clientX,
+                              top: event.clientY,
+                              restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
+                           });
+                        }}
                      >
-                        <CategoryMark category={item} />
-                        <span className="sidebar-label" title={item.name}>
-                           {item.name}
-                        </span>
-                        <span className="count">{summary.categories.get(item.id) ?? 0}</span>
-                     </button>
-                     <Menu
-                        label={`Actions for ${item.name}`}
-                        trigger={<MoreHorizontal size={14} />}
-                        contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
-                        onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
-                     >
-                        <MenuItem onClick={() => setEditingCategory(item)}>
-                           <Pencil size={14} />
-                           Edit category
-                        </MenuItem>
-                        <div className="menu-separator" role="separator" />
-                        <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
-                           <Trash2 size={14} />
-                           Delete category
-                        </MenuItem>
-                     </Menu>
-                  </div>
-               ))}
+                        <button
+                           data-list-control=""
+                           className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`}
+                           aria-pressed={filter === `category:${item.id}`}
+                           style={categoryStyle(item.color)}
+                           onClick={() => setFilter(`category:${item.id}`)}
+                        >
+                           <CategoryMark category={item} />
+                           <span className="sidebar-label" title={item.name}>
+                              {item.name}
+                           </span>
+                           <span className="count">{summary.categories.get(item.id) ?? 0}</span>
+                        </button>
+                        <Menu
+                           label={`Actions for ${item.name}`}
+                           trigger={<MoreHorizontal size={14} />}
+                           contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
+                           onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
+                        >
+                           <MenuItem onClick={() => setEditingCategory(item)}>
+                              <Pencil size={14} />
+                              Edit tag
+                           </MenuItem>
+                           <div className="menu-separator" role="separator" />
+                           <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
+                              <Trash2 size={14} />
+                              Delete tag
+                           </MenuItem>
+                        </Menu>
+                     </div>
+                  )}
+               </MotionList>
                {sources.length > 0 && (
                   <>
                      <div className="sidebar-group-title">Applications</div>
-                     {sources.map((source) => (
-                        <button
-                           key={source.id}
-                           className={`sidebar-item application-filter ${filter === `source:${source.id}` ? "selected" : ""}`}
-                           style={{ "--application-color": applicationColors[source.id] } as CSSProperties}
-                           aria-pressed={filter === `source:${source.id}`}
-                           onClick={() => setFilter(`source:${source.id}`)}
-                        >
-                           <ApplicationIcon src={source.icon} size={16} />
-                           <span className="sidebar-label" title={source.name}>
-                              {source.name}
-                           </span>
-                        </button>
-                     ))}
+                     <MotionList items={sources} identity={collectionRoot}>
+                        {(source) => (
+                           <button
+                              key={source.id}
+                              className={`sidebar-item application-filter ${filter === `source:${source.id}` ? "selected" : ""}`}
+                              style={{ "--application-color": applicationColors[source.id] } as CSSProperties}
+                              aria-pressed={filter === `source:${source.id}`}
+                              onClick={() => setFilter(`source:${source.id}`)}
+                           >
+                              <ApplicationIcon src={source.icon} size={16} />
+                              <span className="sidebar-label" title={source.name}>
+                                 {source.name}
+                              </span>
+                           </button>
+                        )}
+                     </MotionList>
                   </>
                )}
+               <div className="sidebar-group-title">
+                  <span>Folders</span>
+                  <IconButton label="New collection folder" onClick={() => void createFolder("")}>
+                     <Plus size={16} />
+                  </IconButton>
+               </div>
                {folders.length > 0 && (
-                  <>
-                     <div className="sidebar-group-title">Folders</div>
-                     <FolderTree paths={folders} selected={folderPath} onSelect={(path) => setFilter(`folder:${path}`)} />
-                  </>
+                  <FolderTree
+                     dropProps={folderDropProps}
+                     paths={folders}
+                     selected={folderPath}
+                     onSelect={(path) => setFilter(`folder:${path}`)}
+                     renderActions={(path) => folderMenu(path, "tree")}
+                     requestMenu={(path, element, left, top) => requestFolderMenu(path, "tree", element, left, top)}
+                  />
                )}
             </div>
             <div className="sidebar-bottom">
@@ -393,10 +559,13 @@ export function Library({
             </div>
          </aside>
          <PaneDivider label="Library sidebar width" pane={sidebar} />
-         <div className="library-content">
+         <div className="library-content" style={{ "--grid-thumbnail-size": `${thumbnailSizes.grid}px` } as CSSProperties}>
             <header className="library-heading">
                <div>
-                  <h1>{heading}</h1>
+                  <div className="library-title-line">
+                     <h1>{heading}</h1>
+                     {folderPath !== null && folderMenu(folderPath, "heading")}
+                  </div>
                   <p>
                      {childFolders.length > 0 && `${childFolders.length} ${childFolders.length === 1 ? "folder" : "folders"} · `}
                      {discovering && discovery && discoveredCount !== undefined ? (
@@ -405,7 +574,7 @@ export function Library({
                         <span aria-hidden="true">&nbsp;</span>
                      ) : (
                         <>
-                           {clips.length} {clips.length === 1 ? "clip" : "clips"}
+                           {headingClipCount} {headingClipCount === 1 ? "clip" : "clips"}
                         </>
                      )}
                   </p>
@@ -442,10 +611,28 @@ export function Library({
                   </div>
                   <div className="library-view-switch moving-selection" role="group" aria-label="Library view">
                      <SelectionIndicator value={view} selector={'button[aria-pressed="true"]'} />
-                     <IconButton label="Grid view" aria-pressed={view === "grid"} onClick={() => setView("grid")}>
+                     <IconButton
+                        label="Grid view"
+                        aria-pressed={view === "grid"}
+                        onClick={() => {
+                           if (view !== "grid") {
+                              captureLayout();
+                              setView("grid");
+                           }
+                        }}
+                     >
                         <Grid2X2 size={16} />
                      </IconButton>
-                     <IconButton label="List view" aria-pressed={view === "list"} onClick={() => setView("list")}>
+                     <IconButton
+                        label="List view"
+                        aria-pressed={view === "list"}
+                        onClick={() => {
+                           if (view !== "list") {
+                              captureLayout();
+                              setView("list");
+                           }
+                        }}
+                     >
                         <List size={18} />
                      </IconButton>
                   </div>
@@ -482,25 +669,46 @@ export function Library({
                ) : clips.length || childFolders.length ? (
                   <div className="clip-grid" data-view={view} ref={grid}>
                      {childFolders.map((path) => (
-                        <article className="clip-card folder-card" key={`folder:${path}`} data-layout-key={`folder:${path}`}>
+                        <article
+                           className="clip-card folder-card"
+                           {...folderDropProps(path)}
+                           key={`folder:${path}`}
+                           data-layout-key={`folder:${path}`}
+                           onContextMenu={(event) => {
+                              event.preventDefault();
+                              requestFolderMenu(path, "tile", event.currentTarget.querySelector("button")!, event.clientX, event.clientY);
+                           }}
+                           onKeyDown={(event) => {
+                              if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              const bounds = event.currentTarget.getBoundingClientRect();
+                              requestFolderMenu(path, "tile", event.currentTarget.querySelector("button")!, bounds.left + 20, bounds.top + 30);
+                           }}
+                        >
                            <button className="clip-open" aria-label={`Open folder ${path}`} onClick={() => setFilter(`folder:${path}`)}>
                               <div className="clip-thumbnail">
                                  <Folder size={58} />
                               </div>
                               <div className="clip-card-info">
-                                 <strong>{path.split("/").at(-1)}</strong>
+                                 <h3 title={path.split("/").at(-1)}>{path.split("/").at(-1)}</h3>
+                                 <p title="Includes clips in subfolders">
+                                    {folderStats.get(path)?.count ?? 0} {(folderStats.get(path)?.count ?? 0) === 1 ? "clip" : "clips"}
+                                 </p>
                               </div>
                            </button>
+                           <div className="card-menu">{folderMenu(path, "tile")}</div>
                         </article>
                      ))}
                      {clips.map((clip) => (
                         <ClipCard
                            key={clip.id}
                            clip={clip}
+                           collectionRoot={collectionRoot}
                            ageText={age(clip.createdAt)}
                            job={activeJobs.get(clip.id)}
-                           applicationColor={clip.applicationId ? applicationColors[clip.applicationId] : undefined}
-                           appIcon={clip.applicationId ? state.applicationIcons[clip.applicationId] : undefined}
+                           applicationColor={applicationColors[appKeys.get(clip.id) ?? ""]}
+                           appIcon={state.applicationIcons[appKeys.get(clip.id) ?? ""]}
                            showSource={!filter.startsWith("source:")}
                            shareSizeMB={state.preferences.shareSizeMB}
                            attaCutAvailable={attaCutAvailable}
@@ -508,7 +716,8 @@ export function Library({
                            requestMenu={requestMenu}
                            closeMenu={closeMenu}
                            openClip={openClip}
-                           openCategories={openCategories}
+                           categories={state.categories}
+                           moveClip={moveClip}
                            run={run}
                            ask={ask}
                         />
@@ -534,7 +743,7 @@ export function Library({
                            : folderPath !== null
                              ? "Put supported videos in this folder to see them here."
                              : selectedCategory
-                               ? "Add clips to this category using their actions menu."
+                               ? "Tag clips using their actions menu."
                                : filter.startsWith("source:")
                                  ? "Clips recorded from this application appear here."
                                  : "Save a clip while recording, or put supported videos into your collection folder."
@@ -560,34 +769,55 @@ export function Library({
                   </Empty>
                )}
             </div>
+            <div className="library-scale" role="group" aria-label="Thumbnail scale">
+               <IconButton
+                  label="Smaller thumbnails"
+                  onClick={() => stepThumbnails(-1)}
+                  disabled={view === "grid" ? smallerGridSize === null : thumbnailSizes.list <= 80}
+               >
+                  <ZoomOut size={15} />
+               </IconButton>
+               <Slider
+                  key={view}
+                  variant="compact"
+                  aria-label={`${view === "grid" ? "Grid" : "List"} thumbnail size`}
+                  min={view === "grid" ? 220 : 80}
+                  max={view === "grid" ? 440 : 192}
+                  step={1}
+                  value={thumbnailSizes[view]}
+                  onValueChange={resizeThumbnails}
+               />
+               <IconButton
+                  label="Larger thumbnails"
+                  onClick={() => stepThumbnails(1)}
+                  disabled={view === "grid" ? largerGridSize === null : thumbnailSizes.list >= 192}
+               >
+                  <ZoomIn size={15} />
+               </IconButton>
+            </div>
          </div>
+         {moveRequest && (
+            <MoveDialog
+               title={moveRequest.kind === "folder" ? `Move ${moveRequest.path.split("/").at(-1)}` : "Move clip"}
+               folders={folders}
+               initial={moveRequest.kind === "folder" ? moveRequest.path.split("/").slice(0, -1).join("/") : (folderPath ?? "")}
+               excluded={moveRequest.kind === "folder" ? moveRequest.path : undefined}
+               close={() => setMoveRequest(null)}
+               submit={async (destination) => {
+                  if (moveRequest.kind === "folder") {
+                     const next = await api.moveFolder(moveRequest.path, destination);
+                     if (next === null) return;
+                     followFolder(moveRequest.path, next);
+                     reportFeedback({ kind: "notice", message: "Folder moved", error: false });
+                  } else {
+                     const moved = await api.moveClip(moveRequest.id, destination);
+                     reportFeedback({ kind: "notice", message: moved ? "Clip moved" : "Clip is already in this folder", error: false });
+                  }
+               }}
+            />
+         )}
          {editingCategory && (
             <CategoryEditor category={editingCategory === "new" ? undefined : editingCategory} close={() => setEditingCategory(null)} run={run} />
-         )}
-         {categoryClip && (
-            <DialogPanel title="Categories" label="Clip categories" close={closeCategories} className="category-dialog" closeLabel="Close categories">
-               <p>{categoryClip.name}</p>
-               {state.categories.length ? (
-                  state.categories.map((item) => (
-                     <button
-                        key={item.id}
-                        className="category-option"
-                        aria-pressed={categoryClip.categories.includes(item.id)}
-                        style={categoryStyle(item.color)}
-                        onClick={() => void assign(item.id)}
-                     >
-                        <CategoryMark category={item} size={17} />
-                        {item.name}
-                        {categoryClip.categories.includes(item.id) && <Check size={17} />}
-                     </button>
-                  ))
-               ) : (
-                  <p>Create a category in the Library sidebar first.</p>
-               )}
-               <Button className="primary" onClick={closeCategories}>
-                  Done
-               </Button>
-            </DialogPanel>
          )}
       </div>
    );

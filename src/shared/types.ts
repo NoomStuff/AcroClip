@@ -3,8 +3,10 @@ export type SourceKind = "screen" | "app" | "auto";
 export interface ApplicationArtwork {
    id: string;
    icon: string;
+   name?: string;
 }
 export interface CaptureSource {
+   applicationName?: string;
    applicationId?: string;
    appIcon?: string;
    id: string;
@@ -221,6 +223,12 @@ export type AppEvent =
    | { type: "audio-levels"; levels: AudioLevels }
    | { type: "audio-monitor"; monitorError: string; listeningError?: string }
    | { type: "visibility"; visible: boolean };
+export interface FolderContents {
+   clips: number;
+   otherFiles: number;
+   folders: number;
+   fingerprint: string;
+}
 export interface DesktopAPI {
    state(): Promise<AppState>;
    sources(options?: { thumbnails?: boolean }): Promise<CaptureSource[]>;
@@ -240,15 +248,21 @@ export interface DesktopAPI {
    createShareable(clipId: string, targetMB?: number): Promise<void>;
    cancelJob(id: string): Promise<void>;
    renameClip(id: string, name: string): Promise<void>;
+   createFolder(parent: string, name: string): Promise<string>;
+   renameFolder(path: string, name: string): Promise<string>;
+   moveFolder(path: string, destination: string): Promise<string | null>;
+   deleteFolder(path: string): Promise<boolean>;
+   moveClip(id: string, destination: string): Promise<boolean>;
    deleteClip(id: string, shareableId?: string, scope?: "shareables"): Promise<void>;
    category(
-      action: "create" | "update" | "delete" | "assign",
+      action: "create" | "update" | "delete" | "assign" | "toggle",
       value: { id?: string; name?: string; color?: string; icon?: string; clipId?: string; categoryIds?: string[] }
    ): Promise<void>;
    reveal(path: string): Promise<void>;
    openInAttaCut(id: string): Promise<void>;
    attaCutAvailable(): Promise<boolean>;
    dragFile(path: string): void;
+   reorderCategory(id: string, beforeId: string | null): Promise<void>;
    playback(path: string, track?: number | number[]): Promise<string>;
    refresh(): Promise<void>;
    checkUpdate(): Promise<void>;

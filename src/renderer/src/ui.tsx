@@ -5,6 +5,9 @@ import { LoaderCircle } from "lucide-react";
 
 import { SelectionIndicator } from "./SelectionIndicator";
 import { DropdownSelect } from "./DropdownSelect";
+import { menuPosition } from "./menu-position";
+import { MenuFamilyContext } from "./MenuSubmenu";
+export { MenuSubmenu, MenuCheckboxItem } from "./MenuSubmenu";
 import type { DropdownOption } from "./DropdownSelect";
 
 export function HeaderActions({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -207,26 +210,39 @@ export function Menu({
    contextRequest?: ContextMenuRequest | undefined;
    onContextClose?: (() => void) | undefined;
 }) {
-   const [open, setOpen] = useState(false);
+   const [phase, setPhase] = useState<"closed" | "open" | "closing">("closed");
+   const familyId = useId();
+   const belongsToFamily = useCallback(
+      (target: EventTarget | null) => target instanceof Element && target.closest<HTMLElement>("[data-menu-family]")?.dataset["menuFamily"] === familyId,
+      [familyId]
+   );
+   const open = phase === "open";
    const [contextAnchor, setContextAnchor] = useState<ContextMenuRequest | null>(null);
    const contextClose = useRef(onContextClose);
    contextClose.current = onContextClose;
    const dismiss = useCallback(() => {
-      setOpen(false);
+      setPhase((current) => (current === "closed" ? current : "closing"));
+   }, []);
+   const finishClosing = useCallback(() => {
+      setPhase("closed");
       if (contextAnchor) contextClose.current?.();
    }, [contextAnchor]);
    useEffect(() => {
+      if (phase !== "closing") return;
+      const timer = window.setTimeout(finishClosing, 150);
+      return () => window.clearTimeout(timer);
+   }, [phase, finishClosing]);
+   useEffect(() => {
       if (contextRequest) {
          setContextAnchor(contextRequest);
-         setOpen(true);
+         setPhase("open");
       } else {
-         setContextAnchor(null);
-         setOpen(false);
+         dismiss();
       }
-   }, [contextRequest]);
+   }, [contextRequest, dismiss]);
    const ref = useRef<HTMLDivElement>(null);
    const menu = useRef<HTMLDivElement>(null);
-   const [position, setPosition] = useState({ top: 0, left: 0 });
+   const [position, setPosition] = useState({ top: 0, left: 0, transformOrigin: "top right" });
    useLayoutEffect(() => {
       if (!open || !ref.current || !menu.current) return;
       const place = () => {
@@ -234,20 +250,12 @@ export function Menu({
          const anchor = ref.current.getBoundingClientRect();
          const width = menu.current.offsetWidth;
          const height = menu.current.offsetHeight;
-         setPosition({
-            left: Math.max(8, Math.min(window.innerWidth - width - 8, contextAnchor?.left ?? anchor.right - width)),
-            top: contextAnchor
-               ? Math.max(8, Math.min(window.innerHeight - height - 8, contextAnchor.top))
-               : anchor.bottom + height + 8 > window.innerHeight
-                 ? Math.max(8, anchor.top - height - 5)
-                 : anchor.bottom + 5,
-         });
+         setPosition(menuPosition(anchor, { width, height }, { width: window.innerWidth, height: window.innerHeight }, contextAnchor));
       };
       place();
       menu.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
       const scroll = (event: Event) => {
-         if (contextAnchor && !menu.current?.contains(event.target as Node)) dismiss();
-         else place();
+         if (!belongsToFamily(event.target)) dismiss();
       };
       window.addEventListener("resize", place);
       window.addEventListener("scroll", scroll, true);
@@ -259,7 +267,7 @@ export function Menu({
          window.removeEventListener("resize", place);
          window.removeEventListener("scroll", scroll, true);
       };
-   }, [open, contextAnchor, dismiss]);
+   }, [open, contextAnchor, dismiss, belongsToFamily]);
    const restoreFocus = useCallback(
       () => (contextAnchor?.restoreFocus.isConnected ? contextAnchor.restoreFocus : ref.current?.querySelector("button"))?.focus(),
       [contextAnchor]
@@ -267,7 +275,7 @@ export function Menu({
    useEffect(() => {
       if (!open) return;
       const close = (event: PointerEvent) => {
-         if (!ref.current?.contains(event.target as Node) && !menu.current?.contains(event.target as Node)) dismiss();
+         if (!ref.current?.contains(event.target as Node) && !belongsToFamily(event.target)) dismiss();
       };
       const key = (event: KeyboardEvent) => {
          if (event.key === "Escape") {
@@ -281,7 +289,7 @@ export function Menu({
          window.removeEventListener("pointerdown", close);
          window.removeEventListener("keydown", key);
       };
-   }, [open, restoreFocus, dismiss]);
+   }, [open, restoreFocus, dismiss, belongsToFamily]);
    return (
       <div className={`menu-wrap ${className}`} ref={ref}>
          <IconButton
@@ -291,26 +299,33 @@ export function Menu({
             onClick={() => {
                setContextAnchor(null);
                if (open) dismiss();
-               else setOpen(true);
+               else setPhase("open");
             }}
             onKeyDown={(event) => {
                if (event.key === "ArrowDown") {
                   event.preventDefault();
                   setContextAnchor(null);
-                  setOpen(true);
+                  setPhase("open");
                }
             }}
          >
             {trigger}
          </IconButton>
-         {open &&
+         {phase !== "closed" &&
             createPortal(
                <div
                   ref={menu}
                   className={`menu floating-menu ${className ? `${className}-popup` : ""}`}
                   style={position}
                   role="menu"
+                  data-menu-family={familyId}
                   aria-label={label}
+                  aria-hidden={!open}
+                  inert={!open}
+                  data-closing={phase === "closing" ? true : undefined}
+                  onAnimationEnd={(event) => {
+                     if (phase === "closing" && event.target === event.currentTarget) finishClosing();
+                  }}
                   onClick={() => {
                      dismiss();
                      restoreFocus();
@@ -346,7 +361,7 @@ export function Menu({
                      items[next]?.focus();
                   }}
                >
-                  {children}
+                  <MenuFamilyContext.Provider value={{ id: familyId, closing: !open, dismiss }}>{children}</MenuFamilyContext.Provider>
                </div>,
                document.fullscreenElement ?? document.body
             )}

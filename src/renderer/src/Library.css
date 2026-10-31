@@ -138,6 +138,7 @@
 }
 
 .library-content {
+   position: relative;
    container-type: inline-size;
    padding: 0;
    min-width: 0;
@@ -169,6 +170,15 @@
    overflow: hidden;
    text-overflow: ellipsis;
    white-space: nowrap;
+}
+.library-title-line {
+   display: flex;
+   align-items: center;
+   gap: 6px;
+   min-width: 0;
+}
+.library-title-line > .menu-wrap {
+   flex-shrink: 0;
 }
 
 .library-tools {
@@ -225,17 +235,35 @@
 .library-scroll {
    flex: 1;
    overflow-y: auto;
-   padding: 8px calc(var(--workspace-padding) - var(--scrollbar-size)) 15px 8px;
+   /* Reserve space for the hover expansion and its spring overshoot. */
+   padding: 8px max(12px, calc(var(--workspace-padding) - var(--scrollbar-size))) 64px 12px;
    margin-top: -8px;
-   margin-left: -8px;
-   /* The viewport reaches the window edge; cards keep the workspace inset. */
+   margin-left: -12px;
+   /* The viewport reaches the window edge; the highlight stays inside it. */
    margin-inline-end: calc(-1 * var(--workspace-padding));
 }
 
 .clip-grid {
    display: grid;
-   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+   grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-thumbnail-size, 300px), 100%), 1fr));
    gap: 18px;
+}
+.library-scale {
+   position: absolute;
+   right: 12px;
+   bottom: 12px;
+   z-index: 2;
+   display: flex;
+   align-items: center;
+   gap: 3px;
+   padding: 3px;
+   background: var(--surface);
+   border: 1px solid var(--border-control);
+   border-radius: var(--radius-control);
+}
+.library-scale .icon-button {
+   width: 27px;
+   height: 27px;
 }
 
 .clip-card {
@@ -257,15 +285,19 @@
    opacity: 0;
    transform: scale(0.98);
    transition:
-      opacity 150ms var(--ease),
-      inset 200ms var(--spring),
-      transform 200ms var(--spring);
+      opacity 420ms var(--ease) 80ms,
+      inset 420ms var(--spring) 80ms,
+      transform 420ms var(--spring) 80ms;
 }
 .clip-card:is(:hover, :has([aria-expanded="true"]))::before,
 :root[data-keyboard] .clip-card:focus-within::before {
-   inset: -7px;
+   inset: -7px -9px;
    opacity: 1;
    transform: scale(1);
+   transition:
+      opacity 240ms var(--ease),
+      inset 340ms var(--spring),
+      transform 340ms var(--spring);
 }
 
 .clip-open {
@@ -309,7 +341,8 @@
    height: 30px;
    border-radius: 5px;
 }
-.library-view-switch [aria-pressed="true"] {
+.library-view-switch .icon-button[aria-pressed="true"],
+.library-view-switch .icon-button[aria-pressed="true"]:hover {
    background: transparent;
    color: var(--accent);
 }
@@ -341,8 +374,8 @@
    border-radius: var(--radius-control);
 }
 .clip-grid[data-view="list"] .clip-thumbnail {
-   width: 104px;
-   flex: 0 0 104px;
+   width: var(--list-thumbnail-size, 128px);
+   flex: 0 0 var(--list-thumbnail-size, 128px);
    border-radius: 5px;
 }
 .clip-grid[data-view="list"] .clip-thumbnail .duration {
@@ -373,14 +406,18 @@
    color: var(--subtle);
 }
 .clip-grid[data-view="list"] .card-menu {
-   top: 24px;
+   top: 50%;
+   transform: translateY(-50%);
    right: 5px;
    margin-top: 0;
 }
-.clip-grid[data-view="list"] .card-job {
-   padding: 0 10px 8px 130px;
+.clip-grid[data-view="list"] .card-job-cancel {
+   top: calc(50% + 12.5px);
+   bottom: auto;
+   right: 128px;
+   transform: translateY(-50%);
 }
-.clip-grid[data-view="list"] .folder-card svg {
+.clip-grid[data-view="list"] .folder-card .clip-thumbnail > svg {
    width: 30px;
    height: 30px;
 }
@@ -393,7 +430,7 @@
    padding: 10px;
 }
 .clip-grid[data-view="list"] .clip-placeholder > div {
-   width: 104px;
+   width: var(--list-thumbnail-size, 128px);
    flex-shrink: 0;
 }
 .clip-grid[data-view="list"] .clip-placeholder > span {
@@ -497,22 +534,32 @@
    width: 30px;
 }
 
-.card-job {
+.clip-card p.card-job {
    display: flex;
    gap: 7px;
    align-items: center;
-   padding: 6px 0;
-   font-size: 11px;
+   padding: 0 26px 0 0;
+   min-height: 18.6px;
+   font-size: 12px;
    color: var(--accent);
 }
 
 .card-job > span:first-of-type {
    flex: 1;
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
 }
-
-.card-job .icon-button {
-   width: 28px;
-   height: 28px;
+.card-job > svg,
+.card-job > .tabular {
+   flex-shrink: 0;
+}
+.card-job-cancel {
+   position: absolute;
+   right: -2px;
+   bottom: 0;
+   width: 24px;
+   height: 24px;
 }
 
 .thumbnail-progress {
@@ -530,29 +577,6 @@
    transition: width 200ms linear;
 }
 
-.category-option {
-   display: flex;
-   gap: 10px;
-   align-items: center;
-   width: 100%;
-   padding: 11px 9px;
-   border-radius: 9px;
-   text-align: left;
-}
-
-.category-option:hover {
-   background: #ffffff05;
-}
-
-.category-option > svg:last-child {
-   margin-left: auto;
-}
-
-.category-dialog > .button {
-   margin-top: 20px;
-   width: 100%;
-}
-
 @media (max-width: 1120px) {
    .library-sidebar {
       width: 215px;
@@ -564,46 +588,33 @@
       width: 170px;
    }
    .clip-grid {
-      grid-template-columns: repeat(auto-fill, minmax(205px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-thumbnail-size, 300px), 100%), 1fr));
       gap: 14px;
    }
 }
 
-.category-item .sidebar-item.selected,
-.category-option[aria-pressed="true"] {
+.category-item .sidebar-item.selected {
    --category-ink: var(--category-color);
    color: var(--category-color);
-}
-.category-option[aria-pressed="true"] {
-   background: var(--category-tint);
 }
 .category-item .sidebar-item.selected .count {
    color: inherit;
 }
-.category-item .sidebar-item:not(.selected):hover,
-.category-option:not([aria-pressed="true"]):hover {
+.category-item .sidebar-item:not(.selected):hover {
    background: #ffffff05;
 }
 .sidebar-scroll > .selection-indicator {
    transition: background-color 180ms ease-out;
 }
-.category-option[aria-pressed="true"] {
-   transition:
-      background-color 180ms ease-out,
-      color 180ms ease-out;
-}
 @media (prefers-reduced-motion: reduce) {
-   .sidebar-scroll > .selection-indicator,
-   .category-option {
+   .sidebar-scroll > .selection-indicator {
       transition: none;
    }
 }
-:root[data-keyboard] .category-item .sidebar-item:focus-visible,
-:root[data-keyboard] .category-option:focus-visible {
+:root[data-keyboard] .category-item .sidebar-item:focus-visible {
    outline-color: var(--category-color);
 }
-.category-item .sidebar-item:disabled,
-.category-option:disabled {
+.category-item .sidebar-item:disabled {
    opacity: 0.5;
 }
 
@@ -616,6 +627,41 @@
    flex: 1;
    min-width: 0;
    padding-left: 25px;
+   padding-right: 32px;
+}
+.folder-tree-row > .menu-wrap {
+   position: absolute;
+   right: 0;
+   top: 50%;
+   transform: translateY(-50%);
+}
+@media (hover: hover) and (pointer: fine) {
+   .folder-tree-row > .menu-wrap {
+      opacity: 0;
+      transition: opacity 120ms var(--ease);
+      pointer-events: none;
+   }
+   .folder-tree-row:is(:hover, :focus-within) > .menu-wrap,
+   .folder-tree-row > .menu-wrap:has([aria-expanded="true"]) {
+      opacity: 1;
+      pointer-events: auto;
+   }
+}
+.move-dialog {
+   width: min(460px, calc(100vw - 32px));
+}
+.move-folders {
+   max-height: min(45vh, 380px);
+   overflow-y: auto;
+   margin-top: 16px;
+}
+.move-folders .folder-tree-row > .sidebar-item {
+   padding-right: 12px;
+}
+.move-destination {
+   overflow-wrap: anywhere;
+   color: var(--muted);
+   font-size: 12px;
 }
 .folder-tree-row > .sidebar-item > span {
    overflow: hidden;
@@ -638,22 +684,20 @@
 .folder-expand svg {
    transition: rotate 150ms ease-out;
 }
-.folder-tree-children {
-   margin-left: 16px;
-}
 .folder-breadcrumb {
    display: flex;
    align-items: center;
    flex-wrap: wrap;
-   gap: 6px;
+   gap: 4px;
    margin: 0 0 15px;
    font-size: 12px;
    color: var(--muted);
 }
 .folder-breadcrumb button {
    display: flex;
-   gap: 6px;
+   gap: 4px;
    align-items: center;
+   padding: 2px 0;
 }
 .folder-breadcrumb button[aria-current="page"] {
    color: var(--text);
@@ -662,10 +706,6 @@
    display: grid;
    place-items: center;
    color: var(--muted);
-}
-.folder-card .clip-card-info {
-   padding: 12px;
-   text-align: left;
 }
 
 .clip-source-label {
@@ -769,4 +809,11 @@
       min-width: 140px;
       width: auto;
    }
+}
+
+.clip-drop-active {
+   outline: 2px solid var(--accent);
+   outline-offset: -2px;
+   border-radius: var(--radius-control);
+   background: var(--accent-soft);
 }

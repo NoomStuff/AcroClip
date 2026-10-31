@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { MoreHorizontal, Volume2, VolumeX } from "lucide-react";
+import { MoreHorizontal, Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import { IconButton, Menu } from "./ui";
 import { MixerFader } from "./MixerFader";
 import { ListenButton, useIsListening } from "./AudioListening";
@@ -34,7 +34,8 @@ export function AudioMixerRow({
    options: ReactNode;
 }) {
    const listening = useIsListening(sourceId);
-   const muteLabel = ["Source audio", "Desktop audio", "App audio", "Microphone"].includes(name) ? name.toLowerCase() : name;
+   const VolumeIcon = muted || !enabled || volume === 0 ? VolumeX : volume < 0.33 ? Volume : volume < 0.67 ? Volume1 : Volume2;
+   const muteLabel = ["Source audio", "Desktop", "Application", "Desktop audio", "App audio", "Microphone"].includes(name) ? name.toLowerCase() : name;
    return (
       <div className="mixer-channel" data-disabled={!enabled || undefined}>
          <div className="mixer-channel-header">
@@ -50,7 +51,7 @@ export function AudioMixerRow({
                disabled={!enabled && active}
                onClick={() => (enabled ? onMute() : onEnable(true))}
             >
-               {muted || !enabled || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+               <VolumeIcon size={18} />
             </IconButton>
             <MixerFader label={`${name} level`} value={volume} muted={muted} disabled={!enabled} onCommit={onVolume} />
          </div>

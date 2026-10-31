@@ -1,7 +1,7 @@
 // Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut VolumeControl and VolumeSlider.
 // See THIRD_PARTY_NOTICES.md.
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import { Slider } from "./Slider";
 import { Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import { IconButton } from "./ui";
 
@@ -47,30 +47,27 @@ export function ViewerVolume({
          </IconButton>
          <div className="player-volume-popover">
             <div className="player-volume-panel">
-               <span className="player-volume-slider" style={{ "--fill": `${displayed * 100}%`, "--volume": displayed } as CSSProperties}>
-                  <i aria-hidden="true" />
-                  <input
-                     type="range"
-                     aria-label="Playback volume"
-                     min={0}
-                     max={1}
-                     step={0.01}
-                     value={displayed}
-                     disabled={disabled}
-                     onPointerDown={() => {
-                        gestureVolume.current = volume;
-                     }}
-                     onPointerUp={finishGesture}
-                     onPointerCancel={finishGesture}
-                     onLostPointerCapture={finishGesture}
-                     onKeyDown={() => {
-                        gestureVolume.current ??= volume;
-                     }}
-                     onKeyUp={finishGesture}
-                     onBlur={finishGesture}
-                     onChange={(event) => onVolume(Number(event.target.value), gestureVolume.current ?? volume)}
-                  />
-               </span>
+               <Slider
+                  variant="compact"
+                  aria-label="Playback volume"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={displayed}
+                  disabled={disabled}
+                  onPointerDown={() => {
+                     gestureVolume.current = volume;
+                  }}
+                  onPointerUp={finishGesture}
+                  onPointerCancel={finishGesture}
+                  onLostPointerCapture={finishGesture}
+                  onKeyDown={() => {
+                     gestureVolume.current ??= volume;
+                  }}
+                  onKeyUp={finishGesture}
+                  onBlur={finishGesture}
+                  onValueChange={(next) => onVolume(next, gestureVolume.current ?? volume)}
+               />
             </div>
          </div>
       </div>
