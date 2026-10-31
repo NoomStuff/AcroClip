@@ -254,8 +254,22 @@ export function Menu({
       };
       place();
       menu.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+      // A trigger can scroll into view before its click, with the scroll event
+      // delivered after the menu opens. Only dismiss for a subsequent change.
+      const scrollPositions = new Map<Element, { top: number; left: number }>();
+      for (let node: Element | null = ref.current; node; node = node.parentElement) {
+         scrollPositions.set(node, { top: node.scrollTop, left: node.scrollLeft });
+      }
+      if (document.scrollingElement) {
+         const node = document.scrollingElement;
+         scrollPositions.set(node, { top: node.scrollTop, left: node.scrollLeft });
+      }
       const scroll = (event: Event) => {
-         if (!belongsToFamily(event.target)) dismiss();
+         if (belongsToFamily(event.target)) return;
+         const target = event.target === document ? document.scrollingElement : event.target;
+         const previous = target instanceof Element ? scrollPositions.get(target) : undefined;
+         if (target instanceof Element && previous?.top === target.scrollTop && previous.left === target.scrollLeft) return;
+         dismiss();
       };
       window.addEventListener("resize", place);
       window.addEventListener("scroll", scroll, true);

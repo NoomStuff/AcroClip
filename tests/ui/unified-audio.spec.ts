@@ -35,6 +35,12 @@ test("Application and default microphone migrate, edit, remove and readd without
       await expect(page.getByRole("button", { name: "Unmute microphone", exact: true })).toBeEnabled();
       await expect(page.locator(".mixer-channel").filter({ hasText: "Microphone" }).locator(".audio-listen")).toBeDisabled();
       await page.getByRole("button", { name: "Microphone options", exact: true }).click();
+      const menu = page.getByRole("menu", { name: "Microphone options", exact: true });
+      await expect(menu).toBeVisible();
+      // A queued notification from scrolling the trigger into view must not
+      // dismiss the menu when the scroll position has not changed since open.
+      await page.locator(".mixer-scroll").evaluate((element) => element.dispatchEvent(new Event("scroll")));
+      await expect(menu).toBeVisible();
       await page.getByRole("menuitem", { name: "Edit source", exact: true }).click();
       await expect(page.getByRole("combobox", { name: "Audio source", exact: true })).toContainText("Selected device unavailable");
       await expect(page.getByRole("button", { name: "Save source", exact: true })).toBeDisabled();

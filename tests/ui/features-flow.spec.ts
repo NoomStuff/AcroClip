@@ -125,6 +125,17 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       const labels = page.locator(".category-item .sidebar-label");
       await expect(labels).toHaveText(["Matches", "Second", "Third"]);
       const third = page.locator(".category-item").filter({ hasText: "Third" });
+      await expect
+         .poll(() =>
+            third.evaluate(
+               (row) =>
+                  row
+                     .closest(".motion-list-item")!
+                     .getAnimations({ subtree: true })
+                     .filter((animation) => animation.playState === "running").length
+            )
+         )
+         .toBe(0);
       const thirdBounds = (await third.boundingBox())!;
       const firstBounds = (await page.locator(".category-item").first().boundingBox())!;
       const grab = thirdBounds.height / 2;
