@@ -8,7 +8,9 @@ import { ApplicationIcon } from "./ApplicationIcon";
 export function RecordingStatus({ state, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
    const [sources, setSources] = useState<CaptureSource[]>([]);
    const sourceId = state?.recorder.sourceId;
+   const applicationRecording = state?.recorder.state === "recording" && state.recorder.sourceKind === "app";
    useEffect(() => {
+      if (!applicationRecording) return;
       let disposed = false;
       const unsubscribe = api.onEvent((event) => {
          if (event.type === "capture-sources") setSources(event.sources);
@@ -23,7 +25,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
          disposed = true;
          unsubscribe();
       };
-   }, [sourceId]);
+   }, [sourceId, applicationRecording]);
    const capacity = state?.preferences.clipSeconds ?? 60;
    const available = Math.max(0, Math.min(capacity, state?.recorder.availableSeconds ?? 0));
    const fill = capacity > 0 ? Math.min(1, available / capacity) : 0;

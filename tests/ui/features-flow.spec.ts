@@ -67,13 +67,17 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       const highlightRow = page.locator(".category-item").filter({ hasText: "Highlights" });
       await page.getByRole("button", { name: "List view", exact: true }).hover();
       await expect(highlightRow.locator(".count")).toBeVisible();
-      const countBounds = await highlightRow.locator(".count").boundingBox();
       await highlightRow.hover();
       await expect(highlightRow.locator(".count")).toBeHidden();
-      const menuBounds = await page.getByRole("button", { name: "Actions for Highlights", exact: true }).boundingBox();
-      expect(countBounds).not.toBeNull();
-      expect(menuBounds).not.toBeNull();
-      expect(Math.abs(countBounds!.x + countBounds!.width / 2 - menuBounds!.x - menuBounds!.width / 2)).toBeLessThan(1);
+      await expect
+         .poll(() =>
+            highlightRow.evaluate((row) => {
+               const count = row.querySelector(".count")!.getBoundingClientRect();
+               const menu = row.querySelector(".menu-wrap button")!.getBoundingClientRect();
+               return Math.abs(count.x + count.width / 2 - menu.x - menu.width / 2);
+            })
+         )
+         .toBeLessThan(1);
       await highlightRow.click({ button: "right" });
       await expect(page.getByRole("menu", { name: "Actions for Highlights", exact: true })).toBeVisible();
       await expect(page.getByRole("menuitem", { name: "Edit tag", exact: true })).toBeVisible();
