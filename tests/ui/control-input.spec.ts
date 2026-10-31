@@ -31,9 +31,9 @@ test("gain entry commits, rejects invalid input and supports keyboard resets", a
    try {
       const page = await desktop.firstWindow();
       await expect(page.locator(".recording-page")).toBeVisible({ timeout: 15000 });
-      const level = page.getByRole("slider", { name: "Source audio level", exact: true });
+      const level = page.getByRole("slider", { name: "Application level", exact: true });
       await expect(level).toBeVisible();
-      const number = page.getByRole("textbox", { name: "Source audio level in decibels", exact: true });
+      const number = page.getByRole("textbox", { name: "Application level in decibels", exact: true });
       await number.fill("-6");
       await number.press("Enter");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureVolume, { timeout: 15000 }).toBe(0.5);
@@ -69,9 +69,9 @@ test("gain entry commits, rejects invalid input and supports keyboard resets", a
       await expect(level).toHaveValue("0.99");
       await level.dblclick();
       await expect(level).toHaveValue("1");
-      await page.getByRole("button", { name: "Mute source audio", exact: true }).click();
+      await page.getByRole("button", { name: "Mute application", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureMuted).toBe(true);
-      await page.getByRole("button", { name: "Unmute source audio", exact: true }).click();
+      await page.getByRole("button", { name: "Unmute application", exact: true }).click();
       await level.fill("0.53");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureVolume).toBe(0.53);
       await level.dispatchEvent("pointerdown", { pointerType: "mouse" });
@@ -79,10 +79,10 @@ test("gain entry commits, rejects invalid input and supports keyboard resets", a
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureVolume).toBe(0.2);
       await level.fill("0");
       await level.dispatchEvent("pointerup", { pointerType: "mouse" });
-      await expect(page.getByRole("button", { name: "Unmute source audio", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Unmute application", exact: true })).toBeVisible();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureMuted).toBe(true);
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureVolume).toBe(0.53);
-      await page.getByRole("button", { name: "Unmute source audio", exact: true }).click();
+      await page.getByRole("button", { name: "Unmute application", exact: true }).click();
       await expect(level).toHaveValue("0.53");
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page.getByRole("button", { name: "Custom", exact: true }).click();

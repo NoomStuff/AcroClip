@@ -75,11 +75,11 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       });
       expect(state.preferences.sourceId).not.toBe("");
       expect(state.recorder.state).toBe("stopped");
-      await page.getByRole("slider", { name: "Source audio level", exact: true }).fill("0.5");
+      await page.getByRole("slider", { name: "Desktop level", exact: true }).fill("0.5");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureVolume).toBe(0.5);
-      await page.getByRole("button", { name: "Mute source audio", exact: true }).click();
+      await page.getByRole("button", { name: "Mute desktop", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureMuted).toBe(true);
-      await expect(page.getByRole("button", { name: "Unmute source audio", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Unmute desktop", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await selectOption(page, "Resolution limit", "720");
       await expect(page.getByRole("combobox", { name: "Resolution limit" })).toHaveAttribute("data-value", "720");

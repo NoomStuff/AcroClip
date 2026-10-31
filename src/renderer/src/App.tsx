@@ -137,16 +137,8 @@ export function App() {
       if (!state) return;
       const key = (event: KeyboardEvent) => {
          const target = event.target instanceof HTMLElement ? event.target : null;
-         if (
-            event.defaultPrevented ||
-            event.repeat ||
-            (target?.closest("input,textarea,select,[contenteditable=true],[role=textbox],[role=slider],[role=combobox],.shortcut-input.editing") &&
-               !event.ctrlKey &&
-               !event.metaKey &&
-               !event.altKey) ||
-            document.querySelector('[role="dialog"]')
-         )
-            return;
+         const editing = target?.closest("input,textarea,select,[contenteditable=true],[role=textbox],[role=slider],[role=combobox],.shortcut-input.editing");
+         if (event.defaultPrevented || event.repeat || document.querySelector('[role="dialog"]')) return;
          const mac = state.platform === "darwin",
             pressed = normalizeBinding(eventBinding(event), mac);
          const action = shortcutRegistry.find(
@@ -158,6 +150,7 @@ export function App() {
          );
          if (
             !action ||
+            (editing && action.id !== "newCategory" && action.id !== "newFolder") ||
             (target?.closest('button,a[href],[role="button"],[role="menuitem"],[role="menuitemradio"],[role="option"]') &&
                !event.ctrlKey &&
                !event.metaKey &&

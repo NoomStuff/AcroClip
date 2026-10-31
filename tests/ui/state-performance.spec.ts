@@ -37,7 +37,7 @@ test("incremental updates preserve large libraries, meter routing, visibility an
          preferences: { ...actual.preferences, audioSources: actual.preferences.audioSources.map((source) => ({ ...source, muted: false, enabled: true })) },
       };
       await publish({ type: "state", state });
-      const sourceMeter = page.getByRole("meter", { name: "Source audio peak", exact: true });
+      const sourceMeter = page.getByRole("meter", { name: "Desktop peak", exact: true });
       const microphoneMeter = page.getByRole("meter", { name: "Microphone peak", exact: true });
       await expect(sourceMeter).toBeVisible();
       await publish({ type: "audio-levels", levels: { capture: 85, microphone: 0, additional: { "microphone-default": 32, "source-audio": 5 } } });

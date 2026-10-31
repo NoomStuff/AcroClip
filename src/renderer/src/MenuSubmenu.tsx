@@ -27,7 +27,7 @@ export function MenuSubmenu({ label, icon, disabled = false, children }: { label
       if (disabled) return;
       clearClose();
       if (focus && phase === "open") {
-         panel.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+         panel.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
          return;
       }
       keyboard.current = focus;
@@ -56,7 +56,7 @@ export function MenuSubmenu({ label, icon, disabled = false, children }: { label
       };
       place();
       if (keyboard.current) {
-         panel.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+         panel.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
          keyboard.current = false;
       }
       const observer = new ResizeObserver(place);

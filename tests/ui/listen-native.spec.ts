@@ -68,8 +68,8 @@ test("Listen is one direct default-output toggle and survives gain changes with 
          const state = await window.acroClip.state();
          await window.acroClip.savePreferences({ ...state.preferences, sourceId: id, captureAudio: true, captureMuted: true });
       }, target.id);
-      await page.getByRole("button", { name: "Listen to Source audio", exact: true }).click();
-      const listening = page.getByRole("button", { name: "Stop listening to Source audio", exact: true });
+      await page.getByRole("button", { name: "Listen to Application", exact: true }).click();
+      const listening = page.getByRole("button", { name: "Stop listening to Application", exact: true });
       try {
          await expect(listening).toHaveAttribute("aria-pressed", "true", { timeout: 20000 });
       } catch (error) {
@@ -102,22 +102,22 @@ test("Listen is one direct default-output toggle and survives gain changes with 
          expect(geometry.vertical).toBeLessThan(1);
          expect(geometry.shrink).toBe("0");
       }
-      await page.getByRole("textbox", { name: "Source audio level in decibels" }).fill("-6");
-      await page.getByRole("textbox", { name: "Source audio level in decibels" }).press("Enter");
+      await page.getByRole("textbox", { name: "Application level in decibels" }).fill("-6");
+      await page.getByRole("textbox", { name: "Application level in decibels" }).press("Enter");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureVolume).toBe(0.5);
       await expect(listening).toHaveAttribute("aria-pressed", "true");
       expect((await page.evaluate(() => window.acroClip.state())).preferences.captureMuted).toBe(false);
       await page.waitForTimeout(1200);
       await expect(listening).toHaveAttribute("aria-pressed", "true");
       await listening.click();
-      await expect(page.getByRole("button", { name: "Listen to Source audio", exact: true })).toHaveAttribute("aria-pressed", "false");
+      await expect(page.getByRole("button", { name: "Listen to Application", exact: true })).toHaveAttribute("aria-pressed", "false");
       await page.getByRole("button", { name: "Start recording", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.state, { timeout: 25000 }).toBe("recording");
-      await page.getByRole("button", { name: "Listen to Source audio", exact: true }).click();
+      await page.getByRole("button", { name: "Listen to Application", exact: true }).click();
       await expect(listening).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await page.getByRole("button", { name: "Recording", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Listen to Source audio", exact: true })).toHaveAttribute("aria-pressed", "false");
+      await expect(page.getByRole("button", { name: "Listen to Application", exact: true })).toHaveAttribute("aria-pressed", "false");
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await expect(page.getByRole("combobox", { name: "Resolution limit", exact: true })).toBeDisabled();

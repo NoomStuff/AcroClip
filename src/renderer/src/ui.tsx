@@ -253,7 +253,7 @@ export function Menu({
          setPosition(menuPosition(anchor, { width, height }, { width: window.innerWidth, height: window.innerHeight }, contextAnchor));
       };
       place();
-      menu.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+      menu.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
       const scroll = (event: Event) => {
          if (!belongsToFamily(event.target)) dismiss();
       };
@@ -269,7 +269,7 @@ export function Menu({
       };
    }, [open, contextAnchor, dismiss, belongsToFamily]);
    const restoreFocus = useCallback(
-      () => (contextAnchor?.restoreFocus.isConnected ? contextAnchor.restoreFocus : ref.current?.querySelector("button"))?.focus(),
+      () => (contextAnchor?.restoreFocus.isConnected ? contextAnchor.restoreFocus : ref.current?.querySelector("button"))?.focus({ preventScroll: true }),
       [contextAnchor]
    );
    useEffect(() => {

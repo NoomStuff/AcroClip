@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { defaultPreferences } from "../../src/shared/defaults";
 import { selectOption } from "./select-option";
-test("Source audio and default microphone migrate, edit, remove and readd without resurrecting removed rows", async () => {
+test("Application and default microphone migrate, edit, remove and readd without resurrecting removed rows", async () => {
    test.setTimeout(80000);
    const profile = await mkdtemp(join(tmpdir(), "acroclip-source-model-")),
       collection = join(profile, "clips");
@@ -47,7 +47,7 @@ test("Source audio and default microphone migrate, edit, remove and readd withou
          enabled: true,
          muted: true,
       });
-      for (const name of ["Source audio", "Microphone"]) {
+      for (const name of ["Application", "Microphone"]) {
          await page.getByRole("button", { name: `${name} options`, exact: true }).click();
          await page.getByRole("menuitem", { name: "Remove source", exact: true }).click();
          await expect(page.getByRole("button", { name: `${name} options`, exact: true })).toHaveCount(0);
@@ -58,7 +58,7 @@ test("Source audio and default microphone migrate, edit, remove and readd withou
       await page.getByRole("button", { name: "Add audio source", exact: true }).click();
       await selectOption(page, "Audio source type", "source");
       await page.getByRole("button", { name: "Add source", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Source audio options", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Application options", exact: true })).toBeVisible();
       await page.reload();
       await expect(page.locator(".mixer-channel")).toHaveCount(1);
       sources = (await page.evaluate(() => window.acroClip.state())).preferences.audioSources;

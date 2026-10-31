@@ -216,7 +216,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
          const state = await window.acroClip.state();
          await window.acroClip.savePreferences({ ...state.preferences, captureAudio: true });
       });
-      const listen = page.getByRole("button", { name: "Listen to Source audio", exact: true });
+      const listen = page.getByRole("button", { name: "Listen to Application", exact: true });
       await listen.scrollIntoViewIfNeeded();
       await listen.focus();
       await listen.click();
@@ -224,7 +224,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(page.locator(".toast.error")).toBeVisible();
       await expect(page.locator(".mixer-monitor-error")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Listen to Source audio", exact: true })).toHaveAttribute("aria-pressed", "false");
+      await expect(page.getByRole("button", { name: "Listen to Application", exact: true })).toHaveAttribute("aria-pressed", "false");
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("stopped");
    } finally {
       await app.close();
