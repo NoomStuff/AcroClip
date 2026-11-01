@@ -3,7 +3,7 @@ import { clipDragType } from "./clip-drag";
 import type { ClipDrag } from "./clip-drag";
 
 export const api = window.acroClip;
-export type Run = (action: () => Promise<unknown>) => Promise<boolean>;
+export type Run = (action: () => Promise<unknown>, options?: { feedback: "external" }) => Promise<boolean>;
 export function describeError(error: unknown): string {
    const message =
       typeof error === "string"

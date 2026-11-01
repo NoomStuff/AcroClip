@@ -24,6 +24,7 @@ import { SelectionIndicator } from "./SelectionIndicator";
 import { MotionList } from "./MotionList";
 import { HeaderActions, Button, Select, NumberInput } from "./ui";
 import { Field, Toggle } from "./SettingsControls";
+import { NotificationSettings } from "./NotificationSettings";
 import { api } from "./desktop";
 import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
@@ -463,29 +464,7 @@ export function Settings({
                         </section>
                      </>
                   )}
-                  {section === "notifications" && (
-                     <>
-                        <section className="settings-group">
-                           <Field label="Show notifications" detail="Choose when to show a saved clip notification.">
-                              <Select
-                                 label="Notification visibility"
-                                 value={draft.notifications}
-                                 onChange={(value) => change("notifications", value as Preferences["notifications"])}
-                              >
-                                 <option value="everywhere">Everywhere</option>
-                                 <option value="outside-fullscreen">Outside fullscreen</option>
-                                 <option value="off">Off</option>
-                              </Select>
-                           </Field>
-                           <Toggle
-                              checked={draft.sound}
-                              onChange={(value) => change("sound", value)}
-                              label="Play a sound"
-                              detail="Play a confirmation even when visual notifications are off."
-                           />
-                        </section>
-                     </>
-                  )}
+                  {section === "notifications" && <NotificationSettings value={draft} onChange={(key, enabled) => change(key, enabled)} />}
                   {section === "general" && (
                      <>
                         <section className="settings-group">

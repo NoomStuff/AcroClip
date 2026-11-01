@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { posix } from "node:path";
 
 // Mesa and VAAPI drivers belong to the host. Loading their system dependencies
 // first prevents an older bundled Wayland/C++ library from breaking new drivers.
@@ -23,12 +23,12 @@ export function linuxRecorderEnvironment(
       "libva-x11.so.2",
    ];
    const host = names.flatMap((name) => {
-      const file = directories.map((directory) => join(directory, name)).find(exists);
+      const file = directories.map((directory) => posix.join(directory, name)).find(exists);
       return file ? [file] : [];
    });
    return {
       ...environment,
-      LD_LIBRARY_PATH: [join(root, "lib"), environment["LD_LIBRARY_PATH"]].filter(Boolean).join(":"),
+      LD_LIBRARY_PATH: [posix.join(root, "lib"), environment["LD_LIBRARY_PATH"]].filter(Boolean).join(":"),
       ...(host.length ? { LD_PRELOAD: [environment["LD_PRELOAD"], ...host].filter(Boolean).join(":") } : {}),
    };
 }

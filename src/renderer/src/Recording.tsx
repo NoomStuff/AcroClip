@@ -259,7 +259,7 @@ export function Recording({
    const save = async () => {
       setSaving(true);
       setPulsing(true);
-      await run(() => api.saveClip());
+      await run(() => api.saveClip(), { feedback: "external" });
       setSaving(false);
       window.setTimeout(() => setPulsing(false), 550);
    };
@@ -338,6 +338,13 @@ export function Recording({
                         }
                      />
                   )}
+                  {state.recorder.startingDetail !== undefined && (
+                     <div className="preview-message recording-startup" role="status" aria-live="polite">
+                        <LoaderCircle size={30} className="spin" />
+                        <h3>Starting recording...</h3>
+                        <p>{state.recorder.startingDetail}</p>
+                     </div>
+                  )}
                   {source && (
                      <div className="preview-caption">
                         <span className={preview.status === "live" ? "preview-dot live" : "preview-dot"} />
@@ -374,7 +381,7 @@ export function Recording({
                         title={active ? "Stop recording. Unsaved history will clear." : undefined}
                         aria-description={active ? "Stopping clears unsaved history." : undefined}
                         disabled={state.recorder.state === "starting" || !state.recorder.supported || (!active && !captureAvailable)}
-                        onClick={() => void run(active ? () => api.stopRecording() : () => api.startRecording())}
+                        onClick={() => void run(active ? () => api.stopRecording() : () => api.startRecording(), { feedback: "external" })}
                      >
                         {active ? (
                            <CircleStop size={50} strokeWidth={1.7} />

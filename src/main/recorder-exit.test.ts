@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, link, copyFile, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Recorder } from "./recorder";
+import { Recorder, type RecorderErrorContext } from "./recorder";
 import { defaultPreferences } from "../shared/defaults";
 import type { ApplicationArtwork, RecorderState } from "../shared/types";
 
@@ -13,8 +13,19 @@ afterEach(async () => {
    for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 async function fixture(
-   mode: "crash" | "pending" | "normal" | "fatal" | "reject-save" | "unacknowledged-save" | "devices-exit" | "candidates-timeout" | "saved-source-mismatch",
-   invalidExecutable = false
+   mode:
+      | "crash"
+      | "pending"
+      | "normal"
+      | "fatal"
+      | "reject-save"
+      | "unacknowledged-save"
+      | "devices-exit"
+      | "candidates-timeout"
+      | "saved-source-mismatch"
+      | "save-failure",
+   invalidExecutable = false,
+   rejectRegistration = false
 ) {
    const root = await mkdtemp(join(tmpdir(), "acroclip-protocol-exit-"));
    roots.push(root);
@@ -44,6 +55,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  if(v.action==='save' && mode==='pending') setTimeout(()=>process.exit(19),80);
  if(v.action==='save' && mode==='reject-save') {emit({event:'error',id:v.id,message:'Save was not accepted'});return;}
  if(v.action==='save' && mode==='unacknowledged-save') return;
+ if(v.action==='save' && mode==='save-failure') setTimeout(()=>emit({event:'error',requestId:v.requestId,message:'Clip write failed'}),10);
  if(v.action==='save' && mode==='saved-source-mismatch') emit({event:'saved',requestId:v.requestId,path:v.path,source:'Previous game',sourceId:'window:previous:0'});
  if(v.action==='audio-devices' && mode==='devices-exit') process.exit(0);
  if(v.action==='exit') process.exit(0);
@@ -52,15 +64,20 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
    );
    const states: RecorderState[] = [];
    const errors: string[] = [];
+   const failures: Array<{ message: string; context: RecorderErrorContext }> = [];
    const saved: Array<{ source: string; application?: ApplicationArtwork }> = [];
    const Constructor = Recorder;
    const child = new Constructor({
       nativePath: executable,
       gameCatalogPath: join(root, "catalog.json"),
       onState: (state) => states.push(state),
-      onError: (message) => errors.push(message),
+      onError: (message, context) => {
+         errors.push(message);
+         failures.push({ message, context });
+      },
       onSaved: (_path, source, _requestId, capture) => {
          saved.push({ source, ...(capture.application ? { application: capture.application } : {}) });
+         if (rejectRegistration) throw new Error("Saved clip could not be indexed");
       },
    });
    // The fixture speaks only the helper protocol. It never simulates a valid media file.
@@ -70,7 +87,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
          { id: "screen:0:0", kind: "screen", name: "Isolated fixture", thumbnail: "" },
       ]);
    if (!invalidExecutable) await start();
-   return { child, states, errors, saved, root, executable, start };
+   return { child, states, errors, failures, saved, root, executable, start };
 }
 
 // Real process startup can exceed five seconds on Windows, especially with two fixtures.
@@ -150,6 +167,27 @@ describe("recorder helper termination", () => {
       helperTestTimeout
    );
 
+   it(
+      "classifies asynchronous save failures without stopping healthy capture",
+      async () => {
+         const { child, root, failures } = await fixture("save-failure");
+         await child.save(join(root, "failed.mkv"));
+         await expect.poll(() => failures).toEqual([{ message: "Clip write failed", context: "save" }]);
+         expect(child.status).toMatchObject({ state: "recording", pendingSaves: 0 });
+      },
+      helperTestTimeout
+   );
+   it(
+      "distinguishes saved-file registration failures from failed writes",
+      async () => {
+         const { child, root, failures } = await fixture("saved-source-mismatch", false, true);
+         await child.save(join(root, "saved.mkv"));
+         await expect.poll(() => failures).toEqual([{ message: "Saved clip could not be indexed", context: "saved-clip" }]);
+         await expect.poll(() => child.status.pendingSaves).toBe(0);
+         expect(child.status.state).toBe("recording");
+      },
+      helperTestTimeout
+   );
    it(
       "settles an outstanding device query when the helper exits",
       async () => {

@@ -8,6 +8,7 @@ import type { AdditionalAudioSource } from "../shared/types";
 import { applyRecordingPreset } from "../shared/recording-presets";
 import { preferencesSchema } from "../shared/validation";
 import { z } from "zod";
+import { migrateNotificationPreferences } from "../shared/notifications";
 export function mergePreferenceChanges(current: Preferences, value: unknown, changedKeys: unknown): Preferences {
    const incoming = preferencesSchema.parse(value);
    if (changedKeys === undefined) return incoming;
@@ -20,7 +21,7 @@ export async function readPreferences(path: string, collection: string): Promise
    for (const candidate of [path, `${path}.bak`]) {
       try {
          const stored: unknown = JSON.parse(await readFile(candidate, "utf8"));
-         const legacy = typeof stored === "object" && stored ? (stored as Partial<Preferences>) : {};
+         const legacy = migrateNotificationPreferences(stored) as Partial<Preferences>;
          const candidatePreferences = { ...defaultPreferences, collection, ...legacy };
          if (legacy.audioSourcesVersion !== 2) {
             candidatePreferences.audioSources = migrateAudioSources(candidatePreferences, (legacy.audioSources as AdditionalAudioSource[]) ?? []);
@@ -63,7 +64,7 @@ export async function writePreferences(path: string, value: Preferences): Promis
          await handle.close();
       }
       try {
-         preferencesSchema.parse(JSON.parse(await readFile(path, "utf8")));
+         preferencesSchema.parse(migrateNotificationPreferences(JSON.parse(await readFile(path, "utf8"))));
          await copyFile(path, `${path}.bak`);
       } catch (error) {
          if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !(error instanceof SyntaxError) && !(error instanceof Error && error.name === "ZodError"))

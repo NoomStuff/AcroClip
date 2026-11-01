@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Bell, Clock3, Copy, Cpu, FileVideo, FolderTree, Gauge, Keyboard, Monitor, Power, RefreshCw, Scissors, SlidersHorizontal, Volume2 } from "lucide-react";
+import { Clock3, Copy, Cpu, FileVideo, FolderTree, Gauge, Keyboard, Monitor, Power, RefreshCw, Scissors, SlidersHorizontal } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Toggle as Switch } from "./ui";
 
@@ -14,8 +14,6 @@ const icons: Record<string, LucideIcon> = {
    "Group clips by application": FolderTree,
    "Default maximum size": FileVideo,
    "Automatically create shareables": Copy,
-   "Show notifications": Bell,
-   "Play a sound": Volume2,
    "Start with your computer": Power,
    "Start recording when AcroClip opens": FileVideo,
    "Check for updates at startup": RefreshCw,

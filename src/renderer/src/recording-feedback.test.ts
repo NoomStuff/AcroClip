@@ -69,12 +69,42 @@ describe("recording buffer status", () => {
       expect(html).toContain("Saving");
       expect(html).not.toContain("2:05");
    });
+   it("keeps the startup headline while source status updates underneath", () => {
+      const html = renderToStaticMarkup(
+         createElement(RecordingStatus, {
+            state: {
+               ...state,
+               recorder: { ...state.recorder, state: "waiting", message: "Waiting for source", startingDetail: "Waiting for source" },
+            },
+            visible: true,
+         })
+      );
+      expect(html).toContain('title="Starting recording..."');
+      expect(html).toContain('class="status-message" title="Waiting for source"');
+      expect(html).not.toContain("available</span>");
+   });
    it.each(["stopped", "starting", "waiting", "error"] as const)("hides available time while %s", (phase) => {
       const html = renderToStaticMarkup(createElement(RecordingStatus, { state: { ...state, recorder: { ...state.recorder, state: phase } }, visible: true }));
       expect(html).not.toContain("available</span>");
       expect(html).not.toContain("buffer-ring");
       expect(html.includes(' spin"')).toBe(phase === "starting" || phase === "waiting");
    });
+});
+
+it("uses the same headline and detail in the recording loading view", async () => {
+   const { Recording } = await import("./Recording");
+   const html = renderToStaticMarkup(
+      createElement(Recording, {
+         state: { ...state, recorder: { ...state.recorder, state: "waiting", startingDetail: "Waiting for source" } },
+         visible: true,
+         run: async () => true,
+         pulse: 0,
+         openGames: () => undefined,
+      })
+   );
+   expect(html).toContain('class="preview-message recording-startup"');
+   expect(html).toContain("<h3>Starting recording...</h3>");
+   expect(html).toContain("<p>Waiting for source</p>");
 });
 
 it("preserves browser and cross-realm error messages", async () => {

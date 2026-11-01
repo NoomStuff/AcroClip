@@ -787,3 +787,8 @@
 .motion-list-item[data-dragging] .mixer-channel .mixer-drag-handle {
    background: transparent;
 }
+
+.recording-startup {
+   z-index: 2;
+   background: var(--surface);
+}

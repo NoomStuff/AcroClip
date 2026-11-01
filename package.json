@@ -55,6 +55,10 @@
       ],
       "extraResources": [
          {
+            "from": "resources/feedback",
+            "to": "feedback"
+         },
+         {
             "from": "resources/media",
             "to": "media"
          },

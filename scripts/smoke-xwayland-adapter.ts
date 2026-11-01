@@ -79,8 +79,14 @@ try {
       customCQ: 28,
       clipSeconds: 2,
       allowSoftwareEncoder: true,
-      notifications: "off" as const,
-      sound: false,
+      notificationStartBanner: false,
+      notificationStartSound: false,
+      notificationStopBanner: false,
+      notificationStopSound: false,
+      notificationSaveBanner: false,
+      notificationSaveSound: false,
+      notificationErrorBanner: true as const,
+      notificationErrorSound: false,
    };
    const matched = await recorder.games(preferences.customGames);
    assert.equal(matched.find((candidate) => candidate.id === targetId)?.gameName, "User-added XWayland game");
