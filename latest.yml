@@ -1,13 +1,13 @@
-version: 0.7.1
+version: 0.8.0
 path: >-
-  https://github.com/NoomStuff/AcroClip/releases/download/v0.7.1/AcroClip-0.7.1-win-x64-Installer.exe
+  https://github.com/NoomStuff/AcroClip/releases/download/v0.8.0/AcroClip-0.8.0-win-x64-Installer.exe
 sha512: >-
-  MlxMveG+bCw7CRlChkYIgU/yL5RI/EKLiFjwfn20mT8VuAb4lKqJREyqFAq7GhHgIo9qzbGsThew5sqVu09fLw==
+  CHO02ePg1mhZh5fNr1GFapftlVTIhJUvim9mODqbMt2sveHdjgKfJYcWy4bzNCVwf/l3G4Z4l0VpzXl/ws3JVg==
 files:
   - url: >-
-      https://github.com/NoomStuff/AcroClip/releases/download/v0.7.1/AcroClip-0.7.1-win-x64-Installer.exe
+      https://github.com/NoomStuff/AcroClip/releases/download/v0.8.0/AcroClip-0.8.0-win-x64-Installer.exe
     sha512: >-
-      MlxMveG+bCw7CRlChkYIgU/yL5RI/EKLiFjwfn20mT8VuAb4lKqJREyqFAq7GhHgIo9qzbGsThew5sqVu09fLw==
-    size: 151849563
-releaseName: More UI tweaks lol
-releaseDate: '2026-11-01T03:56:35.082Z'
+      CHO02ePg1mhZh5fNr1GFapftlVTIhJUvim9mODqbMt2sveHdjgKfJYcWy4bzNCVwf/l3G4Z4l0VpzXl/ws3JVg==
+    size: 151850000
+releaseName: Improved Linux support
+releaseDate: '2026-11-01T17:46:27.214Z'
