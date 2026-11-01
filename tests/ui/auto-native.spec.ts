@@ -44,7 +44,15 @@ $timer.Dispose()
 $form.Dispose()
 `
    );
-   const fixture = spawn("powershell.exe", ["-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", script], { windowsHide: true, stdio: "ignore" });
+   const fixture = spawn("powershell.exe", ["-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", script], {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+   });
+   let fixtureDiagnostics = "";
+   for (const output of [fixture.stdout, fixture.stderr])
+      output.on("data", (data: Buffer) => {
+         fixtureDiagnostics = (fixtureDiagnostics + data.toString("utf8")).slice(-8000);
+      });
    await writeFile(
       join(profile, "preferences.json"),
       JSON.stringify({
@@ -77,6 +85,9 @@ $form.Dispose()
       ...(executablePath ? { executablePath } : {}),
       args: [resolve("."), "--disable-gpu-sandbox"],
       env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile, ACROCLIP_COLLECTION: collection },
+   });
+   desktop.on("console", (message) => {
+      if (message.text().startsWith("Test native:")) console.log(message.text());
    });
    try {
       await expect
@@ -189,6 +200,7 @@ $form.Dispose()
       expect(saved.customGames).toEqual([{ name: title, executable: candidate.executable }]);
       expect(saved.desktopFallback).toBe(false);
    } finally {
+      console.log("Auto fixture process", { pid: fixture.pid, exitCode: fixture.exitCode, signal: fixture.signalCode, diagnostics: fixtureDiagnostics });
       console.log(
          "auto-native.spec.ts final recorder",
          await desktop

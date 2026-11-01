@@ -384,7 +384,9 @@ export class Recorder {
          }
       });
       // Diagnostic text remains local and is never forwarded as user-facing errors.
+      let testDiagnostics = "";
       child.stderr.on("data", (data: Buffer) => {
+         if (process.env["ACROCLIP_TEST"] === "1") testDiagnostics = (testDiagnostics + data.toString("utf8")).slice(-16000);
          if (process.env["ACROCLIP_TEST"] === "1" && this.expectedExit) console.log(`Test shutdown: native ${data.toString("utf8").slice(-8000)}`);
       });
       child.on("error", (error) => {
@@ -395,7 +397,8 @@ export class Recorder {
       // Failed launches emit close without exit. Close also follows drained stdout,
       // so buffered save responses are handled before termination clears requests.
       const closed = new Promise<void>((resolve) =>
-         child.once("close", (code) => {
+         child.once("close", (code, signal) => {
+            if (process.env["ACROCLIP_TEST"] === "1") console.log(`Test native: closed with code ${code}, signal ${signal}\n${testDiagnostics}`);
             this.readyReject?.(new Error("The recording helper exited before becoming ready"));
             this.readyResolve = null;
             this.readyReject = null;

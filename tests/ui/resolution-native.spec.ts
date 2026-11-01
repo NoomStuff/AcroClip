@@ -29,6 +29,9 @@ test("screen resolution limits preserve the real source aspect without upscaling
       })
    );
    const app = await electron.launch({ args: [resolve("."), "--disable-gpu-sandbox"], env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile } });
+   app.on("console", (message) => {
+      if (message.text().startsWith("Test native:")) console.log(message.text());
+   });
    try {
       const page = await app.firstWindow();
       const display = await app.evaluate(async ({ BrowserWindow, screen }) => {
@@ -66,6 +69,13 @@ test("screen resolution limits preserve the real source aspect without upscaling
       expect(sizes[1]).toEqual(fitResolutionLimit(sizes[0]!, 720));
       console.log("Actual screen Original and 720p limit", JSON.stringify(sizes));
    } finally {
+      console.log(
+         "Resolution final recorder",
+         await app
+            .windows()[0]
+            ?.evaluate(async () => (await window.acroClip.state()).recorder)
+            .catch(() => undefined)
+      );
       await app.close();
    }
 });
