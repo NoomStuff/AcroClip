@@ -80,13 +80,16 @@ $form.Dispose()
    });
    try {
       await expect
-         .poll(async () => {
-            try {
-               return await readFile(handle, "utf8");
-            } catch {
-               return "";
-            }
-         })
+         .poll(
+            async () => {
+               try {
+                  return await readFile(handle, "utf8");
+               } catch {
+                  return "";
+               }
+            },
+            { timeout: 15000 }
+         )
          .not.toBe("");
       const page = await desktop.firstWindow();
       await expect(page.locator(".recording-page")).toBeVisible({ timeout: 15000 });

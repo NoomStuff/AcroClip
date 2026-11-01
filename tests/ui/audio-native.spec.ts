@@ -54,10 +54,13 @@ test("extra audio rows persist, obey recording boundaries and produce named isol
          const state = await window.acroClip.state();
          await window.acroClip.savePreferences({ ...state.preferences, sourceKind: "app", sourceId: id });
       }, target!.id);
-      await page.getByRole("button", { name: "Add audio source", exact: true }).click();
-      await expect(page.getByRole("combobox", { name: "Audio source", exact: true })).toBeEnabled({ timeout: 30000 });
+      await expect
+         .poll(async () => (await page.evaluate(() => window.acroClip.games())).some((game) => game.name === audioTitle), { timeout: 15000 })
+         .toBe(true);
       const audio = (await page.evaluate(() => window.acroClip.games())).find((game) => game.name === audioTitle)!;
       expect(audio).toBeDefined();
+      await page.getByRole("button", { name: "Add audio source", exact: true }).click();
+      await expect(page.getByRole("combobox", { name: "Audio source", exact: true })).toBeEnabled({ timeout: 30000 });
       await selectOption(page, "Audio source", audio.id);
       await expect(page.getByRole("checkbox", { name: /Include in master mix/ })).toHaveCount(0);
       await page.getByRole("button", { name: "Add source", exact: true }).click();
