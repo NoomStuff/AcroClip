@@ -169,7 +169,22 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
          .toEqual(["Matches", "Third", "Second"]);
+      await expect(labels).toHaveText(["Matches", "Third", "Second"]);
+      await expect(thirdControl).toBeFocused();
       await thirdControl.press("Alt+ArrowUp");
+      await expect
+         .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
+         .toEqual(["Third", "Matches", "Second"]);
+      await expect(thirdControl).toBeFocused();
+      await thirdControl.press("Alt+ArrowDown");
+      await thirdControl.press("Alt+ArrowDown");
+      await expect(labels).toHaveText(["Matches", "Second", "Third"]);
+      await expect
+         .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
+         .toEqual(["Matches", "Second", "Third"]);
+      await thirdControl.press("Alt+ArrowUp");
+      await thirdControl.press("Alt+ArrowUp");
+      await expect(labels).toHaveText(["Third", "Matches", "Second"]);
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
          .toEqual(["Third", "Matches", "Second"]);

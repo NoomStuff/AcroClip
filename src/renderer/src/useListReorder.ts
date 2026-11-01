@@ -26,6 +26,8 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
    const generation = useRef(0);
    const latest = useRef({ items, commit });
    latest.current = { items, commit };
+   const keyboardOrder = useRef<string[] | null>(null);
+   const keyboardFocus = useRef<HTMLElement | null>(null);
    const enabled = commit !== undefined;
    const [announcement, setAnnouncement] = useState("");
    const paint = useRef<() => void>(() => undefined);
@@ -109,8 +111,24 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
    }, [preview]);
    useLayoutEffect(() => {
       stop.current(false);
+      const target = keyboardOrder.current;
+      const current = latest.current.items;
+      if (target && target.length === current.length && target.every((id) => current.some((item) => item.id === id))) {
+         if (target.join("\0") !== signature) return;
+      }
+      keyboardOrder.current = null;
       setPreview(null);
-   }, [signature, identity, enabled]);
+   }, [signature]);
+   useLayoutEffect(() => {
+      if (keyboardFocus.current?.isConnected && document.activeElement === document.body) keyboardFocus.current.focus({ preventScroll: true });
+      if (!keyboardOrder.current) keyboardFocus.current = null;
+   }, [preview, signature]);
+   useLayoutEffect(() => {
+      stop.current(false);
+      keyboardOrder.current = null;
+      keyboardFocus.current = null;
+      setPreview(null);
+   }, [identity, enabled]);
    useLayoutEffect(() => {
       if (!enabled) return;
       const tick = () => {
@@ -174,6 +192,8 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
          if (!enabled || event.button !== 0 || !event.isPrimary || event.pointerType === "touch") return;
          const capture = event.currentTarget.querySelector<HTMLElement>("[data-list-control]");
          if (!capture || !(event.target instanceof Node) || !capture.contains(event.target)) return;
+         keyboardOrder.current = null;
+         keyboardFocus.current = null;
          generation.current++;
          // Capture before the browser can start a native text/image drag and
          // cancel the pointer stream. Keep normal clicks on the real button.
@@ -206,16 +226,29 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
          if (!(event.target instanceof Element) || !event.target.closest("[data-list-control]")) return;
          event.preventDefault();
          event.stopPropagation();
-         const index = latest.current.items.findIndex((item) => item.id === id);
+         const ids = keyboardOrder.current ?? latest.current.items.map((item) => item.id);
+         const index = ids.indexOf(id);
          const nextIndex = index + (event.key === "ArrowUp" ? -1 : 1);
-         if (index < 0 || nextIndex < 0 || nextIndex >= latest.current.items.length) return;
-         const beforeId = event.key === "ArrowUp" ? latest.current.items[nextIndex]!.id : (latest.current.items[nextIndex + 1]?.id ?? null);
-         void Promise.resolve(latest.current.commit?.(id, beforeId)).then(
-            (result) => {
-               if (result !== false) setAnnouncement(`Moved to position ${nextIndex + 1} of ${latest.current.items.length}`);
-            },
-            () => undefined
-         );
+         if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return;
+         generation.current++;
+         const next = ids.filter((item) => item !== id);
+         next.splice(nextIndex, 0, id);
+         keyboardOrder.current = next;
+         keyboardFocus.current = event.target.closest<HTMLElement>("[data-list-control]");
+         setPreview(next);
+         const beforeId = next[nextIndex + 1] ?? null;
+         const restore = () => {
+            if (keyboardOrder.current !== next) return;
+            keyboardOrder.current = null;
+            setPreview(null);
+         };
+         void Promise.resolve(latest.current.commit?.(id, beforeId)).then((result) => {
+            if (result === false) restore();
+            else {
+               setAnnouncement(`Moved to position ${nextIndex + 1} of ${ids.length}`);
+               if (latest.current.items.map((item) => item.id).join("\0") === next.join("\0")) restore();
+            }
+         }, restore);
       },
    };
 }
