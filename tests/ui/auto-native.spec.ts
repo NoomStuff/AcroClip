@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { defaultPreferences } from "../../src/shared/defaults";
+import { applicationLabel } from "../../src/main/application-identity";
 
 test("Auto waits privately, adds a local game and follows it without losing accepted clips", async () => {
    test.skip(process.platform !== "win32" || process.env["ACROCLIP_NATIVE_UI"] !== "1", "Requires actual Windows capture");
@@ -101,6 +102,7 @@ $form.Dispose()
       console.log("Auto waiting state confirmed");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.games())).some((game) => game.name === title)).toBe(true);
       const candidate = (await page.evaluate(() => window.acroClip.games())).find((game) => game.name === title)!;
+      const applicationName = await applicationLabel(candidate.executable);
       await selectOption(page, "Running application", candidate.id);
       await page.getByRole("button", { name: "Add selected game", exact: true }).click();
       await page.locator(".rail").getByRole("button", { name: "Recording", exact: true }).click();
@@ -134,6 +136,7 @@ $form.Dispose()
          second.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`Clip command exited ${code}`))));
       });
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length, { timeout: 20_000 }).toBe(1);
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.pendingSaves, { timeout: 20_000 }).toBe(0);
       expect(
          await desktop.evaluate(({ BrowserWindow }) =>
             BrowserWindow.getAllWindows()
@@ -142,7 +145,7 @@ $form.Dispose()
          )
       ).toBe(false);
       const clip = (await page.evaluate(() => window.acroClip.state())).clips[0]!;
-      expect(clip.source).toBe(title);
+      expect(clip.source).toBe(applicationName);
       expect(clip.duration).toBeGreaterThan(3);
       const decoded = spawnSync(resolve("resources/media/ffmpeg.exe"), ["-v", "error", "-i", clip.path, "-f", "null", "-"], {
          encoding: "utf8",
@@ -166,7 +169,7 @@ $form.Dispose()
       });
       await page.locator(".rail").getByRole("button", { name: "Library", exact: true }).click();
       await page.getByRole("button", { name: `Open ${clip.name}`, exact: true }).click();
-      await expect(page.locator(".viewer-metadata .source-label")).toHaveText(title);
+      await expect(page.locator(".viewer-metadata .source-label")).toHaveText(applicationName);
       const metadata = await page.locator(".viewer-metadata").evaluate((node) => {
          const source = node.querySelector(".source-label")!.getBoundingClientRect(),
             time = node.querySelector("time")!.getBoundingClientRect();

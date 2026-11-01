@@ -126,7 +126,7 @@ test("native capture survives preview teardown and saves the selected applicatio
       expect(clip.applicationId).toBe(source!.applicationId);
       expect((await page.evaluate(() => window.acroClip.state())).applicationIcons?.[clip.applicationId!]).toMatch(/^data:image\/png;base64,/);
       expect(clip.duration).toBeGreaterThanOrEqual(4.5);
-      expect(clip.source).toBe("Native preview fixture");
+      expect(clip.source).toBe("Electron");
       const ffmpeg = resolve("resources/media/ffmpeg.exe");
       await promisify(execFile)(ffmpeg, ["-v", "error", "-i", clip.path, "-f", "null", "-"], { windowsHide: true });
       const pixel = await promisify(execFile)(
