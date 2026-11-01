@@ -8,6 +8,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -22,6 +23,11 @@ bun = shutil.which("bun")
 if not bun:
     raise RuntimeError("Bun must be on PATH")
 root = pathlib.Path.cwd()
+# Exercise the source-matched Linux app separately before testing the actual
+# AppImage payload. Both checks use private display, audio and profile state.
+print("Verifying Linux UI and native capture before the independent AppImage check", flush=True)
+subprocess.run([sys.executable, str(root / "scripts/run-linux-ui.py"), bun, "x", "playwright", "test"],
+               cwd=root, env=dict(os.environ, ACROCLIP_NATIVE_UI="1"), check=True)
 evidence = root / ".cache/linux-packaged" / str(uuid.uuid4())
 evidence.mkdir(parents=True)
 private = pathlib.Path(tempfile.mkdtemp(prefix="acroclip-packaged-x11-"))

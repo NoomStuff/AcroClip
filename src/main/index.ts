@@ -1,7 +1,7 @@
 import { shareableTargetAllowed } from "../shared/shareable-target";
 import { normalizeApplicationLabel } from "./application-identity";
 import { isPackagedApp, registerWindowsIdentity, windowsAppId } from "./identity";
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, nativeImage, protocol, shell, Tray, session, systemPreferences } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, nativeImage, protocol, shell, Tray, session, systemPreferences, screen } from "electron";
 import { mkdirSync, realpathSync } from "node:fs";
 import { appendFile, mkdir, realpath, stat, rename as renameFile, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -22,6 +22,7 @@ import { Recorder } from "./recorder";
 import { CaptureSources } from "./capture-sources";
 import { serveMedia } from "./serve";
 import { Updates } from "./updates";
+import { isWaylandSession } from "./linux-session";
 import { linuxDesktopIdentity, linuxStartup, linuxDesktopName, xdgDirectory } from "./startup";
 import { pendingExitDecision } from "./lifecycle";
 import { Feedback } from "./feedback";
@@ -118,7 +119,7 @@ const recorder = new Recorder({
 });
 const captureSources = new CaptureSources(
    recorder,
-   () => (process.platform === "win32" && mainWindow ? mainWindow.getNativeWindowHandle().readBigUInt64LE().toString() : ""),
+   () => mainWindow?.getMediaSourceId().split(":")[1] ?? "",
    (sources) => {
       send({ type: "capture-sources", sources });
       void collections
@@ -224,11 +225,12 @@ async function showFeedback(message: string, error: boolean, saving: boolean) {
 let lastRecordingArtwork: RecordingArtwork | undefined;
 function createWindow() {
    stateChanges.reset();
+   const workArea = process.platform === "linux" ? screen.getPrimaryDisplay().workAreaSize : { width: 1380, height: 900 };
    mainWindow = new BrowserWindow({
-      width: 1380,
-      height: 900,
-      minWidth: 980,
-      minHeight: 680,
+      width: Math.min(1380, workArea.width),
+      height: Math.min(900, workArea.height),
+      minWidth: Math.min(980, workArea.width),
+      minHeight: Math.min(680, workArea.height),
       backgroundColor: "#0d0c0f",
       frame: process.platform !== "win32",
       titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
@@ -337,6 +339,7 @@ async function saveClip() {
    const requestedAt = Date.now();
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to save another clip.");
    if (recorder.status.state !== "recording" && recorder.status.state !== "waiting") throw new Error("Start recording before saving a clip.");
+   if (!collections.root) throw new Error("The collection folder is still opening. Try saving again when it is available.");
    send({ type: "clip-action" });
    const footage = bufferedCaptureSource(recorder.status);
    await collections.finishFileChanges();
@@ -463,7 +466,31 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown) {
    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
       if (event.sender !== mainWindow?.webContents) throw new Error("Unknown window");
       try {
-         if (!["state", "sources", "choose-folder", "update-check", "update-download", "update-release", "update-reveal", "exit"].includes(channel))
+         if (
+            ![
+               "state",
+               "sources",
+               "choose-folder",
+               "update-check",
+               "update-download",
+               "update-release",
+               "update-reveal",
+               "exit",
+               "preferences",
+               "playback",
+               "record-start",
+               "record-stop",
+               "record-save",
+               "recording-capabilities",
+               "capture-shortcut",
+               "preview-source",
+               "monitor-audio",
+               "listen-audio",
+               "audio-devices",
+               "games",
+               "game-catalog",
+            ].includes(channel)
+         )
             await collectionReady;
          if (
             closingRequested &&
@@ -826,7 +853,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
    app.on("second-instance", (_event, arguments_) => {
       if (arguments_.includes("--clip")) {
-         void collectionReady.then(() => saveClip()).catch((error: unknown) => notice(errorMessage(error), true));
+         void saveClip().catch((error: unknown) => notice(errorMessage(error), true));
          return;
       }
       mainWindow?.show();
@@ -853,12 +880,7 @@ else {
          preferencePath = join(app.getPath("userData"), "preferences.json");
          preferences = await readPreferences(preferencePath, process.env["ACROCLIP_COLLECTION"] ?? join(app.getPath("videos"), "AcroClip"));
          collectionReady = collections.open(preferences.collection);
-         const previewAllowed = () =>
-            !!previewSourceId &&
-            !!mainWindow?.isVisible() &&
-            !mainWindow.isMinimized() &&
-            !closingRequested &&
-            !(process.platform === "linux" && process.env["WAYLAND_DISPLAY"]);
+         const previewAllowed = () => !!previewSourceId && !!mainWindow?.isVisible() && !mainWindow.isMinimized() && !closingRequested && !isWaylandSession();
          session.defaultSession.setDisplayMediaRequestHandler(
             (request, callback) => {
                if (request.frame !== mainWindow?.webContents.mainFrame || !request.videoRequested || request.audioRequested || !previewAllowed()) {
@@ -930,13 +952,15 @@ else {
          tray = new Tray(trayIcon());
          tray.on("double-click", () => mainWindow?.show());
          updateTray();
-         await collectionReady;
-         if (process.platform === "linux" && isPackagedApp() && process.env["ACROCLIP_TEST"] !== "1")
+         if (process.platform === "linux" && isPackagedApp() && process.env["ACROCLIP_TEST"] !== "1") {
             await linuxDesktopIdentity(
                xdgDirectory(process.env["XDG_DATA_HOME"], join(app.getPath("home"), ".local", "share")),
                process.env["APPIMAGE"] ?? process.execPath,
                iconPath()
             ).catch((error: unknown) => notice(errorMessage(error), true));
+            // AppImage updates can replace the versioned executable path.
+            if (preferences.startWithOS) await applyStartup(true).catch((error: unknown) => notice(errorMessage(error), true));
+         }
          installShortcuts(preferences, true);
          if (process.argv.includes("--clip")) void saveClip().catch((error: unknown) => notice(errorMessage(error), true));
          setInterval(() => {
@@ -953,6 +977,7 @@ else {
          }, 5000).unref();
          if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
             void startRecording().catch((e) => notice(errorMessage(e), true));
+         await collectionReady;
          if (isPackagedApp() && process.env["ACROCLIP_TEST"] !== "1") {
             setTimeout(() => {
                if (preferences.updateCheck) void updates.check(false);

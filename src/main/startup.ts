@@ -9,7 +9,11 @@ export function desktopExec(executable: string, args: string[]): string {
       const argument = value.replaceAll("%", "%%").replace(/[\\"`$]/g, "\\$&");
       return `"${argument.replaceAll("\\", "\\\\").replaceAll("\t", "\\t")}"`;
    };
-   return [executable, ...args].map(quote).join(" ");
+   // GLib validates the executable before expanding %% in Exec. Keep a fixed
+   // executable in that case, and pass the real path as a literal argument.
+   // The shell evaluates only this static command, never the supplied path.
+   const command = executable.includes("%") ? ["/bin/sh", "-c", 'exec "$@"', "acroclip", executable, ...args] : [executable, ...args];
+   return command.map(quote).join(" ");
 }
 export function xdgDirectory(configured: string | undefined, fallback: string): string {
    return configured && isAbsolute(configured) ? configured : fallback;

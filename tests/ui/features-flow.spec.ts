@@ -246,6 +246,10 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
          const state = await window.acroClip.state();
          await window.acroClip.savePreferences({ ...state.preferences, captureAudio: true });
       });
+      if (process.platform !== "win32") {
+         await expect(page.getByRole("button", { name: "Listening is available on Windows only: Application", exact: true })).toBeDisabled();
+         return;
+      }
       const listen = page.getByRole("button", { name: "Listen to Application", exact: true });
       await listen.scrollIntoViewIfNeeded();
       await listen.focus();

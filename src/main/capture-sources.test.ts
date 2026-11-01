@@ -4,8 +4,17 @@ import { CaptureSources } from "./capture-sources";
 
 const electron = vi.hoisted(() => {
    const icon = { isEmpty: () => false, resize: () => ({ toDataURL: () => "data:image/png;base64,icon" }) };
+   const display = {
+      id: 7,
+      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      size: { width: 1920, height: 1080 },
+      scaleFactor: 1,
+      nativeOrigin: { x: 0, y: 0 },
+   };
    return {
       icon,
+      display,
+      getAllDisplays: vi.fn(() => [display]),
       getFileIcon: vi.fn(async () => icon),
       getSources: vi.fn(async () => [
          { id: "screen:0:0", name: "Screen 1", display_id: "7", thumbnail: { toDataURL: () => "" } },
@@ -18,7 +27,7 @@ vi.mock("electron", () => ({
    desktopCapturer: { getSources: electron.getSources },
    nativeImage: { createEmpty: () => ({ toDataURL: () => "" }) },
    screen: {
-      getAllDisplays: () => [{ id: 7, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, size: { width: 1920, height: 1080 }, scaleFactor: 1 }],
+      getAllDisplays: electron.getAllDisplays,
       dipToScreenRect: (_window: unknown, bounds: unknown) => bounds,
    },
 }));
@@ -32,6 +41,7 @@ function recorder() {
    };
 }
 beforeEach(() => {
+   electron.getAllDisplays.mockReset().mockReturnValue([electron.display]);
    electron.getSources.mockClear();
    electron.getFileIcon.mockReset().mockResolvedValue(electron.icon);
 });
@@ -137,5 +147,55 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       expect((await sources.list()).map((source) => source.id)).toEqual(first.map((source) => source.id));
       finish!([]);
       await thumbnails;
+   });
+});
+
+describe.skipIf(process.platform !== "linux")("Wayland portal ownership", () => {
+   it("does not open an Electron picker when only the session type advertises Wayland", async () => {
+      vi.stubEnv("WAYLAND_DISPLAY", "");
+      vi.stubEnv("XDG_SESSION_TYPE", "wayland");
+      try {
+         const sources = new CaptureSources(recorder(), () => "999");
+         expect(await sources.list(true)).toEqual([]);
+         expect(electron.getSources).not.toHaveBeenCalled();
+      } finally {
+         vi.unstubAllEnvs();
+      }
+   });
+});
+
+describe("capture window exclusion", () => {
+   it("excludes the application's own window by its media source identity", async () => {
+      const native = recorder();
+      native.capturableApplications.mockResolvedValue([application]);
+      const sources = new CaptureSources(native, () => "42");
+      expect((await sources.list()).some((source) => source.id === "window:42:0")).toBe(false);
+   });
+});
+
+describe.skipIf(process.platform !== "linux")("Linux source discovery", () => {
+   it("offers only application windows the native recorder can identify", async () => {
+      const native = recorder();
+      native.capturableApplications.mockResolvedValue([application]);
+      expect((await new CaptureSources(native, () => "999").list()).map((source) => source.id)).toEqual(["screen:0:0", "window:42:0"]);
+      native.capturableApplications.mockResolvedValue([]);
+      expect((await new CaptureSources(native, () => "999").list()).map((source) => source.id)).toEqual(["screen:0:0"]);
+   });
+});
+
+describe.skipIf(process.platform !== "linux")("Linux scaled display coordinates", () => {
+   it("uses native pixel origins instead of multiplying mixed-scale logical positions", async () => {
+      electron.getAllDisplays.mockReturnValue([
+         {
+            ...electron.display,
+            bounds: { x: 1280, y: 0, width: 1093, height: 614 },
+            size: { width: 1093, height: 614 },
+            nativeOrigin: { x: 1920, y: 0 },
+            scaleFactor: 1.25,
+         },
+      ]);
+      const screen = (await new CaptureSources(recorder(), () => "999").list())[0]!;
+      expect(screen.bounds).toEqual({ x: 1920, y: 0, width: 1366, height: 768 });
+      expect(screen.pixelSize).toEqual({ width: 1366, height: 768 });
    });
 });

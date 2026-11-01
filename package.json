@@ -35,7 +35,9 @@
       "package": "bun scripts/package.ts dir",
       "test:portable": "bun scripts/run-interactive-tests.ts portable",
       "release:downloads": "bun scripts/release-downloads.ts",
-      "release:feeds": "bun scripts/prepare-update-feed.ts"
+      "release:feeds": "bun scripts/prepare-update-feed.ts",
+      "test:ui:linux": "python3 scripts/run-linux-ui.py bun run test:ui",
+      "test:ui:native:linux": "ACROCLIP_NATIVE_UI=1 python3 scripts/run-linux-ui.py bun x playwright test linux-native linux-desktop"
    },
    "build": {
       "releaseInfo": {

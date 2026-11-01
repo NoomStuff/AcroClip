@@ -1,3 +1,4 @@
+import { mediaTool } from "./media-tool";
 import { selectOption } from "./select-option";
 import { test, expect, _electron as electron } from "@playwright/test";
 import { execFile } from "node:child_process";
@@ -15,7 +16,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
    await mkdir(collection, { recursive: true });
    const source = join(collection, "Desktop moment.mp4");
    await promisify(execFile)(
-      resolve("resources/media/ffmpeg.exe"),
+      mediaTool("ffmpeg"),
       [
          "-hide_banner",
          "-loglevel",

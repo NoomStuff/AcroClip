@@ -46,6 +46,8 @@ describe("shortcut and startup validation", () => {
       expect(isValidShortcut("Meta+UnknownKey")).toBe(false);
    });
    it("quotes Linux executable paths and escapes desktop entry interpolation", () => {
-      expect(desktopExec("/home/user/My App%/AcroClip", ["/project/path"])).toBe('"/home/user/My App%%/AcroClip" "/project/path"');
+      const command = desktopExec("/home/user/My App%/AcroClip", ["/project/path"]);
+      expect(command).toMatch(/^"\/bin\/sh" "-c" /);
+      expect(command).toContain('"/home/user/My App%%/AcroClip" "/project/path"');
    });
 });

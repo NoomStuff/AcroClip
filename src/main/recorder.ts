@@ -1,3 +1,4 @@
+import { linuxRecorderEnvironment } from "./linux-runtime";
 import { selectedCaptureSource } from "../shared/capture-policy";
 import { promisify } from "node:util";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -357,10 +358,7 @@ export class Recorder {
          cwd: root,
          windowsHide: true,
          stdio: "pipe",
-         env: {
-            ...process.env,
-            ...(process.platform === "linux" ? { LD_LIBRARY_PATH: [path.join(root, "lib"), process.env["LD_LIBRARY_PATH"]].filter(Boolean).join(":") } : {}),
-         },
+         env: process.platform === "linux" ? linuxRecorderEnvironment(root) : process.env,
       });
       this.process = child;
       this.ready = new Promise<void>((resolve, reject) => {

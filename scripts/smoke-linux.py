@@ -17,6 +17,9 @@ folder = root / ".cache/linux-smoke" / str(uuid.uuid4())
 folder.mkdir(parents=True)
 private = pathlib.Path(tempfile.mkdtemp(prefix="acroclip-native-"))
 env = dict(os.environ, ACROCLIP_ISOLATED_TEST_RUNNER="private-linux", XDG_RUNTIME_DIR=str(private), PULSE_SERVER="unix:" + str(private / "audio.sock"), DBUS_SESSION_BUS_ADDRESS="unix:path=" + str(private / "dbus.sock"), WAYLAND_DISPLAY="", XDG_SESSION_TYPE="x11", ACROCLIP_NATIVE_TEST_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe")
+hardware = os.environ.get("ACROCLIP_TEST_HARDWARE") == "1"
+if hardware:
+    env.pop("ACROCLIP_NATIVE_TEST_SOFTWARE", None)
 env["LD_LIBRARY_PATH"] = str(runtime / "lib")
 display = next(number for number in range(90, 180) if not pathlib.Path(f"/tmp/.X11-unix/X{number}").exists())
 env["DISPLAY"] = f"127.0.0.1:{display}"
@@ -43,6 +46,8 @@ def wait(predicate, timeout=20):
     raise RuntimeError(f"Native command timed out: {events}")
 
 def command(data, expected="response"):
+    if hardware and data.get("action") in ("start", "source"):
+        data["allowSoftwareEncoder"] = False
     identity = str(uuid.uuid4())
     helper.stdin.write(json.dumps(dict(data, id=identity)) + "\n")
     helper.stdin.flush()
@@ -86,12 +91,18 @@ try:
     threading.Thread(target=read, daemon=True).start()
     ready = wait(lambda event: event["event"] == "ready")
     assert ready["version"] == ("30.2.3.1-3~bpo24.04.1" if platform.machine() == "aarch64" else "32.2.0"), ready
-    denied = command(dict(action="start",sourceKind="screen",screenIndex=0,quality="low",clipSeconds=2,captureAudio=False,microphone=False,allowSoftwareEncoder=False), "error")
-    assert "software" in denied["message"].lower(), denied
-    command(dict(action="stop"))
+    if hardware:
+        assert ready["encoders"], "Hardware mode requires a real hardware encoder"
+    else:
+        denied = command(dict(action="start",sourceKind="screen",screenIndex=0,quality="low",clipSeconds=2,captureAudio=False,microphone=False,allowSoftwareEncoder=False), "error")
+        assert "software" in denied["message"].lower(), denied
+        command(dict(action="stop"))
     command(dict(action="start", sourceKind="screen", sourceName="Private X11", screenIndex=0, bounds=dict(x=0,y=0,width=640,height=360), quality="custom",customWidth=640,customHeight=360,customFPS=24,customCQ=28,clipSeconds=2,captureAudio=True,microphone=False,allowSoftwareEncoder=True,captureVolume=0.5))
     recording = wait(lambda event: event["event"] == "recording")
-    assert recording["encoder"] == "obs_x264", recording
+    if hardware:
+        assert recording["encoder"] in ready["encoders"], recording
+    else:
+        assert recording["encoder"] == "obs_x264", recording
     measured = {}
     for name, gain, mute in [("half",0.5,False),("full",1,False),("muted",1,True)]:
         command(dict(action="audio",source="capture",volume=gain,muted=mute))
@@ -187,7 +198,7 @@ try:
     helper.stdin.flush()
     assert helper.wait(timeout=10)==0
     (folder/"measurements.json").write_text(json.dumps(measured,indent=2))
-    print("Real Linux X11/PulseAudio/x264 smoke passed", measured, folder)
+    print("Real Linux X11/PulseAudio capture passed with " + recording["encoder"], measured, folder)
 finally:
     for process in reversed(processes):
         if process.poll() is None:

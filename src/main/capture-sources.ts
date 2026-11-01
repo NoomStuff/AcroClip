@@ -1,3 +1,4 @@
+import { isWaylandSession } from "./linux-session";
 import { app, desktopCapturer, nativeImage, screen } from "electron";
 import type { DesktopCapturerSource } from "electron";
 import { createHash, randomUUID } from "node:crypto";
@@ -52,12 +53,12 @@ export class CaptureSources {
          const choices = portalSources(capabilities, candidates);
          if (choices !== null) return (this.cached = choices);
          // Electron's independent portal session would ask twice and cannot name the native selection.
-         if (process.env["WAYLAND_DISPLAY"]) return (this.cached = []);
+         if (isWaylandSession()) return (this.cached = []);
       }
       // Discovery needs identities, not captured images. Run the independent
       // enumerations together, and fetch Windows executable icons afterwards.
       const [nativeWindows, list] = await Promise.all([
-         process.platform === "win32" ? this.recorder.capturableApplications() : this.recorder.applicationCandidates().catch(() => []),
+         ["win32", "linux"].includes(process.platform) ? this.recorder.capturableApplications() : this.recorder.applicationCandidates().catch(() => []),
          desktopCapturer.getSources({
             types: ["screen", "window"],
             thumbnailSize: { width: 0, height: 0 },
@@ -73,11 +74,18 @@ export class CaptureSources {
          .filter(
             (s) =>
                s.id.split(":")[1] !== this.ownWindow() &&
-               (process.platform !== "win32" || s.id.startsWith("screen:") || windowsByHandle.has(s.id.split(":")[1]))
+               (!["win32", "linux"].includes(process.platform) || s.id.startsWith("screen:") || windowsByHandle.has(s.id.split(":")[1]))
          )
          .map((s) => {
             const display = displays.get(s.display_id);
-            const bounds = display ? (process.platform === "win32" ? screen.dipToScreenRect(null, display.bounds) : display.bounds) : undefined;
+            let bounds = display?.bounds;
+            if (display && process.platform === "win32") bounds = screen.dipToScreenRect(null, display.bounds);
+            else if (display && process.platform === "linux")
+               bounds = {
+                  ...display.nativeOrigin,
+                  width: Math.round(display.size.width * display.scaleFactor),
+                  height: Math.round(display.size.height * display.scaleFactor),
+               };
             const candidate = windowsByHandle.get(s.id.split(":")[1]);
             const prior = previous.get(s.id);
             let applicationId: string | undefined;
@@ -152,7 +160,7 @@ export class CaptureSources {
       });
    }
    private async loadThumbnails(): Promise<CaptureSource[]> {
-      if (this.cached.some((source) => source.id.startsWith("portal:")) || (process.platform === "linux" && process.env["WAYLAND_DISPLAY"])) return this.cached;
+      if (this.cached.some((source) => source.id.startsWith("portal:")) || isWaylandSession()) return this.cached;
       const snapshot = new Map(this.cached.map((source) => [source.id, source]));
       const frames = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false });
       const images = new Map(frames.map((source) => [source.id, source]));

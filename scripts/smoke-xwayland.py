@@ -118,7 +118,14 @@ try:
     dbus = launch(["dbus-daemon", "--session", "--nofork", "--print-address"], "dbus", stdout=True)
     env["DBUS_SESSION_BUS_ADDRESS"] = dbus.stdout.readline().strip()
     pipewire = launch(["pipewire"], "pipewire")
-    launch(["wireplumber"], "wireplumber")
+    # WirePlumber exits if it races PipeWire's socket creation on a cold session.
+    deadline = time.monotonic() + 10
+    while not (private / "pipewire-0").is_socket():
+        assert pipewire.poll() is None and time.monotonic() < deadline, "Private PipeWire did not start"
+        time.sleep(0.05)
+    manager = launch(["wireplumber"], "wireplumber")
+    time.sleep(0.2)
+    assert manager.poll() is None, "Private WirePlumber did not connect"
     launch(["pulseaudio", "-n", "--daemonize=no", "--exit-idle-time=-1", "--use-pid-file=no", "--disable-shm=true", "--load=module-native-protocol-unix socket=" + str(private / "audio.sock") + " auth-anonymous=1", "--load=module-null-sink sink_name=acroclip-test rate=48000 channels=2"], "pulse")
     deadline = time.monotonic() + 10
     while not (private / "audio.sock").exists():

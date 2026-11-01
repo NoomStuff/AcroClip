@@ -1,3 +1,4 @@
+import { mediaTool } from "./media-tool";
 import { test, expect, _electron as electron } from "@playwright/test";
 import { mkdtemp, mkdir, writeFile, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,7 +15,7 @@ test("cached loading states, enumeration retry, and interrupted library movement
    await mkdir(collection);
    const source = join(collection, "First.mp4");
    await promisify(execFile)(
-      resolve("resources/media/ffmpeg.exe"),
+      mediaTool("ffmpeg"),
       ["-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=24", "-t", "1", "-c:v", "libx264", "-threads", "1", source],
       { windowsHide: true }
    );

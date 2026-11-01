@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { z } from "zod";
-import { hostedTestIsolation, requireTestIsolation } from "./test-isolation";
+import { hostedTestIsolation, privateLinuxTestIsolation, requireTestIsolation } from "./test-isolation";
 
 const commands = {
    ui: [
@@ -30,7 +30,7 @@ const testArguments = process.env["ACROCLIP_INTERACTIVE_ARGUMENTS"]
    ? z.array(z.string()).parse(JSON.parse(process.env["ACROCLIP_INTERACTIVE_ARGUMENTS"]))
    : process.argv.slice(3);
 const read = (command: string, args: string[]): string => execFileSync(command, args, { encoding: "utf8", windowsHide: true }).trim();
-if (!hostedTestIsolation(process.env, process.platform)) {
+if (!hostedTestIsolation(process.env, process.platform) && !(process.platform === "linux" && privateLinuxTestIsolation(process.env))) {
    const status = read("git", ["status", "--porcelain", "--untracked-files=normal"]);
    if (status)
       throw new Error(

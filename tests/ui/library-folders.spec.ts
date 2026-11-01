@@ -1,3 +1,4 @@
+import { mediaTool } from "./media-tool";
 import { test, expect, _electron as electron } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { copyFile, mkdir, mkdtemp, writeFile, stat, readFile } from "node:fs/promises";
@@ -13,7 +14,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
    await mkdir(join(collection, "Games", "Empty"), { recursive: true });
    await mkdir(join(collection, "Other", "Empty"), { recursive: true });
    const rootClip = join(collection, "Root moment.mp4");
-   await promisify(execFile)(resolve("resources/media/ffmpeg.exe"), [
+   await promisify(execFile)(mediaTool("ffmpeg"), [
       "-v",
       "error",
       "-f",

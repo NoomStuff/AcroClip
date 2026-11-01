@@ -1,3 +1,4 @@
+import { mediaTool } from "./media-tool";
 import { test, expect, _electron as electron } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -13,7 +14,7 @@ test("the viewer rail retains its first clip, version and position when a newer 
    await mkdir(collection, { recursive: true });
    const source = join(collection, "Reviewed moment.mp4");
    await promisify(execFile)(
-      resolve("resources/media/ffmpeg.exe"),
+      mediaTool("ffmpeg"),
       [
          "-v",
          "error",

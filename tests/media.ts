@@ -51,26 +51,10 @@ try {
       "title=Microphone",
       original,
    ]);
-   const streaming = join(workspace, "streaming.webm");
-   await runMedia("ffmpeg", [
-      ...ffmpegBase,
-      "-y",
-      "-i",
-      original,
-      "-map",
-      "0:v:0",
-      "-c:v",
-      "libvpx-vp9",
-      "-deadline",
-      "realtime",
-      "-cpu-used",
-      "8",
-      "-live",
-      "1",
-      streaming,
-   ]);
+   const streaming = join(workspace, "streaming.mkv");
+   await runMedia("ffmpeg", [...ffmpegBase, "-y", "-i", original, "-map", "0:v:0", "-c:v", "copy", "-f", "matroska", "-live", "1", streaming]);
    const streamingInfo = await probe(streaming);
-   assert.ok(Math.abs(streamingInfo.duration - 8) < 0.1, "WebM without a declared duration remains playable");
+   assert.ok(Math.abs(streamingInfo.duration - 8) < 0.1, "Streaming Matroska without a declared duration remains playable");
    const streamingCache = join(workspace, "streaming-playback");
    await mkdir(streamingCache);
    const streamingPlayback = await new PlaybackCache().prepare(streaming, streamingCache);

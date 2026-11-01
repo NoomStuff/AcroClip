@@ -314,7 +314,8 @@ std::vector<std::string> hardwareEncoders() {
   // GPU. OBS modules register them only after their device availability probe.
   for (const char *preferred :
        {"obs_nvenc_h264_tex", "obs_nvenc_h264", "h264_texture_amf",
-        "h264_fallback_amf", "obs_qsv11_v2", "obs_qsv11_soft_v2"}) {
+        "h264_fallback_amf", "obs_qsv11_v2", "obs_qsv11_soft_v2",
+        "ffmpeg_vaapi"}) {
     const char *id = nullptr;
     for (size_t i = 0; obs_enum_encoder_types(i, &id); i++)
       if (std::string(id) == preferred)
@@ -2011,7 +2012,10 @@ public:
                        &y) != 4)
               continue;
             auto b = c["bounds"];
-            if (w != b.value("width", 0) || h != b.value("height", 0) ||
+            // DIP rounding can lose one pixel at fractional scales. The exact
+            // native origin still identifies the selected physical monitor.
+            if (std::abs(int64_t(w) - b.value("width", int64_t(0))) > 1 ||
+                std::abs(int64_t(h) - b.value("height", int64_t(0))) > 1 ||
                 x != b.value("x", 0) || y != b.value("y", 0))
               continue;
           } else if (candidate != screen)
@@ -2311,6 +2315,8 @@ private:
       encoder = hardware.front();
     if (encoder.find("amf") != std::string::npos)
       obs_data_set_string(d.get(), "preset", "balanced");
+    if (encoder == "ffmpeg_vaapi")
+      obs_data_set_int(d.get(), "qp", cq);
     if (encoder.find("qsv") != std::string::npos) {
       obs_data_set_string(d.get(), "target_usage", "TU4");
       obs_data_set_int(d.get(), "qpi", cq);
@@ -2633,6 +2639,12 @@ int main(int argc, char **argv) {
     )
       throw std::runtime_error("libOBS initialization failed");
 #ifdef __linux__
+    // The bundled libva comes from Ubuntu. Drivers stay on the host, whose
+    // distro may use a different directory than libva's compiled default.
+    if (!std::getenv("LIBVA_DRIVERS_PATH"))
+      setenv("LIBVA_DRIVERS_PATH",
+             "/usr/lib/dri:/usr/lib64/dri:/usr/lib/x86_64-linux-gnu/dri:"
+             "/usr/lib/aarch64-linux-gnu/dri:/usr/local/lib/dri", 0);
     obsShutdown.initialized = true;
     if (!acroclip::wayland::enabled()) {
       if (!std::getenv("DISPLAY"))

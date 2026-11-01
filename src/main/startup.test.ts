@@ -12,7 +12,7 @@ describe("Linux packaged portal identity", () => {
       await writeFile(icon, "isolated app icon");
       await linuxDesktopIdentity(directory, "/apps/My App%.AppImage", icon);
       const initial = await readFile(file, "utf8");
-      expect(initial).toContain('Exec="/apps/My App%%.AppImage"');
+      expect(initial).toContain('"/apps/My App%%.AppImage"');
       expect(initial).toContain("StartupWMClass=dev.acroclip.app");
       expect(initial).toContain("Icon=dev.acroclip.app");
       expect(await readFile(join(directory, "icons", "hicolor", "256x256", "apps", "dev.acroclip.app.png"), "utf8")).toBe("isolated app icon");
@@ -39,7 +39,7 @@ describe("Linux launcher configuration", () => {
       const command = desktopExec(source, []);
       const decoded = command.replace(/\\([\\tnr])/g, (_, char: string) => ({ t: "\t", n: "\n", r: "\r" })[char] ?? char);
       const argument = decoded
-         .slice(1, -1)
+         .slice(decoded.indexOf('"/apps/') + 1, -1)
          .replace(/\\([\\"`$])/g, "$1")
          .replaceAll("%%", "%");
       expect(argument).toBe(source);

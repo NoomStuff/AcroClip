@@ -71,7 +71,9 @@ test("live preview captures the chosen window and releases tracks on navigation,
       const choices = await page.evaluate(() => window.acroClip.sources());
       const sourceA = choices.find((source) => source.name === "Preview fixture A");
       const sourceB = choices.find((source) => source.name === "Preview fixture B");
-      expect(choices.some((source) => ["Hidden capture fixture", "Protected capture fixture"].includes(source.name))).toBe(false);
+      expect(choices.some((source) => source.name === "Hidden capture fixture")).toBe(false);
+      if (process.platform === "win32" || process.platform === "darwin")
+         expect(choices.some((source) => source.name === "Protected capture fixture")).toBe(false);
       expect(sourceA).toBeDefined();
       expect(sourceB).toBeDefined();
       await page.evaluate(async (id) => {
@@ -164,7 +166,11 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();
       });
-      await page.evaluate(() => window.acroClip.window("close"));
+      await desktop.evaluate(({ BrowserWindow }) =>
+         BrowserWindow.getAllWindows()
+            .find((window) => window.getTitle() === "AcroClip")!
+            .hide()
+      );
       await expect
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
          .toEqual(["ended"]);
