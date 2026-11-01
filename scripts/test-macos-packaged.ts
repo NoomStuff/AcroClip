@@ -261,7 +261,7 @@ try {
    expect(original.width).toBe(identity.windowPixels.width);
    expect(original.height).toBe(identity.windowPixels.height);
    expect(original.duration).toBeGreaterThanOrEqual(4.5);
-   expect(original.source).toContain("Mac capture fixture");
+   expect(original.source).toBe("Fixture");
    const digest = (data: Buffer) => createHash("sha256").update(data).digest("hex");
    const hash = digest(await readFile(original.path));
    const audioEvidence: Array<{ clip: string; tones: number[][] }> = [];
