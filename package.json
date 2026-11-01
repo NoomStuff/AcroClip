@@ -1,6 +1,6 @@
 {
    "name": "acroclip",
-   "version": "0.7.0",
+   "version": "0.7.1",
    "description": "Clip it. Watch it. Share It.",
    "license": "GPL-3.0-or-later",
    "type": "module",
@@ -39,7 +39,7 @@
    },
    "build": {
       "releaseInfo": {
-         "releaseName": "Major UI improvements"
+         "releaseName": "More UI tweaks lol"
       },
       "appId": "dev.acroclip.app",
       "productName": "AcroClip",

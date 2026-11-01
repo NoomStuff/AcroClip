@@ -817,3 +817,40 @@
    border-radius: var(--radius-control);
    background: var(--accent-soft);
 }
+
+.sidebar-group-title[data-empty],
+.category-item[data-empty],
+.folder-tree-row[data-empty],
+.application-filter[data-empty] {
+   opacity: 0.75;
+   transition: opacity 140ms ease;
+}
+.sidebar-group-title[data-empty] {
+   opacity: 0.5;
+}
+.sidebar-group-title[data-empty]:hover,
+:root[data-keyboard] .sidebar-group-title[data-empty]:focus-within,
+.category-item[data-empty]:hover,
+.category-item[data-empty]:focus-within,
+.folder-tree-row[data-empty]:hover,
+.folder-tree-row[data-empty]:focus-within,
+.application-filter[data-empty]:hover,
+.application-filter[data-empty]:focus-visible {
+   opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+   .sidebar-group-title[data-empty],
+   .category-item[data-empty],
+   .folder-tree-row[data-empty],
+   .application-filter[data-empty] {
+      transition: none;
+   }
+}
+
+.folder-card[data-empty] {
+   opacity: 0.75;
+}
+.folder-card[data-empty]:hover,
+.folder-card[data-empty]:focus-within {
+   opacity: 1;
+}

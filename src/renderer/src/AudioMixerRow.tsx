@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { MoreHorizontal, Volume, Volume1, Volume2, VolumeX } from "lucide-react";
+import { GripVertical, MoreHorizontal, Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import { IconButton, Menu } from "./ui";
 import { MixerFader } from "./MixerFader";
 import { ListenButton, useIsListening } from "./AudioListening";
@@ -39,6 +39,9 @@ export function AudioMixerRow({
    return (
       <div className="mixer-channel" data-disabled={!enabled || undefined}>
          <div className="mixer-channel-header">
+            <button type="button" className="mixer-drag-handle" data-list-control="" aria-label={`Reorder ${name}`} disabled={active}>
+               <GripVertical size={15} />
+            </button>
             <span className="mixer-channel-name">{name}</span>
             {!enabled && <span className="mixer-channel-status">Not recorded</span>}
             <Menu label={`${name} options`} trigger={<MoreHorizontal size={16} />}>

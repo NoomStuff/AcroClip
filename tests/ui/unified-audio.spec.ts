@@ -31,6 +31,25 @@ test("Application and default microphone migrate, edit, remove and readd without
       await expect(page.locator(".mixer-channel")).toHaveCount(2);
       let sources = (await page.evaluate(() => window.acroClip.state())).preferences.audioSources;
       expect(sources.map((item) => item.kind)).toEqual(["source", "input"]);
+      const microphoneHandle = page.getByRole("button", { name: "Reorder Microphone", exact: true });
+      const sourceHandle = page.locator(".mixer-drag-handle").first();
+      await page.locator(".mixer-channel").filter({ hasText: "Microphone" }).hover();
+      const from = await microphoneHandle.boundingBox();
+      const to = await sourceHandle.boundingBox();
+      if (!from || !to) throw new Error("Audio track handles are missing");
+      await page.mouse.move(from.x + 12, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(to.x + 12, to.y + to.height / 2, { steps: 12 });
+      await page.mouse.up();
+      await expect
+         .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.audioSources.map((item) => item.kind))
+         .toEqual(["input", "source"]);
+      await microphoneHandle.focus();
+      await page.keyboard.press("Alt+ArrowDown");
+      await expect
+         .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.audioSources.map((item) => item.kind))
+         .toEqual(["source", "input"]);
+
       expect(sources[1]).toMatchObject({ enabled: true, muted: true, deviceId: "missing-device" });
       await expect(page.getByRole("button", { name: "Unmute microphone", exact: true })).toBeEnabled();
       await expect(page.locator(".mixer-channel").filter({ hasText: "Microphone" }).locator(".audio-listen")).toBeDisabled();

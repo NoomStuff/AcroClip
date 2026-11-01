@@ -67,6 +67,42 @@ export function DialogPanel({
    const card = useRef<HTMLDivElement>(null),
       titleId = useId();
    const backdropPointer = useRef(false);
+   const backdrop = useRef<HTMLDivElement>(null);
+   useLayoutEffect(() => {
+      const node = backdrop.current;
+      if (!node) return;
+      return () => {
+         if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+         const snapshot = node.cloneNode(true) as HTMLDivElement;
+         const parent = node.parentElement;
+         // Strict Mode replays effects without removing the panel. Only animate
+         // an actual removal, including closes initiated by the parent.
+         queueMicrotask(() => {
+            if (node.isConnected || !parent?.isConnected) return;
+            snapshot.inert = true;
+            snapshot.setAttribute("aria-hidden", "true");
+            snapshot.setAttribute("data-panel-exit", "");
+            snapshot.style.animation = "none";
+            snapshot.style.pointerEvents = "none";
+            for (const element of snapshot.querySelectorAll("[id], [role=dialog]")) {
+               element.removeAttribute("id");
+               element.removeAttribute("role");
+            }
+            parent.append(snapshot);
+            const animation = snapshot.animate(
+               [
+                  { opacity: 1, transform: "translateY(0)" },
+                  { opacity: 0, transform: "translateY(5px)" },
+               ],
+               { duration: 120, easing: getComputedStyle(snapshot).getPropertyValue("--ease").trim() || "ease", fill: "forwards" }
+            );
+            void animation.finished.then(
+               () => snapshot.remove(),
+               () => snapshot.remove()
+            );
+         });
+      };
+   }, []);
    const focusable = useCallback(
       () =>
          [...(card.current?.querySelectorAll<HTMLElement>("button,a[href],input,select,textarea,[tabindex]") ?? [])].filter(
@@ -83,6 +119,7 @@ export function DialogPanel({
    }, [focusable]);
    return createPortal(
       <div
+         ref={backdrop}
          className="modal-backdrop"
          onPointerDownCapture={(event) => {
             backdropPointer.current = event.target === event.currentTarget;

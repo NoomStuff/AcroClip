@@ -5,7 +5,6 @@ import type { CaptureSource, CustomGame, GameCandidate, GameCatalogSnapshot, Pre
 import { api, describeError } from "./desktop";
 import { Button, IconButton, Select } from "./ui";
 import { DialogPanel } from "./Dialog";
-import { useGridMotion } from "./useGridMotion";
 import { ApplicationIcon } from "./ApplicationIcon";
 const executableKey = (value: string) => value.replaceAll("\\", "/").toLowerCase();
 const withAddedGame = (games: CustomGame[], game: CustomGame): CustomGame[] => [
@@ -26,6 +25,8 @@ function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add
       try {
          const [games, sources] = await Promise.all([api.games(), api.sources().catch(() => [])]);
          setCandidates(games);
+         setSelected(games[0]?.id ?? "");
+         setName((games[0]?.gameName || games[0]?.name || "").slice(0, 200));
          setSources(sources);
       } catch (reason) {
          setError(describeError(reason));
@@ -71,7 +72,11 @@ function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add
                   setName((next?.gameName || next?.name || "").slice(0, 200));
                }}
             >
-               <option value="">{loading ? "Finding applications…" : "Choose an application"}</option>
+               {!selected && (
+                  <option value="" disabled>
+                     {loading ? "Finding applications…" : "No applications available"}
+                  </option>
+               )}
                {candidates.map((item) => (
                   <option key={item.id} value={item.id}>
                      {item.name}
@@ -121,7 +126,7 @@ export function GameManagement({
    const [catalog, setCatalog] = useState<GameCatalogSnapshot | null>(null),
       [error, setError] = useState(""),
       [query, setQuery] = useState(""),
-      [page, setPage] = useState(0),
+      [limit, setLimit] = useState(80),
       [adding, setAdding] = useState(false);
    useEffect(() => {
       let disposed = false;
@@ -157,19 +162,49 @@ export function GameManagement({
          if (matches.size === 1) overridden.add([...matches][0]!);
          return { id: "added:" + exe, name: game.name, executables: [game.executable], added: true };
       });
-      return [...known.filter((game) => !overridden.has(game.id)).map((game) => ({ ...game, added: false })), ...added].sort((a, b) =>
-         a.name.localeCompare(b.name)
+      return [...known.filter((game) => !overridden.has(game.id)).map((game) => ({ ...game, added: false })), ...added].sort(
+         (a, b) => Number(b.added) - Number(a.added) || a.name.localeCompare(b.name)
       );
    }, [catalog, preferences.customGames]);
    const filtered = useMemo(() => {
       const value = query.trim().toLowerCase();
       return entries.filter((game) => !value || game.name.toLowerCase().includes(value) || game.executables.some((exe) => exe.toLowerCase().includes(value)));
    }, [entries, query]);
-   const totalPages = Math.max(1, Math.ceil(filtered.length / 80)),
-      currentPage = Math.min(page, totalPages - 1);
-   const list = useRef<HTMLUListElement>(null);
-   const visibleEntries = filtered.slice(currentPage * 80, (currentPage + 1) * 80);
-   useGridMotion(list, JSON.stringify(visibleEntries.map((game) => game.id)), true);
+   const sentinel = useRef<HTMLDivElement>(null);
+   const visibleEntries = filtered.slice(0, limit);
+   useEffect(() => {
+      const node = sentinel.current;
+      if (!node || limit >= filtered.length) return;
+      const observer = new IntersectionObserver(
+         ([entry]) => {
+            if (entry?.isIntersecting) setLimit((current) => current + 80);
+         },
+         { root: node.closest(".settings-scroll"), rootMargin: "400px" }
+      );
+      observer.observe(node);
+      return () => observer.disconnect();
+   }, [limit, filtered.length]);
+   const renderGame = (game: (typeof entries)[number]) => (
+      <li key={game.id}>
+         <Gamepad2 size={20} />
+         <div>
+            <span className="game-entry-name" title={game.name}>
+               {game.name}
+            </span>
+            <span className="game-executables" title={game.executables.join(", ")}>
+               {game.executables.join(", ")}
+            </span>
+         </div>
+         {game.added && (
+            <IconButton
+               label={`Remove game ${game.name}`}
+               onClick={() => change(preferences.customGames.filter((item) => executableKey(item.executable) !== executableKey(game.executables[0]!)))}
+            >
+               <Trash2 size={15} />
+            </IconButton>
+         )}
+      </li>
+   );
    return (
       <div className="game-settings">
          <div className="game-toolbar">
@@ -183,7 +218,7 @@ export function GameManagement({
                   value={query}
                   onChange={(event) => {
                      setQuery(event.target.value);
-                     setPage(0);
+                     setLimit(80);
                   }}
                />
             </label>
@@ -192,8 +227,18 @@ export function GameManagement({
                Add game
             </Button>
          </div>
+         {visibleEntries.some((game) => game.added) && (
+            <section className="game-group" aria-label="Added games">
+               <h3 className="game-category">Added games</h3>
+               <ul className="game-list" aria-label="Added games">
+                  {visibleEntries.filter((game) => game.added).map(renderGame)}
+               </ul>
+            </section>
+         )}
          <div className="game-list-summary">
-            <span>{catalog ? `${filtered.length.toLocaleString()} games` : error ? "Catalogue unavailable" : "Loading games…"}</span>
+            <span>
+               {catalog ? `${filtered.filter((game) => !game.added).length.toLocaleString()} games` : error ? "Catalogue unavailable" : "Loading games…"}
+            </span>
             {catalog && <span>{catalog.source === "saved" ? "Saved catalogue" : "Built-in catalogue"}</span>}
          </div>
          {error && (
@@ -201,55 +246,18 @@ export function GameManagement({
                {error}
             </p>
          )}
-         <ul className="game-list" aria-label="Games" ref={list}>
-            {visibleEntries.map((game) => (
-               <li key={game.id} data-layout-key={game.id}>
-                  <Gamepad2 size={20} />
-                  <div>
-                     <span className="game-entry-name" title={game.name}>
-                        {game.name}
-                     </span>
-                     <span className="game-executables" title={game.executables.join(", ")}>
-                        {game.executables.join(", ")}
-                     </span>
-                  </div>
-                  {game.added && (
-                     <>
-                        <span className="game-added">Added</span>
-                        <IconButton
-                           label={`Remove game ${game.name}`}
-                           onClick={() =>
-                              change(preferences.customGames.filter((item) => executableKey(item.executable) !== executableKey(game.executables[0]!)))
-                           }
-                        >
-                           <Trash2 size={15} />
-                        </IconButton>
-                     </>
-                  )}
-               </li>
-            ))}
+         <ul className="game-list" aria-label="Games">
+            {visibleEntries.filter((game) => !game.added).map(renderGame)}
          </ul>
          {catalog && !filtered.length && <p className="game-empty">No matching games.</p>}
-         {totalPages > 1 && (
-            <div className="game-pagination">
-               <span>
-                  Page {currentPage + 1} of {totalPages}
-               </span>
-               <Button className="quiet" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>
-                  Previous
-               </Button>
-               <Button className="quiet" disabled={currentPage + 1 >= totalPages} onClick={() => setPage(currentPage + 1)}>
-                  Next
-               </Button>
-            </div>
-         )}
+         <div ref={sentinel} aria-hidden="true" />
          {adding && (
             <AddGameDialog
                additions={preferences.customGames}
                add={(game) => {
                   change(withAddedGame(preferences.customGames, game));
                   setQuery(game.name);
-                  setPage(0);
+                  setLimit(80);
                }}
                close={() => setAdding(false)}
             />

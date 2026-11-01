@@ -194,9 +194,9 @@ export function App() {
    const libraryState = useMemo(
       () =>
          clips && folders && applicationIcons && categories && collectionStatus && jobs && preferences
-            ? { clips, folders, applicationIcons, categories, collectionStatus, jobs, preferences }
+            ? { clips, folders, applicationIcons, categories, collectionStatus, jobs, preferences, platform: state?.platform ?? "" }
             : null,
-      [clips, folders, applicationIcons, categories, collectionStatus, jobs, preferences]
+      [clips, folders, applicationIcons, categories, collectionStatus, jobs, preferences, state?.platform]
    );
    const recordingState = useMemo(() => (preferences && recorder && platform ? { preferences, recorder, platform } : null), [preferences, recorder, platform]);
    const viewerState = useMemo(
@@ -293,6 +293,7 @@ export function App() {
                            ask={ask}
                            openClip={openClip}
                            openSettings={openCollectionSettings}
+                           openGames={openGames}
                         />
                      )}
                   </section>

@@ -5,6 +5,7 @@ import { groupFolders, visibleFolderRows } from "./library-index";
 import { MotionList } from "./MotionList";
 export function FolderTree({
    paths,
+   counts,
    selected,
    onSelect,
    renderActions,
@@ -12,6 +13,7 @@ export function FolderTree({
    dropProps,
 }: {
    paths: string[];
+   counts?: ReadonlyMap<string, { count: number }>;
    selected: string | null;
    onSelect: (path: string) => void;
    dropProps?: ((path: string) => Pick<HTMLAttributes<HTMLDivElement>, "onDragOver" | "onDragLeave" | "onDrop">) | undefined;
@@ -49,6 +51,7 @@ export function FolderTree({
    const render = ({ id: path, level, hasChildren, open, position, siblings }: (typeof rows)[number]) => (
       <div
          className="folder-tree-row"
+         data-empty={(counts && !counts.get(path)?.count) || undefined}
          style={{ marginLeft: (level - 1) * 16 }}
          {...dropProps?.(path)}
          onContextMenu={(event) => {

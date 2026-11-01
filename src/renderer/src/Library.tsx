@@ -62,13 +62,15 @@ export function Library({
    ask,
    openClip,
    openSettings,
+   openGames,
 }: {
-   state: Pick<AppState, "clips" | "folders" | "applicationIcons" | "categories" | "collectionStatus" | "jobs" | "preferences">;
+   state: Pick<AppState, "clips" | "folders" | "applicationIcons" | "categories" | "collectionStatus" | "jobs" | "preferences" | "platform">;
    visible?: boolean;
    run: Run;
    ask: Ask;
    openClip: (clip: Clip) => void;
    openSettings: () => void;
+   openGames: () => void;
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const scrollArea = useRef<HTMLDivElement>(null);
@@ -194,6 +196,27 @@ export function Library({
       setFilter("all");
       setQuery("");
    }, [collectionRoot]);
+   const [addedApplications, setAddedApplications] = useState<Array<{ id: string; name: string }>>([]);
+   useEffect(() => {
+      let cancelled = false;
+      void Promise.all(
+         state.preferences.customGames.map(async (game) => {
+            const executable = state.platform === "win32" ? game.executable.toLowerCase() : game.executable;
+            const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(executable));
+            return { id: Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""), name: game.name };
+         })
+      ).then((items) => {
+         if (!cancelled) setAddedApplications(items);
+      });
+      return () => {
+         cancelled = true;
+      };
+   }, [state.preferences.customGames, state.platform]);
+   const applicationCounts = useMemo(() => {
+      const counts = new Map<string, number>();
+      for (const id of appKeys.values()) counts.set(id, (counts.get(id) ?? 0) + 1);
+      return counts;
+   }, [appKeys]);
    const sources = useMemo(() => {
       const apps = new Map<string, { id: string; name: string; icon?: string | undefined }>();
       for (const clip of state.clips)
@@ -201,8 +224,9 @@ export function Library({
             const id = appKeys.get(clip.id)!;
             if (!apps.has(id)) apps.set(id, { id, name: clip.source.trim(), icon: state.applicationIcons[id] });
          }
+      for (const game of addedApplications) apps.set(game.id, { ...game, icon: state.applicationIcons[game.id] });
       return [...apps.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-   }, [state.clips, state.applicationIcons, appKeys]);
+   }, [state.clips, state.applicationIcons, appKeys, addedApplications]);
    useEffect(() => {
       if (filter.startsWith("source:") && !sources.some((source) => `source:${source.id}` === filter)) setFilter("all");
       if (filter.startsWith("category:") && !state.categories.some((category) => `category:${category.id}` === filter)) setFilter("all");
@@ -457,7 +481,7 @@ export function Library({
                   <span className="sidebar-label">All clips</span>
                   <span className="count">{initial ? "" : state.clips.length}</span>
                </button>
-               <div className="sidebar-group-title">
+               <div className="sidebar-group-title" data-empty={state.categories.length === 0 || undefined}>
                   <span>Tags</span>
                   <IconButton label="New tag" onClick={() => void createCategory()}>
                      <Plus size={16} />
@@ -467,6 +491,7 @@ export function Library({
                   {(item) => (
                      <div
                         className="category-item"
+                        data-empty={!summary.categories.get(item.id) || undefined}
                         key={item.id}
                         onContextMenu={(event) => {
                            event.preventDefault();
@@ -510,13 +535,19 @@ export function Library({
                      </div>
                   )}
                </MotionList>
-               {sources.length > 0 && (
+               {
                   <>
-                     <div className="sidebar-group-title">Applications</div>
+                     <div className="sidebar-group-title" data-empty={sources.length === 0 || undefined}>
+                        <span>Applications</span>
+                        <IconButton label="Add game" onClick={openGames}>
+                           <Plus size={16} />
+                        </IconButton>
+                     </div>
                      <MotionList items={sources} identity={collectionRoot}>
                         {(source) => (
                            <button
                               key={source.id}
+                              data-empty={!applicationCounts.get(source.id) || undefined}
                               className={`sidebar-item application-filter ${filter === `source:${source.id}` ? "selected" : ""}`}
                               style={{ "--application-color": applicationColors[source.id] } as CSSProperties}
                               aria-pressed={filter === `source:${source.id}`}
@@ -530,8 +561,8 @@ export function Library({
                         )}
                      </MotionList>
                   </>
-               )}
-               <div className="sidebar-group-title">
+               }
+               <div className="sidebar-group-title" data-empty={folders.length === 0 || undefined}>
                   <span>Folders</span>
                   <IconButton label="New collection folder" onClick={() => void createFolder("")}>
                      <Plus size={16} />
@@ -541,6 +572,7 @@ export function Library({
                   <FolderTree
                      dropProps={folderDropProps}
                      paths={folders}
+                     counts={folderStats}
                      selected={folderPath}
                      onSelect={(path) => setFilter(`folder:${path}`)}
                      renderActions={(path) => folderMenu(path, "tree")}
@@ -671,6 +703,7 @@ export function Library({
                      {childFolders.map((path) => (
                         <article
                            className="clip-card folder-card"
+                           data-empty={!folderStats.get(path)?.count || undefined}
                            {...folderDropProps(path)}
                            key={`folder:${path}`}
                            data-layout-key={`folder:${path}`}

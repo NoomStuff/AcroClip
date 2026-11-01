@@ -65,7 +65,7 @@ test("Auto game management searches the saved catalogue and persists application
       await expect(page.getByText("No matching games.", { exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Add game", exact: true }).click();
       await expect(page.getByRole("combobox", { name: "Running application", exact: true })).toBeEnabled();
-      await selectOption(page, "Running application", "window:777:0");
+      await expect(page.getByRole("textbox", { name: "Game name", exact: true })).toHaveValue("Running application fixture");
       await page.getByRole("textbox", { name: "Game name", exact: true }).fill("My local game");
       await page.getByRole("button", { name: "Add selected game", exact: true }).click();
       await expect
@@ -73,14 +73,24 @@ test("Auto game management searches the saved catalogue and persists application
          .toEqual([{ name: "My local game", executable: "C:/Controlled/local-game.exe" }]);
       await search.fill("");
       await expect(page.locator(".game-list>li")).toHaveCount(3);
+      await expect(page.locator(".game-list>li").first()).toContainText("My local game");
+      await expect(page.locator(".game-category")).toHaveText(["Added games"]);
+      await page.locator(".rail").getByRole("button", { name: "Library", exact: true }).click();
+      const addedApplication = page.locator(".application-filter").filter({ hasText: "My local game" });
+      await expect(addedApplication).toBeVisible();
+      await expect(addedApplication).toHaveAttribute("data-empty", "true");
+      await addedApplication.click();
+      await expect(page.locator(".library-title-line h1")).toHaveText("My local game");
+      await page.locator(".sidebar-group-title").getByRole("button", { name: "Add game", exact: true }).click();
+      await expect(search).toBeFocused();
       await search.fill("My local game");
       await expect(page.locator(".game-list>li")).toHaveCount(1);
-      await expect(page.locator(".game-added")).toHaveText("Added");
+      await expect(page.getByRole("heading", { name: "Added games", exact: true })).toBeVisible();
       await page.reload();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page.locator(".settings-sidebar").getByRole("button", { name: "Games", exact: true }).click();
       await page.getByRole("textbox", { name: "Search games", exact: true }).fill("My local game");
-      await expect(page.locator(".game-added")).toHaveText("Added");
+      await expect(page.getByRole("heading", { name: "Added games", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Remove game My local game", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.customGames.length).toBe(0);
       await page.getByRole("textbox", { name: "Search games", exact: true }).fill("Official fixture game");

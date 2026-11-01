@@ -124,7 +124,6 @@ export function MixerFader({
                      reset();
                   }
                }}
-               title="Drag up to +3 dB. Type up to +12 dB. Double-click or Delete resets to 0 dB. Hold Shift to bypass snapping."
             />
             <span className="mixer-fader-track" aria-hidden="true">
                <span className="mixer-fader-fill" />
@@ -136,7 +135,7 @@ export function MixerFader({
                type="text"
                inputMode="decimal"
                aria-label={`${label} in decibels`}
-               title={display <= 0 ? "Silence. Enter a dB value to restore gain." : `${gainDb(display).toFixed(2)} dB`}
+               title={display <= 0 ? "Silence" : `${gainDb(display).toFixed(2)} dB`}
                value={draft ?? gainText(display)}
                disabled={disabled}
                onFocus={() => setDraft(gainText(display))}

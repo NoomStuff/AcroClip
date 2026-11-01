@@ -446,7 +446,6 @@ export function Viewer({
                      ref={video}
                      tabIndex={0}
                      {...fileDragProps(path)}
-                     title="Drag this video into another app"
                      src={url}
                      poster={clip.thumbnail || undefined}
                      onLoadedMetadata={(event) => {
