@@ -41,6 +41,7 @@ export class PlaybackCache {
       const compatibleAudio = info.tracks.every((entry) => ["aac", "opus", "vorbis", "mp3"].includes(entry.codec));
       if (
          (track === undefined || (track.length === 1 && track[0] === info.tracks[0]?.index)) &&
+         !info.durationFromPackets &&
          compatibleVideo &&
          compatibleAudio &&
          [".mp4", ".webm", ".m4v"].includes(extname(source).toLowerCase())

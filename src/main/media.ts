@@ -120,6 +120,7 @@ export function audioTrackTitle(tags: ProbeStream["tags"], ordinal: number): str
    return ordinal === 0 ? "Master" : `Audio ${ordinal + 1}`;
 }
 export interface MediaInfo {
+   durationFromPackets?: boolean;
    duration: number;
    width: number;
    height: number;
@@ -133,11 +134,21 @@ export async function probe(path: string): Promise<MediaInfo> {
    const result = value as ProbeResult;
    if (!Array.isArray(result.streams)) throw new Error("The file contains no readable media streams.");
    const video = result.streams.find((stream) => stream.codec_type === "video");
-   const duration = Number(result.format?.duration);
+   let duration = Number(result.format?.duration);
+   const durationFromPackets = !Number.isFinite(duration) || duration <= 0;
+   if (video?.width && video.height && durationFromPackets) {
+      // Streaming WebM files may omit Duration, or incorrectly declare zero.
+      // Remux to the null output to measure timestamps without decoding frames.
+      const progress = await runMedia("ffmpeg", [...ffmpegBase, "-i", path, "-map", "0:v:0", "-c", "copy", "-progress", "pipe:1", "-f", "null", "-"], {
+         belowNormal: true,
+      });
+      duration = Math.max(0, ...Array.from(progress.matchAll(/^out_time_us=(\d+)$/gm), (match) => Number(match[1]) / 1e6));
+   }
    if (!video || !Number.isFinite(duration) || duration <= 0 || !video.width || !video.height) throw new Error("The file contains no playable video.");
    const rate = video.avg_frame_rate?.split("/").map(Number);
    const frameRate = rate?.[1] ? (rate[0] ?? 30) / rate[1] : 30;
    return {
+      ...(durationFromPackets ? { durationFromPackets: true } : {}),
       duration,
       width: video.width,
       height: video.height,

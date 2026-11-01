@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { linuxDesktopIdentity, linuxDesktopName } from "./startup";
+import { desktopExec, linuxDesktopIdentity, linuxDesktopName, linuxStartup, xdgDirectory } from "./startup";
 
 describe("Linux packaged portal identity", () => {
    it("creates a matching desktop entry and updates only entries it owns", async () => {
@@ -26,5 +26,31 @@ describe("Linux packaged portal identity", () => {
       const directory = await mkdtemp(join(tmpdir(), "acroclip-desktop-"));
       await expect(linuxDesktopIdentity(directory, "/apps/app\nExec=other", "/apps/icon.png")).rejects.toThrow("app path");
       await expect(linuxDesktopIdentity(directory, "/apps/app", "/apps/icon\nHidden=true")).rejects.toThrow("app path");
+   });
+});
+
+describe("Linux launcher configuration", () => {
+   it("ignores unset, empty and relative XDG paths", () => {
+      for (const value of [undefined, "", "relative/config"]) expect(xdgDirectory(value, "/home/test/.config")).toBe("/home/test/.config");
+      expect(xdgDirectory("/custom/config", "/fallback")).toBe("/custom/config");
+   });
+   it("escapes both desktop string and command argument layers", () => {
+      const source = '/apps/quote" dollar$ tick` slash\\ percent%.AppImage';
+      const command = desktopExec(source, []);
+      const decoded = command.replace(/\\([\\tnr])/g, (_, char: string) => ({ t: "\t", n: "\n", r: "\r" })[char] ?? char);
+      const argument = decoded
+         .slice(1, -1)
+         .replace(/\\([\\"`$])/g, "$1")
+         .replaceAll("%%", "%");
+      expect(argument).toBe(source);
+      expect(command).toContain("\\\\\\\\");
+   });
+   it("rejects autostart entry injection before writing", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "acroclip-autostart-"));
+      await expect(linuxStartup(true, directory, "/apps/app", ["bad\nHidden=true"])).rejects.toThrow("app path");
+      await linuxStartup(true, directory, "/apps/My App", ["--clip"]);
+      expect(await readFile(join(directory, "autostart", "acroclip.desktop"), "utf8")).toContain('Exec="/apps/My App" "--clip"');
+      await linuxStartup(false, directory, "/apps/My App", []);
+      await expect(readFile(join(directory, "autostart", "acroclip.desktop"))).rejects.toThrow();
    });
 });

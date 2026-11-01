@@ -22,7 +22,7 @@ import { Recorder } from "./recorder";
 import { CaptureSources } from "./capture-sources";
 import { serveMedia } from "./serve";
 import { Updates } from "./updates";
-import { linuxDesktopIdentity, linuxStartup } from "./startup";
+import { linuxDesktopIdentity, linuxStartup, linuxDesktopName, xdgDirectory } from "./startup";
 import { pendingExitDecision } from "./lifecycle";
 import { Feedback } from "./feedback";
 import { bufferedCaptureSource, portalScreenId, selectedCaptureSource, previewCaptureSource } from "../shared/capture-policy";
@@ -37,6 +37,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const testProfile = process.env["ACROCLIP_PROFILE"];
 if (testProfile) app.setPath("userData", resolve(testProfile));
 app.setName("AcroClip");
+if (process.platform === "linux") app.setDesktopName(linuxDesktopName);
 if (process.platform === "win32") app.setAppUserModelId(windowsAppId());
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -229,7 +230,7 @@ function createWindow() {
       minWidth: 980,
       minHeight: 680,
       backgroundColor: "#0d0c0f",
-      frame: process.platform === "darwin",
+      frame: process.platform !== "win32",
       titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
       title: "AcroClip",
       icon: iconPath(),
@@ -259,7 +260,8 @@ function createWindow() {
    mainWindow.on("close", (event) => {
       if (!quitting) {
          event.preventDefault();
-         mainWindow?.hide();
+         if (process.platform === "linux") void requestExit();
+         else mainWindow?.hide();
       }
    });
    mainWindow.webContents.on("render-process-gone", () => {
@@ -362,7 +364,8 @@ async function applyStartup(enabled: boolean) {
    if (process.env["ACROCLIP_TEST"] === "1") return;
    const executable = process.env["PORTABLE_EXECUTABLE_FILE"] ?? process.env["APPIMAGE"] ?? app.getPath("exe");
    const args = isPackagedApp() ? [] : [app.getAppPath()];
-   if (process.platform === "linux") await linuxStartup(enabled, process.env["XDG_CONFIG_HOME"] ?? join(app.getPath("home"), ".config"), executable, args);
+   if (process.platform === "linux")
+      await linuxStartup(enabled, xdgDirectory(process.env["XDG_CONFIG_HOME"], join(app.getPath("home"), ".config")), executable, args);
    else app.setLoginItemSettings({ openAtLogin: enabled, path: executable, args });
 }
 async function prepareExit(): Promise<boolean> {
@@ -930,7 +933,7 @@ else {
          await collectionReady;
          if (process.platform === "linux" && isPackagedApp() && process.env["ACROCLIP_TEST"] !== "1")
             await linuxDesktopIdentity(
-               process.env["XDG_DATA_HOME"] ?? join(app.getPath("home"), ".local", "share"),
+               xdgDirectory(process.env["XDG_DATA_HOME"], join(app.getPath("home"), ".local", "share")),
                process.env["APPIMAGE"] ?? process.execPath,
                iconPath()
             ).catch((error: unknown) => notice(errorMessage(error), true));

@@ -161,7 +161,7 @@ export function Settings({
    run,
    target,
 }: {
-   state: Pick<AppState, "preferences" | "recorder" | "jobs" | "update" | "version">;
+   state: Pick<AppState, "preferences" | "recorder" | "jobs" | "update" | "version" | "platform">;
    run: Run;
    target: SettingsTarget | null;
 }) {
@@ -490,7 +490,11 @@ export function Settings({
                      <>
                         <section className="settings-group">
                            <h2>Startup</h2>
-                           <p className="section-description">Closing the window keeps AcroClip running in the tray.</p>
+                           <p className="section-description">
+                              {state.platform === "linux"
+                                 ? "Closing the window exits AcroClip and stops recording."
+                                 : "Closing the window keeps AcroClip running in the tray."}
+                           </p>
                            <Toggle label="Start with your computer" checked={draft.startWithOS} onChange={(value) => change("startWithOS", value)} />
                            <Toggle
                               label="Start recording when AcroClip opens"

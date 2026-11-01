@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CollectionService, fileIdentity, withinRoot } from "../src/main/collection";
+import { PlaybackCache } from "../src/main/playback";
 import { ffmpegBase, probe, runMedia } from "../src/main/media";
 
 const workspace = await realpath(await mkdtemp(join(tmpdir(), "acroclip-media-")));
@@ -50,6 +51,33 @@ try {
       "title=Microphone",
       original,
    ]);
+   const streaming = join(workspace, "streaming.webm");
+   await runMedia("ffmpeg", [
+      ...ffmpegBase,
+      "-y",
+      "-i",
+      original,
+      "-map",
+      "0:v:0",
+      "-c:v",
+      "libvpx-vp9",
+      "-deadline",
+      "realtime",
+      "-cpu-used",
+      "8",
+      "-live",
+      "1",
+      streaming,
+   ]);
+   const streamingInfo = await probe(streaming);
+   assert.ok(Math.abs(streamingInfo.duration - 8) < 0.1, "WebM without a declared duration remains playable");
+   const streamingCache = join(workspace, "streaming-playback");
+   await mkdir(streamingCache);
+   const streamingPlayback = await new PlaybackCache().prepare(streaming, streamingCache);
+   assert.notEqual(streamingPlayback, streaming, "Playback repairs missing container duration in a disposable copy");
+   const repairedStreaming = await probe(streamingPlayback);
+   assert.equal(repairedStreaming.durationFromPackets, undefined, "Playback copy declares its duration for browser seeking");
+   assert.ok(Math.abs(repairedStreaming.duration - 8) < 0.1);
    const before = await fileIdentity(original);
    const registrationRoot = join(workspace, "registration");
    await mkdir(registrationRoot);

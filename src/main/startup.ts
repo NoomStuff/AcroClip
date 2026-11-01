@@ -1,10 +1,18 @@
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 export function desktopExec(executable: string, args: string[]): string {
-   const quote = (value: string) => `"${value.replaceAll("%", "%%").replace(/[\\"`$]/g, "\\$&")}"`;
+   const quote = (value: string) => {
+      if (/[\r\n\0]/.test(value)) throw new Error("The app path cannot be used for desktop integration.");
+      // Desktop string decoding precedes Exec argument decoding.
+      const argument = value.replaceAll("%", "%%").replace(/[\\"`$]/g, "\\$&");
+      return `"${argument.replaceAll("\\", "\\\\").replaceAll("\t", "\\t")}"`;
+   };
    return [executable, ...args].map(quote).join(" ");
+}
+export function xdgDirectory(configured: string | undefined, fallback: string): string {
+   return configured && isAbsolute(configured) ? configured : fallback;
 }
 export const linuxDesktopName = "dev.acroclip.app.desktop";
 export async function linuxDesktopIdentity(dataDirectory: string, executable: string, icon: string): Promise<void> {
@@ -41,9 +49,7 @@ export async function linuxStartup(enabled: boolean, configDirectory: string, ex
       await rm(path, { force: true });
       return;
    }
+   const command = desktopExec(executable, args);
    await mkdir(directory, { recursive: true });
-   await writeFile(
-      path,
-      `[Desktop Entry]\nType=Application\nName=AcroClip\nExec=${desktopExec(executable, args)}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n`
-   );
+   await writeFile(path, `[Desktop Entry]\nType=Application\nName=AcroClip\nExec=${command}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n`);
 }

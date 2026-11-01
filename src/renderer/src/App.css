@@ -333,3 +333,7 @@
       animation: none;
    }
 }
+
+.titlebar.native-titlebar {
+   -webkit-app-region: no-drag;
+}

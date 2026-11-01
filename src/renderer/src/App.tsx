@@ -204,8 +204,8 @@ export function App() {
       [applicationIcons, jobs, preferences, categories]
    );
    const settingsState = useMemo(
-      () => (preferences && recorder && jobs && update && version ? { preferences, recorder, jobs, update, version } : null),
-      [preferences, recorder, jobs, update, version]
+      () => (preferences && recorder && jobs && update && version ? { preferences, recorder, jobs, update, version, platform: state?.platform ?? "" } : null),
+      [preferences, recorder, jobs, update, version, state?.platform]
    );
    const pages = [
       { id: "recording", title: "Recording", icon: Video },
@@ -214,7 +214,7 @@ export function App() {
    ] as const;
    return (
       <div className="app-shell">
-         <header className="titlebar">
+         <header className={`titlebar${state?.platform === "linux" ? " native-titlebar" : ""}`}>
             <div className="wordmark">
                <Clapperboard size={17} aria-hidden="true" />
                <span>AcroClip</span>
@@ -225,7 +225,7 @@ export function App() {
             </span>
             <div className="titlebar-drag" />
             {state?.update.version && state.update.mode && !["idle", "checking"].includes(state.update.state) && <UpdateChip state={state.update} run={run} />}
-            {state?.platform !== "darwin" && (
+            {state?.platform === "win32" && (
                <div className="window-controls">
                   <IconButton label="Minimize" onClick={() => api.window("minimize")}>
                      <Minus size={15} />
