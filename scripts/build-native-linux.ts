@@ -1,4 +1,4 @@
-import { copyFile, cp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -25,6 +25,9 @@ const waylandProvenance: unknown = JSON.parse(await readFile(path.join(root, ".c
 run("cmake", ["-S", path.join(root, "native"), "-B", output, "-DCMAKE_BUILD_TYPE=Release"]);
 run("cmake", ["--build", output, "--clean-first", "-j2"]);
 await rm(runtime, { recursive: true, force: true });
+await mkdir(runtime, { recursive: true });
+await copyFile("native/notifications/linux.py", path.join(runtime, "acroclip-notifier"));
+await chmod(path.join(runtime, "acroclip-notifier"), 0o755);
 await mkdir(path.join(runtime, "lib"), { recursive: true });
 await mkdir(path.join(runtime, "obs-plugins"), { recursive: true });
 await copyFile(path.join(output, "acroclip-recorder"), path.join(runtime, "acroclip-recorder"));
@@ -72,6 +75,7 @@ for (const input of initialFiles) {
    }
 }
 const sourceFiles = [
+   "native/notifications/linux.py",
    "native/recorder.cpp",
    "native/clip-writer.cpp",
    "native/clip-writer.hpp",

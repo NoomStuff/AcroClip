@@ -36,6 +36,10 @@ export class Feedback {
    }
    show(message: string, error = false, saving = false, details: FeedbackDetails = {}): void {
       if (details.visual === false && !details.sound && !this.child) return;
+      if (details.sound && process.platform === "linux") {
+         const player = spawn("paplay", [details.sound], { windowsHide: true, stdio: "ignore" });
+         player.once("error", (failure) => this.onWarning(`Feedback sound failed: ${failure.message}`));
+      }
       if (!this.helperFailed && existsSync(this.executable)) {
          try {
             const child = this.child ?? spawn(this.executable, [], { windowsHide: true, stdio: "pipe" });
@@ -78,7 +82,7 @@ export class Feedback {
                this.visible = null;
             }
             child.stdin.write(
-               `${JSON.stringify({ id, message: message.slice(0, 4000), error, saving, ...details, artwork: details.recordingStatus ? "" : details.artwork || this.artwork })}\n`
+               `${JSON.stringify({ id, message: message.slice(0, 4000), error, saving, ...details, sound: process.platform === "linux" ? undefined : details.sound, artwork: details.recordingStatus ? "" : details.artwork || this.artwork })}\n`
             );
             return;
          } catch (failure) {
@@ -89,10 +93,6 @@ export class Feedback {
             this.helperFailed = true;
             this.onWarning(failure instanceof Error ? failure.message : "Native feedback could not start");
          }
-      }
-      if (details.sound && process.platform === "linux") {
-         const player = spawn("paplay", [details.sound], { windowsHide: true, stdio: "ignore" });
-         player.once("error", (failure) => this.onWarning(`Feedback sound failed: ${failure.message}`));
       }
       if (details.visual !== false) this.system(message);
    }

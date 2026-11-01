@@ -25,6 +25,7 @@ afterEach(() => {
 });
 function helper() {
    const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough(), kill: vi.fn() });
+   vi.spyOn(child.stdin, "write");
    mocks.spawn.mockReturnValue(child);
    const feedback = new Feedback("notifier", vi.fn(), "icon.png");
    instances.push(feedback);
@@ -118,25 +119,19 @@ it("sends sound-only feedback and reuses the helper for the completion sound", (
    const { feedback, child } = helper();
    feedback.show("Clip saving...", false, true, { visual: false, sound: "clip-saving.wav" });
    feedback.show("Clip saved", false, false, { visual: false, sound: "clip-saved.wav" });
-   const messages = String(child.stdin.read())
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
+   const messages = vi.mocked(child.stdin.write).mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
    expect(messages).toMatchObject([
-      { visual: false, saving: true, sound: "clip-saving.wav" },
-      { visual: false, saving: false, sound: "clip-saved.wav" },
+      { visual: false, saving: true, ...(process.platform === "linux" ? {} : { sound: "clip-saving.wav" }) },
+      { visual: false, saving: false, ...(process.platform === "linux" ? {} : { sound: "clip-saved.wav" }) },
    ]);
-   expect(mocks.spawn).toHaveBeenCalledTimes(1);
+   expect(mocks.spawn).toHaveBeenCalledTimes(process.platform === "linux" ? 3 : 1);
    expect(mocks.show).not.toHaveBeenCalled();
 });
 it("uses request artwork with an app icon fallback", () => {
    const { feedback, child } = helper();
    feedback.show("Clip saving...", false, true, { artwork: "data:image/png;base64,game", detail: "HASTE" });
    feedback.show("Clip saved");
-   const messages = String(child.stdin.read())
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
+   const messages = vi.mocked(child.stdin.write).mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
    expect(messages).toMatchObject([{ artwork: "data:image/png;base64,game", detail: "HASTE" }, { artwork: "data:image/png;base64,fallback" }]);
 });
 it("uses recording status graphics instead of thumbnail placeholders", () => {
@@ -165,4 +160,20 @@ it("ships distinct WAV sound files with audio data", async () => {
       expect(chunks.get("data")?.length).toBeGreaterThan(0);
    }
    expect(sounds[0]!.equals(sounds[1]!)).toBe(false);
+});
+
+it("falls back once for a correlated rendering failure", () => {
+   const { feedback, child } = helper();
+   feedback.show("Save failed", true);
+   child.stdout.write('{"event":"failed","id":"1"}\n');
+   child.emit("exit", 1);
+   expect(mocks.show).toHaveBeenCalledOnce();
+});
+it("falls back when spawning the helper throws synchronously", () => {
+   const { feedback } = helper();
+   mocks.spawn.mockImplementationOnce(() => {
+      throw new Error("Cannot start");
+   });
+   feedback.show("Saved");
+   expect(mocks.show).toHaveBeenCalledOnce();
 });
