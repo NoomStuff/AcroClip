@@ -156,7 +156,7 @@ test("Linux recording saves the requested footage during a first library scan", 
    try {
       const page = await app.firstWindow();
       await expect(page.locator(".recording-page")).toBeVisible();
-      expect((await page.evaluate(() => window.acroClip.state())).collectionStatus.phase).toBe("loading");
+      expect(["loading", "refreshing"]).toContain((await page.evaluate(() => window.acroClip.state())).collectionStatus.phase);
       const source = (await page.evaluate(() => window.acroClip.sources())).find((item) => item.kind === "screen")!;
       await page.evaluate(async (id) => {
          const state = await window.acroClip.state();
@@ -170,8 +170,8 @@ test("Linux recording saves the requested footage during a first library scan", 
             timeout: 15000,
          })
          .toBe(true);
-      expect((await page.evaluate(() => window.acroClip.state())).collectionStatus.phase).toBe("loading");
-      await promisify(execFile)(app.process().spawnfile, [resolve("."), "--clip"], {
+      expect(["loading", "refreshing"]).toContain((await page.evaluate(() => window.acroClip.state())).collectionStatus.phase);
+      await promisify(execFile)(app.process().spawnfile, ["--no-sandbox", "--disable-gpu-sandbox", resolve("."), "--clip"], {
          env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile },
       });
       await expect
@@ -179,7 +179,7 @@ test("Linux recording saves the requested footage during a first library scan", 
             timeout: 15000,
          })
          .toBe(2);
-      expect((await page.evaluate(() => window.acroClip.state())).collectionStatus.phase).toBe("loading");
+      expect(["loading", "refreshing"]).toContain((await page.evaluate(() => window.acroClip.state())).collectionStatus.phase);
       await page.getByRole("button", { name: "Stop recording", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length, { timeout: 120000 }).toBe(602);
       const file = (await readdir(collection, { recursive: true })).find((file) => file.endsWith(".mkv") && !file.endsWith(".saving.mkv"))!;

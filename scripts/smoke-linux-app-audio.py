@@ -17,9 +17,15 @@ folder = root / ".cache/linux-smoke" / str(uuid.uuid4())
 folder.mkdir(parents=True)
 private = pathlib.Path(tempfile.mkdtemp(prefix="acroclip-native-"))
 env = dict(os.environ, ACROCLIP_ISOLATED_TEST_RUNNER="private-linux", XDG_RUNTIME_DIR=str(private), PULSE_SERVER="unix:" + str(private / "audio.sock"), DBUS_SESSION_BUS_ADDRESS="unix:path=" + str(private / "dbus.sock"), WAYLAND_DISPLAY="", XDG_SESSION_TYPE="x11", ACROCLIP_NATIVE_TEST_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe")
-env["LD_LIBRARY_PATH"] = str(runtime / "lib")
+recorder_env = dict(env, LD_LIBRARY_PATH=str(runtime / "lib"))
+# Only the recorder uses bundled dependencies. In particular, a host
+# libpulse-simple paired with the bundled libpulse can silently break the tone
+# producer on PipeWire before AcroClip has even started capturing it.
+env.pop("LD_LIBRARY_PATH", None)
+env.pop("LD_PRELOAD", None)
 display = next(number for number in range(90, 180) if not pathlib.Path(f"/tmp/.X11-unix/X{number}").exists())
 env["DISPLAY"] = f"127.0.0.1:{display}"
+recorder_env["DISPLAY"] = env["DISPLAY"]
 processes = []
 logs = []
 events = []
@@ -27,7 +33,8 @@ events = []
 def launch(args, name, pipe=False):
     log = open(folder / (name + ".log"), "w")
     logs.append(log)
-    process = subprocess.Popen(args, cwd=runtime, env=env, stdin=subprocess.PIPE if pipe else subprocess.DEVNULL, stdout=subprocess.PIPE if pipe else log, stderr=log, text=True)
+    child_env = recorder_env if args[0] == str(runtime / "acroclip-recorder") else env
+    process = subprocess.Popen(args, cwd=runtime, env=child_env, stdin=subprocess.PIPE if pipe else subprocess.DEVNULL, stdout=subprocess.PIPE if pipe else log, stderr=log, text=True)
     processes.append(process)
     return process
 
@@ -66,7 +73,10 @@ try:
         except OSError:
             assert time.monotonic() < deadline, "Private Xvfb did not start"
             time.sleep(0.1)
-    pulse=launch(["pulseaudio", "-n", "--daemonize=no", "--exit-idle-time=-1", "--use-pid-file=no", "--disable-shm=true", "--load=module-native-protocol-unix socket=" + str(private / "audio.sock") + " auth-anonymous=1", "--load=module-null-sink sink_name=acroclip-test rate=48000 channels=2"], "pulse")
+    if "--pipewire" in sys.argv[2:]:
+        pulse = launch([sys.executable, str(root / "scripts/private-pipewire.py")], "pipewire")
+    else:
+        pulse=launch(["pulseaudio", "-n", "--daemonize=no", "--exit-idle-time=-1", "--use-pid-file=no", "--disable-shm=true", "--load=module-native-protocol-unix socket=" + str(private / "audio.sock") + " auth-anonymous=1", "--load=module-null-sink sink_name=acroclip-test rate=48000 channels=2"], "pulse")
     deadline = time.monotonic() + 10
     while not (private / "audio.sock").exists():
         assert time.monotonic() < deadline, "Private PulseAudio did not start"
@@ -103,6 +113,24 @@ try:
         if candidate: break
         time.sleep(.2)
     assert candidate and candidate["pid"]==fixture.pid, candidate
+    # Establish that every real producer is audible before testing isolation.
+    # Otherwise a broken producer can masquerade as a capture regression.
+    deadline = time.monotonic() + 10
+    while True:
+        inputs = json.loads(subprocess.check_output(["pactl", "-f", "json", "list", "sink-inputs"], env=env, text=True))
+        if len(inputs) >= 4:
+            break
+        assert time.monotonic() < deadline, "Private tone producers did not connect"
+        time.sleep(.05)
+    reference = subprocess.run(["timeout", "3", "parec", "--device=acroclip-test.monitor",
+                                "--format=float32le", "--rate=48000", "--channels=1", "--latency-msec=20"],
+                               env=env, capture_output=True)
+    assert reference.returncode == 124, reference.stderr
+    reference_pcm = array.array("f", reference.stdout)[-48000:]
+    assert len(reference_pcm) == 48000, "Private output monitor did not produce a second of audio"
+    reference_tones = {hz: tone_peak(reference_pcm, 48000, hz)["amplitude"] for hz in [997, 1499, 1999, 1234]}
+    assert all(value > .02 for value in reference_tones.values()), reference_tones
+    (folder / "producer-tones.json").write_text(json.dumps(reference_tones, indent=2))
     config=dict(sourceKind="app",sourceId=candidate["id"],pid=candidate["pid"],sourceName=title,quality="custom",customWidth=640,customHeight=360,customFPS=24,customCQ=28,clipSeconds=2,microphone=False,allowSoftwareEncoder=True,captureAudio=True)
     command(dict(config,action="start"))
     measured={}
