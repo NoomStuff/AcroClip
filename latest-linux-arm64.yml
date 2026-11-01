@@ -1,13 +1,13 @@
-version: 0.7.0
+version: 0.7.1
 path: >-
-  https://github.com/NoomStuff/AcroClip/releases/download/v0.7.0/AcroClip-0.7.0-linux-arm64.AppImage
+  https://github.com/NoomStuff/AcroClip/releases/download/v0.7.1/AcroClip-0.7.1-linux-arm64.AppImage
 sha512: >-
-  oYCmTPqte4nyMJjst58R0m6jkk1bQY839ER4dcXjBJERENSQBLOzLXWcwDN/cX2QIWS4CH3x+xKNoDfNenIqzw==
+  FcXgf4cXaJ02DqtNRzi+mVM7bTH3vKyos2LChZAvnemXRpciEqLCeTQn+VQvHJ+kbsIKxwYW6/uL/TxfmaMB/g==
 files:
   - url: >-
-      https://github.com/NoomStuff/AcroClip/releases/download/v0.7.0/AcroClip-0.7.0-linux-arm64.AppImage
+      https://github.com/NoomStuff/AcroClip/releases/download/v0.7.1/AcroClip-0.7.1-linux-arm64.AppImage
     sha512: >-
-      oYCmTPqte4nyMJjst58R0m6jkk1bQY839ER4dcXjBJERENSQBLOzLXWcwDN/cX2QIWS4CH3x+xKNoDfNenIqzw==
-    size: 257777126
-releaseName: Major UI improvements
-releaseDate: '2026-11-01T02:17:15.132Z'
+      FcXgf4cXaJ02DqtNRzi+mVM7bTH3vKyos2LChZAvnemXRpciEqLCeTQn+VQvHJ+kbsIKxwYW6/uL/TxfmaMB/g==
+    size: 257777097
+releaseName: More UI tweaks lol
+releaseDate: '2026-11-01T03:55:33.474Z'

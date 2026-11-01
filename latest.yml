@@ -1,13 +1,13 @@
-version: 0.7.0
+version: 0.7.1
 path: >-
-  https://github.com/NoomStuff/AcroClip/releases/download/v0.7.0/AcroClip-0.7.0-win-x64-Installer.exe
+  https://github.com/NoomStuff/AcroClip/releases/download/v0.7.1/AcroClip-0.7.1-win-x64-Installer.exe
 sha512: >-
-  /fNkZ6AMM/Zi0R99RjJBfwc5FnUaI9rjC6n2Lx3Az+Uk2erSPaOfsSwBBq6gQZOHYpy7cwSLcib0xPZlAfVXvA==
+  MlxMveG+bCw7CRlChkYIgU/yL5RI/EKLiFjwfn20mT8VuAb4lKqJREyqFAq7GhHgIo9qzbGsThew5sqVu09fLw==
 files:
   - url: >-
-      https://github.com/NoomStuff/AcroClip/releases/download/v0.7.0/AcroClip-0.7.0-win-x64-Installer.exe
+      https://github.com/NoomStuff/AcroClip/releases/download/v0.7.1/AcroClip-0.7.1-win-x64-Installer.exe
     sha512: >-
-      /fNkZ6AMM/Zi0R99RjJBfwc5FnUaI9rjC6n2Lx3Az+Uk2erSPaOfsSwBBq6gQZOHYpy7cwSLcib0xPZlAfVXvA==
-    size: 151848190
-releaseName: Major UI improvements
-releaseDate: '2026-11-01T02:18:06.340Z'
+      MlxMveG+bCw7CRlChkYIgU/yL5RI/EKLiFjwfn20mT8VuAb4lKqJREyqFAq7GhHgIo9qzbGsThew5sqVu09fLw==
+    size: 151849563
+releaseName: More UI tweaks lol
+releaseDate: '2026-11-01T03:56:35.082Z'
