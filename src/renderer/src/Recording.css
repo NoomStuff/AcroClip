@@ -69,7 +69,6 @@
 
 .preview-stream.ready {
    opacity: 1;
-   transition: opacity 120ms var(--ease);
 }
 
 .preview-message {
@@ -116,6 +115,8 @@
 }
 
 .preview-note {
+   display: flex;
+   align-items: center;
    margin-left: auto;
    color: var(--muted);
    font-size: 11px;
@@ -727,16 +728,6 @@
 
 .preview-canvas.cached {
    opacity: 1;
-}
-
-.preview-message.preview-cached-message {
-   inset: auto 12px 38px;
-   padding: 8px 12px;
-   border-radius: 7px;
-   background: #080808d9;
-   width: fit-content;
-   margin: auto;
-   font-size: 12px;
 }
 
 .source-list > .selection-indicator {

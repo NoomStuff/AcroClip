@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, describeError } from "./desktop";
 
 type PreviewStatus = "idle" | "connecting" | "live" | "error";
 
-export function useSourcePreview(sourceId: string | undefined, visible: boolean, nativeScreen = false, scope = "") {
+export function useSourcePreview(sourceId: string | undefined, visible: boolean, nativeScreen = false, scope = "", identity = "") {
    const video = useRef<HTMLVideoElement>(null);
    const canvas = useRef<HTMLCanvasElement>(null);
    const [status, setStatus] = useState<PreviewStatus>("idle");
    const [error, setError] = useState("");
    const [retry, setRetry] = useState(0);
-   const cacheKey = `${scope}\0${sourceId ?? ""}`;
+   const cacheKey = `${scope}\0${identity}\0${sourceId ?? ""}`;
    const [cachedSource, setCachedSource] = useState<string | null>(null);
    const cached = cachedSource === cacheKey;
    const images = useRef(new Map<string, { canvas: HTMLCanvasElement; at: number }>());
@@ -24,32 +24,33 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
    const previousScope = useRef(scope);
    const statusSource = useRef(cacheKey);
 
-   useEffect(() => {
+   useLayoutEffect(() => {
       statusSource.current = cacheKey;
       const owner = crypto.randomUUID();
-      if (previousScope.current !== scope || !sourceId) images.current.clear();
+      if (previousScope.current !== scope) images.current.clear();
       previousScope.current = scope;
       let disposed = false;
       let stream: MediaStream | undefined;
       let frame: number | undefined;
+      let painted = false;
       const element = video.current;
       const snapshot = () => {
-         if (!sourceId || !stream || element?.srcObject !== stream || !element.videoWidth || !element.videoHeight || element.readyState < 2) return;
+         if (!sourceId || !painted || !stream || element?.srcObject !== stream || !element.videoWidth || !element.videoHeight || element.readyState < 2) return;
          const surface = document.createElement("canvas");
          const scale = Math.min(1, 960 / element.videoWidth, 540 / element.videoHeight);
          surface.width = Math.max(1, Math.round(element.videoWidth * scale));
          surface.height = Math.max(1, Math.round(element.videoHeight * scale));
-         surface
-            .getContext("2d", { alpha: false })
-            ?.drawImage(nativeScreen && canvas.current?.width ? canvas.current : element, 0, 0, surface.width, surface.height);
-         images.current.delete(sourceId);
-         images.current.set(sourceId, { canvas: surface, at: Date.now() });
+         const context = surface.getContext("2d", { alpha: false });
+         if (!context) return;
+         context.drawImage(nativeScreen && canvas.current?.width ? canvas.current : element, 0, 0, surface.width, surface.height);
+         images.current.delete(cacheKey);
+         images.current.set(cacheKey, { canvas: surface, at: Date.now() });
          while (images.current.size > 2) images.current.delete(images.current.keys().next().value!);
          window.clearTimeout(expiry.current);
          const sweep = () => {
             const now = Date.now();
             for (const [id, image] of images.current) if (now - image.at >= 60_000) images.current.delete(id);
-            setCachedSource((current) => (current && !images.current.has(current.split("\0").at(-1)!) ? null : current));
+            setCachedSource((current) => (current && !images.current.has(current) ? null : current));
             if (images.current.size)
                expiry.current = window.setTimeout(sweep, Math.max(1, Math.min(...[...images.current.values()].map((image) => 60_000 - (now - image.at)))));
          };
@@ -71,20 +72,16 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
       const visibility = () => {
          if (document.hidden) {
             cancel();
-            images.current.clear();
-            setCachedSource(null);
          }
       };
       const unsubscribe = api.onEvent((event) => {
          if (event.type === "visibility" && !event.visible) {
             cancel();
-            images.current.clear();
-            setCachedSource(null);
          }
       });
       document.addEventListener("visibilitychange", visibility);
       window.addEventListener("pagehide", cancel);
-      const image = sourceId ? images.current.get(sourceId) : undefined;
+      const image = sourceId ? images.current.get(cacheKey) : undefined;
       const reuse = !!image && Date.now() - image.at < 60_000;
       setCachedSource(reuse ? cacheKey : null);
       if (reuse && canvas.current && image) {
@@ -127,7 +124,7 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
                   () => {
                      if (disposed) return;
                      stop(false);
-                     images.current.delete(sourceId);
+                     images.current.delete(cacheKey);
                      setCachedSource(null);
                      setError("This source is no longer available.");
                      setStatus("error");
@@ -149,8 +146,11 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
                   }
                   surface.getContext("2d", { alpha: false, desynchronized: true })?.drawImage(element, 0, 0, width, height);
                }
-               setCachedSource(null);
-               setStatus("live");
+               if (!painted) {
+                  painted = true;
+                  setCachedSource(null);
+                  setStatus("live");
+               }
                if (nativeScreen) frame = element.requestVideoFrameCallback(paint);
             };
             frame = element.requestVideoFrameCallback(paint);
@@ -159,7 +159,7 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
             stop(false);
             await api.previewSource(null, owner).catch(() => undefined);
             if (!disposed) {
-               if (sourceId) images.current.delete(sourceId);
+               images.current.delete(cacheKey);
                setCachedSource(null);
                const message = describeError(reason);
                const name = reason && typeof reason === "object" && "name" in reason ? reason.name : "";

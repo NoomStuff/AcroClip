@@ -106,7 +106,8 @@ export function Recording({
       previewUnavailable ? undefined : source?.id,
       visible && state.preferences.setupComplete,
       nativeScreenPreview,
-      `${state.preferences.collection}\0${source?.processId ?? ""}`
+      state.preferences.collection,
+      String(source?.processId ?? "")
    );
    useEffect(() => {
       if (!visible || state.preferences.sourceKind !== "auto" || !state.recorder.supported) return;
@@ -297,26 +298,15 @@ export function Recording({
                            className={`preview-canvas ${nativeScreenPreview && preview.status === "live" ? "ready" : ""} ${preview.cached && preview.status !== "live" ? "cached" : ""}`}
                            aria-label={`${preview.cached ? "Last frame" : "Live preview"} of ${source.name}`}
                         />
-                        {preview.status !== "live" && (
-                           <div className={`preview-message ${preview.cached ? "preview-cached-message" : ""}`}>
-                              {preview.cached ? (
-                                 <p>{preview.status === "error" ? "Preview unavailable. Last frame shown." : "Reconnecting preview. Last frame shown."}</p>
-                              ) : preview.status === "error" ? (
-                                 <>
-                                    <Monitor size={30} />
-                                    <h3>Preview unavailable</h3>
-                                    <p>{preview.error}</p>
-                                    <Button onClick={preview.retry}>
-                                       <RefreshCw size={14} />
-                                       Retry preview
-                                    </Button>
-                                 </>
-                              ) : (
-                                 <>
-                                    <Monitor size={30} />
-                                    <p>Opening preview…</p>
-                                 </>
-                              )}
+                        {preview.status === "error" && (
+                           <div className="preview-message">
+                              <Monitor size={30} />
+                              <h3>Preview unavailable</h3>
+                              <p>{preview.error}</p>
+                              <Button onClick={preview.retry}>
+                                 <RefreshCw size={14} />
+                                 Retry preview
+                              </Button>
                            </div>
                         )}
                      </>
@@ -342,7 +332,17 @@ export function Recording({
                      <div className="preview-caption">
                         <span className={preview.status === "live" ? "preview-dot live" : "preview-dot"} />
                         {source.name}
-                        <span className="preview-note">{preview.status === "live" ? "Live preview" : "Preview"}</span>
+                        <span className="preview-note">
+                           {preview.status === "live" ? (
+                              "Live preview"
+                           ) : preview.status === "connecting" ? (
+                              <span role="status" aria-label="Loading preview">
+                                 <LoaderCircle size={12} className="spin" />
+                              </span>
+                           ) : (
+                              "Preview"
+                           )}
+                        </span>
                      </div>
                   )}
                </div>
