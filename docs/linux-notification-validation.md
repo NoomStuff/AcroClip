@@ -23,3 +23,9 @@ Not verified:
 These gaps remain before calling the whole PR verified. Do not merge, publish, tag, or bump the version based on these checks.
 
 The previous Windows CI run also exposed checkbox hit testing and a viewer test that expected the removed main-process toast event. The checkbox now has a hit area matching its switch. The viewer test exercises the renderer feedback event used by rejected UI actions. These changes await the next isolated CI run.
+
+## CI follow-up
+
+Windows CI for `c7ad145` passed notification settings and viewer-state checks. It exposed a tag-order preview that could remain after keyboard reorder persistence completed. The fix retains previews only while keyboard saves are pending, and the UI test now checks the intermediate external order after revealing the retained Library page.
+
+A temporary runner using private PipeWire and pipewire-pulse services successfully ran the tag-order UI test three consecutive times on private Xvfb/Openbox. `bun run verify` also passed after the fix. It uses the existing isolation guard with a real private audio socket. This targeted run does not establish full Linux UI or capture coverage.

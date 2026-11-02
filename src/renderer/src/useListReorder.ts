@@ -27,6 +27,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
    const latest = useRef({ items, commit });
    latest.current = { items, commit };
    const keyboardOrder = useRef<string[] | null>(null);
+   const pendingKeyboard = useRef(0);
    const keyboardFocus = useRef<HTMLElement | null>(null);
    const enabled = commit !== undefined;
    const [announcement, setAnnouncement] = useState("");
@@ -113,7 +114,9 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       stop.current(false);
       const target = keyboardOrder.current;
       const current = latest.current.items;
-      if (target && target.length === current.length && target.every((id) => current.some((item) => item.id === id))) {
+      // Keep optimistic keyboard order only while a save can still confirm it.
+      // Later external changes must replace a completed keyboard preview.
+      if (pendingKeyboard.current > 0 && target && target.length === current.length && target.every((id) => current.some((item) => item.id === id))) {
          if (target.join("\0") !== signature) return;
       }
       keyboardOrder.current = null;
@@ -242,13 +245,18 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
             keyboardOrder.current = null;
             setPreview(null);
          };
-         void Promise.resolve(latest.current.commit?.(id, beforeId)).then((result) => {
-            if (result === false) restore();
-            else {
-               setAnnouncement(`Moved to position ${nextIndex + 1} of ${ids.length}`);
-               if (latest.current.items.map((item) => item.id).join("\0") === next.join("\0")) restore();
-            }
-         }, restore);
+         pendingKeyboard.current++;
+         void Promise.resolve(latest.current.commit?.(id, beforeId))
+            .then((result) => {
+               if (result === false) restore();
+               else {
+                  setAnnouncement(`Moved to position ${nextIndex + 1} of ${ids.length}`);
+                  if (latest.current.items.map((item) => item.id).join("\0") === next.join("\0")) restore();
+               }
+            }, restore)
+            .finally(() => {
+               pendingKeyboard.current--;
+            });
       },
    };
 }

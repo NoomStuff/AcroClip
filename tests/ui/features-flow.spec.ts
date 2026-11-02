@@ -198,6 +198,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       // turn zero offsets into the next visible animation's starting positions.
       await page.evaluate(({ id, before }) => window.acroClip.reorderCategory(id, before), { id: secondId, before: thirdId });
       await page.getByRole("button", { name: "Library", exact: true }).click();
+      await expect(labels).toHaveText(["Second", "Third", "Matches"]);
       await page.evaluate(({ id, before }) => window.acroClip.reorderCategory(id, before), { id: thirdId, before: secondId });
       await expect(labels).toHaveText(["Third", "Second", "Matches"]);
       const unchanged = page.locator(".category-item").filter({ hasText: "Matches" });
