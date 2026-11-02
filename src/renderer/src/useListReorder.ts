@@ -22,7 +22,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
    const [draggingId, setDraggingId] = useState<string | null>(null);
    const drag = useRef<Drag | null>(null);
    const frame = useRef(0);
-   const suppressClickUntil = useRef(0);
+   const suppressPointerClick = useRef(false);
    const generation = useRef(0);
    const latest = useRef({ items, commit });
    latest.current = { items, commit };
@@ -50,7 +50,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       const transform = current.node.style.transform;
       current.node.style.removeProperty("transform");
       if (current.active) {
-         suppressClickUntil.current = performance.now() + 120;
+         suppressPointerClick.current = true;
          if (!matchMedia("(prefers-reduced-motion: reduce)").matches && save) {
             current.node.animate([{ transform }, { transform: "translateY(0)" }], { duration: 220, easing: "cubic-bezier(.22,.8,.3,1)" });
          }
@@ -196,6 +196,8 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       draggingId,
       announcement,
       pointerDown: (id: string, event: ReactPointerEvent<HTMLElement>) => {
+         // A fresh press is an intentional click, even immediately after a drag.
+         suppressPointerClick.current = false;
          if (!enabled || event.button !== 0 || !event.isPrimary || event.pointerType === "touch") return;
          const capture = event.currentTarget.querySelector<HTMLElement>("[data-list-control]");
          if (!capture || !(event.target instanceof Element) || event.target.closest("[data-list-control]") !== capture) return;
@@ -223,7 +225,8 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
          };
       },
       clickCapture: (event: ReactMouseEvent<HTMLElement>) => {
-         if (performance.now() < suppressClickUntil.current) {
+         if (event.detail > 0 && suppressPointerClick.current) {
+            suppressPointerClick.current = false;
             event.preventDefault();
             event.stopPropagation();
          }

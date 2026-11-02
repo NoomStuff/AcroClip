@@ -87,7 +87,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
                };
                const action = rect(".collection-home .header-actions button");
                const title = rect(".collection-home .context-header-title");
-               const category = rect(".sidebar-group-title button");
+               const category = rect(".sidebar-group-title .icon-button");
                const count = rect(".sidebar-scroll > .sidebar-item > .count");
                return Math.max(
                   Math.abs(action.y + action.height / 2 - title.y - title.height / 2),
