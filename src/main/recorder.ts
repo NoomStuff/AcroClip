@@ -286,7 +286,7 @@ export class Recorder {
                ...nativeAudioPreferences(preferences),
                resolvedKind: "screen",
                sourceId: screen.id,
-               sourceName: screen.name,
+               sourceName: "Desktop",
                bounds: screen.bounds,
                displayId: screen.displayId,
                screenIndex: sources.filter((item) => item.kind === "screen").findIndex((item) => item.id === screen.id),
@@ -635,7 +635,7 @@ export class Recorder {
       if (preferences.sourceKind === "auto") return this.autoConfiguration(preferences, sources);
       const selected = selectedCaptureSource(sources, preferences);
       if (!selected) throw new Error("The selected capture source is unavailable");
-      this.source = selected.name;
+      this.source = selected.kind === "screen" ? "Desktop" : (selected.applicationName ?? selected.name);
       const screenIndex = sources.filter((s) => s.kind === "screen").findIndex((s) => s.id === selected.id);
       // Match OBS's available window list rather than inventing an executable identity.
       const window = this.windows.find((w) => w.value.split(":")[0] === selected.name || w.name.endsWith(`: ${selected.name}`));
@@ -644,7 +644,7 @@ export class Recorder {
       return {
          ...nativeAudioPreferences(preferences),
          pixelSize: selected.pixelSize,
-         sourceName: selected.name,
+         sourceName: this.source,
          displayId: selected.displayId,
          screenIndex: Math.max(0, screenIndex),
          bounds: selected.bounds,
@@ -729,7 +729,7 @@ export class Recorder {
          if (key !== this.monitorKey) {
             this.monitorKey = "";
             this.monitorLevels = { capture: 0, microphone: 0 };
-            await this.command({ action: "monitor-audio", enabled: true, audioSources: sources });
+            await this.command({ action: "monitor-audio", enabled: true, audioSources: sources, applicationPid: process.pid });
             if (generation !== this.monitorGeneration) return [];
             this.monitorKey = key;
          } else for (const source of sources) await this.command({ action: "audio", source: source["id"], volume: source["volume"], muted: source["muted"] });
@@ -756,7 +756,7 @@ export class Recorder {
             nativeAudioPreferences(preferences).audioSources,
             preferences.audioSources.some((source) => source.enabled && source.kind === "application") ? await this.candidates() : []
          );
-         await this.command({ action: "start", ...configuration });
+         await this.command({ action: "start", ...configuration, applicationPid: process.pid });
          this.autoGeneration++;
          this.autoPreferences = preferences.sourceKind === "auto" ? preferences : null;
          this.autoSources = sources;

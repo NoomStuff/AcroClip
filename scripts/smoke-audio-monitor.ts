@@ -22,6 +22,7 @@ type Event = {
    message?: string;
    windows?: Array<{ id: string; name: string; pid: number; pixelSize?: { width: number; height: number } }>;
    devices?: Array<{ id: string; name: string }>;
+   capture?: number;
    additional?: Record<string, number>;
    sources?: number;
    attached?: number;
@@ -625,14 +626,22 @@ try {
       isolatedMic: toneAt(2, 1733, screenMix),
    };
    assert.ok(
-      screenTones.masterExtra > -60 && Math.abs(screenTones.masterExtra - screenTones.sourceExtra) < 1.5,
+      screenTones.masterExtra > -60 && screenTones.sourceExtra < -70 && Math.abs(screenTones.masterExtra - screenTones.isolatedExtra) < 1.5,
       `Desktop master must not double added app audio: ${JSON.stringify(screenTones)}`
    );
    assert.ok(
       screenTones.masterMic > -65 && screenTones.sourceMic < -70 && Math.abs(screenTones.masterMic - screenTones.isolatedMic) < 1.5,
       JSON.stringify(screenTones)
    );
-   await assert.rejects(command("listen-audio", { source: "test-listener" }), /recorded|captured|feedback/);
+   await command("listen-audio", { source: "capture" });
+   await command("status");
+   assert.equal((await lifecycle()).listening, "capture", "Desktop listening must work through the default output");
+   await wait((asyncEvent) => asyncEvent.event === "audio-levels" && (asyncEvent.capture ?? 0) > 0.2);
+   await command("listen-audio", { source: "test-listener" });
+   await command("test-listener-tone");
+   const auditionedScreen = await saveProof("automatic-screen-audition-excluded");
+   assert.ok(toneAt(1, 1733, auditionedScreen) < -70, "AcroClip listening must stay out of Desktop");
+   await command("listen-audio", { source: "" });
    await command("stop");
    screenCover.kill();
    screenCover = undefined;
@@ -649,7 +658,7 @@ try {
    );
    assert.equal((await lifecycle()).sources, baseline.sources);
    console.log(
-      "Automatic APP all-source master, SCREEN source-plus-input master, isolated tracks, audible muted audition, restore and duplicate failures passed",
+      "Automatic APP all-source master, SCREEN isolated desktop master, isolated tracks, audible muted audition, restore and duplicate failures passed",
       JSON.stringify({ appTones, screenTones })
    );
    await writeFile(path.join(folder, "proof.json"), JSON.stringify({ baseline, live, stopped, timings, events }, null, 2));

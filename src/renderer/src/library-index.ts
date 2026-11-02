@@ -1,7 +1,31 @@
+import { normalizeApplicationLabel } from "../../shared/application-label";
 import type { Clip } from "../../shared/types";
+export type LibrarySectionId = "tags" | "applications" | "folders";
+export function orderLibrarySections(populated: Record<LibrarySectionId, boolean>, order: readonly string[]) {
+   const sections = [
+      { id: "tags", label: "Tags", empty: !populated.tags },
+      { id: "applications", label: "Applications", empty: !populated.applications },
+      { id: "folders", label: "Folders", empty: !populated.folders },
+   ] satisfies Array<{ id: LibrarySectionId; label: string; empty: boolean }>;
+   const position = (id: string) => (order.indexOf(id) < 0 ? sections.length : order.indexOf(id));
+   return sections.sort((a, b) => Number(a.empty) - Number(b.empty) || position(a.id) - position(b.id));
+}
 export function applicationKeys(clips: readonly Clip[]): Map<string, string> {
-   const known = new Map(clips.filter((clip) => clip.applicationId).map((clip) => [clip.source.toLowerCase(), clip.applicationId!]));
-   return new Map(clips.map((clip) => [clip.id, clip.applicationId ?? known.get(clip.source.toLowerCase()) ?? `label:${clip.source.toLowerCase()}`]));
+   const known = new Map(
+      clips
+         .filter((clip) => clip.applicationId && normalizeApplicationLabel(clip.source) !== "Desktop")
+         .map((clip) => [normalizeApplicationLabel(clip.source).toLowerCase(), clip.applicationId!])
+   );
+   return new Map(
+      clips
+         .filter((clip) => normalizeApplicationLabel(clip.source) !== "Desktop")
+         .map((clip) => [
+            clip.id,
+            clip.applicationId ??
+               known.get(normalizeApplicationLabel(clip.source).toLowerCase()) ??
+               `label:${normalizeApplicationLabel(clip.source).toLowerCase()}`,
+         ])
+   );
 }
 
 export function summarizeClips(clips: readonly Clip[]): { size: number; categories: Map<string, number> } {

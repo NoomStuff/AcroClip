@@ -854,3 +854,39 @@
 .folder-card[data-empty]:focus-within {
    opacity: 1;
 }
+
+.sidebar-section[data-empty] {
+   opacity: 0.4;
+   transition: opacity 140ms ease;
+}
+.sidebar-section[data-empty]:hover,
+.sidebar-section[data-empty]:focus-within {
+   opacity: 1;
+}
+.sidebar-section-control {
+   flex: 1;
+   align-self: stretch;
+   text-align: left;
+   color: inherit;
+   font: inherit;
+   background: none;
+   border: 0;
+   padding: 0;
+   cursor: grab;
+}
+.sidebar-section-control:active {
+   cursor: grabbing;
+}
+.sidebar-section-control:focus-visible {
+   outline: 2px solid var(--accent);
+   outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+   .sidebar-section[data-empty] {
+      transition: none;
+   }
+}
+
+.sidebar-section[data-empty] .sidebar-group-title[data-empty] {
+   opacity: 1;
+}

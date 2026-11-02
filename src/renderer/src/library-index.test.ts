@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { applicationKeys, groupFolders, summarizeClips, visibleFolderRows } from "./library-index";
+import { applicationKeys, orderLibrarySections, groupFolders, summarizeClips, visibleFolderRows } from "./library-index";
 import type { Clip } from "../../shared/types";
 
 describe("library indexes", () => {
    it("groups legacy app captions with the same identified application", () => {
       const keys = applicationKeys([
          { id: "known", source: "Explorer", applicationId: "explorer" },
-         { id: "legacy", source: "Explorer" },
+         { id: "legacy", source: "Downloads \u2500 File Explorer" },
+         { id: "screen", source: "Screen 2" },
+         { id: "desktop", source: "Desktop" },
          { id: "other", source: "Other" },
       ] as Clip[]);
+      expect(keys.has("screen")).toBe(false);
+      expect(keys.has("desktop")).toBe(false);
       expect(keys.get("legacy")).toBe(keys.get("known"));
       expect(keys.get("other")).not.toBe(keys.get("known"));
    });
@@ -47,4 +51,17 @@ describe("library indexes", () => {
       expect(visibleFolderRows(folders, new Set(["Games/A"])).map((row) => row.id)).toEqual(["Games", "Other"]);
       expect(visibleFolderRows(new Map(), new Set())).toEqual([]);
    });
+});
+
+it("keeps populated sections above empty ones while preserving their saved order", () => {
+   const order = ["folders", "tags", "applications"];
+   const populated = { tags: false, applications: false, folders: false };
+   expect(orderLibrarySections(populated, order).map((section) => section.id)).toEqual(order);
+   expect(orderLibrarySections({ ...populated, applications: true }, order).map((section) => section.id)).toEqual(["applications", "folders", "tags"]);
+   expect(orderLibrarySections({ ...populated, tags: true, applications: true }, order).map((section) => section.id)).toEqual([
+      "tags",
+      "applications",
+      "folders",
+   ]);
+   expect(orderLibrarySections({ tags: true, applications: true, folders: true }, order).map((section) => section.id)).toEqual(order);
 });

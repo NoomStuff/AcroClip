@@ -98,3 +98,21 @@ describe("saved capture selection", () => {
       expect(selectedCaptureSource(sources, { sourceKind: "screen", sourceId: "" })).toBe(sources[0]);
    });
 });
+
+it("uses Desktop for every screen save, including buffered footage during a source switch", () => {
+   expect(bufferedCaptureSource({ ...stoppedRecorder, sourceKind: "screen", sourceId: "screen:2:0", sourceName: "Screen 3" })).toEqual({
+      kind: "screen",
+      id: "screen:2:0",
+      name: "Desktop",
+   });
+   expect(
+      bufferedCaptureSource({
+         ...stoppedRecorder,
+         sourceKind: "app",
+         sourceName: "Next app",
+         bufferedSourceKind: "screen",
+         bufferedSourceName: "Portal-selected screen",
+         bufferedSourceId: "portal:screen",
+      })
+   ).toEqual({ kind: "screen", id: "portal:screen", name: "Desktop" });
+});

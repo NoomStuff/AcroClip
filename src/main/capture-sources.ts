@@ -15,8 +15,8 @@ export class CaptureSources {
    private query: Promise<CaptureSource[]> | null = null;
    private thumbnailQuery: Promise<CaptureSource[]> | null = null;
    private loadedAt = 0;
+   private readonly stableWindowIcons = new Map<string, string>();
    private readonly icons = new Map<string, Promise<string | undefined>>();
-   private iconFallbackAt = 0;
    private readonly recorder: SourceRecorder;
    private readonly ownWindow: () => string;
    private readonly onChange: (sources: CaptureSource[]) => void;
@@ -97,12 +97,16 @@ export class CaptureSources {
                else if (candidate && prior?.processId === candidate.pid) applicationId = prior.applicationId;
                applicationId ??= createHash("sha256").update(`window:${s.id}:${randomUUID()}`).digest("hex");
             }
-            let appIcon: string | undefined;
+            let appIcon: string | undefined = applicationId ? this.stableWindowIcons.get(applicationId) : undefined;
             if (candidate && prior?.processId === candidate.pid && prior?.applicationId === applicationId) appIcon = prior.appIcon;
             try {
-               if (s.appIcon && !s.appIcon.isEmpty()) {
+               if (process.platform === "linux" && !appIcon && s.appIcon && !s.appIcon.isEmpty()) {
                   const value = s.appIcon.resize({ width: 32, height: 32 }).toDataURL();
-                  if (value.length <= 45000) appIcon = value;
+                  if (value.length <= 45000) {
+                     appIcon = value;
+                     if (applicationId) this.stableWindowIcons.set(applicationId, value);
+                     while (this.stableWindowIcons.size > 128) this.stableWindowIcons.delete(this.stableWindowIcons.keys().next().value!);
+                  }
                }
             } catch {
                /* A missing app icon must not make its capture source unavailable. */
@@ -130,7 +134,7 @@ export class CaptureSources {
                ...(s.display_id ? { displayId: s.display_id } : {}),
             };
          });
-      if (process.platform === "win32") this.hydrateIcons(nativeWindows);
+      if (process.platform === "win32" || process.platform === "darwin") this.hydrateIcons(nativeWindows);
       this.hydrateNames(nativeWindows);
       return this.cached;
    }
@@ -181,17 +185,17 @@ export class CaptureSources {
       return this.cached;
    }
    private hydrateIcons(candidates: GameCandidate[]): void {
-      const missingIcons = new Map(
-         this.cached.filter((source) => source.kind === "app" && !source.appIcon).map((source) => [source.id.split(":")[1], source.processId])
-      );
+      const missingIcons = new Map(this.cached.filter((source) => source.kind === "app").map((source) => [source.id.split(":")[1], source.processId]));
       const pending = candidates.filter((candidate) => candidate.executable && missingIcons.get(candidate.id.split(":")[1]) === candidate.pid);
       void Promise.all(
          pending.map(async (candidate) => {
-            const executable = candidate.executable.toLowerCase();
+            const executable = process.platform === "win32" ? candidate.executable.toLowerCase() : candidate.executable;
             let icon = this.icons.get(executable);
             if (!icon) {
                icon = app
-                  .getFileIcon(candidate.executable, { size: "normal" })
+                  .getFileIcon(process.platform === "darwin" ? candidate.executable.replace(/(\.app)\/Contents\/.*/, "$1") : candidate.executable, {
+                     size: "normal",
+                  })
                   .then((image) => {
                      if (image.isEmpty()) return undefined;
                      const value = image.resize({ width: 32, height: 32 }).toDataURL();
@@ -214,34 +218,11 @@ export class CaptureSources {
          let changed = false;
          this.cached = this.cached.map((source) => {
             const appIcon = source.applicationId ? icons.get(source.applicationId) : undefined;
-            if (source.appIcon || !appIcon) return source;
+            if (!appIcon || source.appIcon === appIcon) return source;
             changed = true;
             return { ...source, appIcon };
          });
          if (changed) this.onChange(this.cached);
-         if (this.cached.some((source) => source.kind === "app" && !source.appIcon) && Date.now() - this.iconFallbackAt >= 15_000) {
-            this.iconFallbackAt = Date.now();
-            const windows = await desktopCapturer
-               .getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: true })
-               .catch(() => []);
-            const fallback = new Map(windows.map((window) => [window.id.split(":")[1], window]));
-            const identities = new Map(candidates.map((candidate) => [candidate.id.split(":")[1], candidate.pid]));
-            let recovered = false;
-            this.cached = this.cached.map((source) => {
-               if (source.appIcon || source.processId !== identities.get(source.id.split(":")[1])) return source;
-               const icon = fallback.get(source.id.split(":")[1])?.appIcon;
-               if (!icon || icon.isEmpty()) return source;
-               try {
-                  const value = icon.resize({ width: 32, height: 32 }).toDataURL();
-                  if (value.length > 45000) return source;
-                  recovered = true;
-                  return { ...source, appIcon: value };
-               } catch {
-                  return source;
-               }
-            });
-            if (recovered) this.onChange(this.cached);
-         }
       });
    }
    async preview(id: string): Promise<DesktopCapturerSource[]> {

@@ -1,3 +1,4 @@
+import { normalizeApplicationLabel } from "../../shared/application-label";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent } from "react";
 import {
@@ -53,7 +54,7 @@ import { PaneDivider, usePaneSize } from "./layout";
 import { useApplicationColors } from "./useApplicationColors";
 import type { ContextMenuRequest } from "./ui";
 import { useAttaCutAvailable } from "./useAttaCutAvailable";
-import { applicationKeys, summarizeClips } from "./library-index";
+import { applicationKeys, summarizeClips, orderLibrarySections } from "./library-index";
 
 export function Library({
    state,
@@ -220,9 +221,9 @@ export function Library({
    const sources = useMemo(() => {
       const apps = new Map<string, { id: string; name: string; icon?: string | undefined }>();
       for (const clip of state.clips)
-         if (clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown") {
+         if (appKeys.has(clip.id) && clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown") {
             const id = appKeys.get(clip.id)!;
-            if (!apps.has(id)) apps.set(id, { id, name: clip.source.trim(), icon: state.applicationIcons[id] });
+            if (!apps.has(id)) apps.set(id, { id, name: normalizeApplicationLabel(clip.source), icon: state.applicationIcons[id] });
          }
       for (const game of addedApplications) apps.set(game.id, { ...game, icon: state.applicationIcons[game.id] });
       return [...apps.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
@@ -249,6 +250,31 @@ export function Library({
       reportLocation("library", `folder:${parent}`, true);
       setFilter(`folder:${parent}`);
    }, [folderPath, folders, state.collectionStatus.phase]);
+   const [sectionOrder, setSectionOrder] = useState<string[]>(() => {
+      try {
+         const stored: unknown = JSON.parse(localStorage.getItem("acroclip.library.sections") ?? "null");
+         return Array.isArray(stored) && stored.every((id): id is string => typeof id === "string") ? stored : [];
+      } catch {
+         return [];
+      }
+   });
+   const sections = useMemo(
+      () => orderLibrarySections({ tags: state.categories.length > 0, applications: sources.length > 0, folders: folders.length > 0 }, sectionOrder),
+      [state.categories.length, sources.length, folders.length, sectionOrder]
+   );
+   const reorderSection = (id: string, beforeId: string | null) => {
+      const section = sections.find((item) => item.id === id);
+      if (!section) return;
+      const next = sections.map((item) => item.id).filter((value) => value !== section.id);
+      const at = beforeId === null ? next.length : next.findIndex((value) => value === beforeId);
+      next.splice(at < 0 ? next.length : at, 0, section.id);
+      setSectionOrder(next);
+      try {
+         localStorage.setItem("acroclip.library.sections", JSON.stringify(next));
+      } catch {
+         /* Ordering still works for this session. */
+      }
+   };
    const folderDropProps = (destination: string) => ({
       onDragOver: (event: DragEvent<HTMLElement>) => {
          if (!event.dataTransfer.types.includes(clipDragType)) return;
@@ -481,104 +507,126 @@ export function Library({
                   <span className="sidebar-label">All clips</span>
                   <span className="count">{initial ? "" : state.clips.length}</span>
                </button>
-               <div className="sidebar-group-title" data-empty={state.categories.length === 0 || undefined}>
-                  <span>Tags</span>
-                  <IconButton label="New tag" onClick={() => void createCategory()}>
-                     <Plus size={16} />
-                  </IconButton>
-               </div>
-               <MotionList items={state.categories} identity={collectionRoot} onReorder={(id, beforeId) => run(() => api.reorderCategory(id, beforeId))}>
-                  {(item) => (
-                     <div
-                        className="category-item"
-                        data-empty={!summary.categories.get(item.id) || undefined}
-                        key={item.id}
-                        onContextMenu={(event) => {
-                           event.preventDefault();
-                           setCategoryContextMenu({
-                              categoryId: item.id,
-                              left: event.clientX,
-                              top: event.clientY,
-                              restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
-                           });
-                        }}
-                     >
-                        <button
-                           data-list-control=""
-                           className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`}
-                           aria-pressed={filter === `category:${item.id}`}
-                           style={categoryStyle(item.color)}
-                           onClick={() => setFilter(`category:${item.id}`)}
-                        >
-                           <CategoryMark category={item} />
-                           <span className="sidebar-label" title={item.name}>
-                              {item.name}
-                           </span>
-                           <span className="count">{summary.categories.get(item.id) ?? 0}</span>
-                        </button>
-                        <Menu
-                           label={`Actions for ${item.name}`}
-                           trigger={<MoreHorizontal size={14} />}
-                           contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
-                           onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
-                        >
-                           <MenuItem onClick={() => setEditingCategory(item)}>
-                              <Pencil size={14} />
-                              Edit tag
-                           </MenuItem>
-                           <div className="menu-separator" role="separator" />
-                           <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
-                              <Trash2 size={14} />
-                              Delete tag
-                           </MenuItem>
-                        </Menu>
-                     </div>
+               <MotionList items={sections} identity={collectionRoot} onReorder={reorderSection}>
+                  {(section) => (
+                     <section className="sidebar-section" data-empty={section.empty || undefined} aria-label={section.label}>
+                        {section.id === "tags" ? (
+                           <>
+                              <div className="sidebar-group-title" data-empty={state.categories.length === 0 || undefined}>
+                                 <button className="sidebar-section-control" data-list-control="" title="Drag to reorder. Alt+Up or Alt+Down">
+                                    Tags
+                                 </button>
+                                 <IconButton label="New tag" onClick={() => void createCategory()}>
+                                    <Plus size={16} />
+                                 </IconButton>
+                              </div>
+                              <MotionList
+                                 items={state.categories}
+                                 identity={collectionRoot}
+                                 onReorder={(id, beforeId) => run(() => api.reorderCategory(id, beforeId))}
+                              >
+                                 {(item) => (
+                                    <div
+                                       className="category-item"
+                                       data-empty={!summary.categories.get(item.id) || undefined}
+                                       key={item.id}
+                                       onContextMenu={(event) => {
+                                          event.preventDefault();
+                                          setCategoryContextMenu({
+                                             categoryId: item.id,
+                                             left: event.clientX,
+                                             top: event.clientY,
+                                             restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
+                                          });
+                                       }}
+                                    >
+                                       <button
+                                          data-list-control=""
+                                          className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`}
+                                          aria-pressed={filter === `category:${item.id}`}
+                                          style={categoryStyle(item.color)}
+                                          onClick={() => setFilter(`category:${item.id}`)}
+                                       >
+                                          <CategoryMark category={item} />
+                                          <span className="sidebar-label" title={item.name}>
+                                             {item.name}
+                                          </span>
+                                          <span className="count">{summary.categories.get(item.id) ?? 0}</span>
+                                       </button>
+                                       <Menu
+                                          label={`Actions for ${item.name}`}
+                                          trigger={<MoreHorizontal size={14} />}
+                                          contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
+                                          onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
+                                       >
+                                          <MenuItem onClick={() => setEditingCategory(item)}>
+                                             <Pencil size={14} />
+                                             Edit tag
+                                          </MenuItem>
+                                          <div className="menu-separator" role="separator" />
+                                          <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
+                                             <Trash2 size={14} />
+                                             Delete tag
+                                          </MenuItem>
+                                       </Menu>
+                                    </div>
+                                 )}
+                              </MotionList>
+                           </>
+                        ) : section.id === "applications" ? (
+                           <>
+                              <div className="sidebar-group-title" data-empty={sources.length === 0 || undefined}>
+                                 <button className="sidebar-section-control" data-list-control="" title="Drag to reorder. Alt+Up or Alt+Down">
+                                    Applications
+                                 </button>
+                                 <IconButton label="Add game" onClick={openGames}>
+                                    <Plus size={16} />
+                                 </IconButton>
+                              </div>
+                              <MotionList items={sources} identity={collectionRoot}>
+                                 {(source) => (
+                                    <button
+                                       key={source.id}
+                                       data-empty={!applicationCounts.get(source.id) || undefined}
+                                       className={`sidebar-item application-filter ${filter === `source:${source.id}` ? "selected" : ""}`}
+                                       style={{ "--application-color": applicationColors[source.id] } as CSSProperties}
+                                       aria-pressed={filter === `source:${source.id}`}
+                                       onClick={() => setFilter(`source:${source.id}`)}
+                                    >
+                                       <ApplicationIcon src={source.icon} size={16} />
+                                       <span className="sidebar-label" title={source.name}>
+                                          {source.name}
+                                       </span>
+                                    </button>
+                                 )}
+                              </MotionList>
+                           </>
+                        ) : (
+                           <>
+                              <div className="sidebar-group-title" data-empty={folders.length === 0 || undefined}>
+                                 <button className="sidebar-section-control" data-list-control="" title="Drag to reorder. Alt+Up or Alt+Down">
+                                    Folders
+                                 </button>
+                                 <IconButton label="New collection folder" onClick={() => void createFolder("")}>
+                                    <Plus size={16} />
+                                 </IconButton>
+                              </div>
+                              {folders.length > 0 && (
+                                 <FolderTree
+                                    dropProps={folderDropProps}
+                                    paths={folders}
+                                    counts={folderStats}
+                                    selected={folderPath}
+                                    onSelect={(path) => setFilter(`folder:${path}`)}
+                                    renderActions={(path) => folderMenu(path, "tree")}
+                                    requestMenu={(path, element, left, top) => requestFolderMenu(path, "tree", element, left, top)}
+                                 />
+                              )}
+                           </>
+                        )}
+                     </section>
                   )}
                </MotionList>
-               {
-                  <>
-                     <div className="sidebar-group-title" data-empty={sources.length === 0 || undefined}>
-                        <span>Applications</span>
-                        <IconButton label="Add game" onClick={openGames}>
-                           <Plus size={16} />
-                        </IconButton>
-                     </div>
-                     <MotionList items={sources} identity={collectionRoot}>
-                        {(source) => (
-                           <button
-                              key={source.id}
-                              data-empty={!applicationCounts.get(source.id) || undefined}
-                              className={`sidebar-item application-filter ${filter === `source:${source.id}` ? "selected" : ""}`}
-                              style={{ "--application-color": applicationColors[source.id] } as CSSProperties}
-                              aria-pressed={filter === `source:${source.id}`}
-                              onClick={() => setFilter(`source:${source.id}`)}
-                           >
-                              <ApplicationIcon src={source.icon} size={16} />
-                              <span className="sidebar-label" title={source.name}>
-                                 {source.name}
-                              </span>
-                           </button>
-                        )}
-                     </MotionList>
-                  </>
-               }
-               <div className="sidebar-group-title" data-empty={folders.length === 0 || undefined}>
-                  <span>Folders</span>
-                  <IconButton label="New collection folder" onClick={() => void createFolder("")}>
-                     <Plus size={16} />
-                  </IconButton>
-               </div>
-               {folders.length > 0 && (
-                  <FolderTree
-                     dropProps={folderDropProps}
-                     paths={folders}
-                     counts={folderStats}
-                     selected={folderPath}
-                     onSelect={(path) => setFilter(`folder:${path}`)}
-                     renderActions={(path) => folderMenu(path, "tree")}
-                     requestMenu={(path, element, left, top) => requestFolderMenu(path, "tree", element, left, top)}
-                  />
-               )}
             </div>
             <div className="sidebar-bottom">
                {initial ? (

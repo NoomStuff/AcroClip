@@ -21,10 +21,12 @@
 #include <vector>
 #ifdef _WIN32
 #include "windows/audio-health.hpp"
+#include "windows/desktop-audio.hpp"
 #include "windows/listen-safety.hpp"
 #endif
 #ifdef __APPLE__
 #include "macos/platform.hpp"
+#include "macos/desktop-audio.hpp"
 #include <mach/mach_time.h>
 #endif
 #ifdef __linux__
@@ -344,9 +346,9 @@ const char *microphoneType() {
 }
 const char *desktopType() {
 #ifdef _WIN32
-  return "wasapi_output_capture";
+  return "acroclip_desktop_audio";
 #elif defined(__linux__)
-  return linuxOutputAudioType();
+  return linuxDesktopAudioType();
 #else
   return "pulse_output_capture";
 #endif
@@ -1008,7 +1010,7 @@ public:
       captureMuted = muted;
       obs_source_t *source =
 #ifdef __APPLE__
-          capture;
+          screenCapture ? desktop : capture;
 #elif defined(__linux__)
           screenCapture ? desktop : applicationAudioSource(applicationAudio);
 #else
@@ -1076,7 +1078,7 @@ private:
 #ifdef __linux__
     error = linuxDeviceAudioError(source);
 #elif defined(_WIN32)
-    error = audioHealth.error(source);
+    error = acroclip::windows::filteredDesktop(source) ? acroclip::windows::desktopAudioError(source) : audioHealth.error(source);
 #elif defined(__APPLE__)
     error = acroclip::macos::audioError(source, 0, 0);
 #endif
@@ -1138,7 +1140,24 @@ private:
     return {};
 #endif
   }
+  void configureDesktopExclusions(const json &config) {
+#if defined(_WIN32) || defined(__linux__) || defined(__APPLE__)
+    std::vector<uint32_t> excluded;
+    if (config.value("applicationPid", 0u)) excluded.push_back(config.value("applicationPid", 0u));
+    for (const auto &extra : config.value("audioSources", json::array()))
+      if (extra.value("enabled", true) && extra.value("kind", std::string{}) == "application") excluded.push_back(extra.value("pid", 0u));
+    if (!monitoring && captureEnabled && !screenCapture && captureAudioEnabled && targetProcess) excluded.push_back(targetProcess);
+#ifdef _WIN32
+    acroclip::windows::setDesktopExclusions(excluded);
+#elif defined(__linux__)
+    setLinuxDesktopExclusions(excluded);
+#else
+    acroclip::macos::setDesktopExclusions(excluded);
+#endif
+#endif
+  }
   void setupAdditionalAudio(const json &config) {
+    configureDesktopExclusions(config);
     auto sources = config.value("audioSources", json::array());
     const bool automatic=config.value("automaticMaster",false);
     if (!sources.is_array() || sources.size() > (monitoring ? 5u : automatic ? (config.value("sourceAudioPresent",false)?4u:5u) : 3u))
@@ -1188,7 +1207,7 @@ private:
       audioNames.push_back(extra.name);
       uint32_t mask = monitoring
                           ? 0u
-                          : (((automatic ? (!screenCapture || extra.kind=="input") : settings.value("includeInMaster", true)) ? 1u : 0u) |
+                          : (((automatic || settings.value("includeInMaster", true)) ? 1u : 0u) |
                              extra.isolatedMask);
       extra.mixerMask = mask;
       extra.outputChannel = uint32_t(additionalAudio.size() + 3);
@@ -1275,12 +1294,21 @@ private:
 #endif
 #ifdef __APPLE__
         data.reset();
+        if (automatic && screenCapture && captureAudioEnabled) throw std::runtime_error("System audio is already included by Source audio");
         if (extra.deviceId != "system")
           throw std::runtime_error("Choose System audio. Individual output-device capture is unavailable on macOS");
         extra.source = acroclip::macos::createSystemAudio(extra.name);
 #else
         type = desktopType();
-        auto *properties = obs_get_source_properties(type);
+        auto *properties = obs_get_source_properties(
+#ifdef _WIN32
+            "wasapi_output_capture"
+#elif defined(__linux__)
+            linuxOutputAudioType()
+#else
+            type
+#endif
+        );
         auto *devices = properties ? obs_properties_get(properties, "device_id") : nullptr;
         bool found = false;
         if (devices)
@@ -1424,18 +1452,10 @@ public:
     const std::string requested=config.value("deviceId","default");
     acroclip::windows::ListenRouting routing;
     const std::string output=utf8(acroclip::windows::ListenRouting::identity(routing.device(requested).Get()));
-    if(found.kind=="output" && (found.deviceId=="default" || routing.same(found.deviceId,output)))throw std::runtime_error("Cannot listen to this output through itself because that would create audio feedback");
-    // A monitored signal must never re-enter any configured loopback capture,
-    // including muted sources which the user can unmute during recording.
-    if(active && screenCapture && captureAudioEnabled && (requested=="default" || routing.same("default",output)))
-      throw std::runtime_error("Cannot listen while the system output is being recorded because that would change the recorded mix");
-    for(const auto &extra:additionalAudio)
-      if(active && extra.source && extra.kind=="output" && (extra.deviceId=="default" || routing.same(extra.deviceId,output)))
-        throw std::runtime_error("Cannot listen while the system output is being captured because that would create audio feedback");
     if(!obs_set_audio_monitoring_device("Listening output",output.c_str()))throw std::runtime_error("The listening output could not be opened");
     // AND_OUTPUT keeps the existing mixer masks, recording gain and record mute.
     obs_source_set_monitoring_type(found.source,active ? OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT : OBS_MONITORING_TYPE_MONITOR_ONLY);
-    if(!routing.audible(GetCurrentProcessId(),output,false)){obs_source_set_monitoring_type(found.source,OBS_MONITORING_TYPE_NONE);throw std::runtime_error("The listening output did not start");}
+    if(!acroclip::windows::filteredDesktop(found.source) && !routing.audible(GetCurrentProcessId(),output,false)){obs_source_set_monitoring_type(found.source,OBS_MONITORING_TYPE_NONE);throw std::runtime_error("The listening output did not start");}
     listeningSource=id;
     listeningDevice=output;
     listeningRequestedDevice=requested;
@@ -2059,6 +2079,9 @@ public:
       targetPid = cardinal(uint32_t(target), "_NET_WM_PID");
     }
 #endif
+#ifdef __APPLE__
+    if (target) targetPid = acroclip::macos::captureProcess(target);
+#endif
     if(sessionConfiguration.value("automaticMaster",false) && c.value("captureAudio",sessionConfiguration.value("captureAudio",true))) {
       try {
         for(const auto &extra:additionalAudio)if(extra.source) {
@@ -2138,7 +2161,11 @@ public:
     gameConfig = c;
     screenCapture = kind == "screen";
     captureAudioEnabled = c.value("captureAudio", sessionConfiguration.value("captureAudio",true));
+#ifdef __APPLE__
+    obs_source_set_audio_mixers(next, screenCapture ? 0 : 3);
+#else
     obs_source_set_audio_mixers(next, 3);
+#endif
     if (item)
       obs_sceneitem_remove(item);
     {
@@ -2160,13 +2187,9 @@ public:
     obs_sceneitem_set_pos(item, &pos);
     {
       std::lock_guard<std::mutex> lock(mutex);
-      sourceName = c.value("sourceName", "Screen");
+      sourceName = screenCapture ? "Desktop" : c.value("sourceName", "Application");
       selectedSourceId = c.value("sourceId", "");
       if (active) recoveryBoundary = int64_t(os_gettime_ns() / 1000);
-#ifdef __linux__
-      if (acroclip::wayland::enabled() && screenCapture)
-        sourceName = "Portal-selected screen";
-#endif
     }
     captureEnabled = true;
     std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
@@ -2174,22 +2197,31 @@ public:
     if((!screenCapture || !captureAudioEnabled) && desktop){obs_set_output_source(1,nullptr);audioHealth.forget(desktop);obs_source_release(desktop);desktop=nullptr;}
     if(screenCapture && captureAudioEnabled && !desktop){auto *settings=obs_data_create();obs_data_set_string(settings,"device_id","default");desktop=obs_source_create_private(desktopType(),"Source audio",settings);obs_data_release(settings);if(!desktop)throw std::runtime_error("Source audio could not be opened");audioHealth.watch(desktop);obs_source_set_audio_mixers(desktop,3);obs_set_output_source(1,desktop);}
 #endif
+#ifdef __APPLE__
+    if ((!screenCapture || !captureAudioEnabled) && desktop) { obs_set_output_source(1, nullptr); obs_source_release(desktop); desktop = nullptr; }
+    if (screenCapture && captureAudioEnabled && !desktop) {
+      desktop = acroclip::macos::createSystemAudio("Desktop");
+      obs_source_set_audio_mixers(desktop, 3);
+      obs_set_output_source(1, desktop);
+    }
+#endif
     if (desktop)
       obs_source_set_muted(desktop, kind != "screen" ||
                                         !c.value("captureAudio", sessionConfiguration.value("captureAudio",true)) ||
                                         captureMuted);
     obs_source_t *audioSource =
 #ifdef __APPLE__
-        capture;
+        screenCapture ? desktop : capture;
 #elif defined(__linux__)
         screenCapture ? desktop : applicationAudioSource(applicationAudio);
 #else
         screenCapture ? desktop : capture;
 #endif
     if(sessionConfiguration.value("automaticMaster",false))for(auto &extra:additionalAudio) {
-      extra.mixerMask = extra.isolatedMask | ((!screenCapture || extra.kind == "input") ? 1u : 0u);
+      extra.mixerMask = extra.isolatedMask | 1u;
       if(extra.source)obs_source_set_audio_mixers(extra.source, extra.mixerMask);
     }
+    configureDesktopExclusions(sessionConfiguration);
     if (audioSource) {
       obs_source_set_volume(audioSource, captureVolume);
       obs_source_set_muted(audioSource, captureMuted || !captureAudioEnabled);
@@ -2243,6 +2275,7 @@ private:
   void initializeSession(const json &c) {
     release();
     sessionConfiguration = c;
+    configureDesktopExclusions(c);
     seconds = c.value("clipSeconds", 60);
     avoidOverlap = c.value("avoidOverlap", false);
     clipWriter->resetOverlap();
@@ -2461,12 +2494,6 @@ public:
           if(!problem.empty()&&problem!="Audio capture is starting"&&problem!="Audio capture is reconnecting")throw std::runtime_error(problem);
         }
         if(listeningSource=="capture"&&!screenCapture){DWORD pid=0;GetWindowThreadProcessId(reinterpret_cast<HWND>(targetWindow.load()),&pid);if(!IsWindow(reinterpret_cast<HWND>(targetWindow.load()))||pid!=targetProcess)throw std::runtime_error("The listening source is unavailable");}
-        if(found.kind=="output" && (found.deviceId=="default" || routing.same(found.deviceId,listeningDevice)))throw std::runtime_error("Listening stopped to prevent output audio feedback");
-        if(active && screenCapture && captureAudioEnabled && routing.same("default",listeningDevice))
-          throw std::runtime_error("Listening stopped because its output is now being recorded");
-        for(const auto &extra:additionalAudio)
-          if(active && extra.source && extra.kind=="output" && (extra.deviceId=="default" || routing.same(extra.deviceId,listeningDevice)))
-            throw std::runtime_error("Listening stopped because its output is now being captured");
         for(const auto &extra:additionalAudio) {
           if(extra.id!=listeningSource || !extra.window)continue;
           DWORD pid=0;GetWindowThreadProcessId(reinterpret_cast<HWND>(extra.window),&pid);
@@ -2722,6 +2749,11 @@ int main(int argc, char **argv) {
     }
 #endif
     obs_post_load_modules();
+#ifdef _WIN32
+    acroclip::windows::registerDesktopAudio();
+#elif defined(__APPLE__)
+    acroclip::macos::registerDesktopAudio();
+#endif
 #ifdef __linux__
     registerX11CompatibilitySource();
     registerLinuxApplicationAudio();
@@ -2839,7 +2871,15 @@ int main(int argc, char **argv) {
             else {
 #endif
               auto *props = obs_get_source_properties(
-                  kind == "input" ? microphoneType() : desktopType());
+                  kind == "input" ? microphoneType() :
+#ifdef _WIN32
+                  "wasapi_output_capture"
+#elif defined(__linux__)
+                  linuxOutputAudioType()
+#else
+                  desktopType()
+#endif
+              );
               auto *property =
                   props ? obs_properties_get(props, "device_id") : nullptr;
               json devices = json::array();

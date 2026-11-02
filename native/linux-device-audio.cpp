@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "linux-device-audio.hpp"
+#include "linux-app-audio.hpp"
 #include <pulse/pulseaudio.h>
 #include <util/platform.h>
 #include <atomic>
@@ -269,6 +270,7 @@ void registerLinuxDeviceAudio() {
 std::string linuxDeviceAudioError(obs_source_t *source) {
   if (!source) return {};
   const std::string kind = obs_source_get_id(source);
+  if (kind == linuxDesktopAudioType()) return linuxDesktopAudioError(source);
   if (kind != linuxInputAudioType() && kind != linuxOutputAudioType()) return {};
   calldata_t state{}; calldata_init(&state);
   const bool queried = proc_handler_call(obs_source_get_proc_handler(source), "get_capture_health", &state);

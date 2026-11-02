@@ -23,7 +23,10 @@ export function assertDistinctAudioSources(value: Preferences, known: CaptureSou
    if (source && value.sourceKind === "app") identities.add(appIdentity(value.sourceId));
    if (source && value.sourceKind === "screen") identities.add("output:default");
    for (const item of value.audioSources.filter((item) => item.kind !== "source")) {
-      const key = item.kind === "application" ? appIdentity(item.sourceId) : `${item.kind}:${item.deviceId}`;
+      const key =
+         item.kind === "application"
+            ? appIdentity(item.sourceId)
+            : `${item.kind}:${item.kind === "output" && item.deviceId === "system" ? "default" : item.deviceId}`;
       if (identities.has(key)) throw new Error(`${item.name} is already included by another audio source.`);
       identities.add(key);
    }

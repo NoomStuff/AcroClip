@@ -104,14 +104,14 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       expect(sources.cached[0]?.id).toBe("window:42:1");
    });
 
-   it("keeps the window icon instead of replacing it with a generic executable icon", async () => {
+   it("uses the stable executable icon instead of the window icon", async () => {
       const windowIcon = { isEmpty: () => false, resize: () => ({ toDataURL: () => "data:image/png;base64,window" }) };
       const windows = [{ id: "window:42:1", name: "Application", display_id: "", thumbnail: { toDataURL: () => "" }, appIcon: windowIcon }];
       electron.getSources.mockResolvedValueOnce(windows);
       const sources = new CaptureSources(recorder(), () => "999");
       await sources.list();
       await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(sources.cached[0]?.appIcon).toBe("data:image/png;base64,window");
+      expect(sources.cached[0]?.appIcon).toBe("data:image/png;base64,icon");
    });
 
    it("fetches thumbnails only for an explicit image request, including immediately after a metadata query", async () => {

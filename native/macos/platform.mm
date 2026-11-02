@@ -5,6 +5,7 @@
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 #import <VideoToolbox/VideoToolbox.h>
 #include "platform.hpp"
+#include "desktop-audio.hpp"
 #include "input-health.hpp"
 #include <algorithm>
 #include <atomic>
@@ -402,14 +403,17 @@ obs_source_t *createApplicationAudio(uintptr_t window, int64_t pid, const std::s
   return source;
 }
 
+uint32_t captureProcess(uintptr_t window) {
+  pid_t owner = 0;
+  return availableWindow(CGWindowID(window), 0, &owner, false) ? uint32_t(owner) : 0;
+}
 obs_source_t *createSystemAudio(const std::string &name) {
-  if (!CGDisplayIsActive(CGMainDisplayID()))
-    throw std::runtime_error("System audio capture needs an active screen");
-  auto *settings = obs_data_create();
-  obs_data_set_int(settings, "type", 0);
-  auto *source = audioSource(settings, name);
-  std::lock_guard<std::mutex> lock(availabilityMutex);
-  audioTargets[source] = {0, 0, {}};
+  if (!CGPreflightScreenCaptureAccess()) throw std::runtime_error("Allow AcroClip screen recording access before capturing desktop audio");
+  auto *source = obs_source_create_private("acroclip_sck_desktop_audio", name.c_str(), nullptr);
+  if (!source) throw std::runtime_error("Desktop audio could not be opened");
+  auto health = std::make_unique<CaptureHealth>();
+  watchTiming(source, health.get());
+  sourceHealth.push_back(std::move(health));
   return source;
 }
 
@@ -439,6 +443,7 @@ std::string audioError(obs_source_t *source, uintptr_t window, int64_t pid) {
     if (delivery == inputDelivery.end()) return "The microphone audio could not be checked. Stop recording and select the input again";
     return delivery->second->error(InputDelivery::Clock::now());
   }
+  if (std::string(type) == "acroclip_sck_desktop_audio") return desktopAudioError(source);
   if (std::string(type) != "sck_audio_capture") return {};
   std::lock_guard<std::mutex> lock(availabilityMutex);
   auto health = audioHealth.find(source);

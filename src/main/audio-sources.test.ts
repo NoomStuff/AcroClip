@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdditionalAudioSource, GameCandidate } from "../shared/types";
-import { resolveAudioSources } from "./audio-sources";
+import { resolveAudioSources, assertDistinctAudioSources } from "./audio-sources";
 import { requiresCaptureRestart } from "./preferences";
 import { defaultPreferences } from "../shared/defaults";
 import { preferencesSchema } from "../shared/validation";
@@ -44,4 +44,14 @@ describe("additional audio bindings", () => {
          }).success
       ).toBe(false);
    });
+});
+
+it("rejects macOS System audio when Desktop already captures that output", () => {
+   const desktop = defaultPreferences.audioSources.find((item) => item.kind === "source")!;
+   expect(() =>
+      assertDistinctAudioSources(
+         { ...defaultPreferences, sourceKind: "screen", audioSources: [desktop, { ...source, kind: "output", deviceId: "system" }] },
+         []
+      )
+   ).toThrow("already included");
 });
