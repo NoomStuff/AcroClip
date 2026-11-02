@@ -212,7 +212,7 @@ try:
     moduleId=owned[0];assert moduleId.isdigit(),owned
     pactl('unload-module',str(moduleId))
     saved(request);decode(file);assert volume(file,2)>-40 and volume(file,0)<-70
-    failed=awaitAudio(True,'selected audio device');time.sleep(4)
+    failed=awaitAudio(True,'selected audio output');time.sleep(4)
     request,file=save('fresh-video-after-device-loss');result=saved(request);assert not result['previousFootage'];decode(file);assert volume(file,2)<-70
     assert not status()['waiting'];assert 'acroclip-test.monitor' not in pactl('list','short','sources')
     # PulseAudio can move the old playback client to another sink on removal.

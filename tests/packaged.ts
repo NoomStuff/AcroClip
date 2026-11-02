@@ -130,7 +130,7 @@ try {
    const state = await page.evaluate(() => window.acroClip.state());
    assert.equal(state.recorder.state, "stopped");
    assert.equal(state.recorder.availableSeconds, 0);
-   for (const saved of state.clips) assert.equal(saved.source, source.name, "Each completed clip must register its actual capture source");
+   for (const saved of state.clips) assert.equal(saved.source, "Desktop", "Each completed screen clip must use the stable Desktop source name");
    const clip = state.clips[0]!;
    assert(clip.duration >= 4, "Queued capture must retain footage when stopped");
    assert(clip.tracks.length >= 2, "Master and capture audio must exist");
