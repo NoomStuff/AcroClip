@@ -67,7 +67,7 @@ try:
     if os.environ.get("ACROCLIP_TEST_X11_APP"):
         launch(["openbox", "--sm-disable"], "window-manager")
         time.sleep(1)
-    env["WINEPREFIX"]=str(folder/"wine-prefix")
+    env["WINEPREFIX"]=str(private/"wine-prefix")
     env["WINEARCH"]="win64";env["WINEDEBUG"]="-all";env["WINEDLLOVERRIDES"]="winemenubuilder.exe=d"
     launch(["openbox","--sm-disable"],"window-manager")
     import shutil

@@ -28,6 +28,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
    latest.current = { items, commit };
    const keyboardOrder = useRef<string[] | null>(null);
    const pendingKeyboard = useRef(0);
+   const keyboardHistory = useRef(new Set<string>());
    const keyboardFocus = useRef<HTMLElement | null>(null);
    const enabled = commit !== undefined;
    const [announcement, setAnnouncement] = useState("");
@@ -114,9 +115,15 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       stop.current(false);
       const target = keyboardOrder.current;
       const current = latest.current.items;
-      // Keep optimistic keyboard order only while a save can still confirm it.
-      // Later external changes must replace a completed keyboard preview.
-      if (pendingKeyboard.current > 0 && target && target.length === current.length && target.every((id) => current.some((item) => item.id === id))) {
+      // Pending keyboard saves can report intermediate orders from this sequence.
+      // An unrelated authoritative order must replace the preview immediately.
+      if (
+         pendingKeyboard.current > 0 &&
+         keyboardHistory.current.has(signature) &&
+         target &&
+         target.length === current.length &&
+         target.every((id) => current.some((item) => item.id === id))
+      ) {
          if (target.join("\0") !== signature) return;
       }
       keyboardOrder.current = null;
@@ -230,6 +237,10 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
          event.preventDefault();
          event.stopPropagation();
          const ids = keyboardOrder.current ?? latest.current.items.map((item) => item.id);
+         if (!keyboardOrder.current) {
+            keyboardHistory.current.clear();
+            keyboardHistory.current.add(ids.join("\0"));
+         }
          const index = ids.indexOf(id);
          const nextIndex = index + (event.key === "ArrowUp" ? -1 : 1);
          if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return;
@@ -237,6 +248,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
          const next = ids.filter((item) => item !== id);
          next.splice(nextIndex, 0, id);
          keyboardOrder.current = next;
+         keyboardHistory.current.add(next.join("\0"));
          keyboardFocus.current = event.target.closest<HTMLElement>("[data-list-control]");
          setPreview(next);
          const beforeId = next[nextIndex + 1] ?? null;

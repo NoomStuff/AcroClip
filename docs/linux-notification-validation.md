@@ -29,3 +29,11 @@ The Release workflow supports `verify_candidate=true` with an exact `candidate_s
 The current candidate run is tracked in the PR description. Extra workflow steps for staged-helper drawing and live X11 checks could not be pushed because the connected credential lacks workflow scope. Their patch is retained locally at `.cache/hypr-feedback/release-checks.patch`; the existing five-target candidate workflow runs unchanged. Until it completes, packaged behavior in the pinned Ubuntu environment and macOS verification remain pending. `bun run verify:release` locally runs verification and media checks, then stops at the interactive guard rather than touching the real collection.
 
 Live GNOME/KDE fallback, older Hyprland rule APIs, actual OBS/PipeWire capture exclusion on Hyprland, and final sounds remain unverified. Sway monitor screenshots include the banner. Do not describe Linux capture exclusion as universal, or infer all-desktop support from these tests.
+
+## Candidate result and follow-up
+
+Candidate run 41369896434 finished in about 33 minutes. Windows x64, Linux arm64 and both macOS targets passed independent verification. Linux x64 failed the tag-order UI test, where a still-pending keyboard save masked an unrelated external reorder. The hook now recognizes intermediate orders from its own keyboard sequence and lets unrelated authoritative orders replace the preview. The Wine smoke prefix also moved out of the uploaded evidence tree so its `Z:` symlink cannot lead artifact collection into the host filesystem.
+
+The PR watch reported the regular checks but did not deliver this manually dispatched candidate failure. Treat candidate status as separate from the regular PR checks; a green PR check notification is not evidence that the release candidate passed.
+
+The corrected tag-order UI test passed ten consecutive isolated X11 runs before the candidate retry. The Wine-prefix change was syntax-checked locally; its full native verification remains part of the candidate run.
