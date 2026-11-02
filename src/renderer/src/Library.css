@@ -831,11 +831,11 @@
 .sidebar-group-title[data-empty]:hover,
 :root[data-keyboard] .sidebar-group-title[data-empty]:focus-within,
 .category-item[data-empty]:hover,
-.category-item[data-empty]:focus-within,
+:root[data-keyboard] .category-item[data-empty]:focus-within,
 .folder-tree-row[data-empty]:hover,
-.folder-tree-row[data-empty]:focus-within,
+:root[data-keyboard] .folder-tree-row[data-empty]:focus-within,
 .application-filter[data-empty]:hover,
-.application-filter[data-empty]:focus-visible {
+:root[data-keyboard] .application-filter[data-empty]:focus-visible {
    opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -860,7 +860,7 @@
    transition: opacity 140ms ease;
 }
 .sidebar-section[data-empty]:hover,
-.sidebar-section[data-empty]:focus-within {
+:root[data-keyboard] .sidebar-section[data-empty]:focus-within {
    opacity: 1;
 }
 .sidebar-section-control {
@@ -877,7 +877,7 @@
 .sidebar-section-control:active {
    cursor: grabbing;
 }
-.sidebar-section-control:focus-visible {
+:root[data-keyboard] .sidebar-section-control:focus-visible {
    outline: 2px solid var(--accent);
    outline-offset: 2px;
 }

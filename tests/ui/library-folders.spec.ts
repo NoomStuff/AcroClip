@@ -174,6 +174,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
          dialog.showMessageBox = async (windowOrOptions: Electron.BaseWindow | Electron.MessageBoxOptions, options?: Electron.MessageBoxOptions) => {
             const message = options ?? (windowOrOptions as Electron.MessageBoxOptions);
             if (!message.detail?.includes("2 clips") || !message.detail.includes("1 other file")) throw new Error("Folder move must describe all contents");
+            if (message.defaultId !== 1 || message.cancelId !== 0) throw new Error("Enter must confirm the move and Escape must cancel");
             return { response: 1, checkboxChecked: false };
          };
       });

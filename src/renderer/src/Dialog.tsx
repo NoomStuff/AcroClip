@@ -20,26 +20,41 @@ export function Dialog({ request, close }: { request: DialogRequest; close: () =
       close();
    };
    const submit = () => {
+      if (request.initial !== undefined && !value.trim()) return;
       request.resolve(request.initial === undefined ? true : value.trim());
       close();
    };
    return (
-      <DialogPanel title={request.title} close={cancel} className="" closeLabel="Close">
+      <DialogPanel title={request.title} close={cancel} className="" closeLabel="Close" initialFocus="[data-dialog-initial]">
          {request.detail && <p>{request.detail}</p>}
          <form
+            onKeyDown={(event) => {
+               if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+               if (!(event.target instanceof HTMLButtonElement) || !event.target.closest(".dialog-actions")) return;
+               const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(".dialog-actions button:not(:disabled)")];
+               const index = buttons.indexOf(event.target);
+               if (index < 0) return;
+               event.preventDefault();
+               event.stopPropagation();
+               buttons[(index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+            }}
             onSubmit={(event) => {
                event.preventDefault();
                submit();
             }}
          >
             {request.initial !== undefined && (
-               <input aria-label={request.title} value={value} onChange={(event) => setValue(event.target.value)} maxLength={150} />
+               <input data-dialog-initial="" aria-label={request.title} value={value} onChange={(event) => setValue(event.target.value)} maxLength={150} />
             )}
             <div className="dialog-actions">
                <Button type="button" onClick={cancel}>
                   Cancel
                </Button>
-               <Button className={request.danger ? "destructive" : "primary"} disabled={request.initial !== undefined && !value.trim()}>
+               <Button
+                  data-dialog-initial={request.initial === undefined ? "" : undefined}
+                  className={request.danger ? "destructive" : "primary"}
+                  disabled={request.initial !== undefined && !value.trim()}
+               >
                   <Check size={16} />
                   {request.confirm}
                </Button>
@@ -56,6 +71,7 @@ export function DialogPanel({
    className = "dialog-panel",
    label,
    closeLabel,
+   initialFocus,
 }: {
    title: string;
    close: () => void;
@@ -63,6 +79,7 @@ export function DialogPanel({
    className?: string;
    label?: string;
    closeLabel?: string;
+   initialFocus?: string;
 }) {
    const card = useRef<HTMLDivElement>(null),
       titleId = useId();
@@ -112,11 +129,12 @@ export function DialogPanel({
    );
    useLayoutEffect(() => {
       const previous = document.activeElement;
-      focusable()[0]?.focus();
+      (initialFocus ? card.current?.querySelector<HTMLElement>(initialFocus) : undefined)?.focus();
+      if (!card.current?.contains(document.activeElement)) focusable()[0]?.focus();
       return () => {
          if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
       };
-   }, [focusable]);
+   }, [focusable, initialFocus]);
    return createPortal(
       <div
          ref={backdrop}

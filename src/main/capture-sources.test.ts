@@ -114,6 +114,47 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       expect(sources.cached[0]?.appIcon).toBe("data:image/png;base64,icon");
    });
 
+   it.each(["rejected", "empty"])("keeps the first window icon when executable lookup is %s", async (failure) => {
+      if (failure === "rejected") electron.getFileIcon.mockRejectedValue(new Error("Icon unavailable"));
+      else electron.getFileIcon.mockResolvedValue({ ...electron.icon, isEmpty: () => true });
+      const windowIcon = { isEmpty: () => false, resize: () => ({ toDataURL: () => "data:image/png;base64,fallback" }) };
+      const window = { id: application.id, name: "Application", display_id: "", thumbnail: { toDataURL: () => "" }, appIcon: windowIcon };
+      electron.getSources.mockResolvedValueOnce([window]);
+      const changed = vi.fn();
+      const sources = new CaptureSources(recorder(), () => "999", changed);
+      expect((await sources.list())[0]?.appIcon).toBe("data:image/png;base64,fallback");
+      expect(changed).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ appIcon: "data:image/png;base64,fallback" })]));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1000);
+      const notified = { ...window, appIcon: { ...windowIcon, resize: () => ({ toDataURL: () => "data:image/png;base64,notification" }) } };
+      electron.getSources.mockResolvedValueOnce([notified]);
+      expect((await sources.list())[0]?.appIcon).toBe("data:image/png;base64,fallback");
+   });
+
+   it("replaces a window fallback with the executable icon and reuses it for new windows", async () => {
+      let finish: ((icon: typeof electron.icon) => void) | undefined;
+      electron.getFileIcon.mockImplementation(
+         () =>
+            new Promise((resolve) => {
+               finish = resolve;
+            })
+      );
+      const windowIcon = { isEmpty: () => false, resize: () => ({ toDataURL: () => "data:image/png;base64,fallback" }) };
+      const window = { id: application.id, name: "Application", display_id: "", thumbnail: { toDataURL: () => "" }, appIcon: windowIcon };
+      electron.getSources.mockResolvedValueOnce([window]);
+      const native = recorder();
+      const changed = vi.fn();
+      const sources = new CaptureSources(native, () => "999", changed);
+      expect((await sources.list())[0]?.appIcon).toBe("data:image/png;base64,fallback");
+      finish!(electron.icon);
+      await expect.poll(() => sources.cached[0]?.appIcon).toBe("data:image/png;base64,icon");
+      expect(changed).toHaveBeenCalled();
+      vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1000);
+      native.capturableApplications.mockResolvedValue([{ ...application, id: "window:43:0" }]);
+      electron.getSources.mockResolvedValueOnce([{ id: "window:43:0", name: "Other window", display_id: "", thumbnail: { toDataURL: () => "" } }]);
+      expect((await sources.list())[0]?.appIcon).toBe("data:image/png;base64,icon");
+   });
+
    it("fetches thumbnails only for an explicit image request, including immediately after a metadata query", async () => {
       const sources = new CaptureSources(recorder(), () => "999");
       await sources.list();

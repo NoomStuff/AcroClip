@@ -22,7 +22,6 @@
 }
 .motion-list-item[data-dragging] [data-list-control] {
    cursor: grabbing;
-   background: var(--raised);
 }
 .motion-list-item[data-exiting] {
    position: absolute;

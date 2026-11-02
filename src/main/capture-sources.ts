@@ -98,9 +98,9 @@ export class CaptureSources {
                applicationId ??= createHash("sha256").update(`window:${s.id}:${randomUUID()}`).digest("hex");
             }
             let appIcon: string | undefined = applicationId ? this.stableWindowIcons.get(applicationId) : undefined;
-            if (candidate && prior?.processId === candidate.pid && prior?.applicationId === applicationId) appIcon = prior.appIcon;
+            if (!appIcon && candidate && prior?.processId === candidate.pid && prior?.applicationId === applicationId) appIcon = prior.appIcon;
             try {
-               if (process.platform === "linux" && !appIcon && s.appIcon && !s.appIcon.isEmpty()) {
+               if (applicationId && !appIcon && s.appIcon && !s.appIcon.isEmpty()) {
                   const value = s.appIcon.resize({ width: 32, height: 32 }).toDataURL();
                   if (value.length <= 45000) {
                      appIcon = value;
@@ -134,6 +134,7 @@ export class CaptureSources {
                ...(s.display_id ? { displayId: s.display_id } : {}),
             };
          });
+      if (this.cached.some((source) => source.appIcon && source.appIcon !== previous.get(source.id)?.appIcon)) this.onChange(this.cached);
       if (process.platform === "win32" || process.platform === "darwin") this.hydrateIcons(nativeWindows);
       this.hydrateNames(nativeWindows);
       return this.cached;
@@ -219,6 +220,8 @@ export class CaptureSources {
          this.cached = this.cached.map((source) => {
             const appIcon = source.applicationId ? icons.get(source.applicationId) : undefined;
             if (!appIcon || source.appIcon === appIcon) return source;
+            this.stableWindowIcons.set(source.applicationId!, appIcon);
+            while (this.stableWindowIcons.size > 128) this.stableWindowIcons.delete(this.stableWindowIcons.keys().next().value!);
             changed = true;
             return { ...source, appIcon };
          });
