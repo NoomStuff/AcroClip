@@ -37,5 +37,19 @@ int main() {
   // A stale failure must not override restored capture or silent output.
   require(captureStateError(1, true, 0x80070005u, true).empty());
   require(captureStateError(1, true, 0, false).empty());
+  ProcessCaptureHealth process(start);
+  require(process.error(true, 1, 0, false, 0, start + 1999ms).empty());
+  require(process.error(true, 1, 0, false, 0, start + 2000ms) == "Audio capture is starting");
+  require(process.error(true, 1, 1, true, 0, start + 2100ms).empty());
+  require(process.error(true, 1, 1, true, 0, start + 1h).empty());
+  require(process.error(true, 1, 2, false, 0x80004005u, start + 1h).empty());
+  require(process.error(true, 1, 2, false, 0x80004005u, start + 1h + 1999ms).empty());
+  require(process.error(true, 1, 2, false, 0x80004005u, start + 1h + 2000ms) == "Audio capture is reconnecting");
+  require(process.error(true, 1, 1, true, 0, start + 1h + 2100ms).empty());
+  ProcessCaptureHealth denied(start);
+  require(denied.error(true, 1, 2, false, 0x80070005u, start + 2000ms) == "Audio device access was denied. Check device access settings");
+  require(!denied.error(false, 1, 1, true, 0, start).empty());
+  require(!denied.error(true, 0, 1, true, 0, start).empty());
+  require(!denied.error(true, 1, 4, true, 0, start).empty());
   std::cout << "Input delivery, endpoint state, access denial and capture recovery policy passed\n";
 }

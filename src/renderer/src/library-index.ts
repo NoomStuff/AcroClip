@@ -1,14 +1,25 @@
 import { normalizeApplicationLabel } from "../../shared/application-label";
 import type { Clip } from "../../shared/types";
 export type LibrarySectionId = "tags" | "applications" | "folders";
-export function orderLibrarySections(populated: Record<LibrarySectionId, boolean>, order: readonly string[]) {
+export function orderLibrarySections(populated: Record<LibrarySectionId, boolean>, order: readonly string[], previous?: Record<LibrarySectionId, boolean>) {
    const sections = [
       { id: "tags", label: "Tags", empty: !populated.tags },
       { id: "applications", label: "Applications", empty: !populated.applications },
       { id: "folders", label: "Folders", empty: !populated.folders },
    ] satisfies Array<{ id: LibrarySectionId; label: string; empty: boolean }>;
    const position = (id: string) => (order.indexOf(id) < 0 ? sections.length : order.indexOf(id));
-   return sections.sort((a, b) => Number(a.empty) - Number(b.empty) || position(a.id) - position(b.id));
+   sections.sort((a, b) => position(a.id) - position(b.id));
+   if (previous) {
+      for (const section of [...sections]) {
+         if (section.empty || previous[section.id]) continue;
+         const at = sections.indexOf(section);
+         const empty = sections.findIndex((item) => item.empty);
+         if (empty < 0 || empty >= at) continue;
+         sections.splice(at, 1);
+         sections.splice(empty, 0, section);
+      }
+   }
+   return sections;
 }
 export function applicationKeys(clips: readonly Clip[]): Map<string, string> {
    const known = new Map(

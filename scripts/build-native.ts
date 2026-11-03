@@ -130,6 +130,7 @@ run("cmake", [
    `-DOBS_IMPORT_LIBRARY=${path.join(generated, "obs.lib")}`,
 ]);
 run("cmake", ["--build", output, "--config", "Release"]);
+console.log(run(path.join(output, "Release", "acroclip-audio-health-test.exe"), []));
 const controlledWasapi = await buildWindowsWasapi({ project: root, upstream: source, generated, tools, generator, obsDll: path.join(bin, "obs.dll") });
 // Only replace the generated runtime directory inside this workspace.
 if (path.resolve(runtime) !== path.join(path.resolve(root), "resources", "recorder")) throw new Error("Unexpected staging directory");

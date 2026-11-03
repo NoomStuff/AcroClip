@@ -9,6 +9,12 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { defaultPreferences } from "../../src/shared/defaults";
 
+declare global {
+   interface Window {
+      firstPlaybackReveal?: { from: number; to: number; duration: number };
+   }
+}
+
 test("real media plays, creates a verified shareable, and supports overlapping tags", async () => {
    test.setTimeout(120000);
    const profile = await realpath(await mkdtemp(join(tmpdir(), "acroclip-media-ui-")));
@@ -103,7 +109,12 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await page.keyboard.press("Escape");
       await expect(clipButton).toBeFocused();
       await page.getByRole("button", { name: "Grid view", exact: true }).click();
-      await page.getByRole("button", { name: "New tag", exact: true }).first().click();
+      await clipButton.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Tags", exact: true }).hover();
+      const emptyTagsMenu = page.getByRole("menu", { name: "Tags", exact: true });
+      await expect(emptyTagsMenu.getByRole("separator")).toHaveCount(0);
+      await emptyTagsMenu.getByRole("menuitem", { name: "Create tag", exact: true }).click();
+      await expect(page.getByRole("menu")).toHaveCount(0);
       await page.getByRole("textbox", { name: "Tag name", exact: true }).fill("Best moments");
       await page.getByRole("button", { name: "Create", exact: true }).click();
       await expect(page.getByRole("button", { name: /Best moments/ }).first()).toBeVisible();
@@ -115,6 +126,8 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await page.getByRole("menuitem", { name: "Tags", exact: true }).hover();
       const categories = page.getByRole("menu", { name: "Tags", exact: true });
       await expect(categories).toBeVisible();
+      await expect(categories.getByRole("separator")).toHaveCount(1);
+      await expect(categories.getByRole("menuitem", { name: "Create tag", exact: true })).toBeVisible();
       await categories.getByRole("menuitemcheckbox", { name: "Best moments", exact: true }).click();
       await categories.getByRole("menuitemcheckbox", { name: "Funny", exact: true }).click();
       await expect(categories.getByRole("menuitemcheckbox", { name: "Best moments", exact: true })).toBeChecked();
@@ -130,7 +143,31 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       });
       await page.getByRole("button", { name: "Open Desktop moment", exact: true }).dispatchEvent("dragstart");
       await expect.poll(() => desktop.evaluate(() => (globalThis as typeof globalThis & { testDragPath?: string }).testDragPath)).toBe(source);
+      await page.evaluate(() => {
+         const observer = new MutationObserver(() => {
+            const node = document.querySelector(".player-video.ready");
+            const animation = node?.getAnimations()[0];
+            if (!animation) return;
+            const frames = (animation.effect as KeyframeEffect).getKeyframes();
+            window.firstPlaybackReveal = {
+               from: Number(frames[0]?.["opacity"]),
+               to: Number(frames.at(-1)?.["opacity"]),
+               duration: Number(animation.effect?.getTiming().duration),
+            };
+            observer.disconnect();
+         });
+         observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
+      });
       await page.getByRole("button", { name: "Open Desktop moment", exact: true }).click();
+      await expect(page.locator(".player-video")).toHaveClass(/ready/);
+      expect(await page.evaluate(() => window.firstPlaybackReveal)).toEqual({ from: 0, to: 1, duration: 140 });
+      await expect(page.locator(".video-loading")).toHaveCount(0);
+      await page.getByRole("button", { name: "Shareable", exact: true }).click();
+      await expect(page.getByText("No shareable", { exact: true })).toBeVisible();
+      await expect(page.locator(".player-poster")).toHaveCount(0);
+      await expect(page.locator(".player-outgoing")).toBeHidden();
+      await page.getByRole("button", { name: "Clip", exact: true }).click();
+      await expect(page.locator(".player-video")).toHaveClass(/ready/);
       await expect(page.locator(".viewer-title")).not.toContainText("Unknown");
       await expect(page.locator(".viewer-title time")).toBeVisible();
       await expect(page.locator(".viewer-categories")).toContainText("Best moments");

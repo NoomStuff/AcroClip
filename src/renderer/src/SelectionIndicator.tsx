@@ -90,7 +90,7 @@ export function SelectionIndicator({ value, selector = "button.selected" }: { va
          observe();
          update(false);
       });
-      mutations.observe(parent, { subtree: true, attributes: true, attributeFilter: ["class", "hidden"], childList: true, characterData: true });
+      mutations.observe(parent, { subtree: true, attributes: true, attributeFilter: ["class", "hidden", "inert"], childList: true, characterData: true });
       const layout = () => update(true);
       let followFrame = 0;
       let followUntil = 0;

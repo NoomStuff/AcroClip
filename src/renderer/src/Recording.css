@@ -64,18 +64,17 @@
 
 .preview-stream {
    position: relative;
-   z-index: 2;
+   z-index: 3;
    opacity: 0;
    transition: none;
 }
 
 .preview-stream.ready {
    opacity: 1;
-   transition: opacity 140ms ease-out;
 }
 
 .preview-message {
-   z-index: 3;
+   z-index: 4;
    position: absolute;
    inset: 0;
    display: flex;
@@ -101,6 +100,9 @@
    place-items: center;
    pointer-events: none;
    color: var(--muted);
+}
+.preview-message.preview-discovery {
+   z-index: 1;
 }
 .preview-placeholder,
 .preview-loading-spinner {
@@ -159,7 +161,7 @@
 }
 
 .preview-caption {
-   z-index: 3;
+   z-index: 4;
    position: absolute;
    display: flex;
    align-items: center;
@@ -542,7 +544,7 @@
    opacity: 0;
 }
 .preview-canvas {
-   z-index: 2;
+   z-index: 3;
    position: absolute;
    inset: 0;
    width: 100%;
@@ -552,7 +554,6 @@
 }
 .preview-canvas.ready {
    opacity: 1;
-   transition: opacity 140ms ease-out;
 }
 
 .audio-db-track {
@@ -786,13 +787,18 @@
    height: 10px;
 }
 
-.preview-still {
+.preview-still,
+.preview-outgoing {
    position: absolute;
    inset: 0;
    width: 100%;
    height: 100%;
    object-fit: contain;
    opacity: 0;
+}
+.preview-outgoing {
+   z-index: 2;
+   pointer-events: none;
 }
 .preview-still.cached {
    opacity: 1;

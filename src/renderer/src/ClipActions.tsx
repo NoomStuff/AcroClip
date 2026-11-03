@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { FolderInput, FolderOpen, Pencil, Scissors, Share2, Tag, Trash2 } from "lucide-react";
+import { FolderInput, FolderOpen, Pencil, Plus, Scissors, Share2, Tag, Trash2 } from "lucide-react";
 import type { Category, Clip, Shareable } from "../../shared/types";
 import type { Ask } from "./Dialog";
 import type { Run } from "./desktop";
@@ -16,6 +16,7 @@ export function ClipActions({
    ask,
    run,
    create,
+   createTag,
    move,
    remove,
    shareable = clip.shareables.at(-1),
@@ -29,6 +30,7 @@ export function ClipActions({
    ask: Ask;
    run: Run;
    create: () => void;
+   createTag: () => void;
    move?: (() => void) | undefined;
    remove?: (() => void) | undefined;
    shareable?: Shareable | undefined;
@@ -60,7 +62,7 @@ export function ClipActions({
                Move to folder
             </MenuItem>
          )}
-         <MenuSubmenu label="Tags" icon={<Tag size={15} />} disabled={!categories.length}>
+         <MenuSubmenu label="Tags" icon={<Tag size={15} />}>
             {categories.map((category) => (
                <MenuCheckboxItem
                   key={category.id}
@@ -71,6 +73,11 @@ export function ClipActions({
                   {category.name}
                </MenuCheckboxItem>
             ))}
+            {categories.length > 0 && <div className="menu-separator" role="separator" />}
+            <MenuItem onClick={createTag}>
+               <Plus size={15} />
+               Create tag
+            </MenuItem>
          </MenuSubmenu>
          <div className="menu-separator" role="separator" />
          <MenuItem disabled={!!clip.originalMissing} onClick={() => void run(() => api.reveal(clip.path))}>

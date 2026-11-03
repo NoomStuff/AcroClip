@@ -7,6 +7,7 @@ import { defaultPreferences } from "../../src/shared/defaults";
 declare global {
    interface Window {
       releasePreview?: () => void;
+      firstPreviewReveal?: { from: number; to: number; duration: number };
    }
 }
 
@@ -117,9 +118,25 @@ test("live preview captures the chosen window and releases tracks on navigation,
       });
       expect(await icon.evaluate((node) => Number(getComputedStyle(node).opacity))).toBeLessThan(initialOpacity);
       await expect(page.locator(".preview-message")).toHaveCount(0);
+      await preview.evaluate((node) => {
+         const observer = new MutationObserver(() => {
+            if (!node.classList.contains("ready")) return;
+            const animation = node.getAnimations()[0];
+            if (!animation) return;
+            const frames = (animation.effect as KeyframeEffect).getKeyframes();
+            window.firstPreviewReveal = {
+               from: Number(frames[0]?.["opacity"]),
+               to: Number(frames.at(-1)?.["opacity"]),
+               duration: Number(animation.effect?.getTiming().duration),
+            };
+            observer.disconnect();
+         });
+         observer.observe(node, { attributes: true, attributeFilter: ["class"] });
+      });
       await releasePreview();
       const initialRequestedAt = performance.now();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      expect(await page.evaluate(() => window.firstPreviewReveal)).toEqual({ from: 0, to: 1, duration: 140 });
       console.log("Preview initial first frame ms", Math.round(performance.now() - initialRequestedAt));
       const first = await preview.evaluate((video: HTMLVideoElement) => video.getVideoPlaybackQuality().totalVideoFrames);
       await expect.poll(() => preview.evaluate((video: HTMLVideoElement) => video.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(first + 5);
@@ -177,9 +194,36 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();
       });
-      const switchRequestedAt = performance.now();
+      await holdPreview();
+      const outgoing = page.locator(".preview-outgoing");
+      await outgoing.evaluate((node) => {
+         const observer = new MutationObserver(() => {
+            const fade = node.getAnimations()[0];
+            if (!fade) return;
+            fade.pause();
+            fade.currentTime = 90;
+            observer.disconnect();
+         });
+         observer.observe(node, { attributes: true, attributeFilter: ["style", "width", "height"] });
+      });
       await page.locator(".source-row").filter({ hasText: "Preview fixture B" }).click();
       await expect(preview).toHaveAttribute("aria-label", "Live preview of Preview fixture B");
+      const departing = await outgoing.evaluate((node: HTMLCanvasElement) => ({
+         width: node.width,
+         opacity: Number(getComputedStyle(node).opacity),
+         layer: Number(getComputedStyle(node).zIndex),
+         iconLayer: Number(getComputedStyle(document.querySelector(".preview-loading")!).zIndex),
+         incomingLayer: Number(getComputedStyle(document.querySelector(".preview-stream")!).zIndex),
+      }));
+      expect(departing.width).toBeGreaterThan(200);
+      expect(departing.opacity).toBeGreaterThan(0);
+      expect(departing.opacity).toBeLessThan(1);
+      expect(departing.layer).toBeGreaterThan(departing.iconLayer);
+      expect(departing.layer).toBeLessThan(departing.incomingLayer);
+      await outgoing.evaluate((node) => node.getAnimations()[0]!.finish());
+      await expect(outgoing).toHaveCSS("opacity", "0");
+      await releasePreview();
+      const switchRequestedAt = performance.now();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       console.log("Preview source switch first frame ms", Math.round(performance.now() - switchRequestedAt));
       await expect

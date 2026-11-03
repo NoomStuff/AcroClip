@@ -16,11 +16,13 @@ export function MotionList<T extends { id: string }>({
    children,
    identity = "",
    onReorder,
+   visible = true,
 }: {
    items: readonly T[];
    children: (item: T) => ReactNode;
    identity?: string;
    onReorder?: ReorderItems | undefined;
+   visible?: boolean;
 }) {
    const reorder = useListReorder(sourceItems, identity, onReorder);
    const { items, draggingId } = reorder;
@@ -56,13 +58,12 @@ export function MotionList<T extends { id: string }>({
       const list = root.current;
       if (!list) return;
       const refreshVisibility = () => {
-         if (!list.getClientRects().length || !list.offsetWidth) {
+         if (!visible || !list.getClientRects().length || !list.offsetWidth) {
             resetLayout();
             return;
          }
-         if (layoutVisible.current) return;
-         // A hidden page has no row geometry. Revealing it establishes a new
-         // baseline, rather than rearranging rows from zero-sized rectangles.
+         // Nested lists and folds change row positions without changing this
+         // list's items. Keep their settled geometry as the next baseline.
          const baseline = new Map<string, number>();
          let height = 0;
          for (const row of list.querySelectorAll<HTMLElement>(":scope > .motion-list-item:not([data-exiting])")) {
@@ -71,7 +72,7 @@ export function MotionList<T extends { id: string }>({
             height += row.offsetHeight;
          }
          positions.current = baseline;
-         heightMotion.current = { target: height };
+         if (!heightMotion.current?.animation) heightMotion.current = { target: height };
          initialized.current = true;
          layoutVisible.current = true;
       };
@@ -79,11 +80,11 @@ export function MotionList<T extends { id: string }>({
       resize.observe(list);
       refreshVisibility();
       return () => resize.disconnect();
-   }, [resetLayout]);
+   }, [resetLayout, visible]);
    useLayoutEffect(() => {
       const list = root.current;
       if (!list) return;
-      if (!list.getClientRects().length || !list.offsetWidth) {
+      if (!visible || !list.getClientRects().length || !list.offsetWidth) {
          resetLayout();
          return;
       }
@@ -189,7 +190,7 @@ export function MotionList<T extends { id: string }>({
       initialized.current = true;
       layoutVisible.current = true;
       if (moving) list.dispatchEvent(new Event("list-motion", { bubbles: true }));
-   }, [snapshot.rows, identity, draggingId, resetLayout]);
+   }, [snapshot.rows, identity, draggingId, resetLayout, visible]);
    useLayoutEffect(() => {
       const media = matchMedia("(prefers-reduced-motion: reduce)");
       const activeAnimations = animations.current;

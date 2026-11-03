@@ -34,7 +34,7 @@ export function Recording({
    const layout = useRef<HTMLDivElement>(null);
    const sourceContent = useRef<HTMLDivElement>(null);
    const sourceIndex = ["screen", "app", "auto"].indexOf(state.preferences.sourceKind);
-   useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible, "", "fade");
+   useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible);
    const controls = usePaneSize(layout, { key: "recording.controls", initial: 340, min: 260, max: 460, reserve: 420, axis: "x", fromEnd: true });
    const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 170, max: 380, reserve: 200, axis: "y", fromEnd: true });
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
@@ -267,6 +267,7 @@ export function Recording({
          >
             <div className="recording-main">
                <div className="preview-surface">
+                  <canvas ref={preview.outgoing} className="preview-outgoing" aria-hidden="true" />
                   {source && previewUnavailable ? (
                      <Empty
                         icon={<Monitor size={38} />}
@@ -320,7 +321,7 @@ export function Recording({
                         )}
                      </>
                   ) : (state.preferences.sourceKind !== "auto" && sourcePhase === "loading") || (state.preferences.sourceKind === "auto" && findingGames) ? (
-                     <div className="preview-message" role="status">
+                     <div className="preview-message preview-discovery" role="status">
                         <LoaderCircle size={30} className="preview-loading-spinner" />
                         <p>{state.preferences.sourceKind === "auto" ? "Finding games" : "Finding capture sources"}</p>
                      </div>

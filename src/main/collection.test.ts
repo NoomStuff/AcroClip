@@ -2,13 +2,21 @@ import { describe, expect, it, vi } from "vitest";
 import { resolve, join } from "node:path";
 import { mkdir, symlink, mkdtemp, rm, writeFile, readFile, stat, utimes, realpath, rename } from "node:fs/promises";
 import os from "node:os";
-import { CollectionService, withinRoot } from "./collection";
+import { CollectionService, fileIdentity, withinRoot } from "./collection";
+import { fileURLToPath } from "node:url";
 import { previewFilename } from "../shared/filename";
 import { defaultPreferences } from "../shared/defaults";
 import type * as fileOperations from "node:fs/promises";
 import type * as mediaOperations from "./media";
 
-const io = vi.hoisted(() => ({ identities: 0, writes: 0, exported: [] as string[], beforeProbe: undefined as (() => Promise<void>) | undefined }));
+const io = vi.hoisted(() => ({
+   identities: 0,
+   writes: 0,
+   thumbnails: 0,
+   exported: [] as string[],
+   beforeProbe: undefined as (() => Promise<void>) | undefined,
+   beforeThumbnail: undefined as (() => Promise<void>) | undefined,
+}));
 vi.mock("node:fs/promises", async (original) => {
    const fs = await original<typeof fileOperations>();
    return {
@@ -32,6 +40,11 @@ vi.mock("./media", async (original) => {
          await writeFile(args.at(-1)!, "fixture thumbnail");
          return "";
       },
+      createThumbnail: async (_source: string, output: string) => {
+         io.thumbnails++;
+         await io.beforeThumbnail?.();
+         await writeFile(output, "fixture thumbnail");
+      },
       encodeShareable: async (source: string, output: string) => {
          io.exported.push(source);
          await writeFile(output, `shareable of ${source}`);
@@ -40,6 +53,55 @@ vi.mock("./media", async (original) => {
 });
 
 describe("collection folder operations", () => {
+   it("replaces legacy thumbnails once, while retaining their preview during regeneration", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-thumbnail-upgrade-"));
+      try {
+         const video = join(root, "Moment.mp4");
+         await writeFile(video, "isolated video");
+         const initial = new CollectionService();
+         await initial.open(root);
+         const latest = fileURLToPath(initial.clips[0]!.thumbnail);
+         expect(latest).toContain(".last-keyframe-v1.jpg");
+         const legacy = join(root, ".acroclip", "thumbnails", `${await fileIdentity(video)}.jpg`);
+         await rename(latest, legacy);
+         await writeFile(legacy, "old preview");
+         const before = io.thumbnails;
+         const shown: string[] = [];
+         const upgraded = new CollectionService({ onChange: () => shown.push(...upgraded.clips.map((clip) => clip.thumbnail)) });
+         await upgraded.open(root);
+         expect(shown.some((url) => url && fileURLToPath(url) === legacy)).toBe(true);
+         expect(fileURLToPath(upgraded.clips[0]!.thumbnail)).toBe(latest);
+         expect(await readFile(latest, "utf8")).toBe("fixture thumbnail");
+         await expect(stat(legacy)).rejects.toMatchObject({ code: "ENOENT" });
+         expect(io.thumbnails).toBe(before + 1);
+         await new CollectionService().open(root);
+         expect(io.thumbnails).toBe(before + 1);
+         expect(await readFile(video, "utf8")).toBe("isolated video");
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("keeps a legacy thumbnail when regeneration fails", async () => {
+      const root = await mkdtemp(join(os.tmpdir(), "acroclip-thumbnail-recovery-"));
+      try {
+         const video = join(root, "Moment.mp4");
+         await writeFile(video, "isolated video");
+         const directory = join(root, ".acroclip", "thumbnails");
+         await mkdir(directory, { recursive: true });
+         const legacy = join(directory, `${await fileIdentity(video)}.jpg`);
+         await writeFile(legacy, "old preview");
+         io.beforeThumbnail = async () => {
+            throw new Error("Thumbnail generation failed");
+         };
+         const service = new CollectionService();
+         await service.open(root);
+         expect(fileURLToPath(service.clips[0]!.thumbnail)).toBe(legacy);
+         expect(await readFile(legacy, "utf8")).toBe("old preview");
+      } finally {
+         io.beforeThumbnail = undefined;
+         await rm(root, { recursive: true, force: true });
+      }
+   });
    it("repairs a known application's name and missing artwork without losing clip metadata", async () => {
       const root = await mkdtemp(join(os.tmpdir(), "acroclip-app-repair-"));
       try {

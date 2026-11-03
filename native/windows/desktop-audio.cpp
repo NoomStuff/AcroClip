@@ -2,6 +2,7 @@
 #include "desktop-audio.hpp"
 #include "../audio-submix.hpp"
 #include "listen-safety.hpp"
+#include "audio-health-policy.hpp"
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -45,7 +46,7 @@ struct DesktopAudio {
   std::thread thread;
   std::mutex mutex;
   std::string failure = "Audio capture is starting";
-  struct Child { obs_source_t *source; obs_sceneitem_t *item; };
+  struct Child { obs_source_t *source; obs_sceneitem_t *item; ProcessCaptureHealth health; };
   std::map<DWORD, Child> children;
 
   DesktopAudio(obs_data_t *settings, obs_source_t *owner) : source(owner), device(obs_data_get_string(settings, "device_id")) {
@@ -68,7 +69,7 @@ struct DesktopAudio {
     }
     children.clear();
   }
-  void update() {
+  std::string update() {
     ListenRouting routing;
     auto endpoint = routing.device(device.empty() ? "default" : device);
     Microsoft::WRL::ComPtr<IAudioSessionManager2> manager;
@@ -83,6 +84,7 @@ struct DesktopAudio {
     // without treating their test launcher and sibling tone processes as AcroClip.
     excluded.push_back(GetCurrentProcessId());
     std::set<DWORD> selected;
+    std::set<DWORD> active;
     int count = 0;
     if (FAILED(sessions->GetCount(&count))) throw std::runtime_error("Desktop audio sessions could not be read");
     for (int index = 0; index < count; ++index) {
@@ -94,6 +96,9 @@ struct DesktopAudio {
           FAILED(session->GetProcessId(&pid)) || FAILED(session->GetState(&state)))
         throw std::runtime_error("A desktop audio session could not be identified");
       if (!pid || state == AudioSessionStateExpired) continue;
+      // An inactive session has no running streams. Only retain an existing
+      // capture through silence; never open a new one for an idle application.
+      if (state != AudioSessionStateActive && !children.count(pid)) continue;
       if (std::any_of(excluded.begin(), excluded.end(), [&](DWORD root) { return within(pid, root, parents); })) continue;
       // Windows captures a process tree. An audible ancestor of a separately
       // captured process cannot safely be included in the remaining mix.
@@ -102,6 +107,7 @@ struct DesktopAudio {
         throw std::runtime_error("Desktop audio cannot separate an application from its audible parent process");
       }
       selected.insert(pid);
+      if (state == AudioSessionStateActive) active.insert(pid);
     }
     // A parent capture already includes its descendants. Never mix them twice.
     for (auto it = selected.begin(); it != selected.end();) {
@@ -160,24 +166,43 @@ struct DesktopAudio {
       obs_source_set_audio_mixers(child, 0x3f);
       auto *item = obs_scene_add(scene, child);
       if (!item) { obs_source_release(child); throw std::runtime_error("A desktop audio stream could not be added"); }
-      children.emplace(pid, Child{child, item});
+      children.emplace(pid, Child{child, item, ProcessCaptureHealth{}});
     }
-    for (const auto &[pid, child] : children) {
+    std::string healthFailure;
+    for (auto it = children.begin(); it != children.end();) {
+      auto &[pid, child] = *it;
       calldata_t health{};
       calldata_init(&health);
       const bool queried = proc_handler_call(obs_source_get_proc_handler(child.source), "get_capture_health", &health);
       const auto phase = calldata_int(&health, "state");
+      const auto version = calldata_int(&health, "version");
+      const bool ready = calldata_bool(&health, "ready");
+      const auto result = static_cast<uint32_t>(calldata_int(&health, "hresult"));
       calldata_free(&health);
-      if (!queried || phase != 1) throw std::runtime_error("Desktop audio is waiting for a process capture");
+      const bool audible = std::any_of(active.begin(), active.end(), [&](DWORD process) { return within(process, pid, parents); });
+      if ((!queried || phase != 1 || !ready) && !audible) {
+        obs_sceneitem_remove(child.item);
+        obs_source_release(child.source);
+        it = children.erase(it);
+        continue;
+      }
+      const auto error = child.health.error(queried, int(version), int(phase), ready, result, ProcessCaptureHealth::Clock::now());
+      if (healthFailure.empty() && !error.empty()) healthFailure = "Desktop audio process " + std::to_string(pid) + ": " + error;
+      ++it;
     }
+    return healthFailure;
   }
   void run() {
     while (!quit) {
       std::string error;
-      try { update(); } catch (const std::exception &problem) { error = problem.what(); }
+      try { error = update(); } catch (const std::exception &problem) {
+        error = problem.what();
+        // Routing errors invalidate the mix. A reconnecting process does not:
+        // keep healthy children and let WASAPI retry its own failed client.
+        clear();
+      }
       { std::lock_guard<std::mutex> lock(mutex); failure = error; }
       // Failure must never fall back to an unfiltered device mix.
-      if (!error.empty() && error != "Desktop audio is waiting for a process capture") clear();
       for (int i = 0; i < 10 && !quit; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }

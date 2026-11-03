@@ -11,8 +11,10 @@ export function FolderTree({
    renderActions,
    requestMenu,
    dropProps,
+   visible = true,
 }: {
    paths: string[];
+   visible?: boolean;
    counts?: ReadonlyMap<string, { count: number }>;
    selected: string | null;
    onSelect: (path: string) => void;
@@ -128,7 +130,9 @@ export function FolderTree({
             }
          }}
       >
-         <MotionList items={rows}>{render}</MotionList>
+         <MotionList items={rows} visible={visible}>
+            {render}
+         </MotionList>
       </div>
    );
 }

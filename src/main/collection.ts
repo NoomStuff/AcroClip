@@ -10,12 +10,13 @@ import type { ApplicationArtwork } from "../shared/types";
 import type { Category, Clip, FolderContents, Job, Shareable } from "../shared/types";
 import { collectionFolder, folderContents, folderName } from "./collection-folders";
 import { normalizeApplicationLabel } from "./application-identity";
-import { encodeShareable, ffmpegBase, probe, runMedia } from "./media";
+import { createThumbnail, encodeShareable, probe } from "./media";
 import type { MediaInfo } from "./media";
 import { PlaybackCache } from "./playback";
 import { mapConcurrent } from "./concurrent";
 
 const categorySchema = z.object({ id: z.string(), name: z.string(), color: z.string(), icon: z.string().max(80).optional() });
+const thumbnailName = (identity: string) => `${identity}.last-keyframe-v1.jpg`;
 const fileSchema = z.object({ relativePath: z.string(), absolutePath: z.string(), identity: z.string() });
 const shareSchema = fileSchema.extend({ id: z.string(), size: z.number().nonnegative(), targetMB: z.number().positive(), createdAt: z.number() });
 const previewSchema = z.object({
@@ -258,14 +259,18 @@ export class CollectionService {
       }
       // Render the collection's own indexed previews before touching the video files.
       let previewsSafe = true;
+      let thumbnailFiles = new Set<string>();
       try {
          await this.safeDirectory(join(this.root, ".acroclip", "thumbnails"));
+         thumbnailFiles = new Set(
+            (await readdir(join(this.root, ".acroclip", "thumbnails"), { withFileTypes: true })).filter((entry) => entry.isFile()).map((entry) => entry.name)
+         );
       } catch {
          previewsSafe = false;
       }
       this.clips = previewsSafe
          ? this.metadata.clips.flatMap((stored) => {
-              const clip = this.previewClip(stored);
+              const clip = this.previewClip(stored, thumbnailFiles);
               return clip ? [clip] : [];
            })
          : [];
@@ -273,7 +278,7 @@ export class CollectionService {
       await this.scan();
    }
 
-   private previewClip(stored: StoredClip): Clip | undefined {
+   private previewClip(stored: StoredClip, thumbnailFiles: ReadonlySet<string>): Clip | undefined {
       if (stored.previewUnavailable || !safeRelative(stored.relativePath) || !/^[a-f0-9]{64}$/i.test(stored.identity)) return;
       const path = resolve(this.root, stored.relativePath);
       if (!withinRoot(this.root, path)) return;
@@ -300,7 +305,11 @@ export class CollectionService {
          width: stored.preview?.info.width ?? 0,
          height: stored.preview?.info.height ?? 0,
          tracks: stored.preview?.info.tracks ?? [],
-         thumbnail: this.url(join(this.root, ".acroclip", "thumbnails", `${stored.identity}.jpg`)),
+         thumbnail: thumbnailFiles.has(thumbnailName(stored.identity))
+            ? this.url(join(this.root, ".acroclip", "thumbnails", thumbnailName(stored.identity)))
+            : thumbnailFiles.has(`${stored.identity}.jpg`)
+              ? this.url(join(this.root, ".acroclip", "thumbnails", `${stored.identity}.jpg`))
+              : "",
          playbackUrl: this.url(path),
          categories: [...stored.categories],
          shareables: shares,
@@ -384,45 +393,27 @@ export class CollectionService {
       let cached = this.cache.get(actual);
       if (!cached || cached.stamp !== stamp) {
          const info = preview?.stamp === stamp ? preview.info : await probe(actual);
-         let thumb = join(this.root, ".acroclip", "thumbnails", `${identity}.jpg`);
+         let thumb = join(this.root, ".acroclip", "thumbnails", thumbnailName(identity));
          try {
             await this.safeDirectory(dirname(thumb));
             try {
-               await stat(thumb);
+               const image = await lstat(thumb);
+               if (!image.isFile() || image.size === 0) throw new Error("Thumbnail cache is incomplete.");
             } catch {
                const temporary = `${thumb}.${randomUUID()}.jpg`;
                try {
-                  await runMedia(
-                     "ffmpeg",
-                     [
-                        ...ffmpegBase,
-                        "-y",
-                        "-ss",
-                        String(Math.min(info.duration * 0.2, 2)),
-                        "-threads",
-                        "2",
-                        "-i",
-                        actual,
-                        "-frames:v",
-                        "1",
-                        "-vf",
-                        "scale=480:-2",
-                        "-filter_threads",
-                        "1",
-                        "-threads",
-                        "1",
-                        temporary,
-                     ],
-                     { belowNormal: true }
-                  );
+                  await createThumbnail(actual, temporary, info.duration);
                   await rename(temporary, thumb);
+                  await rm(join(this.root, ".acroclip", "thumbnails", `${identity}.jpg`), { force: true }).catch(() => undefined);
                } finally {
                   await rm(temporary, { force: true });
                }
             }
          } catch (error) {
             this.warn(`Preview thumbnail unavailable for ${basename(actual)}: ${message(error)}`);
-            thumb = "";
+            const legacy = join(this.root, ".acroclip", "thumbnails", `${identity}.jpg`);
+            const image = await lstat(legacy).catch(() => undefined);
+            thumb = image?.isFile() && image.size > 0 ? legacy : "";
          }
          cached = { stamp, info, thumbnail: thumb };
          this.cache.set(actual, cached);

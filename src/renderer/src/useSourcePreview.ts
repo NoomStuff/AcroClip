@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, describeError } from "./desktop";
+import { useVideoReveal } from "./useVideoReveal";
 
 type PreviewStatus = "idle" | "connecting" | "live" | "error";
 
@@ -7,6 +8,9 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
    const video = useRef<HTMLVideoElement>(null);
    const canvas = useRef<HTMLCanvasElement>(null);
    const still = useRef<HTMLCanvasElement>(null);
+   const outgoing = useRef<HTMLCanvasElement>(null);
+   const outgoingMotion = useRef<Animation | null>(null);
+   const departing = useRef<{ key: string; scope: string; canvas: HTMLCanvasElement } | null>(null);
    const [status, setStatus] = useState<PreviewStatus>("idle");
    const [error, setError] = useState("");
    const [retry, setRetry] = useState(0);
@@ -20,6 +24,7 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
       () => () => {
          window.clearTimeout(expiry.current);
          images.current.clear();
+         outgoingMotion.current?.cancel();
       },
       []
    );
@@ -29,13 +34,41 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
    useLayoutEffect(() => {
       statusSource.current = cacheKey;
       const owner = crypto.randomUUID();
-      if (previousScope.current !== scope) images.current.clear();
+      const scopeChanged = previousScope.current !== scope;
+      if (scopeChanged) images.current.clear();
       previousScope.current = scope;
+      const media = matchMedia("(prefers-reduced-motion: reduce)");
+      const clearOutgoing = () => {
+         outgoingMotion.current?.cancel();
+         outgoingMotion.current = null;
+         if (outgoing.current) outgoing.current.style.opacity = "0";
+      };
+      const previous = departing.current;
+      departing.current = null;
+      if (scopeChanged || !visible || document.hidden || media.matches) clearOutgoing();
+      else if (previous && previous.key !== cacheKey && previous.scope === scope && outgoing.current) {
+         clearOutgoing();
+         const surface = outgoing.current;
+         surface.width = previous.canvas.width;
+         surface.height = previous.canvas.height;
+         surface.getContext("2d", { alpha: false })?.drawImage(previous.canvas, 0, 0);
+         const animation = surface.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: "ease-out", fill: "forwards" });
+         outgoingMotion.current = animation;
+         void animation.finished.then(
+            () => {
+               if (outgoingMotion.current === animation) clearOutgoing();
+            },
+            () => undefined
+         );
+      }
+      const reduce = () => {
+         if (media.matches) clearOutgoing();
+      };
+      media.addEventListener("change", reduce);
       let disposed = false;
       let stream: MediaStream | undefined;
       let frame: number | undefined;
       let painted = false;
-      let reveal: number | undefined;
       const element = video.current;
       const snapshot = () => {
          if (!sourceId || !painted || !stream || element?.srcObject !== stream || !element.videoWidth || !element.videoHeight || element.readyState < 2) return;
@@ -46,6 +79,7 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
          const context = surface.getContext("2d", { alpha: false });
          if (!context) return;
          context.drawImage(nativeScreen && canvas.current?.width ? canvas.current : element, 0, 0, surface.width, surface.height);
+         departing.current = { key: cacheKey, scope, canvas: surface };
          images.current.delete(cacheKey);
          images.current.set(cacheKey, { canvas: surface, at: Date.now() });
          while (images.current.size > 2) images.current.delete(images.current.keys().next().value!);
@@ -60,7 +94,6 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
          expiry.current = window.setTimeout(sweep, Math.max(1, Math.min(...[...images.current.values()].map((image) => 60_000 - (Date.now() - image.at)))));
       };
       const stop = (remember = true) => {
-         window.clearTimeout(reveal);
          if (remember) snapshot();
          if (frame !== undefined) element?.cancelVideoFrameCallback(frame);
          stream?.getTracks().forEach((track) => track.stop());
@@ -76,15 +109,21 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
       const visibility = () => {
          if (document.hidden) {
             cancel();
+            clearOutgoing();
          }
       };
       const unsubscribe = api.onEvent((event) => {
          if (event.type === "visibility" && !event.visible) {
             cancel();
+            clearOutgoing();
          }
       });
       document.addEventListener("visibilitychange", visibility);
-      window.addEventListener("pagehide", cancel);
+      const pagehide = () => {
+         cancel();
+         clearOutgoing();
+      };
+      window.addEventListener("pagehide", pagehide);
       const image = sourceId ? images.current.get(cacheKey) : undefined;
       const reuse = !!image && Date.now() - image.at < 60_000;
       setCachedSource(reuse ? cacheKey : null);
@@ -154,15 +193,6 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
                if (!painted) {
                   painted = true;
                   setStatus("live");
-                  // Keep the still frame and loading content under the 140 ms video fade.
-                  reveal = window.setTimeout(
-                     () => {
-                        if (disposed) return;
-                        setCachedSource(null);
-                        setRevealed(true);
-                     },
-                     matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 160
-                  );
                }
                if (nativeScreen) frame = element.requestVideoFrameCallback(paint);
             };
@@ -192,17 +222,26 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
          cancel();
          unsubscribe();
          document.removeEventListener("visibilitychange", visibility);
-         window.removeEventListener("pagehide", cancel);
+         window.removeEventListener("pagehide", pagehide);
+         media.removeEventListener("change", reduce);
          void api.previewSource(null, owner).catch(() => undefined);
       };
    }, [sourceId, visible, retry, nativeScreen, scope, cacheKey]);
+
+   const currentStatus: PreviewStatus = statusSource.current === cacheKey ? status : sourceId && visible ? "connecting" : "idle";
+   useVideoReveal(nativeScreen ? canvas : video, currentStatus === "live", cacheKey, () => {
+      if (statusSource.current !== cacheKey) return;
+      setCachedSource(null);
+      setRevealed(true);
+   });
 
    return {
       video,
       canvas,
       still,
+      outgoing,
       revealed: statusSource.current === cacheKey && revealed,
-      status: statusSource.current === cacheKey ? status : sourceId && visible ? ("connecting" as const) : ("idle" as const),
+      status: currentStatus,
       error: statusSource.current === cacheKey ? error : "",
       cached,
       retry: () => setRetry((value) => value + 1),

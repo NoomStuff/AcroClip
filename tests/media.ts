@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, copyFile, writeFile, readFile, rename, rm, stat, symlink, realpath, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, copyFile, writeFile, readFile, rename, rm, stat, symlink, realpath, readdir, open } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CollectionService, fileIdentity, withinRoot } from "../src/main/collection";
 import { PlaybackCache } from "../src/main/playback";
-import { ffmpegBase, probe, runMedia } from "../src/main/media";
+import { createThumbnail, ffmpegBase, probe, runMedia } from "../src/main/media";
 
 const workspace = await realpath(await mkdtemp(join(tmpdir(), "acroclip-media-")));
 const root = join(workspace, "collection");
@@ -14,6 +14,130 @@ await mkdir(join(root, "Existing game"), { recursive: true });
 await mkdir(external);
 let original = join(root, "Existing game", "moment.mp4");
 try {
+   const thumbnailRoot = join(workspace, "thumbnail-proof");
+   await mkdir(thumbnailRoot);
+   const colored = join(thumbnailRoot, "colored.mp4");
+   await runMedia("ffmpeg", [
+      ...ffmpegBase,
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=red:s=160x90:r=10:d=5",
+      "-vf",
+      "drawbox=color=blue:t=fill:enable='gte(t,3)',drawbox=color=black:t=fill:enable='gte(t,4.5)'",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-g",
+      "10",
+      "-keyint_min",
+      "10",
+      "-sc_threshold",
+      "0",
+      colored,
+   ]);
+   const checkColor = async (image: string, color: "blue" | "red" | "black") => {
+      const rgb = `${image}.rgb`;
+      await runMedia("ffmpeg", [...ffmpegBase, "-y", "-i", image, "-vf", "crop=2:2", "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", rgb]);
+      const [red, green, blue] = await readFile(rgb);
+      assert.ok(red !== undefined && green !== undefined && blue !== undefined);
+      assert.ok(
+         color === "blue" ? blue > 200 && red < 40 && green < 40 : color === "red" ? red > 200 && green < 40 && blue < 40 : red < 20 && green < 20 && blue < 20,
+         `${color} pixels expected in ${image}`
+      );
+   };
+   for (const format of ["mp4", "mkv", "ts", "streaming.mkv"]) {
+      const file = format === "mp4" ? colored : join(thumbnailRoot, `colored.${format}`);
+      if (format !== "mp4")
+         await runMedia("ffmpeg", [
+            ...ffmpegBase,
+            "-y",
+            "-i",
+            colored,
+            "-c",
+            "copy",
+            ...(format === "ts" ? ["-output_ts_offset", "30"] : format === "streaming.mkv" ? ["-f", "matroska", "-live", "1"] : []),
+            file,
+         ]);
+      const thumbnail = join(thumbnailRoot, `${format}.jpg`);
+      await createThumbnail(file, thumbnail, (await probe(file)).duration);
+      await checkColor(thumbnail, "blue");
+   }
+   const finalFrame = join(thumbnailRoot, "final-frame.jpg");
+   await runMedia("ffmpeg", [...ffmpegBase, "-y", "-ss", "4.8", "-i", colored, "-frames:v", "1", "-pix_fmt", "yuvj420p", finalFrame]);
+   await checkColor(finalFrame, "black");
+   const longGop = join(thumbnailRoot, "long-gop.mp4");
+   await runMedia("ffmpeg", [
+      ...ffmpegBase,
+      "-y",
+      "-i",
+      colored,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-g",
+      "1000",
+      "-keyint_min",
+      "1000",
+      "-sc_threshold",
+      "0",
+      longGop,
+   ]);
+   const longThumbnail = join(thumbnailRoot, "long-gop.jpg");
+   await createThumbnail(longGop, longThumbnail, 5);
+   await checkColor(longThumbnail, "red");
+   const short = join(thumbnailRoot, "short.mp4");
+   await runMedia("ffmpeg", [...ffmpegBase, "-y", "-i", colored, "-t", "0.2", "-c", "copy", short]);
+   const shortThumbnail = join(thumbnailRoot, "short.jpg");
+   await createThumbnail(short, shortThumbnail, (await probe(short)).duration);
+   await checkColor(shortThumbnail, "red");
+   const fallbackThumbnail = join(thumbnailRoot, "fallback.jpg");
+   const corruptTail = join(thumbnailRoot, "corrupt-tail.mp4");
+   await copyFile(colored, corruptTail);
+   const packets = JSON.parse(
+      await runMedia("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_packets", "-show_entries", "packet=pos,size,flags", "-of", "json", colored])
+   ) as { packets: Array<{ pos: string; size: string; flags: string }> };
+   const lastKeyframe = packets.packets.filter((packet) => packet.flags.includes("K")).at(-1)!;
+   const packetSize = Number(lastKeyframe.size),
+      packetOffset = Number(lastKeyframe.pos);
+   assert.ok(
+      Number.isSafeInteger(packetSize) &&
+         packetSize > 0 &&
+         Number.isSafeInteger(packetOffset) &&
+         packetOffset >= 0 &&
+         packetOffset + packetSize <= (await stat(corruptTail)).size
+   );
+   const damagedVideo = await open(corruptTail, "r+");
+   try {
+      await damagedVideo.write(Buffer.alloc(packetSize), 0, packetSize, packetOffset);
+   } finally {
+      await damagedVideo.close();
+   }
+   await createThumbnail(corruptTail, fallbackThumbnail, 5);
+   await checkColor(fallbackThumbnail, "red");
+   const protectedIdentity = await fileIdentity(colored);
+   await assert.rejects(createThumbnail(colored, colored, 5), /overwrite its source/);
+   assert.equal(await fileIdentity(colored), protectedIdentity);
+   const migrationRoot = join(workspace, "thumbnail-migration");
+   await mkdir(join(migrationRoot, ".acroclip", "thumbnails"), { recursive: true });
+   const migrationVideo = join(migrationRoot, "Moment.mp4");
+   await copyFile(colored, migrationVideo);
+   const migrationIdentity = await fileIdentity(migrationVideo);
+   const legacyThumbnail = join(migrationRoot, ".acroclip", "thumbnails", `${migrationIdentity}.jpg`);
+   await copyFile(fallbackThumbnail, legacyThumbnail);
+   const migration = new CollectionService();
+   await migration.open(migrationRoot);
+   const migratedThumbnail = fileURLToPath(migration.clips[0]!.thumbnail);
+   assert.ok(migratedThumbnail.endsWith(".last-keyframe-v1.jpg"));
+   await checkColor(migratedThumbnail, "blue");
+   await assert.rejects(stat(legacyThumbnail), { code: "ENOENT" });
+   const generatedAt = (await stat(migratedThumbnail)).mtimeMs;
+   await new CollectionService().open(migrationRoot);
+   assert.equal((await stat(migratedThumbnail)).mtimeMs, generatedAt, "the migrated thumbnail is reused on reopen");
+   assert.equal(await fileIdentity(migrationVideo), migrationIdentity, "thumbnail migration never modifies the video");
    await runMedia("ffmpeg", [
       ...ffmpegBase,
       "-y",
@@ -317,7 +441,7 @@ try {
    await assert.rejects(damaged.createCategory("Do not overwrite recovery data"), /Restore/);
    assert.equal(await readFile(movedMetadataPath, "utf8"), "broken", "unrecoverable metadata remains untouched");
    console.log(
-      "Media verification passed: real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, and deletion boundaries."
+      "Media verification passed: last-keyframe thumbnails and cache migration, real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, and deletion boundaries."
    );
 } finally {
    assert.ok(withinRoot(await realpath(tmpdir()), workspace), "test cleanup stays within isolated temporary workspace");

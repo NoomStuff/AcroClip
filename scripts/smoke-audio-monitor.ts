@@ -39,8 +39,10 @@ type Event = {
    listening?: string;
    listeningPeak?: number;
    listeningOutputActive?: boolean;
+   audioWarning?: string;
 };
 let extraFixture: ReturnType<typeof spawn> | undefined;
+let idleFixture: ReturnType<typeof spawn> | undefined;
 let screenCover: ReturnType<typeof spawn> | undefined;
 const events: Event[] = [],
    logs: string[] = [];
@@ -613,10 +615,17 @@ try {
       windowsHide: true,
    });
    await delay(1800);
+   idleFixture = spawn(path.resolve(".cache/native-tests/Release/acroclip-d3d-fixture.exe"), [`Idle desktop tone ${randomUUID()}`, "691"], {
+      stdio: "pipe",
+      env: { ...process.env, ACROCLIP_FIXTURE_LONG: "1", ACROCLIP_FIXTURE_AUDIO_CONTROL: "1" },
+   });
+   createInterface({ input: idleFixture.stdout! }).on("line", (line) => events.push({ event: "fixture-audio", message: line }));
+   await wait((event) => event.event === "fixture-audio" && /^\d+$/.test(event.message ?? ""));
    await command("start", { ...routingConfig, sourceKind: "screen", screenIndex: 0, resolutionLimit: 720, sourceName: "Controlled screen" });
    await waitForFootage();
    await command("test-listener-tone");
    const screenMix = await saveProof("automatic-screen-master");
+   assert.ok(toneAt(1, 691, screenMix) < -70, "An inactive output session must remain silent");
    const screenTones = {
       masterExtra: toneAt(0, 1337, screenMix),
       sourceExtra: toneAt(1, 1337, screenMix),
@@ -633,6 +642,32 @@ try {
       screenTones.masterMic > -65 && screenTones.sourceMic < -70 && Math.abs(screenTones.masterMic - screenTones.isolatedMic) < 1.5,
       JSON.stringify(screenTones)
    );
+   const desktopHealthy = async () => {
+      const mark = events.length;
+      await command("status");
+      const status = events.slice(mark).find((event) => event.event === "status");
+      assert.ok(status, "Desktop status must be available");
+      assert.equal(status.audioWarning ?? "", "", status.audioWarning ?? "Desktop audio must remain healthy");
+   };
+   await desktopHealthy();
+   idleFixture.stdin!.write("resume\n");
+   await wait((event) => event.event === "fixture-audio" && event.message === "audio:playing");
+   for (let attempt = 0; attempt < 30; attempt++) {
+      await desktopHealthy();
+      await delay(100);
+   }
+   const resumedDesktop = await saveProof("desktop-inactive-session-resumed");
+   assert.ok(toneAt(1, 691, resumedDesktop) > -65, "A newly active session must join the actual Desktop track");
+   idleFixture.stdin!.write("pause\n");
+   await wait((event) => event.event === "fixture-audio" && event.message === "audio:paused");
+   for (let attempt = 0; attempt < 30; attempt++) {
+      await desktopHealthy();
+      await delay(100);
+   }
+   const pausedDesktop = await saveProof("desktop-session-paused");
+   assert.ok(toneAt(1, 691, pausedDesktop) < -70, "Pausing an output must restore silence without a capture warning");
+   idleFixture.kill();
+   idleFixture = undefined;
    await command("listen-audio", { source: "capture" });
    await command("status");
    assert.equal((await lifecycle()).listening, "capture", "Desktop listening must work through the default output");
@@ -667,6 +702,7 @@ try {
    if (statusTimer) clearInterval(statusTimer);
    fixture.kill();
    extraFixture?.kill();
+   idleFixture?.kill();
    screenCover?.kill();
    helper.stdin.write(`${JSON.stringify({ action: "exit" })}\n`);
    await Promise.race([new Promise((resolve) => helper.once("exit", resolve)), delay(5000)]);
