@@ -13,6 +13,7 @@ const electron = vi.hoisted(() => {
    };
    return {
       icon,
+      generic: { ...icon, resize: () => ({ toDataURL: () => "data:image/png;base64,generic" }) },
       display,
       getAllDisplays: vi.fn(() => [display]),
       getFileIcon: vi.fn(async () => icon),
@@ -23,7 +24,7 @@ const electron = vi.hoisted(() => {
    };
 });
 vi.mock("electron", () => ({
-   app: { getFileIcon: electron.getFileIcon },
+   app: { getFileIcon: (file: string) => (file.includes(".acroclip-generic-") ? Promise.resolve(electron.generic) : electron.getFileIcon()) },
    desktopCapturer: { getSources: electron.getSources },
    nativeImage: { createEmpty: () => ({ toDataURL: () => "" }) },
    screen: {
@@ -114,8 +115,9 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       expect(sources.cached[0]?.appIcon).toBe("data:image/png;base64,icon");
    });
 
-   it.each(["rejected", "empty"])("keeps the first window icon when executable lookup is %s", async (failure) => {
+   it.each(["rejected", "empty", "generic"])("keeps the first window icon when executable lookup is %s", async (failure) => {
       if (failure === "rejected") electron.getFileIcon.mockRejectedValue(new Error("Icon unavailable"));
+      else if (failure === "generic") electron.getFileIcon.mockResolvedValue(electron.generic);
       else electron.getFileIcon.mockResolvedValue({ ...electron.icon, isEmpty: () => true });
       const windowIcon = { isEmpty: () => false, resize: () => ({ toDataURL: () => "data:image/png;base64,fallback" }) };
       const window = { id: application.id, name: "Application", display_id: "", thumbnail: { toDataURL: () => "" }, appIcon: windowIcon };
@@ -164,6 +166,22 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
          thumbnailSize: { width: 320, height: 180 },
          fetchWindowIcons: false,
       });
+   });
+
+   it.each(["expiry", "process"])("retains a recent thumbnail through metadata refreshes, but invalidates it on %s", async (invalidated) => {
+      const native = recorder();
+      const sources = new CaptureSources(native, () => "999");
+      await sources.list();
+      electron.getSources.mockResolvedValueOnce([
+         { id: application.id, name: "Application", display_id: "", thumbnail: { toDataURL: () => "data:image/png;base64,poster" } },
+      ]);
+      await sources.list(true);
+      const now = Date.now();
+      const time = vi.spyOn(Date, "now").mockReturnValue(now + 1000);
+      expect((await sources.list())[1]?.thumbnail).toBe("data:image/png;base64,poster");
+      if (invalidated === "process") native.capturableApplications.mockResolvedValue([{ ...application, pid: 99 }]);
+      time.mockReturnValue(now + (invalidated === "expiry" ? 61_000 : 2000));
+      expect((await sources.list())[1]?.thumbnail).toBe("");
    });
 
    it("rejects preview when a window handle now belongs to a different process", async () => {

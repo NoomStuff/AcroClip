@@ -298,6 +298,19 @@ export function Recording({
                            className={`preview-canvas ${nativeScreenPreview && preview.status === "live" ? "ready" : ""} ${preview.cached && preview.status !== "live" ? "cached" : ""}`}
                            aria-label={`${preview.cached ? "Last frame" : "Live preview"} of ${source.name}`}
                         />
+                        {preview.status === "connecting" && (
+                           <div key={`${source.id}:${source.processId ?? ""}`} className="preview-loading" role="status" aria-label="Loading preview">
+                              {!preview.cached &&
+                                 (source.thumbnail.length > 30 ? (
+                                    <img className="preview-poster" src={source.thumbnail} alt="" />
+                                 ) : (
+                                    <div className="preview-placeholder">
+                                       <ApplicationIcon src={source.appIcon} size={48} />
+                                    </div>
+                                 ))}
+                              <LoaderCircle size={28} className="preview-loading-spinner" />
+                           </div>
+                        )}
                         {preview.status === "error" && (
                            <div className="preview-message">
                               <Monitor size={30} />
@@ -312,7 +325,7 @@ export function Recording({
                      </>
                   ) : (state.preferences.sourceKind !== "auto" && sourcePhase === "loading") || (state.preferences.sourceKind === "auto" && findingGames) ? (
                      <div className="preview-message" role="status">
-                        <LoaderCircle size={30} className="spin" />
+                        <LoaderCircle size={30} className="preview-loading-spinner" />
                         <p>{state.preferences.sourceKind === "auto" ? "Finding games" : "Finding capture sources"}</p>
                      </div>
                   ) : (
@@ -333,15 +346,7 @@ export function Recording({
                         <span className={preview.status === "live" ? "preview-dot live" : "preview-dot"} />
                         {source.name}
                         <span className="preview-note">
-                           {preview.status === "live" ? (
-                              "Live preview"
-                           ) : preview.status === "connecting" ? (
-                              <span role="status" aria-label="Loading preview">
-                                 <LoaderCircle size={12} className="spin" />
-                              </span>
-                           ) : (
-                              "Preview"
-                           )}
+                           {preview.status === "live" ? "Live preview" : preview.status === "connecting" ? "Loading" : "Preview"}
                         </span>
                      </div>
                   )}

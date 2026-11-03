@@ -102,7 +102,20 @@ test("live preview captures the chosen window and releases tracks on navigation,
          await window.acroClip.savePreferences({ ...state.preferences, sourceKind: "app", sourceId: id });
       }, sourceA!.id);
       const preview = page.locator(".preview-stream");
-      await expect(page.locator(".preview-note").getByRole("status", { name: "Loading preview" })).toBeVisible();
+      await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
+      await expect(page.locator(".preview-note")).toHaveText("Loading");
+      const spinner = page.locator(".preview-loading-spinner");
+      const fadeDelay = await spinner.evaluate((node) => {
+         const fade = node.getAnimations().find((animation) => animation instanceof CSSAnimation && animation.animationName === "preview-spinner-in")!;
+         fade.pause();
+         fade.currentTime = 500;
+         return { delay: fade.effect!.getTiming().delay, opacity: getComputedStyle(node).opacity };
+      });
+      expect(fadeDelay).toEqual({ delay: 1000, opacity: "0" });
+      await spinner.evaluate((node) => {
+         node.getAnimations().find((animation) => animation instanceof CSSAnimation && animation.animationName === "preview-spinner-in")!.currentTime = 1200;
+      });
+      await expect(spinner).toHaveCSS("opacity", "1");
       await expect(page.locator(".preview-message")).toHaveCount(0);
       await releasePreview();
       const initialRequestedAt = performance.now();
@@ -147,7 +160,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       });
       await holdPreview();
       await page.getByRole("button", { name: "Recording", exact: true }).click();
-      await expect(page.locator(".preview-note").getByRole("status", { name: "Loading preview" })).toBeVisible();
+      await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
       await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
       expect(await page.locator(".preview-canvas").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).toBe(cachedA);
       await expect(page.locator(".preview-message")).toHaveCount(0);
@@ -176,7 +189,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       // Returning to A must restore A's frame, rather than B's frame or a blank canvas.
       await holdPreview();
       await page.locator(".source-row").filter({ hasText: "Preview fixture A" }).click();
-      await expect(page.locator(".preview-note").getByRole("status", { name: "Loading preview" })).toBeVisible();
+      await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
       await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
       expect(await page.locator(".preview-canvas").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).not.toBe(cachedB);
       await releasePreview();
@@ -194,7 +207,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
          main?.restore();
          main?.show();
       });
-      await expect(page.locator(".preview-note").getByRole("status", { name: "Loading preview" })).toBeVisible();
+      await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
       await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
       await expect(page.locator(".preview-message")).toHaveCount(0);
       await releasePreview();

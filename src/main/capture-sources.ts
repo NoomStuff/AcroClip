@@ -2,6 +2,8 @@ import { isWaylandSession } from "./linux-session";
 import { app, desktopCapturer, nativeImage, screen } from "electron";
 import type { DesktopCapturerSource } from "electron";
 import { createHash, randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CaptureSource, GameCandidate } from "../shared/types";
 import { portalSources } from "../shared/capture-policy";
 import type { Recorder } from "./recorder";
@@ -15,8 +17,10 @@ export class CaptureSources {
    private query: Promise<CaptureSource[]> | null = null;
    private thumbnailQuery: Promise<CaptureSource[]> | null = null;
    private loadedAt = 0;
+   private thumbnailAt = new Map<string, number>();
    private readonly stableWindowIcons = new Map<string, string>();
    private readonly icons = new Map<string, Promise<string | undefined>>();
+   private genericIcon: Promise<string | undefined> | undefined;
    private readonly recorder: SourceRecorder;
    private readonly ownWindow: () => string;
    private readonly onChange: (sources: CaptureSource[]) => void;
@@ -111,6 +115,14 @@ export class CaptureSources {
             } catch {
                /* A missing app icon must not make its capture source unavailable. */
             }
+            const thumbnail =
+               prior &&
+               prior.processId === candidate?.pid &&
+               prior.applicationId === applicationId &&
+               prior.displayId === (s.display_id || undefined) &&
+               Date.now() - (this.thumbnailAt.get(s.id) ?? 0) < 60_000
+                  ? prior.thumbnail
+                  : s.thumbnail.toDataURL();
             return {
                ...(applicationId ? { applicationId } : {}),
                ...(candidate?.executable ? { applicationName: candidate.gameName ?? executableLabel(candidate.executable) } : {}),
@@ -118,7 +130,7 @@ export class CaptureSources {
                id: s.id,
                name: s.name,
                kind: s.id.startsWith("screen:") ? "screen" : "app",
-               thumbnail: s.thumbnail.toDataURL(),
+               thumbnail,
                ...(candidate ? { processId: candidate.pid } : {}),
                ...(bounds ? { bounds } : {}),
                ...(display
@@ -134,6 +146,8 @@ export class CaptureSources {
                ...(s.display_id ? { displayId: s.display_id } : {}),
             };
          });
+      for (const id of this.thumbnailAt.keys())
+         if (!this.cached.some((source) => source.id === id) || Date.now() - this.thumbnailAt.get(id)! >= 60_000) this.thumbnailAt.delete(id);
       if (this.cached.some((source) => source.appIcon && source.appIcon !== previous.get(source.id)?.appIcon)) this.onChange(this.cached);
       if (process.platform === "win32" || process.platform === "darwin") this.hydrateIcons(nativeWindows);
       this.hydrateNames(nativeWindows);
@@ -180,6 +194,7 @@ export class CaptureSources {
             (source.kind === "screen" && image.display_id !== source.displayId)
          )
             return source;
+         this.thumbnailAt.set(source.id, Date.now());
          return { ...source, thumbnail: image.thumbnail.toDataURL() };
       });
       this.onChange(this.cached);
@@ -197,9 +212,16 @@ export class CaptureSources {
                   .getFileIcon(process.platform === "darwin" ? candidate.executable.replace(/(\.app)\/Contents\/.*/, "$1") : candidate.executable, {
                      size: "normal",
                   })
-                  .then((image) => {
+                  .then(async (image) => {
                      if (image.isEmpty()) return undefined;
                      const value = image.resize({ width: 32, height: 32 }).toDataURL();
+                     if (process.platform === "win32") {
+                        this.genericIcon ??= app
+                           .getFileIcon(join(tmpdir(), `.acroclip-generic-${randomUUID()}.exe`), { size: "normal" })
+                           .then((generic) => (generic.isEmpty() ? undefined : generic.resize({ width: 32, height: 32 }).toDataURL()))
+                           .catch(() => undefined);
+                        if (value === (await this.genericIcon)) return undefined;
+                     }
                      return value.length <= 45000 ? value : undefined;
                   })
                   .catch(() => undefined);
