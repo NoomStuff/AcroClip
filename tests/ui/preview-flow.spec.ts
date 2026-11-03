@@ -104,18 +104,18 @@ test("live preview captures the chosen window and releases tracks on navigation,
       const preview = page.locator(".preview-stream");
       await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
       await expect(page.locator(".preview-note")).toHaveText("Loading");
-      const spinner = page.locator(".preview-loading-spinner");
-      const fadeDelay = await spinner.evaluate((node) => {
-         const fade = node.getAnimations().find((animation) => animation instanceof CSSAnimation && animation.animationName === "preview-spinner-in")!;
-         fade.pause();
-         fade.currentTime = 500;
-         return { delay: fade.effect!.getTiming().delay, opacity: getComputedStyle(node).opacity };
+      await expect(page.locator(".preview-loading-spinner")).toHaveCount(0);
+      const icon = page.locator(".preview-placeholder");
+      const initialOpacity = await icon.evaluate((node) => {
+         const pulse = node.getAnimations().find((animation) => animation instanceof CSSAnimation && animation.animationName === "preview-icon-pulse")!;
+         pulse.pause();
+         pulse.currentTime = 1000;
+         return Number(getComputedStyle(node).opacity);
       });
-      expect(fadeDelay).toEqual({ delay: 1000, opacity: "0" });
-      await spinner.evaluate((node) => {
-         node.getAnimations().find((animation) => animation instanceof CSSAnimation && animation.animationName === "preview-spinner-in")!.currentTime = 1200;
+      await icon.evaluate((node) => {
+         node.getAnimations().find((animation) => animation instanceof CSSAnimation && animation.animationName === "preview-icon-pulse")!.currentTime = 1750;
       });
-      await expect(spinner).toHaveCSS("opacity", "1");
+      expect(await icon.evaluate((node) => Number(getComputedStyle(node).opacity))).toBeLessThan(initialOpacity);
       await expect(page.locator(".preview-message")).toHaveCount(0);
       await releasePreview();
       const initialRequestedAt = performance.now();
@@ -148,28 +148,32 @@ test("live preview captures the chosen window and releases tracks on navigation,
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
          .toEqual(["ended"]);
       await expect.poll(() => preview.evaluate((video: HTMLVideoElement) => video.srcObject === null)).toBe(true);
-      await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
-      const cachedA = await page.locator(".preview-canvas").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
+      const cachedA = await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
       await page.evaluate(() => {
          (window as unknown as { cacheShown: boolean }).cacheShown = false;
+         (window as unknown as { handoffShown: boolean }).handoffShown = false;
          const root = document.querySelector(".recording-page")!;
          const observer = new MutationObserver(() => {
-            if (root.getClientRects().length && root.querySelector(".preview-canvas.cached")) (window as unknown as { cacheShown: boolean }).cacheShown = true;
+            if (root.getClientRects().length && root.querySelector(".preview-still.cached")) (window as unknown as { cacheShown: boolean }).cacheShown = true;
+            if (root.querySelector(".preview-stream.ready") && root.querySelector(".preview-still.cached"))
+               (window as unknown as { handoffShown: boolean }).handoffShown = true;
          });
          observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
       });
       await holdPreview();
       await page.getByRole("button", { name: "Recording", exact: true }).click();
       await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
-      await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
-      expect(await page.locator(".preview-canvas").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).toBe(cachedA);
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
+      expect(await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).toBe(cachedA);
       await expect(page.locator(".preview-message")).toHaveCount(0);
       await releasePreview();
       const returnRequestedAt = performance.now();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
-      await expect(page.locator(".preview-canvas")).not.toHaveClass(/cached/);
+      await expect(page.locator(".preview-still")).not.toHaveClass(/cached/);
       console.log("Preview tab return first frame ms", Math.round(performance.now() - returnRequestedAt));
       expect(await page.evaluate(() => (window as unknown as { cacheShown: boolean }).cacheShown)).toBe(true);
+      expect(await page.evaluate(() => (window as unknown as { handoffShown: boolean }).handoffShown)).toBe(true);
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();
       });
@@ -182,16 +186,16 @@ test("live preview captures the chosen window and releases tracks on navigation,
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
          .toEqual(["ended"]);
       await page.getByRole("button", { name: "Library", exact: true }).click();
-      await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
-      const cachedB = await page.locator(".preview-canvas").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
+      const cachedB = await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
       await page.getByRole("button", { name: "Recording", exact: true }).click();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       // Returning to A must restore A's frame, rather than B's frame or a blank canvas.
       await holdPreview();
       await page.locator(".source-row").filter({ hasText: "Preview fixture A" }).click();
       await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
-      await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
-      expect(await page.locator(".preview-canvas").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).not.toBe(cachedB);
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
+      expect(await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).not.toBe(cachedB);
       await releasePreview();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       await preview.evaluate((video: HTMLVideoElement) => {
@@ -208,7 +212,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
          main?.show();
       });
       await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
-      await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
       await expect(page.locator(".preview-message")).toHaveCount(0);
       await releasePreview();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
@@ -227,7 +231,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       // A failed reconnect must expose the error and retry action, even after a cached frame.
       await page.getByRole("button", { name: "Library", exact: true }).click();
-      await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
       await page.evaluate(() => {
          const acquire = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
          navigator.mediaDevices.getDisplayMedia = async () => {
@@ -237,7 +241,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       });
       await page.getByRole("button", { name: "Recording", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Preview unavailable", exact: true })).toBeVisible();
-      await expect(page.locator(".preview-canvas")).not.toHaveClass(/cached/);
+      await expect(page.locator(".preview-still")).not.toHaveClass(/cached/);
       await page.getByRole("button", { name: "Retry preview", exact: true }).click();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       await page.waitForTimeout(300);

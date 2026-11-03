@@ -285,6 +285,7 @@ export function Recording({
                      />
                   ) : source ? (
                      <>
+                        <canvas ref={preview.still} className={`preview-still ${preview.cached ? "cached" : ""}`} aria-hidden="true" />
                         <video
                            ref={preview.video}
                            muted
@@ -295,20 +296,21 @@ export function Recording({
                         />
                         <canvas
                            ref={preview.canvas}
-                           className={`preview-canvas ${nativeScreenPreview && preview.status === "live" ? "ready" : ""} ${preview.cached && preview.status !== "live" ? "cached" : ""}`}
-                           aria-label={`${preview.cached ? "Last frame" : "Live preview"} of ${source.name}`}
+                           className={`preview-canvas ${nativeScreenPreview && preview.status === "live" ? "ready" : ""}`}
+                           aria-label={`Live preview of ${source.name}`}
                         />
-                        {preview.status === "connecting" && (
-                           <div key={`${source.id}:${source.processId ?? ""}`} className="preview-loading" role="status" aria-label="Loading preview">
-                              {!preview.cached &&
-                                 (source.thumbnail.length > 30 ? (
-                                    <img className="preview-poster" src={source.thumbnail} alt="" />
-                                 ) : (
-                                    <div className="preview-placeholder">
-                                       <ApplicationIcon src={source.appIcon} size={48} />
-                                    </div>
-                                 ))}
-                              <LoaderCircle size={28} className="preview-loading-spinner" />
+                        {(preview.status === "connecting" || (preview.status === "live" && !preview.revealed)) && (
+                           <div
+                              key={`${source.id}:${source.processId ?? ""}`}
+                              className={`preview-loading ${preview.status === "live" ? "complete" : ""}`}
+                              role={preview.status === "connecting" ? "status" : undefined}
+                              aria-label={preview.status === "connecting" ? "Loading preview" : undefined}
+                              aria-hidden={preview.status === "live" || undefined}
+                           >
+                              {!preview.cached && source.thumbnail.length > 30 && <img className="preview-poster" src={source.thumbnail} alt="" />}
+                              <div className="preview-placeholder">
+                                 <ApplicationIcon src={source.appIcon} size={48} />
+                              </div>
                            </div>
                         )}
                         {preview.status === "error" && (

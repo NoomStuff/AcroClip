@@ -6,9 +6,11 @@ type PreviewStatus = "idle" | "connecting" | "live" | "error";
 export function useSourcePreview(sourceId: string | undefined, visible: boolean, nativeScreen = false, scope = "", identity = "") {
    const video = useRef<HTMLVideoElement>(null);
    const canvas = useRef<HTMLCanvasElement>(null);
+   const still = useRef<HTMLCanvasElement>(null);
    const [status, setStatus] = useState<PreviewStatus>("idle");
    const [error, setError] = useState("");
    const [retry, setRetry] = useState(0);
+   const [revealed, setRevealed] = useState(false);
    const cacheKey = `${scope}\0${identity}\0${sourceId ?? ""}`;
    const [cachedSource, setCachedSource] = useState<string | null>(null);
    const cached = cachedSource === cacheKey;
@@ -33,6 +35,7 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
       let stream: MediaStream | undefined;
       let frame: number | undefined;
       let painted = false;
+      let reveal: number | undefined;
       const element = video.current;
       const snapshot = () => {
          if (!sourceId || !painted || !stream || element?.srcObject !== stream || !element.videoWidth || !element.videoHeight || element.readyState < 2) return;
@@ -57,6 +60,7 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
          expiry.current = window.setTimeout(sweep, Math.max(1, Math.min(...[...images.current.values()].map((image) => 60_000 - (Date.now() - image.at)))));
       };
       const stop = (remember = true) => {
+         window.clearTimeout(reveal);
          if (remember) snapshot();
          if (frame !== undefined) element?.cancelVideoFrameCallback(frame);
          stream?.getTracks().forEach((track) => track.stop());
@@ -84,11 +88,12 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
       const image = sourceId ? images.current.get(cacheKey) : undefined;
       const reuse = !!image && Date.now() - image.at < 60_000;
       setCachedSource(reuse ? cacheKey : null);
-      if (reuse && canvas.current && image) {
-         canvas.current.width = image.canvas.width;
-         canvas.current.height = image.canvas.height;
-         canvas.current.getContext("2d", { alpha: false })?.drawImage(image.canvas, 0, 0);
+      if (reuse && still.current && image) {
+         still.current.width = image.canvas.width;
+         still.current.height = image.canvas.height;
+         still.current.getContext("2d", { alpha: false })?.drawImage(image.canvas, 0, 0);
       }
+      setRevealed(false);
       setError("");
       setStatus(sourceId && visible ? "connecting" : "idle");
 
@@ -148,8 +153,16 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
                }
                if (!painted) {
                   painted = true;
-                  setCachedSource(null);
                   setStatus("live");
+                  // Keep the still frame and loading content under the 140 ms video fade.
+                  reveal = window.setTimeout(
+                     () => {
+                        if (disposed) return;
+                        setCachedSource(null);
+                        setRevealed(true);
+                     },
+                     matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 160
+                  );
                }
                if (nativeScreen) frame = element.requestVideoFrameCallback(paint);
             };
@@ -187,6 +200,8 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
    return {
       video,
       canvas,
+      still,
+      revealed: statusSource.current === cacheKey && revealed,
       status: statusSource.current === cacheKey ? status : sourceId && visible ? ("connecting" as const) : ("idle" as const),
       error: statusSource.current === cacheKey ? error : "",
       cached,
