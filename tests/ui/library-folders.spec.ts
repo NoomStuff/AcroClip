@@ -136,7 +136,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await nestedFolder.getByRole("textbox").fill("Shortcut folder");
       await nestedFolder.getByRole("button", { name: "Create", exact: true }).click();
       await expect(nestedFolder).not.toBeVisible();
-      expect((await stat(join(collection, "Other", "Shortcut folder"))).isDirectory()).toBe(true);
+      await expect.poll(async () => (await stat(join(collection, "Other", "Shortcut folder")).catch(() => null))?.isDirectory()).toBe(true);
       await page.getByRole("button", { name: "New collection folder", exact: true }).click();
       const newFolder = page.getByRole("dialog", { name: "New folder", exact: true });
       await newFolder.getByRole("textbox").fill("Organized");
