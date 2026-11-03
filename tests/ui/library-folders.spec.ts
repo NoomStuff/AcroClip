@@ -157,6 +157,11 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
                .evaluate((node) => getComputedStyle(node).transform)
          )
          .toBe("none");
+      const pendingThumbnails = await page.evaluate(async () => (await window.acroClip.state()).clips.map((clip) => ({ ...clip, thumbnail: "" })));
+      await app.evaluate(({ BrowserWindow }, clips) => {
+         BrowserWindow.getAllWindows()[0]!.webContents.send("app-event", { type: "state-patch", patch: { clips } });
+      }, pendingThumbnails);
+      await expect(page.getByRole("button", { name: "Open Root moment", exact: true }).locator(".thumbnail-fallback")).toBeVisible();
       await page.keyboard.down("Shift");
       await page.getByRole("button", { name: "Open Root moment", exact: true }).dragTo(page.locator('.library-sidebar [role="treeitem"][data-path="Sorted"]'));
       await expect.poll(async () => (await stat(join(collection, "Sorted", "Root moment.mp4")).catch(() => null))?.isFile()).toBe(true);
