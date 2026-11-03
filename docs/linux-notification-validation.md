@@ -43,3 +43,7 @@ The corrected tag-order UI test passed ten consecutive isolated X11 runs before 
 Candidate run 41528695913, attempt 2, passed the final gate and independent verification for all five targets at `c079bfa`. Publication was skipped. The successful retry does not establish a cause for the first attempt's missing audio fixture.
 
 Main advanced to `1dfd034` with capture and library changes and version `0.9.0`. The notification branch merges those changes, preserving the notification save-failure tests, immediate starting feedback, main's audio-warning handling and candidate retry tests, and the external tag-order fix. The version comes from main; this PR does not add another bump. The merged tree requires a new candidate run before its release validation is considered complete.
+
+## Merged candidate meter check
+
+Candidate run 41731470641 passed four target verifications. Linux arm64 failed the meter-routing UI check: after the test enabled the microphone and sent one sample, its displayed level stayed at silence. The test now waits for the enabled microphone meter and publishes a stream until both expected levels arrive. It retains the original thresholds and checks that partial updates preserve the microphone level and muting another source does not affect it. This addresses the single-sample startup race without changing application audio behavior.
