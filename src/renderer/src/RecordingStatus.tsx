@@ -4,6 +4,7 @@ import type { AppState, CaptureSource } from "../../shared/types";
 import { formatTime } from "./format";
 import { api, reportFeedback } from "./desktop";
 import { ApplicationIcon } from "./ApplicationIcon";
+import { useAudioWarning } from "./useAudioWarning";
 
 export function RecordingStatus({ state, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
    const [sources, setSources] = useState<CaptureSource[]>([]);
@@ -36,7 +37,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    );
    const appIcon = captured?.appIcon || state?.applicationIcons[captured?.applicationId ?? ""];
    const isApplication = recorder?.sourceKind === "app";
-   const audioWarning = recorder?.audioWarning || audioMessage;
+   const audioWarning = useAudioWarning(recorder?.audioWarning || audioMessage);
    const status = active
       ? recorder?.message || "Recording"
       : recorder?.state === "waiting"
@@ -47,7 +48,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
             ? "Recording stopped"
             : "Not recording";
    const captureName =
-      recorder?.sourceName || (state?.preferences.sourceKind === "screen" ? "Screen" : state?.preferences.sourceKind === "auto" ? "Auto" : "Application");
+      recorder?.sourceName || (state?.preferences.sourceKind === "screen" ? "Desktop" : state?.preferences.sourceKind === "auto" ? "Auto" : "Application");
    return (
       <footer className={`status-strip ${recorder?.state === "error" ? "has-error" : ""}`}>
          <div className="status-primary">
@@ -100,7 +101,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
                   onClick={() => reportFeedback({ kind: "notice", message: audioWarning, error: true })}
                >
                   <AlertCircle size={13} />
-                  Audio warning
+                  <span>{audioWarning}</span>
                </button>
             )}
             {state?.storageWarning && (

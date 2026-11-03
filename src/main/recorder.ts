@@ -208,7 +208,16 @@ export class Recorder {
    }
    async capturableApplications(): Promise<GameCandidate[]> {
       if (this.applicationsPending) return this.applicationsPending;
-      this.applicationsPending = this.queryApplications().finally(() => {
+      this.applicationsPending = (async () => {
+         for (let attempt = 0; ; attempt++) {
+            try {
+               return await this.queryApplications();
+            } catch (error) {
+               if (attempt === 2) throw error;
+               await new Promise<void>((resolve) => setTimeout(resolve, attempt === 0 ? 150 : 450));
+            }
+         }
+      })().finally(() => {
          this.applicationsPending = null;
       });
       return this.applicationsPending;
@@ -216,7 +225,7 @@ export class Recorder {
    private async queryApplications(): Promise<GameCandidate[]> {
       if (!this.current.supported) return [];
       if (process.platform === "win32") {
-         if (this.process && this.ready && !this.readyResolve && !this.readyReject) return this.candidates();
+         // Discovery must not wait behind capture startup or audio commands.
          const executable = existsSync(this.executable) ? this.executable : this.developmentExecutable;
          try {
             const { stdout } = await promisify(execFile)(executable, [path.dirname(executable), "--candidates"], {
@@ -240,15 +249,14 @@ export class Recorder {
    }
    async applicationCandidates(): Promise<GameCandidate[]> {
       if (!this.current.supported) return [];
-      await this.initialize();
-      return (await this.candidates()).filter((candidate) => candidate.pid !== process.pid);
+      return (await this.capturableApplications()).filter((candidate) => candidate.pid !== process.pid);
    }
    private candidates(): Promise<GameCandidate[]> {
       if (this.candidatesPending) return this.candidatesPending;
       this.candidatesPending = new Promise<GameCandidate[]>((resolve, reject) => {
          const timeout = setTimeout(() => {
             this.candidatesResolve = null;
-            reject(new Error("Application detection timed out. Retrying"));
+            reject(new Error("Application detection timed out."));
          }, 3000);
          this.candidatesResolve = (items) => {
             clearTimeout(timeout);
@@ -263,7 +271,7 @@ export class Recorder {
    private async autoConfiguration(preferences: Preferences, sources: CaptureSource[]): Promise<Record<string, unknown>> {
       await this.catalog.load();
       void this.catalog.refresh();
-      const candidates = (await this.candidates()).filter((candidate) => candidate.pid !== process.pid);
+      const candidates = (await this.capturableApplications()).filter((candidate) => candidate.pid !== process.pid);
       const games = this.catalog.match(candidates, preferences.customGames);
       for (const game of games) if (game.foreground) this.focused.set(game.id, Date.now());
       const selected = selectGame(games, this.current.sourceKind === "app" ? (this.current.sourceId ?? null) : null, this.focused);
@@ -286,7 +294,7 @@ export class Recorder {
                ...nativeAudioPreferences(preferences),
                resolvedKind: "screen",
                sourceId: screen.id,
-               sourceName: screen.name,
+               sourceName: "Desktop",
                bounds: screen.bounds,
                displayId: screen.displayId,
                screenIndex: sources.filter((item) => item.kind === "screen").findIndex((item) => item.id === screen.id),
@@ -635,7 +643,7 @@ export class Recorder {
       if (preferences.sourceKind === "auto") return this.autoConfiguration(preferences, sources);
       const selected = selectedCaptureSource(sources, preferences);
       if (!selected) throw new Error("The selected capture source is unavailable");
-      this.source = selected.name;
+      this.source = selected.kind === "screen" ? "Desktop" : (selected.applicationName ?? selected.name);
       const screenIndex = sources.filter((s) => s.kind === "screen").findIndex((s) => s.id === selected.id);
       // Match OBS's available window list rather than inventing an executable identity.
       const window = this.windows.find((w) => w.value.split(":")[0] === selected.name || w.name.endsWith(`: ${selected.name}`));
@@ -644,7 +652,7 @@ export class Recorder {
       return {
          ...nativeAudioPreferences(preferences),
          pixelSize: selected.pixelSize,
-         sourceName: selected.name,
+         sourceName: this.source,
          displayId: selected.displayId,
          screenIndex: Math.max(0, screenIndex),
          bounds: selected.bounds,
@@ -729,7 +737,7 @@ export class Recorder {
          if (key !== this.monitorKey) {
             this.monitorKey = "";
             this.monitorLevels = { capture: 0, microphone: 0 };
-            await this.command({ action: "monitor-audio", enabled: true, audioSources: sources });
+            await this.command({ action: "monitor-audio", enabled: true, audioSources: sources, applicationPid: process.pid });
             if (generation !== this.monitorGeneration) return [];
             this.monitorKey = key;
          } else for (const source of sources) await this.command({ action: "audio", source: source["id"], volume: source["volume"], muted: source["muted"] });
@@ -754,9 +762,9 @@ export class Recorder {
          const configuration = await this.configuration(preferences, sources);
          configuration["audioSources"] = resolveAudioSources(
             nativeAudioPreferences(preferences).audioSources,
-            preferences.audioSources.some((source) => source.enabled && source.kind === "application") ? await this.candidates() : []
+            preferences.audioSources.some((source) => source.enabled && source.kind === "application") ? await this.capturableApplications() : []
          );
-         await this.command({ action: "start", ...configuration });
+         await this.command({ action: "start", ...configuration, applicationPid: process.pid });
          this.autoGeneration++;
          this.autoPreferences = preferences.sourceKind === "auto" ? preferences : null;
          this.autoSources = sources;

@@ -1,3 +1,4 @@
+import { normalizeApplicationLabel } from "../../shared/application-label";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent } from "react";
 import {
@@ -21,7 +22,7 @@ import type { AppState, Category, Clip } from "../../shared/types";
 import type { Ask } from "./Dialog";
 import { clipDragType, readCollectionDrag } from "./clip-drag";
 import { useThumbnailSize } from "./useThumbnailSize";
-import { gridZoomTarget } from "./thumbnail-scale";
+import { gridZoomRange, gridZoomTarget } from "./thumbnail-scale";
 import { Slider } from "./Slider";
 import { SelectionIndicator } from "./SelectionIndicator";
 import { MotionList } from "./MotionList";
@@ -53,7 +54,9 @@ import { PaneDivider, usePaneSize } from "./layout";
 import { useApplicationColors } from "./useApplicationColors";
 import type { ContextMenuRequest } from "./ui";
 import { useAttaCutAvailable } from "./useAttaCutAvailable";
-import { applicationKeys, summarizeClips } from "./library-index";
+import { applicationKeys, summarizeClips, orderLibrarySections } from "./library-index";
+import type { LibrarySectionId } from "./library-index";
+import { LibrarySection } from "./LibrarySection";
 
 export function Library({
    state,
@@ -84,6 +87,7 @@ export function Library({
    });
    const [gridMetrics, setGridMetrics] = useState({ width: 0, gap: 18 });
    const [thumbnailSizes, setThumbnailSizes] = useState(() => ({ grid: readThumbnailSize("grid"), list: readThumbnailSize("list") }));
+   const gridScale = gridZoomRange(gridMetrics.width, gridMetrics.gap, thumbnailSizes.grid);
    const listSizing = useThumbnailSize(layout, thumbnailSizes.list, visible && view === "list");
    const resizeThumbnails = (size: number) => {
       const next = Math.max(view === "grid" ? 220 : 80, Math.min(view === "grid" ? 440 : 192, size));
@@ -220,9 +224,9 @@ export function Library({
    const sources = useMemo(() => {
       const apps = new Map<string, { id: string; name: string; icon?: string | undefined }>();
       for (const clip of state.clips)
-         if (clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown") {
+         if (appKeys.has(clip.id) && clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown") {
             const id = appKeys.get(clip.id)!;
-            if (!apps.has(id)) apps.set(id, { id, name: clip.source.trim(), icon: state.applicationIcons[id] });
+            if (!apps.has(id)) apps.set(id, { id, name: normalizeApplicationLabel(clip.source), icon: state.applicationIcons[id] });
          }
       for (const game of addedApplications) apps.set(game.id, { ...game, icon: state.applicationIcons[game.id] });
       return [...apps.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
@@ -249,6 +253,73 @@ export function Library({
       reportLocation("library", `folder:${parent}`, true);
       setFilter(`folder:${parent}`);
    }, [folderPath, folders, state.collectionStatus.phase]);
+   const [sectionOrder, setSectionOrder] = useState<string[]>(() => {
+      try {
+         const stored: unknown = JSON.parse(localStorage.getItem("acroclip.library.sections") ?? "null");
+         return Array.isArray(stored) && stored.every((id): id is string => typeof id === "string") ? stored : [];
+      } catch {
+         return [];
+      }
+   });
+   const populatedSections = useMemo(
+      () => ({ tags: state.categories.length > 0, applications: sources.length > 0, folders: folders.length > 0 }),
+      [state.categories.length, sources.length, folders.length]
+   );
+   const previousSections = useRef<{ root: string; populated: Record<LibrarySectionId, boolean> } | null>(null);
+   useLayoutEffect(() => {
+      if (state.collectionStatus.phase !== "ready") return;
+      const previous = previousSections.current;
+      previousSections.current = { root: collectionRoot, populated: populatedSections };
+      if (!previous || previous.root !== collectionRoot) return;
+      setSectionOrder((order) => {
+         const next = orderLibrarySections(populatedSections, order, previous.populated).map((section) => section.id);
+         return next.join() ===
+            orderLibrarySections(populatedSections, order)
+               .map((section) => section.id)
+               .join()
+            ? order
+            : next;
+      });
+   }, [collectionRoot, populatedSections, state.collectionStatus.phase]);
+   useEffect(() => {
+      try {
+         localStorage.setItem("acroclip.library.sections", JSON.stringify(sectionOrder));
+      } catch {
+         /* Ordering still works for this session. */
+      }
+   }, [sectionOrder]);
+   const sections = useMemo(() => orderLibrarySections(populatedSections, sectionOrder), [populatedSections, sectionOrder]);
+   const [collapsedSections, setCollapsedSections] = useState<string[]>(() => {
+      try {
+         const stored: unknown = JSON.parse(localStorage.getItem("acroclip.library.collapsed") ?? "[]");
+         return Array.isArray(stored) && stored.every((id): id is string => typeof id === "string") ? stored : [];
+      } catch {
+         return [];
+      }
+   });
+   useEffect(() => {
+      try {
+         localStorage.setItem("acroclip.library.collapsed", JSON.stringify(collapsedSections));
+      } catch {
+         /* Folding still works for this session. */
+      }
+   }, [collapsedSections]);
+   useEffect(() => {
+      if (state.collectionStatus.phase !== "ready") return;
+      setCollapsedSections((current) => {
+         const next = current.filter((id) => sections.some((section) => section.id === id && !section.empty));
+         return next.length === current.length ? current : next;
+      });
+   }, [sections, state.collectionStatus.phase]);
+   const sectionOpen = (id: LibrarySectionId) => !populatedSections[id] || !collapsedSections.includes(id);
+   const reorderSection = (id: string, beforeId: string | null) => {
+      const section = sections.find((item) => item.id === id);
+      if (!section) return;
+      const next = sections.map((item) => item.id).filter((value) => value !== section.id);
+      const at = beforeId === null ? next.length : next.findIndex((value) => value === beforeId);
+      next.splice(at < 0 ? next.length : at, 0, section.id);
+      setSectionOrder(next);
+   };
    const folderDropProps = (destination: string) => ({
       onDragOver: (event: DragEvent<HTMLElement>) => {
          if (!event.dataTransfer.types.includes(clipDragType)) return;
@@ -358,7 +429,10 @@ export function Library({
            ? folderPath.split("/").at(-1) || folderName(collectionRoot)
            : (selectedCategory?.name ?? sources.find((source) => `source:${source.id}` === filter)?.name ?? filter.slice(filter.indexOf(":") + 1));
    const [editingCategory, setEditingCategory] = useState<Category | "new" | null>(null);
-   const createCategory = () => setEditingCategory("new");
+   const createCategory = () => {
+      setCollapsedSections((current) => current.filter((id) => id !== "tags"));
+      setEditingCategory("new");
+   };
    const removeCategory = async (id: string, name: string) => {
       if (
          await ask({
@@ -430,7 +504,6 @@ export function Library({
                   <FolderInput size={15} />
                   Move to folder
                </MenuItem>
-               <div className="menu-separator" role="separator" />
                <MenuItem danger onClick={() => void deleteFolder(path)}>
                   <Trash2 size={15} />
                   Delete folder
@@ -481,104 +554,126 @@ export function Library({
                   <span className="sidebar-label">All clips</span>
                   <span className="count">{initial ? "" : state.clips.length}</span>
                </button>
-               <div className="sidebar-group-title" data-empty={state.categories.length === 0 || undefined}>
-                  <span>Tags</span>
-                  <IconButton label="New tag" onClick={() => void createCategory()}>
-                     <Plus size={16} />
-                  </IconButton>
-               </div>
-               <MotionList items={state.categories} identity={collectionRoot} onReorder={(id, beforeId) => run(() => api.reorderCategory(id, beforeId))}>
-                  {(item) => (
-                     <div
-                        className="category-item"
-                        data-empty={!summary.categories.get(item.id) || undefined}
-                        key={item.id}
-                        onContextMenu={(event) => {
-                           event.preventDefault();
-                           setCategoryContextMenu({
-                              categoryId: item.id,
-                              left: event.clientX,
-                              top: event.clientY,
-                              restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
-                           });
-                        }}
+               <MotionList items={sections} identity={collectionRoot} onReorder={reorderSection}>
+                  {(section) => (
+                     <LibrarySection
+                        label={section.label}
+                        empty={section.empty}
+                        open={sectionOpen(section.id)}
+                        toggle={() =>
+                           setCollapsedSections((current) =>
+                              current.includes(section.id) ? current.filter((id) => id !== section.id) : [...current, section.id]
+                           )
+                        }
+                        action={
+                           <IconButton
+                              label={section.id === "tags" ? "New tag" : section.id === "applications" ? "Add game" : "New collection folder"}
+                              onClick={() => {
+                                 setCollapsedSections((current) => current.filter((id) => id !== section.id));
+                                 if (section.id === "tags") createCategory();
+                                 else if (section.id === "applications") openGames();
+                                 else void createFolder("");
+                              }}
+                           >
+                              <Plus size={16} />
+                           </IconButton>
+                        }
                      >
-                        <button
-                           data-list-control=""
-                           className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`}
-                           aria-pressed={filter === `category:${item.id}`}
-                           style={categoryStyle(item.color)}
-                           onClick={() => setFilter(`category:${item.id}`)}
-                        >
-                           <CategoryMark category={item} />
-                           <span className="sidebar-label" title={item.name}>
-                              {item.name}
-                           </span>
-                           <span className="count">{summary.categories.get(item.id) ?? 0}</span>
-                        </button>
-                        <Menu
-                           label={`Actions for ${item.name}`}
-                           trigger={<MoreHorizontal size={14} />}
-                           contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
-                           onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
-                        >
-                           <MenuItem onClick={() => setEditingCategory(item)}>
-                              <Pencil size={14} />
-                              Edit tag
-                           </MenuItem>
-                           <div className="menu-separator" role="separator" />
-                           <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
-                              <Trash2 size={14} />
-                              Delete tag
-                           </MenuItem>
-                        </Menu>
-                     </div>
+                        {section.id === "tags" ? (
+                           <>
+                              <MotionList
+                                 items={state.categories}
+                                 visible={sectionOpen("tags")}
+                                 identity={collectionRoot}
+                                 onReorder={(id, beforeId) => run(() => api.reorderCategory(id, beforeId))}
+                              >
+                                 {(item) => (
+                                    <div
+                                       className="category-item"
+                                       data-empty={!summary.categories.get(item.id) || undefined}
+                                       key={item.id}
+                                       onContextMenu={(event) => {
+                                          event.preventDefault();
+                                          setCategoryContextMenu({
+                                             categoryId: item.id,
+                                             left: event.clientX,
+                                             top: event.clientY,
+                                             restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
+                                          });
+                                       }}
+                                    >
+                                       <button
+                                          data-list-control=""
+                                          className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`}
+                                          aria-pressed={filter === `category:${item.id}`}
+                                          style={categoryStyle(item.color)}
+                                          onClick={() => setFilter(`category:${item.id}`)}
+                                       >
+                                          <CategoryMark category={item} />
+                                          <span className="sidebar-label" title={item.name}>
+                                             {item.name}
+                                          </span>
+                                          <span className="count">{summary.categories.get(item.id) ?? 0}</span>
+                                       </button>
+                                       <Menu
+                                          label={`Actions for ${item.name}`}
+                                          trigger={<MoreHorizontal size={14} />}
+                                          contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
+                                          onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
+                                       >
+                                          <MenuItem onClick={() => setEditingCategory(item)}>
+                                             <Pencil size={14} />
+                                             Edit tag
+                                          </MenuItem>
+                                          <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
+                                             <Trash2 size={14} />
+                                             Delete tag
+                                          </MenuItem>
+                                       </Menu>
+                                    </div>
+                                 )}
+                              </MotionList>
+                           </>
+                        ) : section.id === "applications" ? (
+                           <>
+                              <MotionList items={sources} identity={collectionRoot} visible={sectionOpen("applications")}>
+                                 {(source) => (
+                                    <button
+                                       key={source.id}
+                                       data-empty={!applicationCounts.get(source.id) || undefined}
+                                       className={`sidebar-item application-filter ${filter === `source:${source.id}` ? "selected" : ""}`}
+                                       style={{ "--application-color": applicationColors[source.id] } as CSSProperties}
+                                       aria-pressed={filter === `source:${source.id}`}
+                                       onClick={() => setFilter(`source:${source.id}`)}
+                                    >
+                                       <ApplicationIcon src={source.icon} size={16} />
+                                       <span className="sidebar-label" title={source.name}>
+                                          {source.name}
+                                       </span>
+                                       <span className="count">{applicationCounts.get(source.id) ?? 0}</span>
+                                    </button>
+                                 )}
+                              </MotionList>
+                           </>
+                        ) : (
+                           <>
+                              {folders.length > 0 && (
+                                 <FolderTree
+                                    visible={sectionOpen("folders")}
+                                    dropProps={folderDropProps}
+                                    paths={folders}
+                                    counts={folderStats}
+                                    selected={folderPath}
+                                    onSelect={(path) => setFilter(`folder:${path}`)}
+                                    renderActions={(path) => folderMenu(path, "tree")}
+                                    requestMenu={(path, element, left, top) => requestFolderMenu(path, "tree", element, left, top)}
+                                 />
+                              )}
+                           </>
+                        )}
+                     </LibrarySection>
                   )}
                </MotionList>
-               {
-                  <>
-                     <div className="sidebar-group-title" data-empty={sources.length === 0 || undefined}>
-                        <span>Applications</span>
-                        <IconButton label="Add game" onClick={openGames}>
-                           <Plus size={16} />
-                        </IconButton>
-                     </div>
-                     <MotionList items={sources} identity={collectionRoot}>
-                        {(source) => (
-                           <button
-                              key={source.id}
-                              data-empty={!applicationCounts.get(source.id) || undefined}
-                              className={`sidebar-item application-filter ${filter === `source:${source.id}` ? "selected" : ""}`}
-                              style={{ "--application-color": applicationColors[source.id] } as CSSProperties}
-                              aria-pressed={filter === `source:${source.id}`}
-                              onClick={() => setFilter(`source:${source.id}`)}
-                           >
-                              <ApplicationIcon src={source.icon} size={16} />
-                              <span className="sidebar-label" title={source.name}>
-                                 {source.name}
-                              </span>
-                           </button>
-                        )}
-                     </MotionList>
-                  </>
-               }
-               <div className="sidebar-group-title" data-empty={folders.length === 0 || undefined}>
-                  <span>Folders</span>
-                  <IconButton label="New collection folder" onClick={() => void createFolder("")}>
-                     <Plus size={16} />
-                  </IconButton>
-               </div>
-               {folders.length > 0 && (
-                  <FolderTree
-                     dropProps={folderDropProps}
-                     paths={folders}
-                     counts={folderStats}
-                     selected={folderPath}
-                     onSelect={(path) => setFilter(`folder:${path}`)}
-                     renderActions={(path) => folderMenu(path, "tree")}
-                     requestMenu={(path, element, left, top) => requestFolderMenu(path, "tree", element, left, top)}
-                  />
-               )}
             </div>
             <div className="sidebar-bottom">
                {initial ? (
@@ -735,6 +830,7 @@ export function Library({
                      ))}
                      {clips.map((clip) => (
                         <ClipCard
+                           createTag={createCategory}
                            key={clip.id}
                            clip={clip}
                            collectionRoot={collectionRoot}
@@ -811,14 +907,19 @@ export function Library({
                   <ZoomOut size={15} />
                </IconButton>
                <Slider
-                  key={view}
                   variant="compact"
                   aria-label={`${view === "grid" ? "Grid" : "List"} thumbnail size`}
-                  min={view === "grid" ? 220 : 80}
-                  max={view === "grid" ? 440 : 192}
+                  aria-valuetext={
+                     view === "grid"
+                        ? `${gridScale.columns} ${gridScale.columns === 1 ? "column" : "columns"}, ${Math.round(gridScale.pixels)}px thumbnails`
+                        : `${thumbnailSizes.list}px thumbnails`
+                  }
+                  min={view === "grid" ? gridScale.min : 80}
+                  max={view === "grid" ? gridScale.max : 192}
                   step={1}
-                  value={thumbnailSizes[view]}
-                  onValueChange={resizeThumbnails}
+                  value={view === "grid" ? gridScale.value : thumbnailSizes.list}
+                  disabled={view === "grid" && gridScale.max === gridScale.min}
+                  onValueChange={(value) => resizeThumbnails(view === "grid" ? (gridScale.sizes[value] ?? thumbnailSizes.grid) : value)}
                />
                <IconButton
                   label="Larger thumbnails"

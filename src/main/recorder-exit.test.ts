@@ -13,7 +13,17 @@ afterEach(async () => {
    for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 async function fixture(
-   mode: "crash" | "pending" | "normal" | "fatal" | "reject-save" | "unacknowledged-save" | "devices-exit" | "candidates-timeout" | "saved-source-mismatch",
+   mode:
+      | "crash"
+      | "pending"
+      | "normal"
+      | "fatal"
+      | "reject-save"
+      | "unacknowledged-save"
+      | "devices-exit"
+      | "candidates-timeout"
+      | "candidates-retry"
+      | "saved-source-mismatch",
    invalidExecutable = false
 ) {
    const root = await mkdtemp(join(tmpdir(), "acroclip-protocol-exit-"));
@@ -28,6 +38,13 @@ const readline = require('node:readline');
 const fs = require('node:fs');
 const emit = x => process.stdout.write(JSON.stringify(x)+'\\n');
 const mode = ${JSON.stringify(mode)};
+if(process.argv.includes('--candidates')) {
+ const counter = require('node:path').join(process.argv[1], 'discovery-attempts');
+ fs.appendFileSync(counter, 'attempt\\n');
+ const count=fs.readFileSync(counter,'utf8').trim().split('\\n').length;
+ if(mode==='candidates-timeout'||mode==='candidates-retry'&&count<3)process.exit(12);
+ console.log(JSON.stringify({event:'candidates',windows:[]}));process.exit(0);
+}
 let active = false;
 emit({event:'ready',encoders:[]});
 readline.createInterface({input:process.stdin}).on('line',line=>{
@@ -104,17 +121,35 @@ describe("recorder helper termination", () => {
    it(
       "distinguishes an application detection timeout from an empty list without interrupting capture",
       async () => {
-         const { child, errors } = await fixture("candidates-timeout");
+         const { child, errors, root } = await fixture("candidates-timeout");
+         if (process.platform === "win32") {
+            await expect(child.applicationCandidates()).rejects.toThrow("Application discovery failed");
+            expect((await readFile(join(root, "discovery-attempts"), "utf8")).trim().split("\n")).toHaveLength(3);
+            expect(child.status.state).toBe("recording");
+            expect(errors).toEqual([]);
+            return;
+         }
          vi.useFakeTimers();
          try {
             const query = expect(child.applicationCandidates()).rejects.toThrow("Application detection timed out");
-            await vi.advanceTimersByTimeAsync(3001);
+            await vi.advanceTimersByTimeAsync(10_001);
             await query;
             expect(child.status.state).toBe("recording");
             expect(errors).toEqual([]);
          } finally {
             vi.useRealTimers();
          }
+      },
+      helperTestTimeout
+   );
+   it.skipIf(process.platform !== "win32")(
+      "retries two failed discoveries silently without waiting for the running recorder",
+      async () => {
+         const { child, errors, root } = await fixture("candidates-retry");
+         await expect(Promise.all([child.applicationCandidates(), child.capturableApplications()])).resolves.toEqual([[], []]);
+         expect((await readFile(join(root, "discovery-attempts"), "utf8")).trim().split("\n")).toHaveLength(3);
+         expect(child.status.state).toBe("recording");
+         expect(errors).toEqual([]);
       },
       helperTestTimeout
    );

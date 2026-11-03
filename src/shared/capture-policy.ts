@@ -1,9 +1,10 @@
 import type { CaptureSource, GameCandidate, RecordingCapabilities, SourceKind, Preferences, RecorderState } from "./types";
 
 export function bufferedCaptureSource(recorder: RecorderState) {
-   return recorder.bufferedSourceName
+   const source = recorder.bufferedSourceName
       ? { name: recorder.bufferedSourceName, id: recorder.bufferedSourceId, kind: recorder.bufferedSourceKind }
       : { name: recorder.sourceName, id: recorder.sourceId, kind: recorder.sourceKind };
+   return source.kind === "screen" ? { ...source, name: "Desktop" } : source;
 }
 
 export const portalScreenId = "portal:screen";

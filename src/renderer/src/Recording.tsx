@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { useApplicationColors } from "./useApplicationColors";
 import { Clapperboard, Circle, CircleStop, Gamepad2, LoaderCircle, Monitor, RefreshCw } from "lucide-react";
 import type { AppState, CaptureSource, GameCandidate, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
-import { api, reportFeedback } from "./desktop";
+import { api, describeError, reportFeedback } from "./desktop";
 import { Button, ContextHeader, Empty, Field, Segmented, Select } from "./ui";
 import type { Run } from "./desktop";
 import { PaneDivider, usePaneSize } from "./layout";
@@ -33,10 +33,8 @@ export function Recording({
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const sourceContent = useRef<HTMLDivElement>(null);
-   const previewContent = useRef<HTMLDivElement>(null);
    const sourceIndex = ["screen", "app", "auto"].indexOf(state.preferences.sourceKind);
    useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible);
-   useDirectionalContent(previewContent, state.preferences.sourceKind, sourceIndex, visible);
    const controls = usePaneSize(layout, { key: "recording.controls", initial: 340, min: 260, max: 460, reserve: 420, axis: "x", fromEnd: true });
    const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 170, max: 380, reserve: 200, axis: "y", fromEnd: true });
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
@@ -106,7 +104,8 @@ export function Recording({
       previewUnavailable ? undefined : source?.id,
       visible && state.preferences.setupComplete,
       nativeScreenPreview,
-      `${state.preferences.collection}\0${source?.processId ?? ""}`
+      state.preferences.collection,
+      String(source?.processId ?? "")
    );
    useEffect(() => {
       if (!visible || state.preferences.sourceKind !== "auto" || !state.recorder.supported) return;
@@ -201,34 +200,30 @@ export function Recording({
       state.preferences.audioSources,
    ]);
    useEffect(() => {
-      if (!visible || active || state.recorder.state === "starting") return;
+      if (!visible || active || state.recorder.state === "starting" || (sourcePhase !== "ready" && !knownSources.current.length)) return;
       let disposed = false;
+      let timer: number | undefined;
       setMonitorSetupError("");
-      void api
-         .monitorAudio(true)
-         .then(() => {
+      setMonitorError("");
+      const configure = async (attempt: number) => {
+         try {
+            await api.monitorAudio(true);
             if (!disposed) setMonitorSetupError("");
-         })
-         .catch((error: unknown) => {
-            if (!disposed)
-               setMonitorSetupError(
-                  error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': /, "") : "Audio monitoring unavailable"
-               );
-         });
+         } catch (error) {
+            if (disposed) return;
+            if (attempt < 2) timer = window.setTimeout(() => void configure(attempt + 1), attempt === 0 ? 500 : 1500);
+            else setMonitorSetupError(describeError(error));
+         }
+      };
+      void configure(0);
       return () => {
          disposed = true;
+         window.clearTimeout(timer);
       };
    }, [visible, active, state.recorder.state, monitorConfiguration, captureAvailable, sourcePhase]);
    useEffect(() => {
       const message = visible && !active && state.recorder.state !== "starting" ? monitorSetupError || monitorError : "";
-      // Source creation and device changes settle asynchronously. Clear recovered
-      // errors immediately, and only show a failure that survives the transition.
-      if (!message) {
-         reportFeedback({ kind: "audio-status", message: "" });
-         return;
-      }
-      const timer = window.setTimeout(() => reportFeedback({ kind: "audio-status", message }), 1200);
-      return () => window.clearTimeout(timer);
+      reportFeedback({ kind: "audio-status", message });
    }, [visible, active, state.recorder.state, monitorError, monitorSetupError]);
    const preferences = (patch: Partial<Preferences> | ((current: Preferences) => Partial<Preferences>)) => {
       pendingPreferences.current.push(patch);
@@ -271,7 +266,8 @@ export function Recording({
             style={{ gridTemplateColumns: `minmax(0, 1fr) 12px ${controls.size}px`, gridTemplateRows: `minmax(0, 1fr) 12px ${lower.size}px` }}
          >
             <div className="recording-main">
-               <div className="preview-surface" ref={previewContent}>
+               <div className="preview-surface">
+                  <canvas ref={preview.outgoing} className="preview-outgoing" aria-hidden="true" />
                   {source && previewUnavailable ? (
                      <Empty
                         icon={<Monitor size={38} />}
@@ -284,6 +280,7 @@ export function Recording({
                      />
                   ) : source ? (
                      <>
+                        <canvas ref={preview.still} className={`preview-still ${preview.cached ? "cached" : ""}`} aria-hidden="true" />
                         <video
                            ref={preview.video}
                            muted
@@ -294,35 +291,38 @@ export function Recording({
                         />
                         <canvas
                            ref={preview.canvas}
-                           className={`preview-canvas ${nativeScreenPreview && preview.status === "live" ? "ready" : ""} ${preview.cached && preview.status !== "live" ? "cached" : ""}`}
-                           aria-label={`${preview.cached ? "Last frame" : "Live preview"} of ${source.name}`}
+                           className={`preview-canvas ${nativeScreenPreview && preview.status === "live" ? "ready" : ""}`}
+                           aria-label={`Live preview of ${source.name}`}
                         />
-                        {preview.status !== "live" && (
-                           <div className={`preview-message ${preview.cached ? "preview-cached-message" : ""}`}>
-                              {preview.cached ? (
-                                 <p>{preview.status === "error" ? "Preview unavailable. Last frame shown." : "Reconnecting preview. Last frame shown."}</p>
-                              ) : preview.status === "error" ? (
-                                 <>
-                                    <Monitor size={30} />
-                                    <h3>Preview unavailable</h3>
-                                    <p>{preview.error}</p>
-                                    <Button onClick={preview.retry}>
-                                       <RefreshCw size={14} />
-                                       Retry preview
-                                    </Button>
-                                 </>
-                              ) : (
-                                 <>
-                                    <Monitor size={30} />
-                                    <p>Opening preview…</p>
-                                 </>
-                              )}
+                        {(preview.status === "connecting" || (preview.status === "live" && !preview.revealed)) && (
+                           <div
+                              key={`${source.id}:${source.processId ?? ""}`}
+                              className={`preview-loading ${preview.status === "live" ? "complete" : ""}`}
+                              role={preview.status === "connecting" ? "status" : undefined}
+                              aria-label={preview.status === "connecting" ? "Loading preview" : undefined}
+                              aria-hidden={preview.status === "live" || undefined}
+                           >
+                              {!preview.cached && source.thumbnail.length > 30 && <img className="preview-poster" src={source.thumbnail} alt="" />}
+                              <div className="preview-placeholder">
+                                 <ApplicationIcon src={source.appIcon} size={48} />
+                              </div>
+                           </div>
+                        )}
+                        {preview.status === "error" && (
+                           <div className="preview-message">
+                              <Monitor size={30} />
+                              <h3>Preview unavailable</h3>
+                              <p>{preview.error}</p>
+                              <Button onClick={preview.retry}>
+                                 <RefreshCw size={14} />
+                                 Retry preview
+                              </Button>
                            </div>
                         )}
                      </>
                   ) : (state.preferences.sourceKind !== "auto" && sourcePhase === "loading") || (state.preferences.sourceKind === "auto" && findingGames) ? (
-                     <div className="preview-message" role="status">
-                        <LoaderCircle size={30} className="spin" />
+                     <div className="preview-message preview-discovery" role="status">
+                        <LoaderCircle size={30} className="preview-loading-spinner" />
                         <p>{state.preferences.sourceKind === "auto" ? "Finding games" : "Finding capture sources"}</p>
                      </div>
                   ) : (
@@ -342,7 +342,9 @@ export function Recording({
                      <div className="preview-caption">
                         <span className={preview.status === "live" ? "preview-dot live" : "preview-dot"} />
                         {source.name}
-                        <span className="preview-note">{preview.status === "live" ? "Live preview" : "Preview"}</span>
+                        <span className="preview-note">
+                           {preview.status === "live" ? "Live preview" : preview.status === "connecting" ? "Loading" : "Preview"}
+                        </span>
                      </div>
                   )}
                </div>

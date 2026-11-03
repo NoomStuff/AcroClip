@@ -4,6 +4,7 @@
 #include <functional>
 #include <obs.h>
 #include <string>
+#include <vector>
 struct ApplicationAudio;
 void registerLinuxApplicationAudio();
 ApplicationAudio *createApplicationAudio(uint32_t pid, uint32_t mixers = 3);
@@ -12,3 +13,7 @@ std::string applicationAudioError(ApplicationAudio *audio);
 void destroyApplicationAudio(ApplicationAudio *audio);
 void setApplicationAudioLevelCallback(ApplicationAudio *audio,
                                       std::function<void(float)> callback);
+
+void setLinuxDesktopExclusions(const std::vector<uint32_t> &pids);
+const char *linuxDesktopAudioType();
+std::string linuxDesktopAudioError(obs_source_t *source);

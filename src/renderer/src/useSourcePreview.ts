@@ -1,15 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, describeError } from "./desktop";
+import { useVideoReveal } from "./useVideoReveal";
 
 type PreviewStatus = "idle" | "connecting" | "live" | "error";
 
-export function useSourcePreview(sourceId: string | undefined, visible: boolean, nativeScreen = false, scope = "") {
+export function useSourcePreview(sourceId: string | undefined, visible: boolean, nativeScreen = false, scope = "", identity = "") {
    const video = useRef<HTMLVideoElement>(null);
    const canvas = useRef<HTMLCanvasElement>(null);
+   const still = useRef<HTMLCanvasElement>(null);
+   const outgoing = useRef<HTMLCanvasElement>(null);
+   const outgoingMotion = useRef<Animation | null>(null);
+   const departing = useRef<{ key: string; scope: string; canvas: HTMLCanvasElement } | null>(null);
    const [status, setStatus] = useState<PreviewStatus>("idle");
    const [error, setError] = useState("");
    const [retry, setRetry] = useState(0);
-   const cacheKey = `${scope}\0${sourceId ?? ""}`;
+   const [revealed, setRevealed] = useState(false);
+   const cacheKey = `${scope}\0${identity}\0${sourceId ?? ""}`;
    const [cachedSource, setCachedSource] = useState<string | null>(null);
    const cached = cachedSource === cacheKey;
    const images = useRef(new Map<string, { canvas: HTMLCanvasElement; at: number }>());
@@ -18,38 +24,70 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
       () => () => {
          window.clearTimeout(expiry.current);
          images.current.clear();
+         outgoingMotion.current?.cancel();
       },
       []
    );
    const previousScope = useRef(scope);
    const statusSource = useRef(cacheKey);
 
-   useEffect(() => {
+   useLayoutEffect(() => {
       statusSource.current = cacheKey;
       const owner = crypto.randomUUID();
-      if (previousScope.current !== scope || !sourceId) images.current.clear();
+      const scopeChanged = previousScope.current !== scope;
+      if (scopeChanged) images.current.clear();
       previousScope.current = scope;
+      const media = matchMedia("(prefers-reduced-motion: reduce)");
+      const clearOutgoing = () => {
+         outgoingMotion.current?.cancel();
+         outgoingMotion.current = null;
+         if (outgoing.current) outgoing.current.style.opacity = "0";
+      };
+      const previous = departing.current;
+      departing.current = null;
+      if (scopeChanged || !visible || document.hidden || media.matches) clearOutgoing();
+      else if (previous && previous.key !== cacheKey && previous.scope === scope && outgoing.current) {
+         clearOutgoing();
+         const surface = outgoing.current;
+         surface.width = previous.canvas.width;
+         surface.height = previous.canvas.height;
+         surface.getContext("2d", { alpha: false })?.drawImage(previous.canvas, 0, 0);
+         const animation = surface.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: "ease-out", fill: "forwards" });
+         outgoingMotion.current = animation;
+         void animation.finished.then(
+            () => {
+               if (outgoingMotion.current === animation) clearOutgoing();
+            },
+            () => undefined
+         );
+      }
+      const reduce = () => {
+         if (media.matches) clearOutgoing();
+      };
+      media.addEventListener("change", reduce);
       let disposed = false;
       let stream: MediaStream | undefined;
       let frame: number | undefined;
+      let painted = false;
       const element = video.current;
       const snapshot = () => {
-         if (!sourceId || !stream || element?.srcObject !== stream || !element.videoWidth || !element.videoHeight || element.readyState < 2) return;
+         if (!sourceId || !painted || !stream || element?.srcObject !== stream || !element.videoWidth || !element.videoHeight || element.readyState < 2) return;
          const surface = document.createElement("canvas");
          const scale = Math.min(1, 960 / element.videoWidth, 540 / element.videoHeight);
          surface.width = Math.max(1, Math.round(element.videoWidth * scale));
          surface.height = Math.max(1, Math.round(element.videoHeight * scale));
-         surface
-            .getContext("2d", { alpha: false })
-            ?.drawImage(nativeScreen && canvas.current?.width ? canvas.current : element, 0, 0, surface.width, surface.height);
-         images.current.delete(sourceId);
-         images.current.set(sourceId, { canvas: surface, at: Date.now() });
+         const context = surface.getContext("2d", { alpha: false });
+         if (!context) return;
+         context.drawImage(nativeScreen && canvas.current?.width ? canvas.current : element, 0, 0, surface.width, surface.height);
+         departing.current = { key: cacheKey, scope, canvas: surface };
+         images.current.delete(cacheKey);
+         images.current.set(cacheKey, { canvas: surface, at: Date.now() });
          while (images.current.size > 2) images.current.delete(images.current.keys().next().value!);
          window.clearTimeout(expiry.current);
          const sweep = () => {
             const now = Date.now();
             for (const [id, image] of images.current) if (now - image.at >= 60_000) images.current.delete(id);
-            setCachedSource((current) => (current && !images.current.has(current.split("\0").at(-1)!) ? null : current));
+            setCachedSource((current) => (current && !images.current.has(current) ? null : current));
             if (images.current.size)
                expiry.current = window.setTimeout(sweep, Math.max(1, Math.min(...[...images.current.values()].map((image) => 60_000 - (now - image.at)))));
          };
@@ -71,27 +109,30 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
       const visibility = () => {
          if (document.hidden) {
             cancel();
-            images.current.clear();
-            setCachedSource(null);
+            clearOutgoing();
          }
       };
       const unsubscribe = api.onEvent((event) => {
          if (event.type === "visibility" && !event.visible) {
             cancel();
-            images.current.clear();
-            setCachedSource(null);
+            clearOutgoing();
          }
       });
       document.addEventListener("visibilitychange", visibility);
-      window.addEventListener("pagehide", cancel);
-      const image = sourceId ? images.current.get(sourceId) : undefined;
+      const pagehide = () => {
+         cancel();
+         clearOutgoing();
+      };
+      window.addEventListener("pagehide", pagehide);
+      const image = sourceId ? images.current.get(cacheKey) : undefined;
       const reuse = !!image && Date.now() - image.at < 60_000;
       setCachedSource(reuse ? cacheKey : null);
-      if (reuse && canvas.current && image) {
-         canvas.current.width = image.canvas.width;
-         canvas.current.height = image.canvas.height;
-         canvas.current.getContext("2d", { alpha: false })?.drawImage(image.canvas, 0, 0);
+      if (reuse && still.current && image) {
+         still.current.width = image.canvas.width;
+         still.current.height = image.canvas.height;
+         still.current.getContext("2d", { alpha: false })?.drawImage(image.canvas, 0, 0);
       }
+      setRevealed(false);
       setError("");
       setStatus(sourceId && visible ? "connecting" : "idle");
 
@@ -127,7 +168,7 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
                   () => {
                      if (disposed) return;
                      stop(false);
-                     images.current.delete(sourceId);
+                     images.current.delete(cacheKey);
                      setCachedSource(null);
                      setError("This source is no longer available.");
                      setStatus("error");
@@ -149,8 +190,10 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
                   }
                   surface.getContext("2d", { alpha: false, desynchronized: true })?.drawImage(element, 0, 0, width, height);
                }
-               setCachedSource(null);
-               setStatus("live");
+               if (!painted) {
+                  painted = true;
+                  setStatus("live");
+               }
                if (nativeScreen) frame = element.requestVideoFrameCallback(paint);
             };
             frame = element.requestVideoFrameCallback(paint);
@@ -159,7 +202,7 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
             stop(false);
             await api.previewSource(null, owner).catch(() => undefined);
             if (!disposed) {
-               if (sourceId) images.current.delete(sourceId);
+               images.current.delete(cacheKey);
                setCachedSource(null);
                const message = describeError(reason);
                const name = reason && typeof reason === "object" && "name" in reason ? reason.name : "";
@@ -179,15 +222,26 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
          cancel();
          unsubscribe();
          document.removeEventListener("visibilitychange", visibility);
-         window.removeEventListener("pagehide", cancel);
+         window.removeEventListener("pagehide", pagehide);
+         media.removeEventListener("change", reduce);
          void api.previewSource(null, owner).catch(() => undefined);
       };
    }, [sourceId, visible, retry, nativeScreen, scope, cacheKey]);
 
+   const currentStatus: PreviewStatus = statusSource.current === cacheKey ? status : sourceId && visible ? "connecting" : "idle";
+   useVideoReveal(nativeScreen ? canvas : video, currentStatus === "live", cacheKey, () => {
+      if (statusSource.current !== cacheKey) return;
+      setCachedSource(null);
+      setRevealed(true);
+   });
+
    return {
       video,
       canvas,
-      status: statusSource.current === cacheKey ? status : sourceId && visible ? ("connecting" as const) : ("idle" as const),
+      still,
+      outgoing,
+      revealed: statusSource.current === cacheKey && revealed,
+      status: currentStatus,
       error: statusSource.current === cacheKey ? error : "",
       cached,
       retry: () => setRetry((value) => value + 1),

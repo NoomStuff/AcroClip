@@ -404,7 +404,7 @@ async function prepareExit(): Promise<boolean> {
                   message: "Discard pending clips?",
                   detail: "These moments have not finished saving and may be lost.",
                   buttons: ["Keep saving", "Discard and exit"],
-                  defaultId: 0,
+                  defaultId: 1,
                   cancelId: 0,
                });
                if (confirm.response !== 1) return false;
@@ -424,7 +424,7 @@ async function prepareExit(): Promise<boolean> {
                message: "Stop recording and exit?",
                detail: "Unsaved recent footage will be cleared.",
                buttons: ["Exit", "Keep recording"],
-               defaultId: 1,
+               defaultId: 0,
                cancelId: 1,
             });
             if (result.response !== 0) return false;
@@ -718,7 +718,7 @@ function registerIPC() {
          message: `Move "${selected.split(/[\\/]/).at(-1)}" to "${target || "Collection"}"?`,
          detail: `${contents.clips} ${contents.clips === 1 ? "clip" : "clips"}, ${contents.otherFiles} other ${contents.otherFiles === 1 ? "file" : "files"}, ${contents.folders} ${contents.folders === 1 ? "subfolder" : "subfolders"}. All contents will move.`,
          buttons: ["Cancel", "Move folder"],
-         defaultId: 0,
+         defaultId: 1,
          cancelId: 0,
       });
       if (result.response !== 1) return null;
@@ -735,7 +735,7 @@ function registerIPC() {
          message: `Move "${selected.split(/[\\/]/).at(-1)}" and all its contents to the trash?`,
          detail: `${contents.clips} ${contents.clips === 1 ? "clip" : "clips"}, ${contents.otherFiles} other ${contents.otherFiles === 1 ? "file" : "files"}, ${contents.folders} ${contents.folders === 1 ? "subfolder" : "subfolders"}.`,
          buttons: ["Cancel", "Move to trash"],
-         defaultId: 0,
+         defaultId: 1,
          cancelId: 0,
       });
       if (result.response !== 1) return false;
@@ -756,7 +756,7 @@ function registerIPC() {
               ? "Move all shareables for this clip to the trash?"
               : "Move this clip and its shareables to the trash?",
          buttons: ["Cancel", "Move to trash"],
-         defaultId: 0,
+         defaultId: 1,
          cancelId: 0,
       });
       if (result.response !== 1) return;

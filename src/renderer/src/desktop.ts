@@ -23,8 +23,11 @@ export function fileDragProps(path: string | undefined, clip?: ClipDrag) {
       draggable: !!path,
       onDragStart: (event: DragEvent) => {
          if (clip && event.shiftKey) {
+            event.dataTransfer.clearData();
             event.dataTransfer.setData(clipDragType, JSON.stringify(clip));
             event.dataTransfer.effectAllowed = "move";
+            const bounds = event.currentTarget.getBoundingClientRect();
+            event.dataTransfer.setDragImage(event.currentTarget, event.clientX - bounds.left, event.clientY - bounds.top);
          } else {
             event.preventDefault();
             if (path) api.dragFile(path);

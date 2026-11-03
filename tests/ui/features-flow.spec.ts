@@ -24,6 +24,8 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       })
    );
    const app = await electron.launch({ args: [resolve("."), "--disable-gpu-sandbox"], env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile } });
+   let failed = false;
+   await app.context().tracing.start({ screenshots: true, snapshots: true });
    try {
       const page = await app.firstWindow();
       const focusNavigation = async () => {
@@ -42,6 +44,22 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await focusNavigation();
       await page.keyboard.press("Control+2");
       await expect(page.locator(".library-page")).toBeVisible();
+      const sectionLabels = page.locator(".sidebar-section-control");
+      await expect(sectionLabels).toHaveText(["Tags", "Applications", "Folders"]);
+      await expect(page.locator(".sidebar-section[data-empty]")).toHaveCount(3);
+      const emptyTags = page.locator('.sidebar-section[aria-label="Tags"]');
+      const tagHandle = emptyTags.locator(".sidebar-section-control");
+      const handleBounds = (await tagHandle.boundingBox())!;
+      await page.mouse.move(handleBounds.x + 30, handleBounds.y + handleBounds.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(handleBounds.x + 60, handleBounds.y + handleBounds.height / 2, { steps: 5 });
+      await expect(emptyTags.locator("xpath=ancestor::div[@data-dragging][1]")).toHaveCount(1);
+      await expect(tagHandle).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await page.mouse.up();
+      await page.getByRole("button", { name: "List view", exact: true }).hover();
+      await expect(emptyTags).toHaveCSS("opacity", "0.4");
+      await page.evaluate(() => window.acroClip.createFolder("", "Saved"));
+      await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
       await page.getByRole("button", { name: "List view", exact: true }).click();
       await expect(page.getByRole("button", { name: "List view", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.keyboard.press("Control+f");
@@ -62,6 +80,11 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await category.getByLabel("Custom tag color").fill("#112233");
       await category.getByRole("button", { name: "Create", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.length).toBe(1);
+      await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
+      await tagHandle.press("Alt+ArrowUp");
+      await expect(sectionLabels).toHaveText(["Tags", "Folders", "Applications"]);
+      await tagHandle.press("Alt+ArrowDown");
+      await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
       const original = (await page.evaluate(() => window.acroClip.state())).categories[0]!;
       expect(original).toMatchObject({ name: "Highlights", color: "#112233", icon: "rocket" });
       const highlightRow = page.locator(".category-item").filter({ hasText: "Highlights" });
@@ -112,6 +135,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await focusNavigation();
       await page.keyboard.press("Control+2");
       await expect(page.getByRole("button", { name: /Matches/ }).first()).toBeVisible();
+      await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
       await expect(page.getByRole("button", { name: "List view", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("button", { name: "Grid view", exact: true }).click();
       await expect(page.getByRole("button", { name: "Grid view", exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -122,6 +146,18 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
          await editor.getByRole("button", { name: "Create", exact: true }).click();
          await expect(editor).not.toBeVisible();
       }
+      await page.locator(".category-item").filter({ hasText: "Second" }).hover();
+      await page.getByRole("button", { name: "Actions for Second", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete tag", exact: true }).click();
+      const confirmation = page.getByRole("dialog", { name: "Delete Second?", exact: true });
+      await expect(confirmation.getByRole("button", { name: "Delete tag", exact: true })).toBeFocused();
+      await page.keyboard.press("ArrowLeft");
+      await expect(confirmation.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+      await page.keyboard.press("ArrowRight");
+      await expect(confirmation.getByRole("button", { name: "Delete tag", exact: true })).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(confirmation).not.toBeVisible();
+      await expect(page.locator(".category-item")).toHaveCount(3);
       const labels = page.locator(".category-item .sidebar-label");
       await expect(labels).toHaveText(["Matches", "Second", "Third"]);
       const third = page.locator(".category-item").filter({ hasText: "Third" });
@@ -144,14 +180,17 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await page.mouse.move(firstBounds.x + 90, firstBounds.y + 7, { steps: 12 });
       await expect(labels).toHaveText(["Third", "Matches", "Second"]);
       // The row follows only Y, and the preview must not write metadata yet.
-      await expect.poll(async () => Math.abs((await third.boundingBox())!.y - (firstBounds.y + 7 - grab))).toBeLessThan(2);
+      await expect.poll(async () => Math.abs((await third.boundingBox())!.y - firstBounds.y)).toBeLessThan(2);
       expect(Math.abs((await third.boundingBox())!.x - thirdBounds.x)).toBeLessThan(1);
+      await page.mouse.move(firstBounds.x + 90, 0, { steps: 8 });
+      const tagListBounds = (await third.locator("xpath=ancestor::div[@class='motion-list'][1]").boundingBox())!;
+      expect((await third.boundingBox())!.y).toBeGreaterThanOrEqual(tagListBounds.y - 1);
       expect((await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name)).toEqual(["Matches", "Second", "Third"]);
       await page.mouse.up();
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
          .toEqual(["Third", "Matches", "Second"]);
-      await third.click();
+      await third.locator(".sidebar-item").click();
       await expect(third.locator(".sidebar-item")).toHaveAttribute("aria-pressed", "true");
       const movedBounds = (await third.boundingBox())!;
       const lastBounds = (await page.locator(".category-item").last().boundingBox())!;
@@ -202,6 +241,12 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect(labels).toHaveText(["Third", "Second", "Matches"]);
       const unchanged = page.locator(".category-item").filter({ hasText: "Matches" });
       expect(await unchanged.evaluate((row) => row.closest(".motion-list-item")!.getAnimations().length)).toBe(0);
+      await page.locator(".category-item").filter({ hasText: "Second" }).hover();
+      await page.getByRole("button", { name: "Actions for Second", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete tag", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Delete Second?", exact: true }).getByRole("button", { name: "Delete tag", exact: true })).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(page.locator(".category-item .sidebar-label")).toHaveText(["Third", "Matches"]);
       await page.keyboard.press("Control+,");
       await expect(page.locator(".settings-page")).toBeVisible();
       await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
@@ -260,7 +305,16 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect(page.locator(".mixer-monitor-error")).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Listen to Application", exact: true })).toHaveAttribute("aria-pressed", "false");
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("stopped");
+   } catch (error) {
+      failed = true;
+      const page = app.windows()[0];
+      if (page && !page.isClosed()) await page.screenshot({ path: test.info().outputPath("features-failure.png") }).catch(() => undefined);
+      throw error;
    } finally {
+      await app
+         .context()
+         .tracing.stop(failed ? { path: test.info().outputPath("browser-trace.zip") } : {})
+         .catch(() => undefined);
       await app.close();
    }
 });

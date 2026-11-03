@@ -394,9 +394,12 @@ export function MenuItem({
    disabled?: boolean;
 }) {
    return (
-      <button role="menuitem" tabIndex={-1} className={danger ? "danger" : ""} onClick={onClick} disabled={disabled}>
-         {children}
-      </button>
+      <>
+         {danger && <div className="menu-separator" role="separator" />}
+         <button role="menuitem" tabIndex={-1} className={danger ? "danger" : ""} onClick={onClick} disabled={disabled}>
+            {children}
+         </button>
+      </>
    );
 }
 export function Select({

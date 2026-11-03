@@ -2,6 +2,10 @@
 // PulseAudio supports monitoring a single sink input without moving or muting
 // playback. Private OBS child sources mix verified process streams together.
 #include "linux-app-audio.hpp"
+#include "audio-submix.hpp"
+#include "linux-device-audio.hpp"
+#include <cstring>
+#include <unistd.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -20,6 +24,8 @@
 #include <vector>
 
 namespace {
+std::mutex desktopExclusionsMutex;
+std::vector<uint32_t> desktopExclusions;
 uint32_t processId(const pa_proplist *properties) {
   const char *text =
       pa_proplist_gets(properties, PA_PROP_APPLICATION_PROCESS_ID);
@@ -312,6 +318,8 @@ bool inputEnded(obs_source_t *source) {
 } // namespace
 struct ApplicationAudio {
   uint32_t pid;
+  const std::string device;
+  uint32_t selectedSink = PA_INVALID_INDEX;
   uint32_t mixers;
   std::shared_ptr<AudioLevels> levels = std::make_shared<AudioLevels>();
   uint64_t processStarted;
@@ -327,10 +335,10 @@ struct ApplicationAudio {
   };
   std::map<uint32_t, Child> children;
   std::thread thread;
-  ApplicationAudio(uint32_t selected, uint32_t mask)
-      : pid(selected), mixers(mask), processStarted(process(selected).started),
+  ApplicationAudio(uint32_t selected, uint32_t mask, std::string output = {})
+      : pid(selected), device(std::move(output)), mixers(mask), processStarted(process(selected).started),
         scene(obs_scene_create_private("Application audio")) {
-    if (!processStarted || !scene) {
+    if ((pid && !processStarted) || !scene) {
       if (scene)
         obs_scene_release(scene);
       throw std::runtime_error(
@@ -353,6 +361,19 @@ struct ApplicationAudio {
     obs_scene_release(scene);
   }
   bool includes(uint32_t inputPid) {
+    if (!pid) {
+      if (!inputPid) return false;
+      std::vector<uint32_t> excluded;
+      { std::lock_guard<std::mutex> lock(desktopExclusionsMutex); excluded = desktopExclusions; }
+      excluded.push_back(uint32_t(getpid()));
+      for (int depth = 0; inputPid > 1 && depth < 128; ++depth) {
+        if (std::find(excluded.begin(), excluded.end(), inputPid) != excluded.end()) return false;
+        const auto parent = process(inputPid).parent;
+        if (!parent || parent == inputPid) break;
+        inputPid = parent;
+      }
+      return true;
+    }
     if (!inputPid || process(pid).started != processStarted)
       return false;
     for (int depth = 0; inputPid > 1 && depth < 32; depth++) {
@@ -366,11 +387,32 @@ struct ApplicationAudio {
     return false;
   }
   void run() {
+    do {
     try {
       Connection connection(quit);
       initialized = 1;
       while (!quit &&
              PA_CONTEXT_IS_GOOD(pa_context_get_state(connection.context))) {
+        if (!pid) {
+          selectedSink = PA_INVALID_INDEX;
+          if (device.empty() || device == "default") {
+            std::string name;
+            if (!connection.operation(pa_context_get_server_info(connection.context,
+                [](pa_context *, const pa_server_info *info, void *data) {
+                  if (info && info->default_sink_name) *static_cast<std::string *>(data) = info->default_sink_name;
+                }, &name)) || name.empty()) throw std::runtime_error("The default audio output is unavailable");
+            connection.operation(pa_context_get_sink_info_by_name(connection.context, name.c_str(),
+                [](pa_context *, const pa_sink_info *info, int end, void *data) {
+                  if (!end && info) *static_cast<uint32_t *>(data) = info->index;
+                }, &selectedSink));
+          } else {
+            connection.operation(pa_context_get_source_info_by_name(connection.context, device.c_str(),
+                [](pa_context *, const pa_source_info *info, int end, void *data) {
+                  if (!end && info) *static_cast<uint32_t *>(data) = info->monitor_of_sink;
+                }, &selectedSink));
+          }
+          if (selectedSink == PA_INVALID_INDEX) throw std::runtime_error("The selected audio output is unavailable");
+        }
         std::vector<Input> inputs;
         struct Discovery {
           ApplicationAudio *self;
@@ -385,7 +427,7 @@ struct ApplicationAudio {
                   if (end || !info)
                     return;
                   auto pid = processId(info->proplist);
-                  if (request->self->includes(pid))
+                  if (request->self->includes(pid) && (request->self->pid || info->sink == request->self->selectedSink))
                     request->inputs->push_back({info->index,
                                                 pid,
                                                 info->sink,
@@ -457,6 +499,7 @@ struct ApplicationAudio {
           } else
             ++it;
         }
+        if (!pid) { std::lock_guard<std::mutex> lock(errorMutex); error.clear(); }
         auto deadline =
             std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
         while (!quit && std::chrono::steady_clock::now() < deadline)
@@ -477,8 +520,62 @@ struct ApplicationAudio {
       }
       initialized = -1;
     }
+    if (pid) break;
+    for (unsigned i = 0; i < 50 && !quit; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    } while (!quit);
   }
 };
+namespace {
+struct DesktopAudio {
+  AudioSubmixClock clock;
+  obs_source_t *source;
+  ApplicationAudio audio;
+  DesktopAudio(obs_data_t *settings, obs_source_t *owner) : source(owner), audio(0, 0x3f, obs_data_get_string(settings, "device_id")) {
+    obs_source_add_active_child(source, obs_scene_get_source(audio.scene));
+  }
+  ~DesktopAudio() { obs_source_remove_active_child(source, obs_scene_get_source(audio.scene)); }
+};
+void registerDesktopAudio() {
+  obs_source_info info{};
+  info.id = linuxDesktopAudioType();
+  info.type = OBS_SOURCE_TYPE_INPUT;
+  info.output_flags = OBS_SOURCE_AUDIO | OBS_SOURCE_DO_NOT_DUPLICATE;
+  info.get_name = [](void *) { return "Desktop audio"; };
+  info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
+    try { return new DesktopAudio(settings, source); } catch (...) { return nullptr; }
+  };
+  info.destroy = [](void *data) { delete static_cast<DesktopAudio *>(data); };
+  info.get_properties = [](void *) { return obs_get_source_properties(linuxOutputAudioType()); };
+  info.enum_active_sources = [](void *data, obs_source_enum_proc_t callback, void *context) {
+    auto *self = static_cast<DesktopAudio *>(data);
+    callback(self->source, obs_scene_get_source(self->audio.scene), context);
+  };
+  info.audio_mix = [](void *data, uint64_t *timestamp, audio_output_data *output, size_t channels, size_t) {
+    auto *self = static_cast<DesktopAudio *>(data);
+    auto *child = obs_scene_get_source(self->audio.scene);
+    if (obs_source_audio_pending(child)) return false;
+    *timestamp = obs_source_get_audio_timestamp(child);
+    if (!*timestamp) return false;
+    obs_source_audio_mix mix{};
+    obs_source_get_audio_mix(child, &mix);
+    for (size_t channel = 0; channel < channels; ++channel)
+      std::memcpy(output->data[channel], mix.output[0].data[channel], AUDIO_OUTPUT_FRAMES * sizeof(float));
+    return true;
+  };
+  obs_register_source(&info);
+}
+}
+void setLinuxDesktopExclusions(const std::vector<uint32_t> &pids) {
+  std::lock_guard<std::mutex> lock(desktopExclusionsMutex);
+  desktopExclusions = pids;
+}
+const char *linuxDesktopAudioType() { return "acroclip_pulse_desktop"; }
+std::string linuxDesktopAudioError(obs_source_t *source) {
+  if (!source || std::string(obs_source_get_id(source)) != linuxDesktopAudioType()) return {};
+  auto *self = static_cast<DesktopAudio *>(obs_obj_get_data(source));
+  if (!self->audio.initialized) return "Audio capture is starting";
+  return applicationAudioError(&self->audio);
+}
 void registerLinuxApplicationAudio() {
   obs_source_info info{};
   info.id = "acroclip_pulse_input";
@@ -506,6 +603,7 @@ void registerLinuxApplicationAudio() {
     delete input;
   };
   obs_register_source(&info);
+  registerDesktopAudio();
 }
 ApplicationAudio *createApplicationAudio(uint32_t pid, uint32_t mixers) {
   auto *audio = new ApplicationAudio(pid, mixers);

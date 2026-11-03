@@ -231,7 +231,8 @@ try:
     portalfile=folder/'portal.mkv'
     command(dict(action='save',path=str(portalfile),requestId='portal',requestedAt=int(time.time()*1000)))
     portal_saved=wait(lambda e:e['event']=='saved' and e.get('requestId')=='portal')
-    assert portal_saved['source']=='Portal-selected screen',portal_saved
+    assert portal_saved['source']=='Desktop',portal_saved
+    assert portal_saved['sourceId']=='portal:screen',portal_saved
     portal_media=decode(portalfile)
     command(dict(settings,action='source'))
     state(lambda v:not v['waiting'] and v['availableSeconds']>=1.8)

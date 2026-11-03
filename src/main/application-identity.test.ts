@@ -8,6 +8,9 @@ it("uses the executable rather than the window title and normalizes known legacy
    expect(executableLabel("C:\\Windows\\explorer.exe")).toBe("Explorer");
    expect(normalizeApplicationLabel("Home ─ Explorer")).toBe("Explorer");
    expect(normalizeApplicationLabel("Downloads ─ Explorer")).toBe("Explorer");
+   expect(normalizeApplicationLabel("Downloads \u2500 File Explorer")).toBe("Explorer");
+   expect(normalizeApplicationLabel("This PC \u2500 File Explorer")).toBe("Explorer");
+   expect(normalizeApplicationLabel("Screen 2")).toBe("Desktop");
    expect(normalizeApplicationLabel("Some game - Level 2")).toBe("Some game - Level 2");
 });
 it("reads a bounded PE resource description and falls back for invalid files", async () => {

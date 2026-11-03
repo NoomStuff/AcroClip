@@ -1,3 +1,4 @@
+import { normalizeApplicationLabel } from "../shared/application-label";
 import { open } from "node:fs/promises";
 
 const known: Record<string, string> = {
@@ -19,11 +20,7 @@ export function executableLabel(executable: string): string {
          ?.replace(/\.(exe|app)$/i, "") ?? "Application";
    return known[filename.toLowerCase()] ?? filename.replace(/[_-]+/g, " ").replace(/^\w/, (value) => value.toUpperCase());
 }
-export function normalizeApplicationLabel(name: string): string {
-   const tail = name.split(/\s+[─–—-]\s+/).at(-1) ?? name;
-   const normalized = Object.values(known).find((value) => value.toLowerCase() === tail.toLowerCase());
-   return normalized ?? (tail === "Windows Explorer" || tail === "File Explorer" ? "Explorer" : name);
-}
+export { normalizeApplicationLabel } from "../shared/application-label";
 const names = new Map<string, Promise<string>>();
 export function applicationLabel(executable: string): Promise<string> {
    const key = process.platform === "win32" ? executable.toLowerCase() : executable;

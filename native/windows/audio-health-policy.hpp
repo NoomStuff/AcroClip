@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <optional>
 
 namespace acroclip::windows {
 class InputDelivery {
@@ -44,4 +45,22 @@ inline std::string captureStateError(int phase, bool ready, uint32_t result, boo
                    : phase == 2 ? "Audio capture is reconnecting"
                                 : "Audio capture has stopped";
 }
+
+class ProcessCaptureHealth {
+public:
+  using Clock = std::chrono::steady_clock;
+  explicit ProcessCaptureHealth(Clock::time_point now = Clock::now()) : waiting(now) {}
+  std::string error(bool queried, int version, int phase, bool ready, uint32_t result, Clock::time_point now) {
+    if (!queried || version != 1 || phase < 0 || phase > 3)
+      return "Audio capture health is unavailable. Repair the recorder installation";
+    if (phase == 1 && ready) { waiting.reset(); return {}; }
+    if (!waiting) waiting = now;
+    // Each newly audible process starts its own asynchronous loopback client.
+    // Normal startup/reconnect must not poison an otherwise healthy Desktop mix.
+    if (now - *waiting < std::chrono::seconds(2)) return {};
+    return captureStateError(phase, false, result, false);
+  }
+private:
+  std::optional<Clock::time_point> waiting;
+};
 }

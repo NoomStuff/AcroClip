@@ -123,5 +123,8 @@ finally:
             except subprocess.TimeoutExpired: process.kill()
     for log in logs: log.close()
     (folder/"events.json").write_text(json.dumps(events,indent=2))
+    # Wine maps Z: to the host root. Evidence collection must not traverse it.
+    root_drive = folder / "wine-prefix" / "dosdevices" / "z:"
+    if root_drive.is_symlink(): root_drive.unlink()
     import shutil
     shutil.rmtree(private)

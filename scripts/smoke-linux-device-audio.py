@@ -140,12 +140,12 @@ try:
     # Kill exactly the private helper-owned source-output. Pulse reports its
     # actual stream terminated while the server and same device stay alive.
     outputs=json.loads(pactl('-f','json','list','source-outputs'))
-    chosen=next(value for value in outputs if value['properties'].get('application.name')=='AcroClip device audio')
+    chosen=next(value for value in outputs if value['properties'].get('application.name')=='AcroClip application audio')
     subprocess.run([str(root/'.cache/native-tests-linux/acroclip-pulse-client-control'),str(chosen['index'])],env=env,check=True)
     deadline=time.monotonic()+15
     while time.monotonic()<deadline:
         clients=json.loads(pactl('-f','json','list','source-outputs'))
-        if any(value['properties'].get('application.name')=='AcroClip device audio' and value['index']!=chosen['index'] for value in clients):break
+        if any(value['properties'].get('application.name')=='AcroClip application audio' and value['index']!=chosen['index'] for value in clients):break
         time.sleep(.1)
     else:raise AssertionError('The terminated private audio client did not reconnect')
     assert not status()['waiting']
@@ -164,7 +164,7 @@ try:
     request,file=save('muted-input');saved(request);decode(file);assert volume(file,2)<-70
     proof['mutedInputHealthy']=True
     clients=json.loads(pactl('-f','json','list','source-outputs'))
-    assert not any(value['properties'].get('application.name')=='AcroClip device audio' for value in clients),clients
+    assert not any(value['properties'].get('application.name')=='AcroClip application audio' for value in clients),clients
     command(dict(action='audio',source='microphone',volume=1,muted=False))
     awaitAudio(False);time.sleep(4)
     # Freeze only this private server. The endpoint and stream still exist,
@@ -212,7 +212,7 @@ try:
     moduleId=owned[0];assert moduleId.isdigit(),owned
     pactl('unload-module',str(moduleId))
     saved(request);decode(file);assert volume(file,2)>-40 and volume(file,0)<-70
-    failed=awaitAudio(True,'selected audio device');time.sleep(4)
+    failed=awaitAudio(True,'selected audio output');time.sleep(4)
     request,file=save('fresh-video-after-device-loss');result=saved(request);assert not result['previousFootage'];decode(file);assert volume(file,2)<-70
     assert not status()['waiting'];assert 'acroclip-test.monitor' not in pactl('list','short','sources')
     # PulseAudio can move the old playback client to another sink on removal.

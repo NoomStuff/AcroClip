@@ -244,7 +244,7 @@ try:
     baseline = captures["isolated"]
     for track in baseline[:3]:
         only_main(track)
-    assert min(baseline[3].values()) > 0.03, baseline[3]
+    assert baseline[3]["1613"] > 0.03 and baseline[3]["997"] < 0.005, baseline[3]
     assert 0.8 < baseline[0]["997"] / baseline[1]["997"] < 1.2, "Excluded extras changed master audio"
     quieter = captures["half-volume"]
     assert 0.35 < quieter[2]["997"] / baseline[2]["997"] < 0.65, quieter[2]
@@ -252,7 +252,7 @@ try:
     muted = captures["muted"]
     assert max(muted[2].values()) < 0.005, muted[2]
     only_main(muted[0])
-    assert min(muted[3].values()) > 0.03, muted[3]
+    assert muted[3]["1613"] > 0.03 and muted[3]["997"] < 0.005, muted[3]
     mixed = captures["included-in-master"]
     only_main(mixed[0])
     assert max(mixed[1].values()) < 0.005, mixed[1]

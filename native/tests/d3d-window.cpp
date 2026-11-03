@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <d3d11.h>
 #include <iostream>
+#include <string>
 #include <mmsystem.h>
 #include <vector>
 #include <windows.h>
@@ -57,6 +58,7 @@ int main(int argc, char **argv) {
     if (waveOutOpen(&sound, WAVE_MAPPER, &format, 0, 0, CALLBACK_NULL) !=
         MMSYSERR_NOERROR)
       return 3;
+    if (std::getenv("ACROCLIP_FIXTURE_AUDIO_CONTROL") && waveOutPause(sound) != MMSYSERR_NOERROR) return 9;
     header.lpData = reinterpret_cast<LPSTR>(tone.data());
     header.dwBufferLength = DWORD(tone.size() * sizeof(int16_t));
     header.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
@@ -128,6 +130,20 @@ int main(int argc, char **argv) {
   while (message.message != WM_QUIT &&
          (!(fullscreenRequested || delayedFullscreen) ||
           GetTickCount64() - started < (std::getenv("ACROCLIP_FIXTURE_LONG") ? 360000u : 45000u))) {
+    if (sound && std::getenv("ACROCLIP_FIXTURE_AUDIO_CONTROL")) {
+      DWORD available = 0;
+      HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+      if (PeekNamedPipe(input, nullptr, 0, nullptr, &available, nullptr) && available) {
+        char bytes[64];
+        DWORD count = 0;
+        if (ReadFile(input, bytes, sizeof(bytes), &count, nullptr) && count) {
+          const std::string command(bytes, count);
+          const bool pause = command.find("pause") != std::string::npos;
+          if ((pause ? waveOutPause(sound) : waveOutRestart(sound)) != MMSYSERR_NOERROR) return 9;
+          std::cout << (pause ? "audio:paused" : "audio:playing") << std::endl;
+        }
+      }
+    }
     if (delayedFullscreen && !fullscreenRequested) {
       DWORD available = 0;
       HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
