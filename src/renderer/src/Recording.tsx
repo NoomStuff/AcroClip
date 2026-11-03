@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { useApplicationColors } from "./useApplicationColors";
 import { Clapperboard, Circle, CircleStop, Gamepad2, LoaderCircle, Monitor, RefreshCw } from "lucide-react";
 import type { AppState, CaptureSource, GameCandidate, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
-import { api, reportFeedback } from "./desktop";
+import { api, describeError, reportFeedback } from "./desktop";
 import { Button, ContextHeader, Empty, Field, Segmented, Select } from "./ui";
 import type { Run } from "./desktop";
 import { PaneDivider, usePaneSize } from "./layout";
@@ -33,10 +33,8 @@ export function Recording({
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const sourceContent = useRef<HTMLDivElement>(null);
-   const previewContent = useRef<HTMLDivElement>(null);
    const sourceIndex = ["screen", "app", "auto"].indexOf(state.preferences.sourceKind);
-   useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible);
-   useDirectionalContent(previewContent, state.preferences.sourceKind, sourceIndex, visible);
+   useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible, "", "fade");
    const controls = usePaneSize(layout, { key: "recording.controls", initial: 340, min: 260, max: 460, reserve: 420, axis: "x", fromEnd: true });
    const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 170, max: 380, reserve: 200, axis: "y", fromEnd: true });
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
@@ -202,34 +200,30 @@ export function Recording({
       state.preferences.audioSources,
    ]);
    useEffect(() => {
-      if (!visible || active || state.recorder.state === "starting") return;
+      if (!visible || active || state.recorder.state === "starting" || (sourcePhase !== "ready" && !knownSources.current.length)) return;
       let disposed = false;
+      let timer: number | undefined;
       setMonitorSetupError("");
-      void api
-         .monitorAudio(true)
-         .then(() => {
+      setMonitorError("");
+      const configure = async (attempt: number) => {
+         try {
+            await api.monitorAudio(true);
             if (!disposed) setMonitorSetupError("");
-         })
-         .catch((error: unknown) => {
-            if (!disposed)
-               setMonitorSetupError(
-                  error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': /, "") : "Audio monitoring unavailable"
-               );
-         });
+         } catch (error) {
+            if (disposed) return;
+            if (attempt < 2) timer = window.setTimeout(() => void configure(attempt + 1), attempt === 0 ? 500 : 1500);
+            else setMonitorSetupError(describeError(error));
+         }
+      };
+      void configure(0);
       return () => {
          disposed = true;
+         window.clearTimeout(timer);
       };
    }, [visible, active, state.recorder.state, monitorConfiguration, captureAvailable, sourcePhase]);
    useEffect(() => {
       const message = visible && !active && state.recorder.state !== "starting" ? monitorSetupError || monitorError : "";
-      // Source creation and device changes settle asynchronously. Clear recovered
-      // errors immediately, and only show a failure that survives the transition.
-      if (!message) {
-         reportFeedback({ kind: "audio-status", message: "" });
-         return;
-      }
-      const timer = window.setTimeout(() => reportFeedback({ kind: "audio-status", message }), 1200);
-      return () => window.clearTimeout(timer);
+      reportFeedback({ kind: "audio-status", message });
    }, [visible, active, state.recorder.state, monitorError, monitorSetupError]);
    const preferences = (patch: Partial<Preferences> | ((current: Preferences) => Partial<Preferences>)) => {
       pendingPreferences.current.push(patch);
@@ -272,7 +266,7 @@ export function Recording({
             style={{ gridTemplateColumns: `minmax(0, 1fr) 12px ${controls.size}px`, gridTemplateRows: `minmax(0, 1fr) 12px ${lower.size}px` }}
          >
             <div className="recording-main">
-               <div className="preview-surface" ref={previewContent}>
+               <div className="preview-surface">
                   {source && previewUnavailable ? (
                      <Empty
                         icon={<Monitor size={38} />}

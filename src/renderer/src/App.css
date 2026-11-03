@@ -276,6 +276,8 @@
 }
 
 .status-audio {
+   min-width: 0;
+   max-width: min(440px, 40vw);
    display: inline-flex;
    align-items: center;
    gap: 6px;
@@ -283,6 +285,13 @@
    font-size: 11px;
    padding: 4px 0;
    white-space: nowrap;
+}
+.status-audio > svg {
+   flex-shrink: 0;
+}
+.status-audio > span {
+   overflow: hidden;
+   text-overflow: ellipsis;
 }
 
 .status-primary {

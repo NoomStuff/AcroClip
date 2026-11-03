@@ -128,7 +128,7 @@ export class CaptureSources {
                ...(candidate?.executable ? { applicationName: candidate.gameName ?? executableLabel(candidate.executable) } : {}),
                ...(appIcon ? { appIcon } : {}),
                id: s.id,
-               name: s.name,
+               name: s.id.startsWith("screen:") && /^entire screen$/i.test(s.name.trim()) ? "Desktop" : s.name,
                kind: s.id.startsWith("screen:") ? "screen" : "app",
                thumbnail,
                ...(candidate ? { processId: candidate.pid } : {}),

@@ -49,6 +49,14 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe.skipIf(process.platform !== "win32")("Windows source discovery", () => {
+   it("labels the provider's Entire Screen as Desktop without renaming application windows", async () => {
+      electron.getSources.mockResolvedValueOnce([
+         { id: "screen:0:0", name: "Entire Screen", display_id: "7", thumbnail: { toDataURL: () => "" } },
+         { id: application.id, name: "Entire Screen", display_id: "", thumbnail: { toDataURL: () => "" } },
+      ]);
+      const sources = await new CaptureSources(recorder(), () => "999").list();
+      expect(sources.map((source) => source.name)).toEqual(["Desktop", "Entire Screen"]);
+   });
    it("retains an unknown executable's identity while its native process is unchanged", async () => {
       const native = recorder();
       native.capturableApplications.mockResolvedValue([{ ...application, executable: "" }]);

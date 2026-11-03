@@ -320,6 +320,23 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await page.getByRole("button", { name: "File actions", exact: true }).click();
       await expect(fileMenu.getByRole("menuitem", { name: "Show clip in folder", exact: true })).toBeVisible();
       await expect(fileMenu.getByRole("menuitem", { name: "Show shareable in folder", exact: true })).toBeVisible();
+      const dangerColor = await page.evaluate(() => {
+         const probe = document.createElement("span");
+         probe.style.color = "var(--red)";
+         document.body.append(probe);
+         const color = getComputedStyle(probe).color;
+         probe.remove();
+         return color;
+      });
+      const deletes = await fileMenu
+         .getByRole("menuitem")
+         .filter({ hasText: /^Delete/ })
+         .all();
+      expect(deletes.length).toBeGreaterThan(1);
+      for (const item of deletes) {
+         await expect(item).toHaveCSS("color", dangerColor);
+         expect(await item.evaluate((node) => node.previousElementSibling?.getAttribute("role"))).toBe("separator");
+      }
       await page.keyboard.press("Escape");
 
       await desktop.evaluate(({ dialog }) => {

@@ -89,7 +89,6 @@ export function ClipActions({
                Open in AttaCut
             </MenuItem>
          )}
-         <div className="menu-separator" role="separator" />
          {children}
          <MenuItem danger disabled={busy} onClick={remove ?? (() => void run(() => api.deleteClip(clip.id)))}>
             <Trash2 size={15} />

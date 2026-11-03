@@ -456,7 +456,6 @@ export function Library({
                   <FolderInput size={15} />
                   Move to folder
                </MenuItem>
-               <div className="menu-separator" role="separator" />
                <MenuItem danger onClick={() => void deleteFolder(path)}>
                   <Trash2 size={15} />
                   Delete folder
@@ -563,7 +562,6 @@ export function Library({
                                              <Pencil size={14} />
                                              Edit tag
                                           </MenuItem>
-                                          <div className="menu-separator" role="separator" />
                                           <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
                                              <Trash2 size={14} />
                                              Delete tag
