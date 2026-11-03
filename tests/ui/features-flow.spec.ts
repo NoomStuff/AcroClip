@@ -78,11 +78,10 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await category.getByLabel("Custom tag color").fill("#112233");
       await category.getByRole("button", { name: "Create", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.length).toBe(1);
+      await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
+      await tagHandle.press("Alt+ArrowUp");
       await expect(sectionLabels).toHaveText(["Tags", "Folders", "Applications"]);
-      await page
-         .locator(".sidebar-section-control")
-         .filter({ hasText: /^Folders$/ })
-         .press("Alt+ArrowUp");
+      await tagHandle.press("Alt+ArrowDown");
       await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
       const original = (await page.evaluate(() => window.acroClip.state())).categories[0]!;
       expect(original).toMatchObject({ name: "Highlights", color: "#112233", icon: "rocket" });

@@ -75,7 +75,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await expect(page.locator(".application-filter")).toHaveCount(0);
       const applicationsHeading = page.locator(".sidebar-group-title").filter({ hasText: "Applications" });
       await expect(applicationsHeading).toBeVisible();
-      await expect(applicationsHeading).toHaveAttribute("data-empty", "true");
+      await expect(page.getByRole("region", { name: "Applications", exact: true })).toHaveAttribute("data-empty", "true");
       await expect(applicationsHeading.getByRole("button", { name: "Add game", exact: true })).toBeVisible();
       // Read one animation frame, rather than comparing rectangles sampled at
       // different positions during the directional page transition.

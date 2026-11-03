@@ -71,22 +71,31 @@ export function usePlaybackFade(
       const node = video.current;
       if (!node || !visible || !prepared || !url) return;
       let disposed = false;
+      let completed = false;
       let frame: number | undefined;
       const decodedFrame = () => {
-         if (disposed) return;
-         if (node.currentSrc !== url || node.seeking || node.readyState < 2) {
-            frame = node.requestVideoFrameCallback(decodedFrame);
-            return;
-         }
+         if (disposed || completed || node.currentSrc !== url || node.seeking || node.readyState < 2) return;
+         completed = true;
+         if (frame !== undefined) node.cancelVideoFrameCallback(frame);
+         frame = undefined;
          shown.current = { identity, url };
          setDecoded(key);
       };
-      // A retained, paused player may already have presented its current frame.
-      if (node.currentSrc === url && node.readyState >= 2 && !node.seeking) decodedFrame();
-      else frame = node.requestVideoFrameCallback(decodedFrame);
+      const presented = () => {
+         frame = undefined;
+         decodedFrame();
+         if (!completed && !disposed) frame = node.requestVideoFrameCallback(presented);
+      };
+      // A paused seek can finish after its only presentation callback. Media
+      // readiness events also reveal that decoded frame without starting playback.
+      const events = ["loadeddata", "canplay", "seeked"] as const;
+      for (const event of events) node.addEventListener(event, decodedFrame);
+      decodedFrame();
+      if (!completed) frame = node.requestVideoFrameCallback(presented);
       return () => {
          disposed = true;
          if (frame !== undefined) node.cancelVideoFrameCallback(frame);
+         for (const event of events) node.removeEventListener(event, decodedFrame);
       };
    }, [video, visible, prepared, url, key, identity]);
    useVideoReveal(video, ready, key);

@@ -12,6 +12,7 @@ import { defaultPreferences } from "../../src/shared/defaults";
 declare global {
    interface Window {
       firstPlaybackReveal?: { from: number; to: number; duration: number };
+      restorePlayerFrameCallbacks?: () => void;
    }
 }
 
@@ -166,8 +167,21 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await expect(page.getByText("No shareable", { exact: true })).toBeVisible();
       await expect(page.locator(".player-poster")).toHaveCount(0);
       await expect(page.locator(".player-outgoing")).toBeHidden();
+      await page.evaluate(() => {
+         const request = HTMLVideoElement.prototype.requestVideoFrameCallback;
+         const cancel = HTMLVideoElement.prototype.cancelVideoFrameCallback;
+         window.restorePlayerFrameCallbacks = () => {
+            HTMLVideoElement.prototype.requestVideoFrameCallback = request;
+            HTMLVideoElement.prototype.cancelVideoFrameCallback = cancel;
+         };
+         // A paused seek may not deliver another presentation callback. The
+         // actual decoded video must still become visible via media events.
+         HTMLVideoElement.prototype.requestVideoFrameCallback = () => 0;
+         HTMLVideoElement.prototype.cancelVideoFrameCallback = () => {};
+      });
       await page.getByRole("button", { name: "Clip", exact: true }).click();
       await expect(page.locator(".player-video")).toHaveClass(/ready/);
+      await page.evaluate(() => window.restorePlayerFrameCallbacks?.());
       await expect(page.locator(".viewer-title")).not.toContainText("Unknown");
       await expect(page.locator(".viewer-title time")).toBeVisible();
       await expect(page.locator(".viewer-categories")).toContainText("Best moments");
