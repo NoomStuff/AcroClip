@@ -20,6 +20,9 @@ concurrency:
    cancel-in-progress: false
 jobs:
    prepare:
+      permissions:
+         contents: read
+         statuses: write
       runs-on: ubuntu-24.04
       timeout-minutes: 5
       outputs:
@@ -39,6 +42,20 @@ jobs:
            id: prepare
            with:
               script: await require('./scripts/ci-preflight.cjs')({github, context, core});
+         - name: Report candidate verification on the source commit
+           if: steps.prepare.outputs.build == 'true' && steps.prepare.outputs.publish != 'true'
+           uses: actions/github-script@v9
+           env:
+              CANDIDATE_SHA: ${{ steps.prepare.outputs.candidate_sha }}
+           with:
+              script: |
+                 const sha = process.env.CANDIDATE_SHA;
+                 if (!/^[a-f0-9]{40}$/.test(sha)) throw Error('Invalid candidate commit');
+                 await github.rest.repos.createCommitStatus({
+                   ...context.repo, sha, state: 'pending', context: 'Release candidate',
+                   description: 'Verifying the app, native capture and all five packages',
+                   target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                 });
    checks:
       needs: prepare
       uses: ./.github/workflows/verify.yml
@@ -89,6 +106,9 @@ jobs:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
       if: needs.prepare.outputs.build == 'true'
    check:
+      permissions:
+         contents: read
+         statuses: write
       needs:
          - prepare
          - checks
@@ -146,6 +166,21 @@ jobs:
               retention-days: 14
               compression-level: 0
            if: needs.prepare.outputs.build == 'true'
+         - name: Report the sealed candidate result on the source commit
+           if: always() && needs.prepare.outputs.build == 'true' && needs.prepare.outputs.publish != 'true'
+           uses: actions/github-script@v9
+           env:
+              VERIFICATION_STATUS: ${{ job.status }}
+           with:
+              script: |
+                 const sha = process.env.CANDIDATE_SHA;
+                 if (!/^[a-f0-9]{40}$/.test(sha)) throw Error('Invalid candidate commit');
+                 const passed = process.env.VERIFICATION_STATUS === 'success';
+                 await github.rest.repos.createCommitStatus({
+                   ...context.repo, sha, state: passed ? 'success' : 'failure', context: 'Release candidate',
+                   description: passed ? 'All five packages verified and candidate sealed' : 'Candidate verification failed',
+                   target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                 });
    publish:
       name: Publish verified release
       needs:

@@ -24,6 +24,8 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       })
    );
    const app = await electron.launch({ args: [resolve("."), "--disable-gpu-sandbox"], env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile } });
+   let failed = false;
+   await app.context().tracing.start({ screenshots: true, snapshots: true });
    try {
       const page = await app.firstWindow();
       const focusNavigation = async () => {
@@ -188,7 +190,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
          .toEqual(["Third", "Matches", "Second"]);
-      await third.click();
+      await third.locator(".sidebar-item").click();
       await expect(third.locator(".sidebar-item")).toHaveAttribute("aria-pressed", "true");
       const movedBounds = (await third.boundingBox())!;
       const lastBounds = (await page.locator(".category-item").last().boundingBox())!;
@@ -303,7 +305,16 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect(page.locator(".mixer-monitor-error")).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Listen to Application", exact: true })).toHaveAttribute("aria-pressed", "false");
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("stopped");
+   } catch (error) {
+      failed = true;
+      const page = app.windows()[0];
+      if (page && !page.isClosed()) await page.screenshot({ path: test.info().outputPath("features-failure.png") }).catch(() => undefined);
+      throw error;
    } finally {
+      await app
+         .context()
+         .tracing.stop(failed ? { path: test.info().outputPath("browser-trace.zip") } : {})
+         .catch(() => undefined);
       await app.close();
    }
 });
