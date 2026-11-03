@@ -1,13 +1,13 @@
-version: 0.8.0
+version: 0.9.0
 path: >-
-  https://github.com/NoomStuff/AcroClip/releases/download/v0.8.0/AcroClip-0.8.0-linux-x86_64.AppImage
+  https://github.com/NoomStuff/AcroClip/releases/download/v0.9.0/AcroClip-0.9.0-linux-x86_64.AppImage
 sha512: >-
-  CtaxqRYY0OGS1Wk2LDBcQWNqJQOPfe354oMgrLkYjcyUlsF5iNX2ilOZiDTz908eqNJSeJdUnAkwavGPc1q8ow==
+  9RZHu4yrmMXb8lKRhjxoVg7D1JOpPPMUtj6ASykKfSNMmjrCvGe/8ECQz4MNgZtB4d+oClKS+W0VpSVrMK4IHw==
 files:
   - url: >-
-      https://github.com/NoomStuff/AcroClip/releases/download/v0.8.0/AcroClip-0.8.0-linux-x86_64.AppImage
+      https://github.com/NoomStuff/AcroClip/releases/download/v0.9.0/AcroClip-0.9.0-linux-x86_64.AppImage
     sha512: >-
-      CtaxqRYY0OGS1Wk2LDBcQWNqJQOPfe354oMgrLkYjcyUlsF5iNX2ilOZiDTz908eqNJSeJdUnAkwavGPc1q8ow==
-    size: 266313610
-releaseName: Improved Linux support
-releaseDate: '2026-11-01T17:53:49.325Z'
+      9RZHu4yrmMXb8lKRhjxoVg7D1JOpPPMUtj6ASykKfSNMmjrCvGe/8ECQz4MNgZtB4d+oClKS+W0VpSVrMK4IHw==
+    size: 266325992
+releaseName: Capture and library improvements
+releaseDate: '2026-11-03T22:35:42.819Z'

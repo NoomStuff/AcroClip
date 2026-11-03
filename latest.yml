@@ -1,13 +1,13 @@
-version: 0.8.0
+version: 0.9.0
 path: >-
-  https://github.com/NoomStuff/AcroClip/releases/download/v0.8.0/AcroClip-0.8.0-win-x64-Installer.exe
+  https://github.com/NoomStuff/AcroClip/releases/download/v0.9.0/AcroClip-0.9.0-win-x64-Installer.exe
 sha512: >-
-  CHO02ePg1mhZh5fNr1GFapftlVTIhJUvim9mODqbMt2sveHdjgKfJYcWy4bzNCVwf/l3G4Z4l0VpzXl/ws3JVg==
+  RQA6KVnsmF9T9RER9tQnj1pvAlWxUlNaHLAQrGTL+JiF7WNH+khryA+OSNMhL0GZEliL3v+bG1n/Rb9dFdt9CQ==
 files:
   - url: >-
-      https://github.com/NoomStuff/AcroClip/releases/download/v0.8.0/AcroClip-0.8.0-win-x64-Installer.exe
+      https://github.com/NoomStuff/AcroClip/releases/download/v0.9.0/AcroClip-0.9.0-win-x64-Installer.exe
     sha512: >-
-      CHO02ePg1mhZh5fNr1GFapftlVTIhJUvim9mODqbMt2sveHdjgKfJYcWy4bzNCVwf/l3G4Z4l0VpzXl/ws3JVg==
-    size: 151850000
-releaseName: Improved Linux support
-releaseDate: '2026-11-01T17:46:27.214Z'
+      RQA6KVnsmF9T9RER9tQnj1pvAlWxUlNaHLAQrGTL+JiF7WNH+khryA+OSNMhL0GZEliL3v+bG1n/Rb9dFdt9CQ==
+    size: 151860388
+releaseName: Capture and library improvements
+releaseDate: '2026-11-03T22:35:52.983Z'
