@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, copyFile, writeFile, readFile, rename, rm, stat, symlin
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import sharp from "sharp";
 import { CollectionService, fileIdentity, withinRoot } from "../src/main/collection";
 import { PlaybackCache } from "../src/main/playback";
 import { createThumbnail, ffmpegBase, probe, runMedia } from "../src/main/media";
@@ -39,9 +40,7 @@ try {
       colored,
    ]);
    const checkColor = async (image: string, color: "blue" | "red" | "black") => {
-      const rgb = `${image}.rgb`;
-      await runMedia("ffmpeg", [...ffmpegBase, "-y", "-i", image, "-vf", "crop=2:2", "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", rgb]);
-      const [red, green, blue] = await readFile(rgb);
+      const [red, green, blue] = await sharp(image).resize(1, 1).removeAlpha().toColourspace("srgb").raw().toBuffer();
       assert.ok(red !== undefined && green !== undefined && blue !== undefined);
       assert.ok(
          color === "blue" ? blue > 200 && red < 40 && green < 40 : color === "red" ? red > 200 && green < 40 && blue < 40 : red < 20 && green < 20 && blue < 20,
