@@ -116,14 +116,16 @@ it("preserves browser and cross-realm error messages", async () => {
 it("keeps normal file drags native and reserves HTML folder moves for Shift", async () => {
    const { api, fileDragProps } = await import("./desktop");
    api.dragFile = vi.fn();
-   const data = { setData: vi.fn(), effectAllowed: "all" };
+   const data = { clearData: vi.fn(), setData: vi.fn(), setDragImage: vi.fn(), effectAllowed: "all" };
    const preventDefault = vi.fn();
-   const event = { shiftKey: false, preventDefault, dataTransfer: data } as unknown as DragEvent;
+   const currentTarget = { getBoundingClientRect: () => ({ left: 10, top: 20 }) };
+   const event = { shiftKey: false, preventDefault, dataTransfer: data, currentTarget, clientX: 30, clientY: 50 } as unknown as DragEvent;
    const props = fileDragProps("/clips/video.mp4", { id: "clip", collection: "/clips" });
    props.onDragStart(event);
    expect(api.dragFile).toHaveBeenCalledWith("/clips/video.mp4");
    expect(preventDefault).toHaveBeenCalledOnce();
    expect(data.setData).not.toHaveBeenCalled();
+   expect(data.clearData).not.toHaveBeenCalled();
    vi.mocked(api.dragFile).mockClear();
    preventDefault.mockClear();
    props.onDragStart({ ...event, shiftKey: true });
@@ -131,4 +133,6 @@ it("keeps normal file drags native and reserves HTML folder moves for Shift", as
    expect(preventDefault).not.toHaveBeenCalled();
    expect(data.setData).toHaveBeenCalledWith("application/x-acroclip-clip", JSON.stringify({ id: "clip", collection: "/clips" }));
    expect(data.effectAllowed).toBe("move");
+   expect(data.clearData).toHaveBeenCalledOnce();
+   expect(data.setDragImage).toHaveBeenCalledWith(currentTarget, 20, 30);
 });

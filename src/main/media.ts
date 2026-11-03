@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { rm, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import os from "node:os";
 import type { AudioTrack } from "../shared/types";
 
@@ -127,6 +128,58 @@ export interface MediaInfo {
    frameRate: number;
    videoCodec: string;
    tracks: AudioTrack[];
+}
+
+export async function createThumbnail(source: string, output: string, duration: number): Promise<void> {
+   const inputPath = resolve(source),
+      outputPath = resolve(output);
+   if (process.platform === "win32" ? inputPath.toLowerCase() === outputPath.toLowerCase() : inputPath === outputPath)
+      throw new Error("A thumbnail must not overwrite its source video.");
+   await rm(output, { force: true });
+   const length = Number.isFinite(duration) && duration > 0 ? duration : 0;
+   const generate = async (keyframes: boolean) => {
+      await runMedia(
+         "ffmpeg",
+         [
+            ...ffmpegBase,
+            "-y",
+            "-ss",
+            String(keyframes ? Math.max(0, length - 1) : Math.min(length * 0.2, 2)),
+            ...(keyframes ? ["-noaccurate_seek", "-skip_frame", "nokey"] : []),
+            "-threads",
+            "2",
+            "-i",
+            source,
+            "-map",
+            "0:v:0",
+            "-vf",
+            "scale=480:-2",
+            "-pix_fmt",
+            "yuvj420p",
+            "-filter_threads",
+            "1",
+            "-threads",
+            "1",
+            // Container indexes can seek before the last keyframe. Keep the final
+            // decoded keyframe, without buffering images or decoding intervening frames.
+            ...(keyframes ? ["-fps_mode", "passthrough"] : ["-frames:v", "1"]),
+            "-f",
+            "image2",
+            "-update",
+            "1",
+            output,
+         ],
+         { belowNormal: true }
+      );
+      if ((await stat(output)).size === 0) throw new Error("No thumbnail frame was decoded.");
+   };
+   try {
+      await generate(length > 0);
+   } catch {
+      // An incomplete index or unsupported keyframe skip must not leave a clip blank.
+      await rm(output, { force: true });
+      await generate(false);
+   }
 }
 export async function probe(path: string): Promise<MediaInfo> {
    const value: unknown = JSON.parse(await runMedia("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", path]));

@@ -15,8 +15,9 @@ import { PaneDivider, usePaneSize } from "./layout";
 import type { Ask } from "./Dialog";
 import { useAttaCutAvailable } from "./useAttaCutAvailable";
 import { ClipActions } from "./ClipActions";
-import { CategoryMark } from "./CategoryEditor";
+import { CategoryEditor, CategoryMark } from "./CategoryEditor";
 import { categoryStyle } from "./category-color";
+import { usePlaybackFade } from "./usePlaybackFade";
 
 export function Viewer({
    state,
@@ -46,6 +47,9 @@ export function Viewer({
    useDirectionalContent(versionActions, version, version === "original" ? 0 : 1, visible, clip?.id ?? "");
    const [shareId, setShareId] = useState("");
    const [url, setUrl] = useState("");
+   const [creatingTag, setCreatingTag] = useState(false);
+   const [urlOwner, setUrlOwner] = useState("");
+   const [urlGeneration, setUrlGeneration] = useState(0);
    const [loading, setLoading] = useState(false);
    const [playing, setPlaying] = useState(false);
    const [time, setTime] = useState(0);
@@ -70,6 +74,8 @@ export function Viewer({
    const previousClip = useRef<string | undefined>(undefined);
    const shareable = clip?.shareables.find((item) => item.id === shareId) ?? clip?.shareables.at(-1);
    const path = version === "shareable" ? shareable?.path : clip?.path;
+   const playbackIdentity = JSON.stringify([clip?.id, path, version, track]);
+   const fade = usePlaybackFade(video, playbackIdentity, url, urlOwner === playbackIdentity, visible, urlGeneration);
    const targetAllowed = shareableTargetAllowed(clip?.size ?? 0, override ? target : state.preferences.shareSizeMB);
    const job = state.jobs.find((item) => item.clipId === clip?.id && item.kind === "shareable" && ["queued", "running"].includes(item.state));
    useEffect(() => {
@@ -90,6 +96,7 @@ export function Viewer({
    }, [clip?.originalMissing]);
    useEffect(() => {
       if (!visible) {
+         setUrlOwner("");
          video.current?.pause();
          if (document.fullscreenElement === player.current) void document.exitFullscreen().catch(() => undefined);
          resume.current = false;
@@ -97,6 +104,9 @@ export function Viewer({
       }
       if (!path) {
          setUrl("");
+         setUrlOwner("");
+         setLoading(false);
+         setMediaError("");
          return;
       }
       let disposed = false;
@@ -114,10 +124,13 @@ export function Viewer({
                }
                currentUrl.current = result;
                setUrl(result);
+               setUrlOwner(playbackIdentity);
+               setUrlGeneration((value) => value + 1);
             }
          } catch (error) {
             if (!disposed) {
                setUrl("");
+               setUrlOwner("");
                setMediaError(describeError(error));
             }
          } finally {
@@ -127,7 +140,7 @@ export function Viewer({
       return () => {
          disposed = true;
       };
-   }, [path, track, version, visible]);
+   }, [path, track, version, visible, playbackIdentity]);
 
    const rememberPlayback = () => {
       if (!switching.current) {
@@ -239,6 +252,7 @@ export function Viewer({
                         onContextClose={() => setContextMenu(null)}
                      >
                         <ClipActions
+                           createTag={() => setCreatingTag(true)}
                            clip={clip}
                            categories={state.categories}
                            busy={!!job}
@@ -435,19 +449,15 @@ export function Viewer({
                   wakeControls();
                }}
             >
-               {loading && (
-                  <div className="video-loading">
-                     <LoaderCircle size={30} className="spin" />
-                     <span>Preparing playback</span>
-                  </div>
-               )}
+               {path && !mediaError && clip.thumbnail && <img className="player-poster" src={clip.thumbnail} alt="" aria-hidden="true" />}
+               <canvas ref={fade.outgoing} className="player-outgoing" aria-hidden="true" hidden={!path || !!mediaError} />
                {url ? (
                   <video
                      ref={video}
+                     className={`player-video ${fade.ready ? "ready" : ""}`}
                      tabIndex={0}
                      {...fileDragProps(path)}
                      src={url}
-                     poster={clip.thumbnail || undefined}
                      onLoadedMetadata={(event) => {
                         const media = event.currentTarget;
                         setDuration(media.duration);
@@ -536,6 +546,7 @@ export function Viewer({
                onFullscreen={() => void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()))}
             />
          </div>
+         {creatingTag && <CategoryEditor close={() => setCreatingTag(false)} run={run} />}
       </div>
    );
 }

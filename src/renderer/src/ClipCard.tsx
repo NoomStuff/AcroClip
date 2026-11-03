@@ -12,6 +12,8 @@ import { IconButton, Menu, MenuItem } from "./ui";
 import { ClipActions } from "./ClipActions";
 import type { ContextMenuRequest } from "./ui";
 
+const dragSurface = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>')}`;
+
 export const ClipCard = memo(function ClipCard({
    clip,
    collectionRoot,
@@ -27,6 +29,7 @@ export const ClipCard = memo(function ClipCard({
    closeMenu,
    openClip,
    categories,
+   createTag,
    moveClip,
    run,
    ask,
@@ -45,6 +48,7 @@ export const ClipCard = memo(function ClipCard({
    closeMenu: (clipId: string) => void;
    openClip: (clip: Clip) => void;
    categories: Category[];
+   createTag: () => void;
    moveClip: (id: string) => void;
    run: Run;
    ask: Ask;
@@ -128,6 +132,9 @@ export const ClipCard = memo(function ClipCard({
                <span>{clip.duration > 0 ? formatTime(clip.duration) : ""}</span>
                <span>{formatSize(clip.originalMissing ? (shareable?.size ?? clip.size) : clip.size)}</span>
             </span>
+            {/* Chromium can turn Shift-drag on a button into text selection.
+                A stable image target also works before the thumbnail loads. */}
+            <img className="clip-drag-surface" src={dragSurface} alt="" aria-hidden="true" draggable={!!(clip.originalMissing ? shareable?.path : clip.path)} />
          </button>
          <div className="card-menu">
             <Menu
@@ -141,6 +148,7 @@ export const ClipCard = memo(function ClipCard({
                   Open clip
                </MenuItem>
                <ClipActions
+                  createTag={createTag}
                   clip={clip}
                   categories={categories}
                   busy={!!job}

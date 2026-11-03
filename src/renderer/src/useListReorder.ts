@@ -22,7 +22,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
    const [draggingId, setDraggingId] = useState<string | null>(null);
    const drag = useRef<Drag | null>(null);
    const frame = useRef(0);
-   const suppressClickUntil = useRef(0);
+   const suppressPointerClick = useRef(false);
    const generation = useRef(0);
    const latest = useRef({ items, commit });
    latest.current = { items, commit };
@@ -51,7 +51,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       const transform = current.node.style.transform;
       current.node.style.removeProperty("transform");
       if (current.active) {
-         suppressClickUntil.current = performance.now() + 120;
+         suppressPointerClick.current = true;
          if (!matchMedia("(prefers-reduced-motion: reduce)").matches && save) {
             current.node.animate([{ transform }, { transform: "translateY(0)" }], { duration: 220, easing: "cubic-bezier(.22,.8,.3,1)" });
          }
@@ -88,7 +88,11 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
          const speed = current.currentY < bounds.top + 32 ? -6 : current.currentY > bounds.bottom - 32 ? 6 : 0;
          if (speed) scroll.scrollTop += speed;
       }
-      const top = current.currentY - current.grab;
+      const bounds = list.getBoundingClientRect();
+      const viewport = scroll?.getBoundingClientRect();
+      const minimum = Math.max(bounds.top, viewport?.top ?? bounds.top);
+      const maximum = Math.max(minimum, Math.min(bounds.bottom, viewport?.bottom ?? bounds.bottom) - current.node.offsetHeight);
+      const top = Math.max(minimum, Math.min(maximum, current.currentY - current.grab));
       current.node.style.transform = `translateY(${top - wrapper.getBoundingClientRect().top}px)`;
       const center = top + current.node.offsetHeight / 2 - list.getBoundingClientRect().top;
       const rows = Array.from(list.children).filter(
@@ -199,9 +203,11 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       draggingId,
       announcement,
       pointerDown: (id: string, event: ReactPointerEvent<HTMLElement>) => {
+         // A fresh press is an intentional click, even immediately after a drag.
+         suppressPointerClick.current = false;
          if (!enabled || event.button !== 0 || !event.isPrimary || event.pointerType === "touch") return;
          const capture = event.currentTarget.querySelector<HTMLElement>("[data-list-control]");
-         if (!capture || !(event.target instanceof Node) || !capture.contains(event.target)) return;
+         if (!capture || !(event.target instanceof Element) || event.target.closest("[data-list-control]") !== capture) return;
          keyboardOrder.current = null;
          keyboardFocus.current = null;
          generation.current++;
@@ -226,14 +232,16 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
          };
       },
       clickCapture: (event: ReactMouseEvent<HTMLElement>) => {
-         if (performance.now() < suppressClickUntil.current) {
+         if (event.detail > 0 && suppressPointerClick.current) {
+            suppressPointerClick.current = false;
             event.preventDefault();
             event.stopPropagation();
          }
       },
       keyDown: (id: string, event: ReactKeyboardEvent<HTMLElement>) => {
          if (!enabled || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
-         if (!(event.target instanceof Element) || !event.target.closest("[data-list-control]")) return;
+         if (!(event.target instanceof Element) || event.target.closest("[data-list-control]") !== event.currentTarget.querySelector("[data-list-control]"))
+            return;
          event.preventDefault();
          event.stopPropagation();
          const ids = keyboardOrder.current ?? latest.current.items.map((item) => item.id);

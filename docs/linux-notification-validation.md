@@ -37,3 +37,9 @@ Candidate run 41369896434 finished in about 33 minutes. Windows x64, Linux arm64
 The PR watch reported the regular checks but did not deliver this manually dispatched candidate failure. Treat candidate status as separate from the regular PR checks; a green PR check notification is not evidence that the release candidate passed.
 
 The corrected tag-order UI test passed ten consecutive isolated X11 runs before the candidate retry. The Wine-prefix change was syntax-checked locally; its full native verification remains part of the candidate run.
+
+## Main synchronization
+
+Candidate run 41528695913, attempt 2, passed the final gate and independent verification for all five targets at `c079bfa`. Publication was skipped. The successful retry does not establish a cause for the first attempt's missing audio fixture.
+
+Main advanced to `1dfd034` with capture and library changes and version `0.9.0`. The notification branch merges those changes, preserving the notification save-failure tests, immediate starting feedback, main's audio-warning handling and candidate retry tests, and the external tag-order fix. The version comes from main; this PR does not add another bump. The merged tree requires a new candidate run before its release validation is considered complete.

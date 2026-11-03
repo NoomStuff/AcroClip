@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { gridZoomTarget } from "./thumbnail-scale";
+import { gridZoomRange, gridZoomTarget } from "./thumbnail-scale";
 
 describe("grid zoom steps", () => {
+   it("matches the range and position to the columns that fit after a resize", () => {
+      expect(gridZoomRange(900, 18, 300)).toMatchObject({ min: 0, max: 1, value: 1, columns: 2, pixels: 441 });
+      expect(gridZoomRange(1200, 18, 300)).toMatchObject({ min: 0, max: 3, value: 2, columns: 3, pixels: 388 });
+      expect(gridZoomRange(180, 18, 300)).toMatchObject({ min: 0, max: 0, value: 0, columns: 1, pixels: 180 });
+   });
+   it("gives every slider step a distinct, achievable column count", () => {
+      for (const width of [180, 699.5, 900.25, 1200, 1843.75]) {
+         const range = gridZoomRange(width, 18, 300);
+         const columns = range.sizes.map((size) => Math.max(1, Math.floor((width + 18) / (size + 18))));
+         expect(new Set(columns).size).toBe(range.sizes.length);
+         expect(columns).toEqual(Array.from({ length: range.sizes.length }, (_, index) => columns[0]! - index));
+      }
+   });
    it("jumps to adjacent column counts instead of fixed thumbnail increments", () => {
       expect(gridZoomTarget(1200, 18, 300, -1)).toBe(286);
       expect(gridZoomTarget(1200, 18, 300, 1)).toBe(440);

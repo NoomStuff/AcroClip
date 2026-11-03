@@ -547,7 +547,7 @@
    background: #ffffff09;
 }
 
-.menu .danger {
+.menu button.danger {
    color: var(--red);
 }
 

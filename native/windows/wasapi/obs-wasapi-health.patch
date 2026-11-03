@@ -1,7 +1,14 @@
 diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.cpp
 --- a/plugins/win-wasapi/win-wasapi.cpp
 +++ b/plugins/win-wasapi/win-wasapi.cpp
-@@ -170,6 +170,20 @@
+@@ -165,11 +165,27 @@
+ 	string executable;
+ 	HWND hwnd = NULL;
+ 	DWORD process_id = 0;
++	DWORD direct_process_id = 0;
++	WinHandle direct_process;
+ 	const SourceType sourceType;
+ 	std::atomic<bool> useDeviceTiming = false;
  	std::atomic<bool> isDefaultDevice = false;
  	std::atomic<bool> sawBadTimestamp = false;
  	bool hooked = false;
@@ -22,7 +29,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  
  	bool previouslyFailed = false;
  	WinHandle reconnectThread = NULL;
-@@ -282,6 +296,17 @@
+@@ -282,6 +298,17 @@
  	void OnSampleReady();
  	void OnRestart();
  
@@ -40,7 +47,15 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  	bool GetHooked();
  	HWND GetHwnd();
  
-@@ -440,6 +465,7 @@
+@@ -305,6 +332,7 @@
+ 			(PFN_ActivateAudioInterfaceAsync)GetProcAddress(mmdevapi_module, "ActivateAudioInterfaceAsync");
+ 	}
+ 
++	direct_process_id = DWORD(obs_data_get_int(settings, "acroclip_process_id"));
+ 	UpdateSettings(BuildUpdateParams(settings));
+ 	LogSettings();
+ 
+@@ -440,6 +468,7 @@
  
  void WASAPISource::Stop()
  {
@@ -48,7 +63,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  	SetEvent(stopSignal);
  
  	blog(LOG_INFO, "WASAPI: Device '%s' Terminated", device_name.c_str());
-@@ -567,6 +593,7 @@
+@@ -567,6 +596,7 @@
  	LogSettings();
  
  	if (restart) {
@@ -56,7 +71,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  		SetEvent(restartSignal);
  	}
  }
-@@ -583,6 +610,7 @@
+@@ -583,6 +613,7 @@
  	UpdateSettings(std::move(params));
  
  	if (restart) {
@@ -64,7 +79,28 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  		SetEvent(restartSignal);
  	}
  }
-@@ -887,6 +915,10 @@
+@@ -857,6 +888,12 @@
+ 	if (sourceType == SourceType::ProcessOutput) {
+ 		device_name = "[VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK]";
+ 
++        if (direct_process_id) {
++            if (!direct_process.Valid()) direct_process = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, direct_process_id);
++            if (!direct_process.Valid() || WaitForSingleObject(direct_process, 0) != WAIT_TIMEOUT)
++                throw "The desktop audio process is unavailable";
++            process_id = direct_process_id;
++        } else {
+ 		hwnd = ms_find_window(INCLUDE_MINIMIZED, priority, window_class.c_str(), title.c_str(),
+ 				      executable.c_str());
+ 		if (!hwnd) {
+@@ -870,6 +907,7 @@
+ 		}
+ 
+ 		process_id = dwProcessId;
++        }
+ 	} else {
+ 		device = InitDevice(enumerator, isDefaultDevice, sourceType, device_id);
+ 
+@@ -887,6 +925,10 @@
  
  	client = std::move(temp_client);
  	capture = std::move(temp_capture);
@@ -75,7 +111,16 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  
  	if (rtwq_supported) {
  		HRESULT hr = rtwq_put_waiting_work_item(receiveSignal, 0, sampleReadyAsyncResult, nullptr);
-@@ -941,11 +973,13 @@
+@@ -907,7 +949,7 @@
+ 	blog(LOG_INFO, "WASAPI: Device '%s' [%" PRIu32 " Hz] initialized (source: %s)", device_name.c_str(), sampleRate,
+ 	     obs_source_get_name(source));
+ 
+-	if (sourceType == SourceType::ProcessOutput && !hooked) {
++	if (sourceType == SourceType::ProcessOutput && !direct_process_id && !hooked) {
+ 		hooked = true;
+ 
+ 		signal_handler_t *sh = obs_source_get_signal_handler(source);
+@@ -941,11 +983,13 @@
  		success = true;
  
  	} catch (HRError &error) {
@@ -89,16 +134,19 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  		if (!previouslyFailed) {
  			blog(LOG_WARNING, "[WASAPISource::TryInitialize]:[%s] %s",
  			     device_name.empty() ? device_id.c_str() : device_name.c_str(), error);
-@@ -1004,7 +1038,7 @@
+@@ -1002,9 +1046,9 @@
+ 	UINT captureSize = 0;
+ 
  	while (true) {
- 		if ((sourceType == SourceType::ProcessOutput) && !IsWindow(hwnd)) {
+-		if ((sourceType == SourceType::ProcessOutput) && !IsWindow(hwnd)) {
++		if ((sourceType == SourceType::ProcessOutput) && (direct_process_id ? WaitForSingleObject(direct_process, 0) != WAIT_TIMEOUT : !IsWindow(hwnd))) {
  			blog(LOG_WARNING, "[WASAPISource::ProcessCaptureData] window disappeared");
 -			return false;
 +			return CaptureFailed(E_HANDLE);
  		}
  
  		res = capture->GetNextPacketSize(&captureSize);
-@@ -1016,7 +1050,7 @@
+@@ -1016,7 +1060,7 @@
  				     " failed: %lX",
  				     res);
  			}
@@ -107,7 +155,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  		}
  
  		if (!captureSize) {
-@@ -1032,7 +1066,7 @@
+@@ -1032,7 +1076,7 @@
  				     " failed: %lX",
  				     res);
  			}
@@ -116,7 +164,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  		}
  
  		if (!sawBadTimestamp && flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR) {
-@@ -1053,6 +1087,7 @@
+@@ -1053,6 +1097,7 @@
  			buffer = silence.data();
  		}
  
@@ -124,7 +172,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  		obs_source_audio data = {};
  		data.data[0] = buffer;
  		data.frames = frames;
-@@ -1080,7 +1115,8 @@
+@@ -1080,7 +1125,8 @@
  			obs_source_output_audio(source, &data);
  		}
  
@@ -134,7 +182,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  	}
  
  	return true;
-@@ -1199,6 +1235,9 @@
+@@ -1199,6 +1245,9 @@
  		sig_count = _countof(inactive_sigs);
  		sigs = inactive_sigs;
  
@@ -144,7 +192,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  		if (source->client) {
  			source->client->Stop();
  
-@@ -1259,6 +1298,7 @@
+@@ -1259,6 +1308,7 @@
  		default_id.clear();
  	}
  
@@ -152,7 +200,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  	blog(LOG_INFO, "WASAPI: Default %s device changed", input ? "input" : "output");
  
  	SetEvent(restartSignal);
-@@ -1313,6 +1353,7 @@
+@@ -1313,6 +1363,7 @@
  
  	if (!stop) {
  		if (FAILED(rtwq_put_waiting_work_item(receiveSignal, 0, sampleReadyAsyncResult, nullptr))) {
@@ -160,7 +208,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  			blog(LOG_ERROR, "Could not requeue sample receive work");
  			stop = true;
  			reconnect = true;
-@@ -1321,6 +1362,9 @@
+@@ -1321,6 +1372,9 @@
  	}
  
  	if (stop) {
@@ -170,7 +218,7 @@ diff --git a/plugins/win-wasapi/win-wasapi.cpp b/plugins/win-wasapi/win-wasapi.c
  		client->Stop();
  
  		capture.Clear();
-@@ -1435,13 +1479,22 @@
+@@ -1435,13 +1489,22 @@
  	wasapi_source->SetRerouteTarget(target);
  }
  

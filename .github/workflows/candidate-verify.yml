@@ -149,6 +149,7 @@ jobs:
               path: |-
                  test-results/
                  .cache/linux-smoke/
+                 !.cache/linux-smoke/**/wine-prefix/**
                  .cache/linux-packaged/
                  .cache/macos-packaged/
                  .cache/macos-capture/

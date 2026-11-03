@@ -169,7 +169,8 @@ try:
     command(dict(action="save", path=str(first), requestId="actual", requestedAt=int(time.time() * 1000)))
     saved = wait(lambda event: event["event"] == "saved" and event.get("requestId") == "actual")
     actual = decode(first)
-    assert saved["source"] == "Portal-selected screen", saved
+    assert saved["source"] == "Desktop", saved
+    assert saved["sourceId"] == "portal:screen", saved
     queued = folder / "queued-switch.mkv"
     command(dict(action="save", path=str(queued), requestId="queued-switch", requestedAt=int(time.time() * 1000)))
     begin = time.monotonic()

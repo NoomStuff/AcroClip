@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { defaultPreferences } from "../../src/shared/defaults";
 
+declare global {
+   interface Window {
+      releasePreview?: () => void;
+      firstPreviewReveal?: { from: number; to: number; duration: number };
+   }
+}
+
 test("live preview captures the chosen window and releases tracks on navigation, source changes, and hiding", async () => {
    const profile = await mkdtemp(join(tmpdir(), "acroclip-preview-ui-"));
    const collection = join(profile, "clips");
@@ -76,13 +83,60 @@ test("live preview captures the chosen window and releases tracks on navigation,
          expect(choices.some((source) => source.name === "Protected capture fixture")).toBe(false);
       expect(sourceA).toBeDefined();
       expect(sourceB).toBeDefined();
+      // Delay permission acquisition, but still capture a real window when released.
+      const holdPreview = () =>
+         page.evaluate(() => {
+            const acquire = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+            const gate = new Promise<void>((resolve) => {
+               window.releasePreview = resolve;
+            });
+            navigator.mediaDevices.getDisplayMedia = async (options) => {
+               navigator.mediaDevices.getDisplayMedia = acquire;
+               await gate;
+               return acquire(options);
+            };
+         });
+      const releasePreview = () => page.evaluate(() => window.releasePreview?.());
+      await holdPreview();
       await page.evaluate(async (id) => {
          const state = await window.acroClip.state();
          await window.acroClip.savePreferences({ ...state.preferences, sourceKind: "app", sourceId: id });
       }, sourceA!.id);
-      const initialRequestedAt = performance.now();
       const preview = page.locator(".preview-stream");
+      await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
+      await expect(page.locator(".preview-note")).toHaveText("Loading");
+      await expect(page.locator(".preview-loading-spinner")).toHaveCount(0);
+      const icon = page.locator(".preview-placeholder");
+      const initialOpacity = await icon.evaluate((node) => {
+         const pulse = node.getAnimations().find((animation) => animation instanceof CSSAnimation && animation.animationName === "preview-icon-pulse")!;
+         pulse.pause();
+         pulse.currentTime = 1000;
+         return Number(getComputedStyle(node).opacity);
+      });
+      await icon.evaluate((node) => {
+         node.getAnimations().find((animation) => animation instanceof CSSAnimation && animation.animationName === "preview-icon-pulse")!.currentTime = 1750;
+      });
+      expect(await icon.evaluate((node) => Number(getComputedStyle(node).opacity))).toBeLessThan(initialOpacity);
+      await expect(page.locator(".preview-message")).toHaveCount(0);
+      await preview.evaluate((node) => {
+         const observer = new MutationObserver(() => {
+            if (!node.classList.contains("ready")) return;
+            const animation = node.getAnimations()[0];
+            if (!animation) return;
+            const frames = (animation.effect as KeyframeEffect).getKeyframes();
+            window.firstPreviewReveal = {
+               from: Number(frames[0]?.["opacity"]),
+               to: Number(frames.at(-1)?.["opacity"]),
+               duration: Number(animation.effect?.getTiming().duration),
+            };
+            observer.disconnect();
+         });
+         observer.observe(node, { attributes: true, attributeFilter: ["class"] });
+      });
+      await releasePreview();
+      const initialRequestedAt = performance.now();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      expect(await page.evaluate(() => window.firstPreviewReveal)).toEqual({ from: 0, to: 1, duration: 140 });
       console.log("Preview initial first frame ms", Math.round(performance.now() - initialRequestedAt));
       const first = await preview.evaluate((video: HTMLVideoElement) => video.getVideoPlaybackQuality().totalVideoFrames);
       await expect.poll(() => preview.evaluate((video: HTMLVideoElement) => video.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(first + 5);
@@ -111,31 +165,83 @@ test("live preview captures the chosen window and releases tracks on navigation,
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
          .toEqual(["ended"]);
       await expect.poll(() => preview.evaluate((video: HTMLVideoElement) => video.srcObject === null)).toBe(true);
-      const returnRequestedAt = performance.now();
-      await expect(page.locator(".preview-canvas")).toHaveClass(/cached/);
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
+      const cachedA = await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
       await page.evaluate(() => {
          (window as unknown as { cacheShown: boolean }).cacheShown = false;
+         (window as unknown as { handoffShown: boolean }).handoffShown = false;
          const root = document.querySelector(".recording-page")!;
          const observer = new MutationObserver(() => {
-            if (root.getClientRects().length && root.querySelector(".preview-canvas.cached")) (window as unknown as { cacheShown: boolean }).cacheShown = true;
+            if (root.getClientRects().length && root.querySelector(".preview-still.cached")) (window as unknown as { cacheShown: boolean }).cacheShown = true;
+            if (root.querySelector(".preview-stream.ready") && root.querySelector(".preview-still.cached"))
+               (window as unknown as { handoffShown: boolean }).handoffShown = true;
          });
          observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
       });
+      await holdPreview();
       await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
+      expect(await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).toBe(cachedA);
+      await expect(page.locator(".preview-message")).toHaveCount(0);
+      await releasePreview();
+      const returnRequestedAt = performance.now();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-still")).not.toHaveClass(/cached/);
       console.log("Preview tab return first frame ms", Math.round(performance.now() - returnRequestedAt));
       expect(await page.evaluate(() => (window as unknown as { cacheShown: boolean }).cacheShown)).toBe(true);
+      expect(await page.evaluate(() => (window as unknown as { handoffShown: boolean }).handoffShown)).toBe(true);
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();
       });
-      const switchRequestedAt = performance.now();
+      await holdPreview();
+      const outgoing = page.locator(".preview-outgoing");
+      await outgoing.evaluate((node) => {
+         const observer = new MutationObserver(() => {
+            const fade = node.getAnimations()[0];
+            if (!fade) return;
+            fade.pause();
+            fade.currentTime = 90;
+            observer.disconnect();
+         });
+         observer.observe(node, { attributes: true, attributeFilter: ["style", "width", "height"] });
+      });
       await page.locator(".source-row").filter({ hasText: "Preview fixture B" }).click();
       await expect(preview).toHaveAttribute("aria-label", "Live preview of Preview fixture B");
+      const departing = await outgoing.evaluate((node: HTMLCanvasElement) => ({
+         width: node.width,
+         opacity: Number(getComputedStyle(node).opacity),
+         layer: Number(getComputedStyle(node).zIndex),
+         iconLayer: Number(getComputedStyle(document.querySelector(".preview-loading")!).zIndex),
+         incomingLayer: Number(getComputedStyle(document.querySelector(".preview-stream")!).zIndex),
+      }));
+      expect(departing.width).toBeGreaterThan(200);
+      expect(departing.opacity).toBeGreaterThan(0);
+      expect(departing.opacity).toBeLessThan(1);
+      expect(departing.layer).toBeGreaterThan(departing.iconLayer);
+      expect(departing.layer).toBeLessThan(departing.incomingLayer);
+      await outgoing.evaluate((node) => node.getAnimations()[0]!.finish());
+      await expect(outgoing).toHaveCSS("opacity", "0");
+      await releasePreview();
+      const switchRequestedAt = performance.now();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       console.log("Preview source switch first frame ms", Math.round(performance.now() - switchRequestedAt));
       await expect
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
          .toEqual(["ended"]);
+      await page.getByRole("button", { name: "Library", exact: true }).click();
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
+      const cachedB = await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
+      await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      // Returning to A must restore A's frame, rather than B's frame or a blank canvas.
+      await holdPreview();
+      await page.locator(".source-row").filter({ hasText: "Preview fixture A" }).click();
+      await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
+      expect(await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).not.toBe(cachedB);
+      await releasePreview();
+      await expect(page.locator(".preview-note")).toHaveText("Live preview");
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();
       });
@@ -143,11 +249,16 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await expect
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
          .toEqual(["ended"]);
+      await holdPreview();
       await desktop.evaluate(({ BrowserWindow }) => {
          const main = BrowserWindow.getAllWindows().find((window) => window.getTitle() === "AcroClip");
          main?.restore();
          main?.show();
       });
+      await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
+      await expect(page.locator(".preview-message")).toHaveCount(0);
+      await releasePreview();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       // Rapid requests must not let an older completion revoke the final source.
       await page.evaluate(
@@ -161,6 +272,21 @@ test("live preview captures the chosen window and releases tracks on navigation,
          { a: sourceA!.id, b: sourceB!.id }
       );
       await expect(preview).toHaveAttribute("aria-label", "Live preview of Preview fixture B");
+      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      // A failed reconnect must expose the error and retry action, even after a cached frame.
+      await page.getByRole("button", { name: "Library", exact: true }).click();
+      await expect(page.locator(".preview-still")).toHaveClass(/cached/);
+      await page.evaluate(() => {
+         const acquire = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+         navigator.mediaDevices.getDisplayMedia = async () => {
+            navigator.mediaDevices.getDisplayMedia = acquire;
+            throw new DOMException("Source temporarily unreadable", "NotReadableError");
+         };
+      });
+      await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Preview unavailable", exact: true })).toBeVisible();
+      await expect(page.locator(".preview-still")).not.toHaveClass(/cached/);
+      await page.getByRole("button", { name: "Retry preview", exact: true }).click();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       await page.waitForTimeout(300);
       await preview.evaluate((video: HTMLVideoElement) => {

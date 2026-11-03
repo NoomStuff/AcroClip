@@ -53,14 +53,16 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.locator(".clip-card")).toHaveCount(3);
       const gridScale = page.getByRole("slider", { name: "Grid thumbnail size", exact: true });
-      await expect(gridScale).toHaveValue("300");
+      await expect(gridScale).toHaveAttribute("aria-valuetext", /^\d+ columns?, \d+px thumbnails$/);
+      const sliderElement = await gridScale.elementHandle();
       await gridScale.press("End");
       await page.getByRole("button", { name: "List view", exact: true }).click();
       const listScale = page.getByRole("slider", { name: "List thumbnail size", exact: true });
+      expect(await listScale.evaluate((node, previous) => node === previous, sliderElement)).toBe(true);
       await expect(listScale).toHaveValue("128");
       await listScale.press("End");
       await page.getByRole("button", { name: "Grid view", exact: true }).click();
-      await expect(gridScale).toHaveValue("440");
+      await expect.poll(() => gridScale.evaluate((node: HTMLInputElement) => node.value === node.max)).toBe(true);
       await gridScale.press("Home");
       const divider = page.getByRole("separator", { name: "Library sidebar width", exact: true });
       const dividerBounds = (await divider.boundingBox())!;
@@ -73,7 +75,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await expect(page.locator(".application-filter")).toHaveCount(0);
       const applicationsHeading = page.locator(".sidebar-group-title").filter({ hasText: "Applications" });
       await expect(applicationsHeading).toBeVisible();
-      await expect(applicationsHeading).toHaveAttribute("data-empty", "true");
+      await expect(page.getByRole("region", { name: "Applications", exact: true })).toHaveAttribute("data-empty", "true");
       await expect(applicationsHeading.getByRole("button", { name: "Add game", exact: true })).toBeVisible();
       // Read one animation frame, rather than comparing rectangles sampled at
       // different positions during the directional page transition.
@@ -87,7 +89,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
                };
                const action = rect(".collection-home .header-actions button");
                const title = rect(".collection-home .context-header-title");
-               const category = rect(".sidebar-group-title button");
+               const category = rect(".sidebar-group-title .icon-button");
                const count = rect(".sidebar-scroll > .sidebar-item > .count");
                return Math.max(
                   Math.abs(action.y + action.height / 2 - title.y - title.height / 2),
@@ -105,6 +107,14 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       const games = page.getByRole("treeitem", { name: "Games", exact: true });
       await games.focus();
       await games.press("ArrowRight");
+      await expect(page.getByRole("treeitem", { name: "Highlights", exact: true })).toBeVisible();
+      const foldersToggle = page.getByRole("button", { name: "Folders", exact: true });
+      await foldersToggle.click();
+      await expect(foldersToggle).toHaveAttribute("aria-expanded", "false");
+      await expect(page.getByRole("treeitem", { name: "Games", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "New collection folder", exact: true })).toBeVisible();
+      await foldersToggle.press("Space");
+      await expect(foldersToggle).toHaveAttribute("aria-expanded", "true");
       await expect(page.getByRole("treeitem", { name: "Highlights", exact: true })).toBeVisible();
       await games.press("Enter");
       await expect(page.getByRole("button", { name: "Open Gameplay", exact: true })).toBeVisible();
@@ -126,7 +136,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await nestedFolder.getByRole("textbox").fill("Shortcut folder");
       await nestedFolder.getByRole("button", { name: "Create", exact: true }).click();
       await expect(nestedFolder).not.toBeVisible();
-      expect((await stat(join(collection, "Other", "Shortcut folder"))).isDirectory()).toBe(true);
+      await expect.poll(async () => (await stat(join(collection, "Other", "Shortcut folder")).catch(() => null))?.isDirectory()).toBe(true);
       await page.getByRole("button", { name: "New collection folder", exact: true }).click();
       const newFolder = page.getByRole("dialog", { name: "New folder", exact: true });
       await newFolder.getByRole("textbox").fill("Organized");
@@ -147,6 +157,11 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
                .evaluate((node) => getComputedStyle(node).transform)
          )
          .toBe("none");
+      const pendingThumbnails = await page.evaluate(async () => (await window.acroClip.state()).clips.map((clip) => ({ ...clip, thumbnail: "" })));
+      await app.evaluate(({ BrowserWindow }, clips) => {
+         BrowserWindow.getAllWindows()[0]!.webContents.send("app-event", { type: "state-patch", patch: { clips } });
+      }, pendingThumbnails);
+      await expect(page.getByRole("button", { name: "Open Root moment", exact: true }).locator(".thumbnail-fallback")).toBeVisible();
       await page.keyboard.down("Shift");
       await page.getByRole("button", { name: "Open Root moment", exact: true }).dragTo(page.locator('.library-sidebar [role="treeitem"][data-path="Sorted"]'));
       await expect.poll(async () => (await stat(join(collection, "Sorted", "Root moment.mp4")).catch(() => null))?.isFile()).toBe(true);
@@ -174,6 +189,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
          dialog.showMessageBox = async (windowOrOptions: Electron.BaseWindow | Electron.MessageBoxOptions, options?: Electron.MessageBoxOptions) => {
             const message = options ?? (windowOrOptions as Electron.MessageBoxOptions);
             if (!message.detail?.includes("2 clips") || !message.detail.includes("1 other file")) throw new Error("Folder move must describe all contents");
+            if (message.defaultId !== 1 || message.cancelId !== 0) throw new Error("Enter must confirm the move and Escape must cancel");
             return { response: 1, checkboxChecked: false };
          };
       });
