@@ -41,6 +41,16 @@ test("visual review covers primary screens and settings at narrow widths", async
          shortcuts: { ...defaultPreferences.shortcuts, toggleRecording: "" },
       })
    );
+   await writeFile(
+      join(profile, "game-catalog.json"),
+      JSON.stringify({
+         updated: Date.now(),
+         entries: [
+            { id: "celeste", name: "Celeste", executables: [{ name: "celeste.exe", os: process.platform }] },
+            { id: "stardew", name: "Stardew Valley", executables: [{ name: "stardew.exe", os: process.platform }] },
+         ],
+      })
+   );
    const app = await electron.launch({
       args: [resolve("."), "--disable-gpu-sandbox"],
       env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile, ACROCLIP_COLLECTION: collection },
@@ -67,9 +77,16 @@ test("visual review covers primary screens and settings at narrow widths", async
             window.setMinimumSize(0, 0);
             window.setSize(size, 800);
          }, width);
-         for (const section of ["Recording", "Collection", "Notifications", "Shortcuts", "App & updates"]) {
+         for (const section of ["Recording", "Collection", "Games", "Notifications", "Shortcuts", "App & updates"]) {
             await page.locator(".settings-nav").getByRole("button", { name: section, exact: true }).click();
             await expect(page.locator(".settings-heading")).toHaveText(section);
+            if (section === "Games") {
+               await expect(page.locator(".game-list > li")).toHaveCount(2);
+               const overflowingGames = await page
+                  .locator(".game-list > li")
+                  .evaluateAll((rows) => rows.filter((row) => row.scrollWidth > row.clientWidth + 1).length);
+               expect(overflowingGames, `Game rows fit at ${width}px`).toBe(0);
+            }
             if (section === "Recording") {
                await expect(page.getByRole("combobox", { name: "Resolution limit", exact: true })).toHaveAccessibleDescription(
                   "Screens scale to this limit. Apps keep their original size."

@@ -1,4 +1,3 @@
-import { useFieldDescription } from "./field-accessibility";
 // Copyright (c) 2026 NoomStuff
 // SPDX-License-Identifier: MIT
 // Adapted from AttaCut's DropdownSelect. See THIRD_PARTY_NOTICES.md.
@@ -6,6 +5,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
+import { useFieldDescription } from "./field-accessibility";
 
 export interface DropdownOption {
    value: string;
