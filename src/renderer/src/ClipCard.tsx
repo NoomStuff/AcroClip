@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useThumbnailVisibility } from "./useThumbnailVisibility";
 import type { CSSProperties } from "react";
 import { Clapperboard, LoaderCircle, MoreHorizontal, Play, Share2, X } from "lucide-react";
 import type { Category, Clip, Job } from "../../shared/types";
@@ -54,6 +55,7 @@ export const ClipCard = memo(function ClipCard({
    ask: Ask;
 }) {
    const shareable = clip.shareables.at(-1);
+   const thumbnail = useThumbnailVisibility();
    return (
       <article
          className="clip-card"
@@ -81,9 +83,11 @@ export const ClipCard = memo(function ClipCard({
             aria-label={`Open ${clip.name}`}
             title={clip.availability === "unverified" ? "Checking file availability" : undefined}
          >
-            <div className="clip-thumbnail">
+            <div className="clip-thumbnail" ref={thumbnail.ref}>
                {clip.thumbnail ? (
-                  <img src={clip.thumbnail} alt="" loading="lazy" className={clip.height > clip.width ? "portrait-thumbnail" : undefined} />
+                  thumbnail.visible ? (
+                     <img src={clip.thumbnail} alt="" loading="lazy" decoding="async" className={clip.height > clip.width ? "portrait-thumbnail" : undefined} />
+                  ) : null
                ) : (
                   <div className="thumbnail-fallback">
                      <Clapperboard size={34} />

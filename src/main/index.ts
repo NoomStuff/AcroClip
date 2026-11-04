@@ -240,6 +240,18 @@ function createWindow() {
       show: false,
       webPreferences: { preload: join(here, "../preload/index.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false },
    });
+   if (process.platform === "linux") mainWindow.removeMenu();
+   if (!isPackagedApp()) {
+      const contents = mainWindow.webContents;
+      contents.on("before-input-event", (event, input) => {
+         const inspectShortcut =
+            input.key === "F12" ||
+            (input.key.toLowerCase() === "i" && (process.platform === "darwin" ? input.meta && input.alt : input.control && input.shift));
+         if (input.type !== "keyDown" || input.isAutoRepeat || !inspectShortcut) return;
+         event.preventDefault();
+         contents.toggleDevTools();
+      });
+   }
    if (process.platform === "win32") {
       mainWindow.setAppDetails({ appId: windowsAppId(), appIconPath: process.execPath, appIconIndex: 0 });
    }
@@ -870,12 +882,17 @@ function registerIPC() {
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
    app.on("second-instance", (_event, arguments_) => {
+      if (closingRequested || quitting) return;
       if (arguments_.includes("--clip")) {
          void saveClip().catch((error: unknown) => notice(errorMessage(error), true));
          return;
       }
-      mainWindow?.show();
-      mainWindow?.focus();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+         if (app.isReady()) createWindow();
+         return;
+      }
+      mainWindow.show();
+      mainWindow.focus();
    });
    app.on("before-quit", (event) => {
       if (!quitting) {

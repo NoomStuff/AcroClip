@@ -59,7 +59,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await page.getByRole("button", { name: "List view", exact: true }).hover();
       await expect(emptyTags).toHaveCSS("opacity", "0.4");
       await page.evaluate(() => window.acroClip.createFolder("", "Saved"));
-      await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
+      await expect(sectionLabels).toHaveText(["Tags", "Applications", "Folders"]);
       await page.getByRole("button", { name: "List view", exact: true }).click();
       await expect(page.getByRole("button", { name: "List view", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.keyboard.press("Control+f");
@@ -80,11 +80,11 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await category.getByLabel("Custom tag color").fill("#112233");
       await category.getByRole("button", { name: "Create", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.length).toBe(1);
-      await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
-      await tagHandle.press("Alt+ArrowUp");
-      await expect(sectionLabels).toHaveText(["Tags", "Folders", "Applications"]);
+      await expect(sectionLabels).toHaveText(["Tags", "Applications", "Folders"]);
       await tagHandle.press("Alt+ArrowDown");
-      await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
+      await expect(sectionLabels).toHaveText(["Applications", "Tags", "Folders"]);
+      await tagHandle.press("Alt+ArrowUp");
+      await expect(sectionLabels).toHaveText(["Tags", "Applications", "Folders"]);
       const original = (await page.evaluate(() => window.acroClip.state())).categories[0]!;
       expect(original).toMatchObject({ name: "Highlights", color: "#112233", icon: "rocket" });
       const highlightRow = page.locator(".category-item").filter({ hasText: "Highlights" });
@@ -135,7 +135,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await focusNavigation();
       await page.keyboard.press("Control+2");
       await expect(page.getByRole("button", { name: /Matches/ }).first()).toBeVisible();
-      await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
+      await expect(sectionLabels).toHaveText(["Tags", "Applications", "Folders"]);
       await expect(page.getByRole("button", { name: "List view", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("button", { name: "Grid view", exact: true }).click();
       await expect(page.getByRole("button", { name: "Grid view", exact: true })).toHaveAttribute("aria-pressed", "true");

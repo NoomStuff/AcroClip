@@ -62,28 +62,18 @@ describe("library indexes", () => {
    });
 });
 
-it("moves newly populated sections above empty sections once, then respects manual ordering", () => {
+it("preserves section order regardless of which sections are populated", () => {
    const order = ["folders", "tags", "applications"];
-   const populated = { tags: false, applications: false, folders: false };
-   expect(orderLibrarySections(populated, order).map((section) => section.id)).toEqual(order);
-   const applications = { ...populated, applications: true };
-   expect(orderLibrarySections(applications, order, populated).map((section) => section.id)).toEqual(["applications", "folders", "tags"]);
-   expect(orderLibrarySections(applications, order, applications).map((section) => section.id)).toEqual(order);
-   expect(orderLibrarySections(applications, order).map((section) => section.id)).toEqual(order);
-   expect(orderLibrarySections({ ...populated, tags: true, applications: true }, order, populated).map((section) => section.id)).toEqual([
+   for (const tags of [false, true])
+      for (const applications of [false, true])
+         for (const folders of [false, true]) {
+            expect(orderLibrarySections({ tags, applications, folders }, order).map((section) => section.id)).toEqual(order);
+         }
+   expect(orderLibrarySections({ tags: false, applications: false, folders: true }, []).map((section) => section.id)).toEqual([
       "tags",
       "applications",
       "folders",
    ]);
-   expect(orderLibrarySections({ tags: true, applications: true, folders: true }, order).map((section) => section.id)).toEqual(order);
-});
-
-it("only moves the newly populated section, leaving other manual positions intact", () => {
-   const previous = { tags: true, applications: false, folders: false };
-   const order = ["folders", "tags", "applications"];
-   expect(orderLibrarySections({ ...previous, applications: true }, order, previous).map((section) => section.id)).toEqual(["applications", "folders", "tags"]);
-   expect(orderLibrarySections({ ...previous, folders: true }, order, previous).map((section) => section.id)).toEqual(order);
-   expect(orderLibrarySections({ ...previous, tags: false }, order, previous).map((section) => section.id)).toEqual(order);
 });
 
 const sampleClip = (id: string, relativePath: string, createdAt: number): Clip => ({

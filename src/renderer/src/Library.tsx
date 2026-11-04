@@ -9,6 +9,7 @@ import {
    FolderPlus,
    Grid2X2,
    List,
+   LoaderCircle,
    MoreHorizontal,
    Pencil,
    Plus,
@@ -79,6 +80,19 @@ export function Library({
    const layout = useRef<HTMLDivElement>(null);
    const searchInput = useRef<HTMLInputElement>(null);
    const scrollArea = useRef<HTMLDivElement>(null);
+   const headingElement = useRef<HTMLElement>(null);
+   useLayoutEffect(() => {
+      const heading = headingElement.current;
+      if (!heading) return;
+      const measure = () => {
+         const height = heading.getBoundingClientRect().height;
+         if (height) heading.parentElement?.style.setProperty("--library-heading-height", `${height}px`);
+      };
+      measure();
+      const observer = new ResizeObserver(measure);
+      observer.observe(heading);
+      return () => observer.disconnect();
+   }, []);
    const [placeholderCount, setPlaceholderCount] = useState(8);
    const [view, setView] = useState<"grid" | "list">(() => {
       try {
@@ -164,7 +178,7 @@ export function Library({
       if (!visible) return;
       refreshAges((value) => value + 1);
       // Relative dates still advance when unchanged app state is suppressed.
-      const timer = window.setInterval(() => refreshAges((value) => value + 1), 5000);
+      const timer = window.setInterval(() => refreshAges((value) => value + 1), 60000);
       return () => window.clearInterval(timer);
    }, [visible]);
    const search = query.toLowerCase();
@@ -267,22 +281,6 @@ export function Library({
       () => ({ tags: state.categories.length > 0, applications: sources.length > 0, folders: folders.length > 0 }),
       [state.categories.length, sources.length, folders.length]
    );
-   const previousSections = useRef<{ root: string; populated: Record<LibrarySectionId, boolean> } | null>(null);
-   useLayoutEffect(() => {
-      if (state.collectionStatus.phase !== "ready") return;
-      const previous = previousSections.current;
-      previousSections.current = { root: collectionRoot, populated: populatedSections };
-      if (!previous || previous.root !== collectionRoot) return;
-      setSectionOrder((order) => {
-         const next = orderLibrarySections(populatedSections, order, previous.populated).map((section) => section.id);
-         return next.join() ===
-            orderLibrarySections(populatedSections, order)
-               .map((section) => section.id)
-               .join()
-            ? order
-            : next;
-      });
-   }, [collectionRoot, populatedSections, state.collectionStatus.phase]);
    useEffect(() => {
       try {
          localStorage.setItem("acroclip.library.sections", JSON.stringify(sectionOrder));
@@ -370,14 +368,11 @@ export function Library({
    const remainingSlots = discovering && !query && discoveredCount !== undefined ? Math.max(0, discoveredCount - clips.length) : 0;
    const showPlaceholders = discovering && !clips.length && !childFolders.length && !query;
    const grid = useRef<HTMLDivElement>(null);
-   const captureLayout = useGridMotion(
-      grid,
-      JSON.stringify([view, gridMetrics.width, thumbnailSizes[view], childFolders, clips.map((clip) => clip.id)]),
-      visible,
-      JSON.stringify([collectionRoot, filter]),
-      view,
-      view === "list" && listSizing
+   const layoutSignature = useMemo(
+      () => JSON.stringify([view, gridMetrics.width, thumbnailSizes[view], childFolders, clips.map((clip) => clip.id)]),
+      [view, gridMetrics.width, thumbnailSizes, childFolders, clips]
    );
+   const captureLayout = useGridMotion(grid, layoutSignature, visible, JSON.stringify([collectionRoot, filter]), view, view === "list" && listSizing);
    const heading =
       filter === "all"
          ? "All clips"
@@ -414,7 +409,7 @@ export function Library({
       },
       [ask, run]
    );
-   useEffect(() => {
+   useLayoutEffect(() => {
       const command = (event: Event) => {
          const id = (event as CustomEvent<string>).detail;
          if (id === "search") searchInput.current?.focus();
@@ -508,9 +503,11 @@ export function Library({
                <button className={`sidebar-item ${filter === "all" ? "selected" : ""}`} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>
                   <Grid2X2 size={17} />
                   <span className="sidebar-label">All clips</span>
-                  <span className="count">{initial ? "" : state.clips.length}</span>
+                  <span className="count">
+                     <span>{initial ? "" : state.clips.length}</span>
+                  </span>
                </button>
-               <MotionList items={sections} identity={collectionRoot} onReorder={reorderSection}>
+               <MotionList items={sections} identity={collectionRoot} onReorder={reorderSection} followContentSize>
                   {(section) => (
                      <LibrarySection
                         label={section.label}
@@ -569,7 +566,9 @@ export function Library({
                                           <span className="sidebar-label" title={item.name}>
                                              {item.name}
                                           </span>
-                                          <span className="count">{summary.categories.get(item.id) ?? 0}</span>
+                                          <span className="count">
+                                             <span>{summary.categories.get(item.id) ?? 0}</span>
+                                          </span>
                                        </button>
                                        <Menu
                                           label={`Actions for ${item.name}`}
@@ -606,7 +605,9 @@ export function Library({
                                        <span className="sidebar-label" title={source.name}>
                                           {source.name}
                                        </span>
-                                       <span className="count">{applicationCounts.get(source.id) ?? 0}</span>
+                                       <span className="count">
+                                          <span>{applicationCounts.get(source.id) ?? 0}</span>
+                                       </span>
                                     </button>
                                  )}
                               </MotionList>
@@ -643,16 +644,17 @@ export function Library({
          </aside>
          <PaneDivider label="Library sidebar width" pane={sidebar} />
          <div className="library-content" style={{ "--grid-thumbnail-size": `${thumbnailSizes.grid}px` } as CSSProperties}>
-            <header className="library-heading">
+            <header className="library-heading" ref={headingElement}>
                <div>
                   <div className="library-title-line">
                      <h1>{heading}</h1>
                      {folderPath !== null && folderMenu(folderPath, "heading")}
                   </div>
-                  <p>
+                  <p className="library-count">
+                     {pending && <LoaderCircle size={13} className="spin" aria-label="Loading clips" />}
                      {childFolders.length > 0 && `${childFolders.length} ${childFolders.length === 1 ? "folder" : "folders"} · `}
                      {discovering && discovery && discoveredCount !== undefined ? (
-                        `${discoveredCount} videos found`
+                        `${headingClipCount}/${discoveredCount} clips`
                      ) : initial ? (
                         <span aria-hidden="true">&nbsp;</span>
                      ) : (

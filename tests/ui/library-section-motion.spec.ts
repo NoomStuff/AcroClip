@@ -57,6 +57,7 @@ test("tag removal keeps sibling sections in place and empty sections cannot fold
             await window.acroClip.category("delete", { id: category.id });
          }, name);
       await remove("First");
+
       await expect(section.locator(".category-item")).toHaveCount(2);
       await settle();
       await page.evaluate(() => {
@@ -82,7 +83,31 @@ test("tag removal keeps sibling sections in place and empty sections cannot fold
       await page.getByRole("textbox", { name: "Search clips", exact: true }).focus();
       await page.mouse.move(800, 500);
       await expect(heading.locator("svg")).toHaveCSS("opacity", "1");
+      await heading.click();
+      await settle();
+      const movement = page.evaluate(
+         () =>
+            new Promise<{ y: number; bottom: number; exiting: boolean; time: number }[]>((resolve) => {
+               const values: { y: number; bottom: number; exiting: boolean; time: number }[] = [];
+               const started = performance.now();
+               const sample = () => {
+                  values.push({
+                     y: document.querySelector('.sidebar-section[aria-label="Applications"]')!.getBoundingClientRect().top,
+                     bottom: document.querySelector('.sidebar-section[aria-label="Tags"]')!.getBoundingClientRect().bottom,
+                     exiting: !!document.querySelector('.category-item[aria-hidden="true"], .motion-list-item[data-exiting] .category-item'),
+                     time: performance.now() - started,
+                  });
+                  if (performance.now() - started < 500) requestAnimationFrame(sample);
+                  else resolve(values);
+               };
+               sample();
+            })
+      );
       await remove("Third");
+      const samples = await movement;
+      expect(samples.some((sample) => sample.exiting && sample.y < samples[0]!.y - 2)).toBe(true);
+      const gap = samples[0]!.y - samples[0]!.bottom;
+      for (const sample of samples) expect(Math.abs(sample.y - sample.bottom - gap)).toBeLessThan(1);
       await expect(heading).not.toHaveAttribute("aria-expanded");
       await expect(heading.locator("svg")).toHaveCount(0);
       await expect(section.locator(".sidebar-section-fold")).not.toHaveAttribute("inert");
