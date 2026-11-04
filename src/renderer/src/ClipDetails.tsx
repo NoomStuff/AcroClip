@@ -1,3 +1,4 @@
+import { useId, useState } from "react";
 import type { Category, Clip, Shareable } from "../../shared/types";
 import { CategoryMark } from "./CategoryEditor";
 import { categoryStyle } from "./category-color";
@@ -16,6 +17,8 @@ export function ClipDetails({ clip, shareable, version }: { clip: Clip; shareabl
            ? [
                 { label: "File size", value: formatSize(shareable.size) },
                 { label: "Size target", value: `${shareable.targetMB} MB` },
+                { label: "Duration", value: formatTime(clip.duration) },
+                { label: "Audio tracks", value: clip.tracks.length ? 1 : "None" },
              ]
            : [];
    return (
@@ -29,6 +32,10 @@ export function ClipDetails({ clip, shareable, version }: { clip: Clip; shareabl
                         <dd>{value}</dd>
                      </div>
                   ))}
+                  <div className="version-location">
+                     <dt>Location</dt>
+                     <dd>{version === "original" ? clip.path : shareable?.path}</dd>
+                  </div>
                </dl>
             ) : (
                <p className="muted">No shareables.</p>
@@ -39,17 +46,31 @@ export function ClipDetails({ clip, shareable, version }: { clip: Clip; shareabl
 }
 
 export function ClipTags({ ids, categories }: { ids: readonly string[]; categories: readonly Category[] }) {
-   if (!ids.length) return null;
+   const [expanded, setExpanded] = useState(false);
+   const listId = useId();
+   const tags = categories.filter((category) => ids.includes(category.id));
+   if (!tags.length) return null;
    return (
-      <div className="viewer-categories" aria-label="Tags">
-         {categories
-            .filter((category) => ids.includes(category.id))
-            .map((category) => (
-               <span key={category.id} className="viewer-category" style={categoryStyle(category.color)}>
+      <div className="viewer-categories" role="group" aria-label="Tags" data-expanded={expanded || undefined}>
+         <div
+            className="viewer-tag-list"
+            id={listId}
+            tabIndex={expanded ? 0 : undefined}
+            role={expanded ? "region" : undefined}
+            aria-label={expanded ? "All tags" : undefined}
+         >
+            {(expanded ? tags : tags.slice(0, 2)).map((category) => (
+               <span key={category.id} className="viewer-category" style={categoryStyle(category.color)} title={category.name}>
                   <CategoryMark category={category} size={13} />
                   <span>{category.name}</span>
                </span>
             ))}
+         </div>
+         {tags.length > 2 && (
+            <button className="viewer-tags-toggle" aria-controls={listId} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+               {expanded ? "Fewer tags" : `+${tags.length - 2} tags`}
+            </button>
+         )}
       </div>
    );
 }

@@ -18,9 +18,17 @@ export function ShareSizePicker({
 }) {
    const [custom, setCustom] = useState(false);
    const [editing, setEditing] = useState(false);
-   const root = useRef<HTMLDivElement>(null);
+   const [draft, setDraft] = useState("");
    const trigger = useRef<HTMLButtonElement>(null);
    const input = useRef<HTMLInputElement>(null);
+   const valid = draft.trim() !== "" && Number.isInteger(Number(draft)) && Number(draft) >= 1 && Number(draft) <= 2000;
+   const commit = () => {
+      if (!valid) return false;
+      onTarget(Number(draft));
+      onOverride(true);
+      setCustom(true);
+      return true;
+   };
    const close = () => {
       setEditing(false);
       trigger.current?.focus();
@@ -29,30 +37,30 @@ export function ShareSizePicker({
       if (!editing) return;
       input.current?.focus();
       input.current?.select();
-      const dismiss = (event: PointerEvent) => {
-         if (!root.current?.contains(event.target as Node)) setEditing(false);
-      };
-      document.addEventListener("pointerdown", dismiss);
-      return () => document.removeEventListener("pointerdown", dismiss);
    }, [editing]);
    return (
       <div
          className="viewer-size-picker"
-         ref={root}
+         onPointerDown={(event) => {
+            if (event.target instanceof Element && event.target.closest(".select-trigger")) setEditing(false);
+         }}
          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false);
+            if (editing && !event.currentTarget.contains(event.relatedTarget)) {
+               commit();
+               setEditing(false);
+            }
          }}
          onKeyDown={(event) => {
             if (!editing || !["Escape", "Enter"].includes(event.key)) return;
             event.preventDefault();
             event.stopPropagation();
-            close();
+            // Escape discards the draft. Enter and leaving the field commit a valid value.
+            if (event.key === "Escape" || commit()) close();
          }}
       >
          <DropdownSelect
             triggerRef={trigger}
             label={`Shareable size: ${override ? target : defaultTarget} MB${override ? "" : " (default)"}`}
-
             disabled={disabled}
             triggerContent={<span>{override ? target : defaultTarget} MB</span>}
             value={custom && override ? "custom" : String(override ? target : defaultTarget)}
@@ -63,11 +71,13 @@ export function ShareSizePicker({
                { value: "custom", label: "Custom" },
             ]}
             onChange={(value) => {
-               setCustom(value === "custom");
-               onOverride(value === "custom" || Number(value) !== defaultTarget);
-               if (value === "custom") setEditing(true);
-               else {
+               if (value === "custom") {
+                  setDraft(String(override ? target : defaultTarget));
+                  setEditing(true);
+               } else {
+                  setCustom(false);
                   setEditing(false);
+                  onOverride(Number(value) !== defaultTarget);
                   onTarget(Number(value));
                }
             }}
@@ -82,12 +92,18 @@ export function ShareSizePicker({
                      type="number"
                      min={1}
                      max={2000}
-                     value={target}
+                     step={1}
+                     value={draft}
                      aria-label="Shareable size target in MB"
-                     onChange={(event) => onTarget(Math.max(1, Math.min(2000, Number(event.target.value))))}
+                     aria-describedby="viewer-size-range"
+                     aria-invalid={!valid}
+                     onChange={(event) => setDraft(event.target.value)}
                   />
                   <span>MB</span>
                </div>
+               <p id="viewer-size-range" className={valid ? "muted" : "error-text"}>
+                  Enter a whole number, 1 to 2000 MB.
+               </p>
             </div>
          )}
       </div>

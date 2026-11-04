@@ -49,6 +49,9 @@
    --muted: #bdbdbd;
    --subtle: #a6a6a6;
    --line: #ffffff10;
+   --control-track: #6f6879;
+   --control-fill: #a98be0;
+   --control-thumb: #ded7e8;
    --red: #ef8585;
    --green: #8dccaa;
    --ease: cubic-bezier(0.22, 0.8, 0.3, 1);
@@ -120,6 +123,7 @@ button:disabled {
    opacity: 0.38;
 }
 
+:root[data-keyboard] [role="treeitem"]:focus-visible,
 :root[data-keyboard] button:focus-visible,
 :root[data-keyboard] input:focus-visible,
 :root[data-keyboard] select:focus-visible,
@@ -150,6 +154,11 @@ select {
    min-height: var(--control-height);
    font-size: 13px;
    outline: none;
+}
+
+input::placeholder {
+   color: var(--subtle);
+   opacity: 1;
 }
 
 input:focus,

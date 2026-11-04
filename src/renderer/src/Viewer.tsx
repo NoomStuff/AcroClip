@@ -307,7 +307,7 @@ export function Viewer({
                   <time dateTime={new Date(clip.createdAt).toISOString()}>
                      {new Date(clip.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
                   </time>
-                  <ClipTags ids={clip.categories} categories={state.categories} />
+                  <ClipTags key={clip.id} ids={clip.categories} categories={state.categories} />
                </div>
             </header>
             <div className="viewer-toolbar">
@@ -337,6 +337,14 @@ export function Viewer({
                         ))}
                      </Select>
                   )}
+                  <IconButton
+                     label={detailsOpen ? "Hide file details" : "Show file details"}
+                     aria-expanded={detailsOpen}
+                     aria-controls="viewer-file-details"
+                     onClick={toggleDetails}
+                  >
+                     <Info size={18} />
+                  </IconButton>
                </div>
                <div className="viewer-share-actions" ref={versionActions}>
                   {path && (
@@ -392,14 +400,6 @@ export function Viewer({
                      />
                   </div>
                </div>
-               <IconButton
-                  label={detailsOpen ? "Hide file details" : "Show file details"}
-                  aria-expanded={detailsOpen}
-                  aria-controls="viewer-file-details"
-                  onClick={toggleDetails}
-               >
-                  <Info size={18} />
-               </IconButton>
             </div>
             {clip.originalMissing && (
                <p className="permission-note" role="status">
@@ -506,8 +506,8 @@ export function Viewer({
                playing={playing}
                volume={volume}
                muted={muted}
-               tracks={version === "original" ? clip.tracks : [{ index: -1, title: "Master" }]}
-               track={version === "original" ? (track ?? clip.tracks.slice(0, 1).map((item) => item.index)) : [-1]}
+               tracks={version === "original" ? clip.tracks : clip.tracks.length ? [{ index: -1, title: "Master" }] : []}
+               track={version === "original" ? (track ?? clip.tracks.slice(0, 1).map((item) => item.index)) : clip.tracks.length ? [-1] : []}
                speed={speed}
                onSpeed={setSpeed}
                disabled={!url || loading}

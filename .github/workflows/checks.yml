@@ -88,9 +88,10 @@ jobs:
            env:
               ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
            run: pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
+         - run: bun x playwright install ffmpeg
          - run: bun run test:ui
            env:
-              ACROCLIP_UI_EVIDENCE: test-results/visual-review
+              ACROCLIP_UI_EVIDENCE: .cache/visual-review
          - run: bun run test:ui:native
          - run: bun run test:capture-loss
          - uses: actions/upload-artifact@v7
@@ -100,6 +101,7 @@ jobs:
               name: ui-verification
               path: |
                  test-results/
+                 .cache/visual-review/
                  .cache/native-loss/**/events.json
                  .cache/native-loss/**/native.log
               include-hidden-files: true
@@ -179,6 +181,7 @@ jobs:
               name: isolated-test-evidence
               path: |
                  test-results/
+                 .cache/visual-review/
                  .cache/native-*/**/*.json
                  .cache/native-*/**/*.log
                  .cache/native-*/**/*.mkv

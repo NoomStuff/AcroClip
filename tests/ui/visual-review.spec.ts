@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import { mkdtemp, mkdir, writeFile, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -67,34 +68,62 @@ test("visual review covers primary screens and settings at narrow widths", async
       await page.emulateMedia({ reducedMotion: "reduce" });
       const mainWindowId = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.id);
       let captureWidth = 1280;
-      const resize = async (width: number) => {
+      let captureHeight = 800;
+      const resize = async (width: number, height = 800) => {
          captureWidth = width;
+         captureHeight = height;
          await app.evaluate(
-            ({ BrowserWindow }, { id, width }) => {
+            ({ BrowserWindow }, { id, width, height }) => {
                const window = BrowserWindow.fromId(id)!;
                window.unmaximize();
                window.setMinimumSize(0, 0);
-               window.setContentSize(width, 800);
+               window.setContentSize(width, height);
             },
-            { id: mainWindowId, width }
+            { id: mainWindowId, width, height }
          );
-         await expect.poll(() => page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width, height: 800 });
+         await expect.poll(() => page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width, height });
       };
       await resize(1280);
       await page.evaluate(() => document.fonts.ready);
       const evidence = process.env["ACROCLIP_UI_EVIDENCE"];
       const capture = async (name: string) => {
+         // Electron has no browser-created blank tab for axe's cross-frame aggregator.
+         // This app has no frames. User-supplied footage is outside the app UI audit.
+         const accessibility = await new AxeBuilder({ page }).setLegacyMode().exclude("video").withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+         expect
+            .soft(
+               accessibility.violations.map(({ id, nodes }) => ({ id, nodes: nodes.map(({ target, failureSummary }) => ({ target, failureSummary })) })),
+               `${name} automated accessibility`
+            )
+            .toEqual([]);
+         const missingControls = await page
+            .locator("[aria-controls]")
+            .evaluateAll((elements) =>
+               elements.flatMap((element) => (element.getAttribute("aria-controls") ?? "").split(/\s+/).filter((id) => id && !document.getElementById(id)))
+            );
+         expect(missingControls, `${name} control references exist`).toEqual([]);
          if (!evidence) return;
          await mkdir(evidence, { recursive: true });
          expect(await page.evaluate(() => innerWidth), `${name} capture width`).toBe(captureWidth);
          await page.evaluate(() => document.fonts.ready);
          await page.screenshot({ path: join(evidence, `${name}.png`), animations: "disabled", scale: "css" });
+         await writeFile(
+            join(evidence, `${name}-accessibility.json`),
+            JSON.stringify(
+               { violations: accessibility.violations, incomplete: accessibility.incomplete, passes: accessibility.passes.map(({ id }) => id) },
+               null,
+               2
+            )
+         );
+         await writeFile(join(evidence, `${name}-semantics.yml`), await page.locator("body").ariaSnapshot());
          const text = await textEvidence(page);
-         await writeFile(join(evidence, `${name}.json`), JSON.stringify({ width: captureWidth, height: 800, text }, null, 2));
-         expect(
-            text.filter((sample) => sample.contrast < 4.5),
-            `${name} sampled UI text clears 4.5:1`
-         ).toEqual([]);
+         await writeFile(join(evidence, `${name}.json`), JSON.stringify({ width: captureWidth, height: captureHeight, text }, null, 2));
+         expect
+            .soft(
+               text.filter((sample) => sample.contrast < sample.requiredContrast),
+               `${name} sampled UI text clears 4.5:1 and controls clear 3:1`
+            )
+            .toEqual([]);
       };
       await expect(page.locator(".recording-page")).toBeVisible();
       if (process.env["ACROCLIP_NATIVE_UI"] === "1") {
@@ -237,7 +266,7 @@ test("visual review covers primary screens and settings at narrow widths", async
             expect(escapedControls, `${section} controls stay inside their rows without overlapping labels at ${width}px`).toEqual([]);
          }
       }
-      if (evidence) {
+      {
          await resize(1280);
          const exportSource = join(collection, "Tournament final.mp4");
          await promisify(execFile)(mediaTool("ffmpeg"), [
@@ -279,7 +308,51 @@ test("visual review covers primary screens and settings at narrow widths", async
          await page.getByRole("button", { name: "Shareable", exact: true }).click();
          await expect.poll(() => page.locator(".viewer-main video").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
          await page.getByRole("button", { name: "Show file details", exact: true }).click();
+         await expect(page.locator(".player-audio-picker")).toContainText("None");
+         await expect(page.locator(".version-facts")).toContainText("None");
          await capture("viewer-shareable");
+         // Stress the complete header, rather than proving each control in isolation.
+         await page.evaluate(async () => {
+            for (let i = 0; i < 10; i++) {
+               await window.acroClip.category("create", { name: `A much longer tournament tag number ${i + 1}`, color: "#b197fc", icon: "star" });
+            }
+            const state = await window.acroClip.state();
+            const clip = state.clips.find((item) => item.name === "Tournament final")!;
+            await window.acroClip.category("assign", { clipId: clip.id, categoryIds: state.categories.map((category) => category.id) });
+         });
+         await page.getByRole("button", { name: "Create shareable", exact: true }).click();
+         await expect
+            .poll(() => page.evaluate(async () => (await window.acroClip.state()).clips.find((clip) => clip.name === "Tournament final")?.shareables.length), {
+               timeout: 60000,
+            })
+            .toBe(2);
+         await expect(page.getByRole("combobox", { name: "Choose shareable", exact: true })).toBeVisible();
+         await resize(980, 680);
+         await page.getByRole("button", { name: "+10 tags", exact: true }).click();
+         await expect(page.locator(".viewer-category")).toHaveCount(12);
+         const allTags = page.getByRole("region", { name: "All tags", exact: true });
+         await allTags.focus();
+         await allTags.press("End");
+         await expect.poll(() => allTags.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+         await allTags.press("Home");
+         const stress = await page.locator(".viewer-page").evaluate((root) => {
+            const stage = root.querySelector(".video-stage")!.getBoundingClientRect();
+            const tags = root.querySelector(".viewer-tag-list")!.getBoundingClientRect();
+            return { videoHeight: stage.height, tagHeight: tags.height, overflow: root.scrollWidth - root.clientWidth };
+         });
+         expect(stress.videoHeight).toBeGreaterThan(250);
+         expect(stress.tagHeight).toBeLessThanOrEqual(56);
+         expect(stress.overflow).toBeLessThanOrEqual(1);
+         await capture("viewer-crowded-980x680");
+         await page.getByRole("button", { name: "Fewer tags", exact: true }).click();
+         await page.keyboard.press("Tab");
+         const focus = await page.evaluate(() => {
+            const element = document.activeElement!;
+            const style = getComputedStyle(element);
+            return { width: style.outlineWidth, style: style.outlineStyle, keyboard: document.documentElement.hasAttribute("data-keyboard") };
+         });
+         expect(focus).toEqual({ width: "2px", style: "solid", keyboard: true });
+         await capture("viewer-keyboard-focus");
       }
       await resize(980);
       const emptyCollection = join(profile, "empty-collection");

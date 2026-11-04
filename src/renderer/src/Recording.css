@@ -166,8 +166,8 @@
    bottom: 0;
    left: 0;
    right: 0;
-   padding: 30px 16px 14px;
-   background: linear-gradient(transparent, #000b);
+   padding: 8px 16px;
+   background: #080808e6;
    font-size: var(--text-meta);
 }
 
@@ -688,14 +688,14 @@
    top: 12px;
    height: 4px;
    border-radius: 3px;
-   background: #ffffff1b;
+   background: var(--control-track);
    pointer-events: none;
 }
 .mixer-fader-fill {
    display: block;
    width: var(--slider-position, 0%);
    height: 100%;
-   background: #a98be0;
+   background: var(--control-fill);
    border-radius: 3px;
 }
 .mixer-fader-thumb {
@@ -705,7 +705,7 @@
    translate: -50% -50%;
    width: 11px;
    height: 20px;
-   background: #ded7e8;
+   background: var(--control-thumb);
    border-radius: 3px;
    border: 1px solid #fff4;
    transition: background 120ms ease;

@@ -87,9 +87,9 @@
    position: absolute;
    left: 8px;
    right: 8px;
-   top: 6px;
-   height: 28px;
-   background: #2a2a2a;
+   top: 17px;
+   height: 6px;
+   background: var(--control-track);
    border-radius: 5px;
    pointer-events: none;
 }
@@ -98,17 +98,18 @@
    width: var(--slider-position, 0%);
    height: 100%;
    border-radius: 5px 0 0 5px;
-   background: #9b82d0;
+   background: var(--control-fill);
 }
 .slider-thumb {
    position: absolute;
    left: var(--slider-position, 0%);
    top: 50%;
    width: var(--slider-thumb-width, 10px);
-   height: 36px;
+   height: 20px;
    translate: -50% -50%;
    border-radius: 4px;
-   background: var(--accent);
+   background: var(--control-thumb);
+   box-shadow: 0 0 0 2px var(--surface);
    transition: background 150ms var(--ease);
 }
 .slider-marker {
@@ -117,12 +118,12 @@
    width: 2px;
    height: 6px;
    translate: -50% -50%;
-   background: #68646f;
+   background: var(--control-thumb);
    border-radius: 2px;
 }
 .slider-marker.default {
    height: 16px;
-   background: #9d97a6;
+   background: var(--text);
 }
 .slider-input:hover:not(:disabled) + .slider-track .slider-thumb,
 :root[data-keyboard] .slider-input:focus-visible:not(:disabled) + .slider-track .slider-thumb {
@@ -177,7 +178,7 @@
    right: 5px;
    top: 9.5px;
    height: 5px;
-   background: var(--line);
+   background: var(--control-track);
    border-radius: 3px;
 }
 .slider-compact .slider-fill {

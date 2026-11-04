@@ -14,310 +14,508 @@
          "screen": "clip-menu-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 12,
-         "minimumSampledContrast": 7.33
+         "sampledText": 38,
+         "sampledControls": 10,
+         "minimumSampledTextContrast": 6.04,
+         "axeViolations": 0,
+         "axePassingRules": 24,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "clip-menu-980",
          "width": 980,
          "height": 800,
-         "sampledText": 12,
-         "minimumSampledContrast": 7.33
+         "sampledText": 38,
+         "sampledControls": 10,
+         "minimumSampledTextContrast": 6.04,
+         "axeViolations": 0,
+         "axePassingRules": 24,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "library-empty-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 11,
-         "minimumSampledContrast": 7.33
+         "sampledText": 23,
+         "sampledControls": 10,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "library-empty-980",
          "width": 980,
          "height": 800,
-         "sampledText": 11,
-         "minimumSampledContrast": 7.33
+         "sampledText": 23,
+         "sampledControls": 10,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "library-empty-collection",
          "width": 980,
          "height": 800,
-         "sampledText": 8,
-         "minimumSampledContrast": 7.33
+         "sampledText": 18,
+         "sampledControls": 9,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 21,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "library-grid-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 12,
-         "minimumSampledContrast": 7.33
+         "sampledText": 35,
+         "sampledControls": 9,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 24,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "library-grid-980",
          "width": 980,
          "height": 800,
-         "sampledText": 12,
-         "minimumSampledContrast": 7.33
+         "sampledText": 35,
+         "sampledControls": 8,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 24,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "library-list-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 12,
-         "minimumSampledContrast": 7.33
+         "sampledText": 32,
+         "sampledControls": 9,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 24,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "library-list-980",
          "width": 980,
          "height": 800,
-         "sampledText": 12,
-         "minimumSampledContrast": 7.33
+         "sampledText": 32,
+         "sampledControls": 9,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 24,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "onboarding-capture",
          "width": 980,
          "height": 800,
-         "sampledText": 5,
-         "minimumSampledContrast": 7.36
+         "sampledText": 38,
+         "sampledControls": 7,
+         "minimumSampledTextContrast": 7.13,
+         "axeViolations": 0,
+         "axePassingRules": 20,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "onboarding-clip",
          "width": 980,
          "height": 800,
-         "sampledText": 6,
-         "minimumSampledContrast": 9.06
+         "sampledText": 42,
+         "sampledControls": 7,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 22,
+         "axeIncompleteRules": []
       },
       {
          "screen": "onboarding-ready",
          "width": 980,
          "height": 800,
-         "sampledText": 7,
-         "minimumSampledContrast": 9.06
+         "sampledText": 36,
+         "sampledControls": 7,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 22,
+         "axeIncompleteRules": []
       },
       {
          "screen": "recording-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 2,
-         "minimumSampledContrast": 13.06
+         "sampledText": 34,
+         "sampledControls": 7,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 21,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "recording-980",
          "width": 980,
          "height": 800,
-         "sampledText": 2,
-         "minimumSampledContrast": 13.06
+         "sampledText": 34,
+         "sampledControls": 7,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 22,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "recording-active",
          "width": 1280,
          "height": 800,
-         "sampledText": 1,
-         "minimumSampledContrast": 15.38
+         "sampledText": 39,
+         "sampledControls": 7,
+         "minimumSampledTextContrast": 5.34,
+         "axeViolations": 0,
+         "axePassingRules": 22,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "settings-app-updates-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 17,
-         "minimumSampledContrast": 7.39
+         "sampledText": 22,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 21,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-app-updates-760",
          "width": 760,
          "height": 800,
-         "sampledText": 17,
-         "minimumSampledContrast": 7.39
+         "sampledText": 22,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 21,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-app-updates-980",
          "width": 980,
          "height": 800,
-         "sampledText": 17,
-         "minimumSampledContrast": 7.39
+         "sampledText": 22,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 21,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-collection-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 18,
-         "minimumSampledContrast": 7.39
+         "sampledText": 38,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 6.45,
+         "axeViolations": 0,
+         "axePassingRules": 22,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-collection-760",
          "width": 760,
          "height": 800,
-         "sampledText": 18,
-         "minimumSampledContrast": 7.39
+         "sampledText": 38,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 6.45,
+         "axeViolations": 0,
+         "axePassingRules": 22,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-collection-980",
          "width": 980,
          "height": 800,
-         "sampledText": 18,
-         "minimumSampledContrast": 7.39
+         "sampledText": 38,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 6.45,
+         "axeViolations": 0,
+         "axePassingRules": 22,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-games-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 10,
-         "minimumSampledContrast": 7.39
+         "sampledText": 21,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 6.23,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-games-760",
          "width": 760,
          "height": 800,
-         "sampledText": 10,
-         "minimumSampledContrast": 7.39
+         "sampledText": 21,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 6.23,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-games-980",
          "width": 980,
          "height": 800,
-         "sampledText": 10,
-         "minimumSampledContrast": 7.39
+         "sampledText": 21,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 6.23,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-notifications-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 25,
-         "minimumSampledContrast": 7.39
+         "sampledText": 31,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 21,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-notifications-760",
          "width": 760,
          "height": 800,
-         "sampledText": 25,
-         "minimumSampledContrast": 7.39
+         "sampledText": 31,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 21,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-notifications-980",
          "width": 980,
          "height": 800,
-         "sampledText": 25,
-         "minimumSampledContrast": 7.39
+         "sampledText": 31,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 21,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-recording-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 21,
-         "minimumSampledContrast": 7.39
+         "sampledText": 39,
+         "sampledControls": 1,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 22,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-recording-760",
          "width": 760,
          "height": 800,
-         "sampledText": 21,
-         "minimumSampledContrast": 7.39
+         "sampledText": 39,
+         "sampledControls": 1,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-recording-980",
          "width": 980,
          "height": 800,
-         "sampledText": 21,
-         "minimumSampledContrast": 7.39
+         "sampledText": 39,
+         "sampledControls": 1,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 22,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-shortcuts-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 31,
-         "minimumSampledContrast": 7.39
+         "sampledText": 58,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 20,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-shortcuts-760",
          "width": 760,
          "height": 800,
-         "sampledText": 31,
-         "minimumSampledContrast": 7.39
+         "sampledText": 58,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 20,
+         "axeIncompleteRules": []
       },
       {
          "screen": "settings-shortcuts-980",
          "width": 980,
          "height": 800,
-         "sampledText": 31,
-         "minimumSampledContrast": 7.39
+         "sampledText": 58,
+         "sampledControls": 0,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 20,
+         "axeIncompleteRules": []
       },
       {
          "screen": "tag-dialog-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 15,
-         "minimumSampledContrast": 7.33
+         "sampledText": 36,
+         "sampledControls": 11,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 24,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "tag-dialog-980",
          "width": 980,
          "height": 800,
-         "sampledText": 15,
-         "minimumSampledContrast": 7.33
+         "sampledText": 36,
+         "sampledControls": 11,
+         "minimumSampledTextContrast": 7.33,
+         "axeViolations": 0,
+         "axePassingRules": 24,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "viewer-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 6,
-         "minimumSampledContrast": 7.15
+         "sampledText": 17,
+         "sampledControls": 6,
+         "minimumSampledTextContrast": 7.15,
+         "axeViolations": 0,
+         "axePassingRules": 21,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "viewer-980",
          "width": 980,
          "height": 800,
-         "sampledText": 6,
-         "minimumSampledContrast": 7.15
+         "sampledText": 17,
+         "sampledControls": 6,
+         "minimumSampledTextContrast": 7.15,
+         "axeViolations": 0,
+         "axePassingRules": 21,
+         "axeIncompleteRules": ["color-contrast"]
+      },
+      {
+         "screen": "viewer-crowded-980x680",
+         "width": 980,
+         "height": 680,
+         "sampledText": 40,
+         "sampledControls": 6,
+         "minimumSampledTextContrast": 7.15,
+         "axeViolations": 0,
+         "axePassingRules": 24,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "viewer-details-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 7,
-         "minimumSampledContrast": 7.15
+         "sampledText": 28,
+         "sampledControls": 6,
+         "minimumSampledTextContrast": 7.15,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "viewer-details-980",
          "width": 980,
          "height": 800,
-         "sampledText": 7,
-         "minimumSampledContrast": 7.15
+         "sampledText": 28,
+         "sampledControls": 6,
+         "minimumSampledTextContrast": 7.15,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "viewer-export-progress",
          "width": 1280,
          "height": 800,
-         "sampledText": 3,
-         "minimumSampledContrast": 8.01
+         "sampledText": 14,
+         "sampledControls": 7,
+         "minimumSampledTextContrast": 7.39,
+         "axeViolations": 0,
+         "axePassingRules": 20,
+         "axeIncompleteRules": ["color-contrast"]
+      },
+      {
+         "screen": "viewer-keyboard-focus",
+         "width": 980,
+         "height": 680,
+         "sampledText": 30,
+         "sampledControls": 6,
+         "minimumSampledTextContrast": 7.15,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "viewer-ready-to-share",
          "width": 1280,
          "height": 800,
-         "sampledText": 4,
-         "minimumSampledContrast": 7.36
+         "sampledText": 15,
+         "sampledControls": 6,
+         "minimumSampledTextContrast": 7.36,
+         "axeViolations": 0,
+         "axePassingRules": 20,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "viewer-shareable",
          "width": 1280,
          "height": 800,
-         "sampledText": 5,
-         "minimumSampledContrast": 7.36
+         "sampledText": 26,
+         "sampledControls": 6,
+         "minimumSampledTextContrast": 7.36,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "viewer-size-menu-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 6,
-         "minimumSampledContrast": 7.15
+         "sampledText": 22,
+         "sampledControls": 6,
+         "minimumSampledTextContrast": 6.28,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": ["aria-valid-attr-value", "color-contrast"]
       },
       {
          "screen": "viewer-size-menu-980",
          "width": 980,
          "height": 800,
-         "sampledText": 6,
-         "minimumSampledContrast": 7.15
+         "sampledText": 22,
+         "sampledControls": 6,
+         "minimumSampledTextContrast": 6.28,
+         "axeViolations": 0,
+         "axePassingRules": 23,
+         "axeIncompleteRules": ["aria-valid-attr-value", "color-contrast"]
       }
    ],
-   "limits": "Contrast samples exclude disabled text, images, gradients and opacity layers. Static captures do not establish motion quality. Windows CI captures remain pending."
+   "limits": "Contrast samples exclude disabled text, images, gradients and opacity layers. Axe excludes user-supplied video content. Incomplete axe results and accessibility trees are retained in CI evidence. These checks do not establish screen-reader compliance or motion quality. A normal-motion media-flow video is retained separately. Windows checks passed for the prior checkpoint 3eef0f9; this revision needs fresh Windows checks. macOS remains unverified."
 }
