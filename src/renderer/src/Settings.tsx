@@ -366,17 +366,19 @@ export function Settings({
                            <section className="settings-group" key={group.title}>
                               <h2>{group.title}</h2>
                               <p className="section-description">{group.detail}</p>
-                              {group.items.map((item) => (
-                                 <Field icon={Keyboard} key={item.id} label={item.label}>
-                                    <ShortcutInput
-                                       label={item.id === "saveClip" ? "Clip shortcut" : `${item.label} shortcut`}
-                                       value={bindingFor(draft, item.id)}
-                                       onChange={(value) =>
-                                          item.id === "saveClip" ? change("shortcut", value) : change("shortcuts", { ...draft.shortcuts, [item.id]: value })
-                                       }
-                                    />
-                                 </Field>
-                              ))}
+                              <div className="settings-shortcut-list">
+                                 {group.items.map((item) => (
+                                    <Field icon={Keyboard} key={item.id} label={item.label} layout="inline">
+                                       <ShortcutInput
+                                          label={item.id === "saveClip" ? "Clip shortcut" : `${item.label} shortcut`}
+                                          value={bindingFor(draft, item.id)}
+                                          onChange={(value) =>
+                                             item.id === "saveClip" ? change("shortcut", value) : change("shortcuts", { ...draft.shortcuts, [item.id]: value })
+                                          }
+                                       />
+                                    </Field>
+                                 ))}
+                              </div>
                            </section>
                         ))}
                      </>

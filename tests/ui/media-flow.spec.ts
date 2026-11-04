@@ -416,7 +416,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await desktop.evaluate(({ dialog }) => {
          dialog.showMessageBox = async (windowOrOptions: Electron.BaseWindow | Electron.MessageBoxOptions, options?: Electron.MessageBoxOptions) => {
             const message = options ?? (windowOrOptions as Electron.MessageBoxOptions);
-            if (message.defaultId !== 1 || message.cancelId !== 0) throw new Error("Enter must confirm deletion and Escape must cancel");
+            if (message.defaultId !== 0 || message.cancelId !== 0) throw new Error("Deletion must default to Cancel and Escape must cancel");
             (globalThis as typeof globalThis & { testDeletePrompt?: string }).testDeletePrompt = (
                options ?? (windowOrOptions as Electron.MessageBoxOptions)
             ).message;

@@ -530,3 +530,19 @@ fieldset.settings-group:disabled {
       gap: 12px;
    }
 }
+
+.settings-shortcut-list {
+   padding: 0 var(--panel-padding);
+   background: var(--surface);
+   border-radius: var(--radius-control);
+}
+.settings-shortcut-list .settings-row {
+   min-height: 56px;
+   padding: 8px 0;
+   margin: 0;
+   border-radius: 0;
+   background: transparent;
+}
+.settings-shortcut-list .settings-row + .settings-row {
+   border-top: 1px solid var(--line);
+}

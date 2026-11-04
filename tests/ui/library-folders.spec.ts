@@ -196,6 +196,16 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await moveFolder.getByRole("button", { name: "Move here", exact: true }).click();
       await expect(moveFolder).not.toBeVisible();
       expect(await readFile(join(collection, "Games", "Empty", "Sorted", "notes.txt"), "utf8")).toBe("Keep unsupported files");
+      await app.evaluate(({ dialog }) => {
+         dialog.showMessageBox = async (windowOrOptions: Electron.BaseWindow | Electron.MessageBoxOptions, options?: Electron.MessageBoxOptions) => {
+            const message = options ?? (windowOrOptions as Electron.MessageBoxOptions);
+            if (message.defaultId !== 0 || message.cancelId !== 0 || !message.detail?.includes("1 other file"))
+               throw new Error("Folder deletion must default to Cancel and describe unrelated files");
+            return { response: 0, checkboxChecked: false };
+         };
+      });
+      expect(await page.evaluate(() => window.acroClip.deleteFolder("Games/Empty/Sorted"))).toBe(false);
+      expect(await readFile(join(collection, "Games", "Empty", "Sorted", "notes.txt"), "utf8")).toBe("Keep unsupported files");
       await expect(page.getByRole("button", { name: "Open Gameplay", exact: true })).toBeVisible();
    } finally {
       await app.close();

@@ -21,6 +21,7 @@ test("notification choices save independently and error banners cannot be disabl
       const banner = page.getByRole("checkbox", { name: "Error banner", exact: true });
       await expect(banner).toBeChecked();
       await expect(banner).toBeDisabled();
+      await expect(banner).toHaveAccessibleDescription("Error banners are always on");
       await page.getByRole("checkbox", { name: "Start recording banner", exact: true }).uncheck();
       await page.getByRole("checkbox", { name: "Stop recording sound", exact: true }).uncheck();
       await page.getByRole("checkbox", { name: "Error sound", exact: true }).uncheck();

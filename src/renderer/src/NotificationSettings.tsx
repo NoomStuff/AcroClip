@@ -7,7 +7,7 @@ const rows = [
    { action: "startRecording", label: "Start recording", detail: "When recording starts.", icon: CircleDot },
    { action: "stopRecording", label: "Stop recording", detail: "When recording stops.", icon: CircleStop },
    { action: "saveClip", label: "Save clip", detail: "When saving begins and finishes.", icon: Clapperboard },
-   { action: "error", label: "Error", detail: "Recording and clip-saving failures.", icon: TriangleAlert },
+   { action: "error", label: "Error", detail: "Recording and clip-saving failures. Banners are always on.", icon: TriangleAlert },
 ] as const;
 
 export function NotificationSettings({
@@ -43,6 +43,7 @@ export function NotificationSettings({
                   <div className="notification-switch" title={locked ? "Error banners are always on" : `${label} banner`}>
                      <Toggle
                         label={`${label} banner`}
+                        {...(locked ? { detail: "Error banners are always on" } : {})}
                         checked={locked || value[keys.banner]}
                         disabled={locked}
                         onChange={(enabled) => {

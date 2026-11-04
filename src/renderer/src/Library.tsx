@@ -46,6 +46,7 @@ import { age, folderName, formatSize } from "./format";
 import type { Run } from "./desktop";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { ClipCard } from "./ClipCard";
+import { FolderCard } from "./FolderCard";
 import { FolderTree } from "./FolderTree";
 import { categoryColors, categoryStyle } from "./category-color";
 import { CategoryEditor, CategoryMark } from "./CategoryEditor";
@@ -54,8 +55,8 @@ import { PaneDivider, usePaneSize } from "./layout";
 import { useApplicationColors } from "./useApplicationColors";
 import type { ContextMenuRequest } from "./ui";
 import { useAttaCutAvailable } from "./useAttaCutAvailable";
-import { applicationKeys, summarizeClips, orderLibrarySections } from "./library-index";
-import type { LibrarySectionId } from "./library-index";
+import { applicationKeys, summarizeClips, orderLibrarySections, summarizeFolders, selectChildFolders, selectLibraryClips } from "./library-index";
+import type { LibrarySectionId, LibraryOrder } from "./library-index";
 import { LibrarySection } from "./LibrarySection";
 
 export function Library({
@@ -185,7 +186,7 @@ export function Library({
    const [moveRequest, setMoveRequest] = useState<{ kind: "clip"; id: string } | { kind: "folder"; path: string } | null>(null);
    const [folderContext, setFolderContext] = useState<(ContextMenuRequest & { path: string; origin: "tree" | "tile" }) | null>(null);
    const moveClip = useCallback((id: string) => setMoveRequest({ kind: "clip", id }), []);
-   const [order, setOrder] = useState("newest");
+   const [order, setOrder] = useState<LibraryOrder>("newest");
    const applicationColors = useApplicationColors(state.applicationIcons, visible);
    const selectedApplicationColor = filter.startsWith("source:") ? applicationColors[filter.slice(7)] : undefined;
    const [contextMenu, setContextMenu] = useState<(ContextMenuRequest & { clipId: string }) | null>(null);
@@ -346,56 +347,10 @@ export function Library({
          });
       },
    });
-   const folderStats = useMemo(() => {
-      const result = new Map<string, { newest: number; oldest: number; matches: boolean; count: number; matchingCount: number }>();
-      for (const clip of state.clips) {
-         const parts = clip.relativePath.replaceAll("\\", "/").split("/");
-         const matches = !search || `${clip.name} ${clip.source}`.toLowerCase().includes(search);
-         for (let i = 0; i < parts.length; i++) {
-            const path = parts.slice(0, i).join("/"),
-               previous = result.get(path);
-            result.set(path, {
-               newest: Math.max(previous?.newest ?? 0, clip.createdAt),
-               oldest: Math.min(previous?.oldest ?? Infinity, clip.createdAt),
-               matches: (previous?.matches ?? false) || matches,
-               count: (previous?.count ?? 0) + 1,
-               matchingCount: (previous?.matchingCount ?? 0) + (matches ? 1 : 0),
-            });
-         }
-      }
-      return result;
-   }, [state.clips, search]);
-   const childFolders = useMemo(
-      () =>
-         folderPath === null
-            ? []
-            : folders
-                 .filter((path) => {
-                    const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-                    return parent === folderPath && (!search || path.split("/").at(-1)!.toLowerCase().includes(search) || folderStats.get(path)?.matches);
-                 })
-                 .sort((a, b) => {
-                    if (order === "name") return a.localeCompare(b);
-                    const first = folderStats.get(a),
-                       second = folderStats.get(b);
-                    return (
-                       (order === "oldest" ? (first?.oldest ?? 0) - (second?.oldest ?? 0) : (second?.newest ?? 0) - (first?.newest ?? 0)) || a.localeCompare(b)
-                    );
-                 }),
-      [folderPath, folders, search, folderStats, order]
-   );
+   const folderStats = useMemo(() => summarizeFolders(state.clips, search), [state.clips, search]);
+   const childFolders = useMemo(() => selectChildFolders(folders, folderPath, search, folderStats, order), [folders, folderPath, search, folderStats, order]);
    const clips = useMemo(
-      () =>
-         state.clips
-            .filter(
-               (item) =>
-                  (!search || `${item.name} ${item.source}`.toLowerCase().includes(search)) &&
-                  (filter === "all" ||
-                     (filter.startsWith("category:") && item.categories.includes(filter.slice(9))) ||
-                     (filter.startsWith("source:") && appKeys.get(item.id) === filter.slice(7)) ||
-                     (folderPath !== null && item.relativePath.replaceAll("\\", "/").split("/").slice(0, -1).join("/") === folderPath))
-            )
-            .sort((a, b) => (order === "name" ? a.name.localeCompare(b.name) : order === "oldest" ? a.createdAt - b.createdAt : b.createdAt - a.createdAt)),
+      () => selectLibraryClips(state.clips, { search, filter, folderPath, order, applications: appKeys }),
       [state.clips, search, filter, folderPath, order, appKeys]
    );
    useEffect(() => {
@@ -430,10 +385,10 @@ export function Library({
            ? folderPath.split("/").at(-1) || folderName(collectionRoot)
            : (selectedCategory?.name ?? sources.find((source) => `source:${source.id}` === filter)?.name ?? filter.slice(filter.indexOf(":") + 1));
    const [editingCategory, setEditingCategory] = useState<Category | "new" | null>(null);
-   const createCategory = () => {
+   const createCategory = useCallback(() => {
       setCollapsedSections((current) => current.filter((id) => id !== "tags"));
       setEditingCategory("new");
-   };
+   }, []);
    const removeCategory = async (id: string, name: string) => {
       if (
          await ask({
@@ -732,7 +687,7 @@ export function Library({
                      )}
                   </div>
                   <div className="sort-control">
-                     <Select value={order} onChange={setOrder} label="Sort clips">
+                     <Select value={order} onChange={(value) => setOrder(value === "name" || value === "oldest" ? value : "newest")} label="Sort clips">
                         <option value="newest">Newest first</option>
                         <option value="oldest">Oldest first</option>
                         <option value="name">Name</option>
@@ -798,37 +753,15 @@ export function Library({
                ) : clips.length || childFolders.length ? (
                   <div className="clip-grid" data-view={view} ref={grid}>
                      {childFolders.map((path) => (
-                        <article
-                           className="clip-card folder-card"
-                           data-empty={!folderStats.get(path)?.count || undefined}
-                           {...folderDropProps(path)}
+                        <FolderCard
                            key={`folder:${path}`}
-                           data-layout-key={`folder:${path}`}
-                           onContextMenu={(event) => {
-                              event.preventDefault();
-                              requestFolderMenu(path, "tile", event.currentTarget.querySelector("button")!, event.clientX, event.clientY);
-                           }}
-                           onKeyDown={(event) => {
-                              if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
-                              event.preventDefault();
-                              event.stopPropagation();
-                              const bounds = event.currentTarget.getBoundingClientRect();
-                              requestFolderMenu(path, "tile", event.currentTarget.querySelector("button")!, bounds.left + 20, bounds.top + 30);
-                           }}
-                        >
-                           <button className="clip-open" aria-label={`Open folder ${path}`} onClick={() => setFilter(`folder:${path}`)}>
-                              <div className="clip-thumbnail">
-                                 <Folder size={58} />
-                              </div>
-                              <div className="clip-card-info">
-                                 <h3 title={path.split("/").at(-1)}>{path.split("/").at(-1)}</h3>
-                                 <p title="Includes clips in subfolders">
-                                    {folderStats.get(path)?.count ?? 0} {(folderStats.get(path)?.count ?? 0) === 1 ? "clip" : "clips"}
-                                 </p>
-                              </div>
-                           </button>
-                           <div className="card-menu">{folderMenu(path, "tile")}</div>
-                        </article>
+                           path={path}
+                           count={folderStats.get(path)?.count ?? 0}
+                           dropProps={folderDropProps(path)}
+                           actions={folderMenu(path, "tile")}
+                           onOpen={(path) => setFilter(`folder:${path}`)}
+                           requestMenu={(path, element, left, top) => requestFolderMenu(path, "tile", element, left, top)}
+                        />
                      ))}
                      {clips.map((clip) => (
                         <ClipCard

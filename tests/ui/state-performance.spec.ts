@@ -16,6 +16,10 @@ test("incremental updates preserve large libraries, meter routing, visibility an
       const page = await app.firstWindow();
       await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).collectionStatus.phase)).toBe("ready");
       await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).windowVisible)).toBe(true);
+      // Wait for the renderer subscription and initial snapshot before injecting updates.
+      // The IPC state handler can be ready before the renderer subscribes to events.
+      await expect(page.locator(".recording-page")).toBeVisible();
+      await expect(page.locator(".mixer-channel")).toHaveCount(2);
       const actual = await page.evaluate(() => window.acroClip.state());
       await app.evaluate(({ BrowserWindow, ipcMain }) => {
          const web = BrowserWindow.getAllWindows()[0]!.webContents;
@@ -88,11 +92,21 @@ test("incremental updates preserve large libraries, meter routing, visibility an
       state.categories = [{ id: "saved", name: "Saved", color: "#abcdef" }];
       await publish({ type: "state-patch", patch: { clips: state.clips, categories: state.categories } });
       await expect(page.locator(".clip-card")).toHaveCount(0);
+      const libraryStart = performance.now();
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.locator(".clip-card")).toHaveCount(1000);
+      const libraryMs = performance.now() - libraryStart;
       await expect(page.getByRole("button", { name: /^Saved\s*500$/ })).toBeVisible();
+      const searchStart = performance.now();
       await page.getByRole("textbox", { name: "Search clips", exact: true }).fill("Moment 999");
       await expect(page.locator(".clip-card")).toHaveCount(1);
+      const timings = { clips: 1000, libraryMs, searchMs: performance.now() - searchStart };
+      console.log("Large-library UI timings", timings);
+      const evidence = process.env["ACROCLIP_UI_EVIDENCE"];
+      if (evidence) {
+         await mkdir(evidence, { recursive: true });
+         await writeFile(join(evidence, "large-library-timings.json"), JSON.stringify(timings, null, 2));
+      }
       const clip = page.getByRole("button", { name: "Open Moment 999", exact: true });
       await expect(clip).toBeVisible();
       await clip.focus();

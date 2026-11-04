@@ -127,13 +127,14 @@ export function Viewer({
          return;
       }
       let disposed = false;
+      const requestId = crypto.randomUUID();
       switching.current = true;
       video.current?.pause();
       setLoading(true);
       setMediaError("");
       void (async () => {
          try {
-            const result = await api.playback(path, version === "original" ? track : undefined);
+            const result = await api.playback(path, version === "original" ? track : undefined, requestId);
             if (!disposed) {
                if (currentUrl.current === result) {
                   switching.current = false;
@@ -156,6 +157,7 @@ export function Viewer({
       })();
       return () => {
          disposed = true;
+         void api.cancelPlayback(requestId).catch(() => undefined);
       };
    }, [path, track, version, visible, playbackIdentity]);
 
@@ -310,7 +312,7 @@ export function Viewer({
                   <ClipTags key={clip.id} ids={clip.categories} categories={state.categories} />
                </div>
             </header>
-            <div className="viewer-toolbar">
+            <div className="viewer-toolbar" data-multiple-shareables={(version === "shareable" && clip.shareables.length > 1) || undefined}>
                <div className="viewer-version-controls">
                   <Segmented
                      label="Clip version"

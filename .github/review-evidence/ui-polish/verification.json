@@ -278,7 +278,7 @@
          "screen": "settings-notifications-1280",
          "width": 1280,
          "height": 800,
-         "sampledText": 31,
+         "sampledText": 32,
          "sampledControls": 0,
          "minimumSampledTextContrast": 7.33,
          "axeViolations": 0,
@@ -289,7 +289,7 @@
          "screen": "settings-notifications-760",
          "width": 760,
          "height": 800,
-         "sampledText": 31,
+         "sampledText": 32,
          "sampledControls": 0,
          "minimumSampledTextContrast": 7.33,
          "axeViolations": 0,
@@ -300,7 +300,7 @@
          "screen": "settings-notifications-980",
          "width": 980,
          "height": 800,
-         "sampledText": 31,
+         "sampledText": 32,
          "sampledControls": 0,
          "minimumSampledTextContrast": 7.33,
          "axeViolations": 0,
@@ -349,7 +349,7 @@
          "minimumSampledTextContrast": 7.33,
          "axeViolations": 0,
          "axePassingRules": 20,
-         "axeIncompleteRules": []
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "settings-shortcuts-760",
@@ -360,7 +360,7 @@
          "minimumSampledTextContrast": 7.33,
          "axeViolations": 0,
          "axePassingRules": 20,
-         "axeIncompleteRules": []
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "settings-shortcuts-980",
@@ -371,7 +371,7 @@
          "minimumSampledTextContrast": 7.33,
          "axeViolations": 0,
          "axePassingRules": 20,
-         "axeIncompleteRules": []
+         "axeIncompleteRules": ["color-contrast"]
       },
       {
          "screen": "tag-dialog-1280",
@@ -517,5 +517,10 @@
          "axeIncompleteRules": ["aria-valid-attr-value", "color-contrast"]
       }
    ],
-   "limits": "Contrast samples exclude disabled text, images, gradients and opacity layers. Axe excludes user-supplied video content. Incomplete axe results and accessibility trees are retained in CI evidence. These checks do not establish screen-reader compliance or motion quality. A normal-motion media-flow video is retained separately. Windows checks passed for the prior checkpoint 3eef0f9; this revision needs fresh Windows checks. macOS remains unverified."
+   "largeLibrary": {
+      "clips": 1000,
+      "libraryMs": 718.8489239999908,
+      "searchMs": 138.96031199998106
+   },
+   "limits": "The large-library measurement uses 1000 synthetic clip records, not disk scanning or thumbnail decoding. Contrast excludes disabled text, images, gradients and opacity layers. Axe excludes user-supplied footage; incomplete results remain in CI artifacts. No screen-reader compliance claim. Windows and packaged-app checks passed for 88107a0; this revision needs fresh checks. macOS remains unverified."
 }

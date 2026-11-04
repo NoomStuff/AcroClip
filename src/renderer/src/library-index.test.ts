@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { applicationKeys, orderLibrarySections, groupFolders, summarizeClips, visibleFolderRows } from "./library-index";
+import {
+   applicationKeys,
+   orderLibrarySections,
+   groupFolders,
+   summarizeClips,
+   visibleFolderRows,
+   summarizeFolders,
+   selectChildFolders,
+   selectLibraryClips,
+} from "./library-index";
 import type { Clip } from "../../shared/types";
 
 describe("library indexes", () => {
@@ -75,4 +84,52 @@ it("only moves the newly populated section, leaving other manual positions intac
    expect(orderLibrarySections({ ...previous, applications: true }, order, previous).map((section) => section.id)).toEqual(["applications", "folders", "tags"]);
    expect(orderLibrarySections({ ...previous, folders: true }, order, previous).map((section) => section.id)).toEqual(order);
    expect(orderLibrarySections({ ...previous, tags: false }, order, previous).map((section) => section.id)).toEqual(order);
+});
+
+const sampleClip = (id: string, relativePath: string, createdAt: number): Clip => ({
+   id,
+   name: id,
+   path: relativePath,
+   relativePath,
+   source: "Game",
+   size: 1000,
+   duration: 30,
+   width: 640,
+   height: 360,
+   createdAt,
+   thumbnail: "",
+   playbackUrl: "",
+   tracks: [],
+   shareables: [],
+   categories: [],
+});
+
+it("counts nested folders across path separators while filtering only direct clips", () => {
+   const clips = [sampleClip("Root", "Root.mp4", 1), sampleClip("Warmup", "Games\\Warmup.mp4", 5), sampleClip("Winner", "Games/Finals/Winner.mp4", 10)];
+   const summaries = summarizeFolders(clips, "winner");
+   expect(summaries.get("Games")).toEqual({ count: 2, matchingCount: 1, matches: true, newest: 10, oldest: 5 });
+   expect(summaries.get("")?.count).toBe(3);
+   expect(selectChildFolders(["Games", "Games/Finals", "Empty"], "Games", "winner", summaries, "newest")).toEqual(["Games/Finals"]);
+   expect(selectChildFolders(["Games"], null, "", summaries, "name")).toEqual([]);
+   expect(
+      selectLibraryClips(clips, { search: "", filter: "folder:Games", folderPath: "Games", order: "newest", applications: new Map() }).map(({ id }) => id)
+   ).toEqual(["Warmup"]);
+});
+
+it("combines search, tags and application filters without mutating collection order", () => {
+   const clips = [sampleClip("First", "First.mp4", 1), sampleClip("Second", "Second.mp4", 2)];
+   clips[1]!.categories = ["best"];
+   const options = {
+      search: "game",
+      folderPath: null,
+      order: "newest",
+      applications: new Map([
+         ["First", "app-a"],
+         ["Second", "app-b"],
+      ]),
+   } as const;
+   expect(selectLibraryClips(clips, { ...options, filter: "all" }).map(({ id }) => id)).toEqual(["Second", "First"]);
+   expect(selectLibraryClips(clips, { ...options, filter: "category:best" }).map(({ id }) => id)).toEqual(["Second"]);
+   expect(selectLibraryClips(clips, { ...options, filter: "source:app-a" }).map(({ id }) => id)).toEqual(["First"]);
+   expect(clips.map(({ id }) => id)).toEqual(["First", "Second"]);
 });
