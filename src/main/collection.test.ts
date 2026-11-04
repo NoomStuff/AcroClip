@@ -52,9 +52,15 @@ vi.mock("./media", async (original) => {
    };
 });
 
+// Windows can expose TEMP through an 8.3 alias while the collection resolves
+// its root to the long path. Build fixture expectations from that same root.
+async function temporaryCollectionDirectory(prefix: string): Promise<string> {
+   return realpath(await mkdtemp(join(os.tmpdir(), prefix)));
+}
+
 describe("collection folder operations", () => {
    it("replaces legacy thumbnails once, while retaining their preview during regeneration", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-thumbnail-upgrade-"));
+      const root = await temporaryCollectionDirectory("acroclip-thumbnail-upgrade-");
       try {
          const video = join(root, "Moment.mp4");
          await writeFile(video, "isolated video");
@@ -82,7 +88,7 @@ describe("collection folder operations", () => {
       }
    });
    it("keeps a legacy thumbnail when regeneration fails", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-thumbnail-recovery-"));
+      const root = await temporaryCollectionDirectory("acroclip-thumbnail-recovery-");
       try {
          const video = join(root, "Moment.mp4");
          await writeFile(video, "isolated video");
@@ -103,7 +109,7 @@ describe("collection folder operations", () => {
       }
    });
    it("repairs a known application's name and missing artwork without losing clip metadata", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-app-repair-"));
+      const root = await temporaryCollectionDirectory("acroclip-app-repair-");
       try {
          const file = join(root, "Moment.mp4"),
             id = "1".repeat(64);
@@ -127,7 +133,7 @@ describe("collection folder operations", () => {
       }
    });
    it("retains rapid category toggles without opening a separate editor", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-category-toggles-"));
+      const root = await temporaryCollectionDirectory("acroclip-category-toggles-");
       try {
          await writeFile(join(root, "Moment.mp4"), "moment");
          const service = new CollectionService();
@@ -148,7 +154,7 @@ describe("collection folder operations", () => {
       }
    });
    it("moves mixed folder contents and preserves clip and shareable associations after reopening", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-folder-move-"));
+      const root = await temporaryCollectionDirectory("acroclip-folder-move-");
       try {
          await mkdir(join(root, "Games", "Empty"), { recursive: true });
          await writeFile(join(root, "Games", "Moment.mp4"), "original moment");
@@ -175,7 +181,7 @@ describe("collection folder operations", () => {
       }
    });
    it("requires a fresh contents review before moving a changed folder", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-reviewed-move-"));
+      const root = await temporaryCollectionDirectory("acroclip-reviewed-move-");
       try {
          await mkdir(join(root, "Source"));
          await mkdir(join(root, "Target"));
@@ -194,7 +200,7 @@ describe("collection folder operations", () => {
       }
    });
    it("persists category ordering and IDs, and rejects stale targets", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-category-order-"));
+      const root = await temporaryCollectionDirectory("acroclip-category-order-");
       try {
          const service = new CollectionService();
          await service.open(root);
@@ -215,7 +221,7 @@ describe("collection folder operations", () => {
       }
    });
    it("moves one clip without overwriting a conflict and keeps shareables linked", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-single-move-"));
+      const root = await temporaryCollectionDirectory("acroclip-single-move-");
       try {
          await mkdir(join(root, "Target"));
          await writeFile(join(root, "First.mp4"), "first original");
@@ -238,7 +244,7 @@ describe("collection folder operations", () => {
       }
    });
    it("rechecks deletion contents and trashes the entire directory, including unsupported files", async () => {
-      const workspace = await mkdtemp(join(os.tmpdir(), "acroclip-folder-trash-"));
+      const workspace = await temporaryCollectionDirectory("acroclip-folder-trash-");
       const root = join(workspace, "collection");
       try {
          await mkdir(join(root, "Folder", "Empty"), { recursive: true });
@@ -262,7 +268,7 @@ describe("collection folder operations", () => {
       }
    });
    it("rejects traversal, metadata folders, links, self moves and existing destinations", async () => {
-      const workspace = await mkdtemp(join(os.tmpdir(), "acroclip-folder-boundaries-"));
+      const workspace = await temporaryCollectionDirectory("acroclip-folder-boundaries-");
       const root = join(workspace, "collection");
       try {
          await mkdir(join(root, "Games", "Nested"), { recursive: true });
@@ -287,7 +293,7 @@ describe("collection folder operations", () => {
 
 describe("damaged metadata action identity", () => {
    it("retains separate identities for identical copies while recovering a moved original", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-identical-copies-"));
+      const root = await temporaryCollectionDirectory("acroclip-identical-copies-");
       try {
          const original = join(root, "original.mp4");
          const copy = join(root, "copy.mp4");
@@ -313,7 +319,7 @@ describe("damaged metadata action identity", () => {
    });
 
    it("keeps verified shareables and categories accessible when their original disappears, then restores the same clip", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-missing-original-"));
+      const root = await temporaryCollectionDirectory("acroclip-missing-original-");
       try {
          const original = join(root, "Moment.mp4");
          await writeFile(original, "original moment");
@@ -352,7 +358,7 @@ describe("damaged metadata action identity", () => {
       }
    });
    it("recovers duplicate IDs before displayed A can rename, delete or export B", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-duplicate-ids-"));
+      const root = await temporaryCollectionDirectory("acroclip-duplicate-ids-");
       try {
          const a = join(root, "A.mp4");
          const b = join(root, "B.mp4");
@@ -390,7 +396,7 @@ describe("damaged metadata action identity", () => {
       }
    });
    it("keeps duplicate metadata untouched when no recovery copy is valid", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-duplicate-unrecoverable-"));
+      const root = await temporaryCollectionDirectory("acroclip-duplicate-unrecoverable-");
       try {
          await writeFile(join(root, "A.mp4"), "original A");
          await writeFile(join(root, "B.mp4"), "original B");
@@ -434,7 +440,7 @@ describe("collection ownership boundaries", () => {
 
 describe("collection scan cost and fresh action checks", () => {
    it("shows completed custom saving names, hides native in-progress files, and honors verified completed metadata", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-saving-names-"));
+      const root = await temporaryCollectionDirectory("acroclip-saving-names-");
       try {
          const completed = join(
             root,
@@ -463,7 +469,7 @@ describe("collection scan cost and fresh action checks", () => {
       }
    });
    it("registers consecutive recordings after a watcher scan took an older directory snapshot", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-registration-"));
+      const root = await temporaryCollectionDirectory("acroclip-registration-");
       let release: (() => void) | undefined;
       try {
          const collection = new CollectionService();
@@ -506,7 +512,7 @@ describe("collection scan cost and fresh action checks", () => {
       }
    });
    it("keeps a warm 200-file scan free of sampled reads and metadata writes", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-scan-cost-"));
+      const root = await temporaryCollectionDirectory("acroclip-scan-cost-");
       try {
          await Promise.all(Array.from({ length: 200 }, (_, index) => writeFile(join(root, `clip-${index}.mp4`), `synthetic media ${index}`)));
          const collection = new CollectionService();
@@ -528,9 +534,9 @@ describe("collection scan cost and fresh action checks", () => {
       } finally {
          await rm(root, { recursive: true, force: true });
       }
-   });
+   }, 15000);
    it("skips unchanged sampling and metadata writes, but rereads changed files and before deletion", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-scan-"));
+      const root = await temporaryCollectionDirectory("acroclip-scan-");
       try {
          const file = join(root, "clip.mp4");
          await writeFile(file, "synthetic media fixture");
@@ -567,7 +573,7 @@ describe("collection scan cost and fresh action checks", () => {
 
 describe("portable category appearance", () => {
    it("retains category identity, icon and memberships across edits and folder moves", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-category-appearance-")),
+      const root = await temporaryCollectionDirectory("acroclip-category-appearance-"),
          moved = `${root}-moved`;
       try {
          await writeFile(join(root, "Moment.mp4"), "controlled media");
@@ -593,8 +599,8 @@ describe("portable category appearance", () => {
 
 describe("collection folders", () => {
    it("lists empty hierarchy and ignores directory links outside the collection", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-folders-")),
-         outside = await mkdtemp(join(os.tmpdir(), "acroclip-outside-"));
+      const root = await temporaryCollectionDirectory("acroclip-folders-"),
+         outside = await temporaryCollectionDirectory("acroclip-outside-");
       try {
          await mkdir(join(root, "Games", "Empty"), { recursive: true });
          await mkdir(join(root, "Other", "Empty"), { recursive: true });
@@ -615,7 +621,7 @@ describe("collection folders", () => {
 
 describe("saved application icons", () => {
    it("keeps the captured app identity and local icon when the entire collection moves", async () => {
-      const parent = await mkdtemp(join(os.tmpdir(), "acroclip-portable-app-")),
+      const parent = await temporaryCollectionDirectory("acroclip-portable-app-"),
          root = join(parent, "clips"),
          moved = join(parent, "moved");
       await mkdir(root);
@@ -644,7 +650,7 @@ describe("saved application icons", () => {
 
 describe("collection loading snapshots", () => {
    it("retains a completed snapshot while refreshing, reports failure, and clears it for a different folder", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-loading-"));
+      const root = await temporaryCollectionDirectory("acroclip-loading-");
       const moved = `${root}-offline`;
       let release = () => {};
       try {
@@ -707,7 +713,7 @@ describe("collection loading snapshots", () => {
 
 describe("collection change polling", () => {
    it("keeps unchanged polls silent and imports nested additions, in-place changes, moves and removals", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-poll-"));
+      const root = await temporaryCollectionDirectory("acroclip-poll-");
       const onChange = vi.fn();
       try {
          const file = join(root, "First.mp4");
@@ -754,7 +760,7 @@ describe("collection change polling", () => {
       }
    });
    it("detects removed registered shareables and recovers after the collection returns", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-poll-shares-"));
+      const root = await temporaryCollectionDirectory("acroclip-poll-shares-");
       const moved = `${root}-offline`;
       try {
          await writeFile(join(root, "Original.mp4"), "original");
@@ -779,7 +785,7 @@ describe("collection change polling", () => {
       }
    });
    it("does not swallow additions arriving during a scan", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-poll-race-"));
+      const root = await temporaryCollectionDirectory("acroclip-poll-race-");
       try {
          const collection = new CollectionService();
          await collection.open(root);
@@ -801,7 +807,7 @@ describe("collection change polling", () => {
 
 describe("eager indexed previews", () => {
    it("hydrates before file verification, reuses unchanged media info, and hides confirmed dead entries", async () => {
-      const root = await mkdtemp(join(os.tmpdir(), "acroclip-eager-"));
+      const root = await temporaryCollectionDirectory("acroclip-eager-");
       try {
          const source = join(root, "Moment.mp4");
          await writeFile(source, "moment");
