@@ -1,25 +1,9 @@
+import { useId } from "react";
+import { FieldDescription } from "./field-accessibility";
 import type { ReactNode } from "react";
-import { Bell, Clock3, Copy, Cpu, FileVideo, FolderTree, Gauge, Keyboard, Monitor, Power, RefreshCw, Scissors, SlidersHorizontal, Volume2 } from "lucide-react";
+import { Keyboard, Power } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Toggle as Switch } from "./ui";
-
-const icons: Record<string, LucideIcon> = {
-   "Clip length": Clock3,
-   "Resolution limit": Monitor,
-   "Frame rate": Gauge,
-   Compression: SlidersHorizontal,
-   "Allow software encoding": Cpu,
-   "Reduce clip overlap": Scissors,
-   "Recording quality": FileVideo,
-   "Group clips by application": FolderTree,
-   "Default maximum size": FileVideo,
-   "Automatically create shareables": Copy,
-   "Show notifications": Bell,
-   "Play a sound": Volume2,
-   "Start with your computer": Power,
-   "Start recording when AcroClip opens": FileVideo,
-   "Check for updates at startup": RefreshCw,
-};
 
 export function Field({
    label,
@@ -34,21 +18,42 @@ export function Field({
    icon?: LucideIcon;
    className?: string;
 }) {
-   const Icon = icon ?? icons[label] ?? Keyboard;
+   const Icon = icon ?? Keyboard;
+   const labelId = useId();
+   const detailId = useId();
    return (
-      <div className={`settings-row field ${className}`}>
-         <Icon className="settings-row-icon" size={21} aria-hidden="true" />
-         <div className="settings-row-copy">
-            <span className="field-label">{label}</span>
-            {detail && <p className="field-detail">{detail}</p>}
+      <FieldDescription.Provider value={detail ? detailId : undefined}>
+         <div className={`settings-row field ${className}`} role="group" aria-labelledby={labelId}>
+            <Icon className="settings-row-icon" size={21} aria-hidden="true" />
+            <div className="settings-row-copy">
+               <span className="field-label" id={labelId}>
+                  {label}
+               </span>
+               {detail && (
+                  <p className="field-detail" id={detailId}>
+                     {detail}
+                  </p>
+               )}
+            </div>
+            <div className="field-control">{children}</div>
          </div>
-         <div className="field-control">{children}</div>
-      </div>
+      </FieldDescription.Provider>
    );
 }
 
-export function Toggle({ label, detail, checked, onChange }: { label: string; detail?: string; checked: boolean; onChange: (value: boolean) => void }) {
-   const Icon = icons[label] ?? Power;
+export function Toggle({
+   label,
+   detail,
+   checked,
+   onChange,
+   icon: Icon = Power,
+}: {
+   label: string;
+   detail?: string;
+   checked: boolean;
+   onChange: (value: boolean) => void;
+   icon?: LucideIcon;
+}) {
    return (
       <div className="settings-row settings-toggle">
          <Icon className="settings-row-icon" size={21} aria-hidden="true" />

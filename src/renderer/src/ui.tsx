@@ -1,3 +1,4 @@
+import { FieldDescription, useFieldDescription } from "./field-accessibility";
 import { Children, Fragment, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
@@ -151,14 +152,24 @@ export function Toggle({
    );
 }
 export function Field({ label, detail, children, stacked = false }: { label: string; detail?: string; children: ReactNode; stacked?: boolean }) {
+   const labelId = useId();
+   const detailId = useId();
    return (
-      <div className={`field ${stacked ? "field-stacked" : ""}`}>
-         <div>
-            <span className="field-label">{label}</span>
-            {detail && <p className="field-detail">{detail}</p>}
+      <FieldDescription.Provider value={detail ? detailId : undefined}>
+         <div className={`field ${stacked ? "field-stacked" : ""}`} role="group" aria-labelledby={labelId}>
+            <div>
+               <span className="field-label" id={labelId}>
+                  {label}
+               </span>
+               {detail && (
+                  <p className="field-detail" id={detailId}>
+                     {detail}
+                  </p>
+               )}
+            </div>
+            <div className="field-control">{children}</div>
          </div>
-         <div className="field-control">{children}</div>
-      </div>
+      </FieldDescription.Provider>
    );
 }
 export function NumberInput({
@@ -171,9 +182,16 @@ export function NumberInput({
    unit: string;
    onValueChange: (value: number) => void;
 }) {
+   const description = useFieldDescription(props["aria-describedby"]);
    return (
       <div className="number-unit">
-         <input {...props} type="number" value={Number.isNaN(value) ? "" : value} onChange={(event) => onValueChange(event.currentTarget.valueAsNumber)} />
+         <input
+            {...props}
+            aria-describedby={description}
+            type="number"
+            value={Number.isNaN(value) ? "" : value}
+            onChange={(event) => onValueChange(event.currentTarget.valueAsNumber)}
+         />
          <span>{unit}</span>
       </div>
    );

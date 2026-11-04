@@ -81,7 +81,19 @@ test("cached loading states, enumeration retry, and interrupted library movement
       });
       await expect(page.getByLabel("Opening collection")).toBeVisible();
       await expect(page.locator(".clip-placeholder")).toHaveCount(114);
-      await expect(page.getByText("114 videos found", { exact: true })).toBeVisible();
+      await expect(page.getByText("0/114 clips", { exact: true })).toBeVisible();
+      await expect(page.getByLabel("Loading clips", { exact: true })).toBeVisible();
+      const headingBounds = await page.locator(".library-heading").boundingBox();
+      const headingTop = headingBounds!.y;
+      const firstPlaceholder = await page.locator(".clip-placeholder").first().boundingBox();
+      expect(firstPlaceholder!.y).toBeGreaterThan(headingBounds!.y + headingBounds!.height);
+      await page.locator(".library-scroll").evaluate((node) => {
+         node.scrollTop = 400;
+      });
+      await expect.poll(() => page.locator(".library-heading").evaluate((node) => node.getBoundingClientRect().top)).toBe(headingTop);
+      await page.locator(".library-scroll").evaluate((node) => {
+         node.scrollTop = 0;
+      });
       await expect(page.getByText("No clips", { exact: true })).toHaveCount(0);
       await page.waitForTimeout(400);
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
@@ -89,7 +101,37 @@ test("cached loading states, enumeration retry, and interrupted library movement
       await send({ ...actual, collectionStatus: { root: collection, phase: "loading", discovery: { videos: 114, byFolder: { "": 114 }, complete: true } } });
       await expect(page.locator(".clip-card")).toHaveCount(6);
       await expect(page.locator(".clip-placeholder")).toHaveCount(108);
-      await expect(page.getByText("114 videos found", { exact: true })).toBeVisible();
+      await expect(page.getByText("6/114 clips", { exact: true })).toBeVisible();
+      const contentBounds = await page.locator(".library-content").boundingBox();
+      const scrollBounds = await page.locator(".library-scroll").boundingBox();
+      expect(scrollBounds!.y).toBeLessThanOrEqual(contentBounds!.y);
+      expect(scrollBounds!.height).toBeGreaterThanOrEqual(contentBounds!.height);
+      const workspaceBounds = await page.locator(".workspace").boundingBox();
+      expect(scrollBounds!.y).toBe(workspaceBounds!.y);
+      expect(scrollBounds!.y + scrollBounds!.height).toBe(workspaceBounds!.y + workspaceBounds!.height);
+      const expectOverlayAlignment = async () => {
+         const header = await page.locator(".library-heading").boundingBox();
+         const zoom = await page.locator(".library-scale").boundingBox();
+         expect(header!.x + header!.width - (zoom!.x + zoom!.width)).toBeCloseTo(12, 0);
+      };
+      await expectOverlayAlignment();
+      if (process.env["ACROCLIP_UI_EVIDENCE"]) {
+         await mkdir(process.env["ACROCLIP_UI_EVIDENCE"], { recursive: true });
+         await page.waitForTimeout(500);
+         await page.screenshot({ path: join(process.env["ACROCLIP_UI_EVIDENCE"], "library-sticky.png"), animations: "disabled" });
+         await page.locator(".library-scroll").evaluate((node) => {
+            node.scrollTop = 300;
+         });
+         await page.waitForTimeout(150);
+         await page.screenshot({ path: join(process.env["ACROCLIP_UI_EVIDENCE"], "library-sticky-scrolled.png"), animations: "disabled" });
+         await page.locator(".library-scroll").evaluate((node) => {
+            node.scrollTop = 0;
+         });
+         await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
+         await page.waitForTimeout(500);
+         await expectOverlayAlignment();
+         await page.screenshot({ path: join(process.env["ACROCLIP_UI_EVIDENCE"], "library-sticky-980.png"), animations: "disabled" });
+      }
       await send({ ...actual, collectionStatus: { root: collection, phase: "refreshing" } });
       await expect(page.locator(".clip-card")).toHaveCount(6);
       await expect(page.getByLabel("Opening collection")).toHaveCount(0);

@@ -89,18 +89,29 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       }
       const bounds = list.getBoundingClientRect();
       const viewport = scroll?.getBoundingClientRect();
-      const minimum = Math.max(bounds.top, viewport?.top ?? bounds.top);
-      const maximum = Math.max(minimum, Math.min(bounds.bottom, viewport?.bottom ?? bounds.bottom) - current.node.offsetHeight);
+      // The whole row must stay inside the list. Only its handle needs to fit
+      // inside the viewport when the expanded row is taller than the scroller.
+      const listMaximum = Math.max(bounds.top, bounds.bottom - current.node.offsetHeight);
+      const minimum = Math.min(listMaximum, Math.max(bounds.top, viewport?.top ?? bounds.top));
+      const maximum = Math.max(minimum, Math.min(listMaximum, (viewport?.bottom ?? bounds.bottom) - current.capture.offsetHeight));
       const top = Math.max(minimum, Math.min(maximum, current.currentY - current.grab));
       current.node.style.transform = `translateY(${top - wrapper.getBoundingClientRect().top}px)`;
-      const center = top + current.node.offsetHeight / 2 - list.getBoundingClientRect().top;
       const rows = Array.from(list.children).filter(
          (child): child is HTMLElement => child instanceof HTMLElement && child.matches(".motion-list-item:not([data-exiting])")
       );
-      let index = rows.findIndex((row) => center < row.offsetTop + row.offsetHeight);
-      if (index < 0) index = rows.length - 1;
+      const heights = new Map(rows.map((row) => [row.dataset["motionKey"], row.offsetHeight]));
       const next = current.order.filter((id) => id !== current.id);
-      next.splice(Math.max(0, index), 0, current.id);
+      // Compare with the remaining rows packed without the dragged row's gap.
+      // These boundaries do not flip when React moves that gap to a new slot.
+      let boundary = bounds.top;
+      let index = 0;
+      for (const id of next) {
+         const height = heights.get(id) ?? 0;
+         if (top < boundary + height / 2) break;
+         boundary += height;
+         index++;
+      }
+      next.splice(index, 0, current.id);
       if (next.join("\0") !== current.order.join("\0")) {
          current.order = next;
          setPreview(next);
@@ -111,7 +122,8 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       if (drag.current?.active) {
          const current = drag.current;
          if (!current.capture.hasPointerCapture(current.pointer)) current.capture.setPointerCapture(current.pointer);
-         paint.current();
+         // The animation frame owns geometry updates. Repainting here can
+         // recursively change the preview before the layout has settled.
       }
    }, [preview]);
    useLayoutEffect(() => {

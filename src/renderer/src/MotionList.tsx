@@ -17,12 +17,14 @@ export function MotionList<T extends { id: string }>({
    identity = "",
    onReorder,
    visible = true,
+   followContentSize = false,
 }: {
    items: readonly T[];
    children: (item: T) => ReactNode;
    identity?: string;
    onReorder?: ReorderItems | undefined;
    visible?: boolean;
+   followContentSize?: boolean;
 }) {
    const reorder = useListReorder(sourceItems, identity, onReorder);
    const { items, draggingId } = reorder;
@@ -31,6 +33,7 @@ export function MotionList<T extends { id: string }>({
    const animations = useRef(new Map<string, Animation>());
    const heightMotion = useRef<{ target: number; animation?: Animation } | null>(null);
    const previousIdentity = useRef(identity);
+   const previousOrder = useRef(items.map((item) => item.id).join("\0"));
    const initialized = useRef(false);
    const layoutVisible = useRef(false);
    const [snapshot, setSnapshot] = useState({ items, rows: items.map((item): Row<T> => ({ key: item.id, item, exiting: false })) });
@@ -91,6 +94,9 @@ export function MotionList<T extends { id: string }>({
       const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const reset = previousIdentity.current !== identity;
       previousIdentity.current = identity;
+      const order = items.map((item) => item.id).join("\0");
+      const reordered = previousOrder.current !== order;
+      previousOrder.current = order;
       const next = new Map<string, number>();
       let moving = false;
       let height = 0;
@@ -109,7 +115,7 @@ export function MotionList<T extends { id: string }>({
             next.set(key, row.offsetTop);
             continue;
          }
-         if (!exiting && !wasExiting && !reset && previous === row.offsetTop && running) {
+         if (!exiting && !wasExiting && !reset && previous === row.offsetTop && running && !(followContentSize && !reordered)) {
             next.set(key, previous);
             continue;
          }
@@ -149,7 +155,9 @@ export function MotionList<T extends { id: string }>({
          delete row.dataset["exitStarted"];
          const top = row.offsetTop;
          next.set(key, top);
-         if (reduce || reset || !initialized.current || !layoutVisible.current) continue;
+         // Nested sections follow their children's changing height directly.
+         // A second FLIP here would chase that resize with another animation.
+         if (reduce || reset || !initialized.current || !layoutVisible.current || (followContentSize && !reordered)) continue;
          const start = previous;
          const delta = start === undefined ? 0 : start - top + offset;
          if (start !== undefined && !wasExiting && Math.abs(delta) < 0.5) continue;
@@ -173,7 +181,10 @@ export function MotionList<T extends { id: string }>({
       }
       positions.current = next;
       const previousHeight = heightMotion.current;
-      if (previousHeight?.target !== height) {
+      if (followContentSize) {
+         previousHeight?.animation?.cancel();
+         heightMotion.current = { target: height };
+      } else if (previousHeight?.target !== height) {
          const start = previousHeight?.animation ? list.getBoundingClientRect().height : previousHeight?.target;
          previousHeight?.animation?.cancel();
          const motion: { target: number; animation?: Animation } = { target: height };
@@ -190,7 +201,7 @@ export function MotionList<T extends { id: string }>({
       initialized.current = true;
       layoutVisible.current = true;
       if (moving) list.dispatchEvent(new Event("list-motion", { bubbles: true }));
-   }, [snapshot.rows, identity, draggingId, resetLayout, visible]);
+   }, [snapshot.rows, identity, draggingId, resetLayout, visible, followContentSize, items]);
    useLayoutEffect(() => {
       const media = matchMedia("(prefers-reduced-motion: reduce)");
       const activeAnimations = animations.current;

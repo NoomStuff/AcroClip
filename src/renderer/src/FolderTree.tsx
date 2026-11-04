@@ -43,7 +43,7 @@ export function FolderTree({
          else next.delete(path);
          return next;
       });
-   const treeItems = () => Array.from(root.current?.querySelectorAll<HTMLButtonElement>('[role="treeitem"]') ?? []).filter((node) => !node.closest("[inert]"));
+   const treeItems = () => Array.from(root.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? []).filter((node) => !node.closest("[inert]"));
    const focus = (path: string) =>
       requestAnimationFrame(() =>
          treeItems()
@@ -53,19 +53,31 @@ export function FolderTree({
    const render = ({ id: path, level, hasChildren, open, position, siblings }: (typeof rows)[number]) => (
       <div
          className="folder-tree-row"
+         role="treeitem"
+         aria-label={path.split("/").at(-1)!}
+         aria-level={level}
+         aria-posinset={position}
+         aria-setsize={siblings}
+         aria-selected={selected === path}
+         aria-expanded={hasChildren ? open : undefined}
+         data-path={path}
+         tabIndex={selected === path || (!selectedExists && path === rows[0]?.id) ? 0 : -1}
+         onClick={(event) => {
+            if (event.target === event.currentTarget) onSelect(path);
+         }}
          data-empty={(counts && !counts.get(path)?.count) || undefined}
          style={{ marginLeft: (level - 1) * 16 }}
          {...dropProps?.(path)}
          onContextMenu={(event) => {
             if (!requestMenu) return;
             event.preventDefault();
-            requestMenu(path, event.currentTarget.querySelector<HTMLButtonElement>('[role="treeitem"]')!, event.clientX, event.clientY);
+            requestMenu(path, event.currentTarget, event.clientX, event.clientY);
          }}
          onKeyDown={(event) => {
             if (!requestMenu || (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))) return;
             event.preventDefault();
             event.stopPropagation();
-            const item = event.currentTarget.querySelector<HTMLButtonElement>('[role="treeitem"]')!;
+            const item = event.currentTarget;
             const bounds = item.getBoundingClientRect();
             requestMenu(path, item, bounds.left + 20, bounds.bottom);
          }}
@@ -82,15 +94,8 @@ export function FolderTree({
          </button>
          <button
             type="button"
-            role="treeitem"
             data-list-control=""
-            aria-level={level}
-            aria-posinset={position}
-            aria-setsize={siblings}
-            aria-selected={selected === path}
-            aria-expanded={hasChildren ? open : undefined}
-            data-path={path}
-            tabIndex={selected === path || (!selectedExists && path === rows[0]?.id) ? 0 : -1}
+            tabIndex={-1}
             className={`sidebar-item ${selected === path ? "selected" : ""}`}
             title={path}
             onClick={() => onSelect(path)}
@@ -107,8 +112,15 @@ export function FolderTree({
          role="tree"
          aria-label="Collection folders"
          onKeyDown={(event) => {
-            const item = (event.target as HTMLElement).closest<HTMLButtonElement>('[role="treeitem"]');
+            const item = (event.target as HTMLElement).closest<HTMLElement>('[role="treeitem"]');
             if (!item) return;
+            const control = (event.target as HTMLElement).closest("button");
+            if (control && !control.classList.contains("sidebar-item")) return;
+            if (event.key === "Enter" || event.key === " ") {
+               event.preventDefault();
+               onSelect(item.dataset["path"]!);
+               return;
+            }
             const path = item.dataset["path"]!,
                nodes = treeItems(),
                index = nodes.indexOf(item);

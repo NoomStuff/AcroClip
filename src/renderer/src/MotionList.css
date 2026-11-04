@@ -1,4 +1,5 @@
 .motion-list {
+   overflow-anchor: none;
    position: relative;
    isolation: isolate;
 }

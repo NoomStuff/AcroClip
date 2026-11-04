@@ -15,6 +15,7 @@ export function useGridMotion<T extends HTMLElement>(
    const thumbnailMotion = useRef<ReturnType<typeof createGridMotion<HTMLElement>> | null>(null);
    const capturedThumbnails = useRef(new Map<HTMLElement, { width: number; height: number }>());
    const known = useRef(new Set<string>());
+   const measured = useRef(new Set<HTMLElement>());
    const appearances = useRef(new Map<HTMLElement, Animation>());
    const previousFlow = useRef(flowResize);
    const previousLayout = useRef(layoutKey);
@@ -49,6 +50,7 @@ export function useGridMotion<T extends HTMLElement>(
       for (const animation of appearances.current.values()) animation.cancel();
       appearances.current.clear();
       known.current.clear();
+      measured.current.clear();
    }, [root]);
    useLayoutEffect(() => {
       const grid = root.current;
@@ -79,14 +81,14 @@ export function useGridMotion<T extends HTMLElement>(
       }
       // Restore natural layout for measurement. Reapply the current visual sizes before paint.
       grid.style.removeProperty("grid-template-rows");
-      for (const child of grid.children) {
-         const node = child as HTMLElement;
+      for (const node of measured.current) {
          node.style.removeProperty("width");
          node.style.removeProperty("height");
          node.style.removeProperty("transform");
          const thumbnail = node.querySelector<HTMLElement>(".clip-thumbnail");
          if (thumbnail) paintGridThumbnail(thumbnail.style);
       }
+      measured.current.clear();
       const rows = getComputedStyle(grid).gridTemplateRows;
       const bounds = grid.getBoundingClientRect();
       const next = new Set<string>();
@@ -99,6 +101,7 @@ export function useGridMotion<T extends HTMLElement>(
          const key = node.dataset["layoutKey"];
          if (!key) continue;
          active.add(node);
+         measured.current.add(node);
          next.add(key);
          const rect = node.getBoundingClientRect();
          const thumbnail = node.querySelector<HTMLElement>(".clip-thumbnail");

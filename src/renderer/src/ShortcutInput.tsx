@@ -1,8 +1,10 @@
+import { useFieldDescription } from "./field-accessibility";
 import { useState } from "react";
 import { api } from "./desktop";
 import { eventBinding } from "../../shared/shortcuts";
 
 export function ShortcutInput({ value, onChange, label = "Clip shortcut" }: { value: string; onChange: (value: string) => void; label?: string }) {
+   const description = useFieldDescription();
    const [editing, setEditing] = useState(false);
    return (
       <button
@@ -34,6 +36,7 @@ export function ShortcutInput({ value, onChange, label = "Clip shortcut" }: { va
             void api.captureShortcut(false);
          }}
          aria-label={label}
+         aria-describedby={description}
       >
          {editing
             ? "Press a shortcut…"

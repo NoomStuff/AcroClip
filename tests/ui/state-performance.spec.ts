@@ -16,6 +16,10 @@ test("incremental updates preserve large libraries, meter routing, visibility an
       const page = await app.firstWindow();
       await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).collectionStatus.phase)).toBe("ready");
       await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).windowVisible)).toBe(true);
+      // Wait for the renderer subscription and initial snapshot before injecting updates.
+      // The IPC state handler can be ready before the renderer subscribes to events.
+      await expect(page.locator(".recording-page")).toBeVisible();
+      await expect(page.locator(".mixer-channel")).toHaveCount(2);
       const actual = await page.evaluate(() => window.acroClip.state());
       await app.evaluate(({ BrowserWindow, ipcMain }) => {
          const web = BrowserWindow.getAllWindows()[0]!.webContents;
@@ -40,9 +44,20 @@ test("incremental updates preserve large libraries, meter routing, visibility an
       const sourceMeter = page.getByRole("meter", { name: "Desktop peak", exact: true });
       const microphoneMeter = page.getByRole("meter", { name: "Microphone peak", exact: true });
       await expect(sourceMeter).toBeVisible();
-      await publish({ type: "audio-levels", levels: { capture: 85, microphone: 0, additional: { "microphone-default": 32, "source-audio": 5 } } });
-      await expect.poll(async () => Number(await sourceMeter.getAttribute("aria-valuenow"))).toBeGreaterThan(-15);
-      await expect.poll(async () => Number(await microphoneMeter.getAttribute("aria-valuenow"))).toBeGreaterThan(-45);
+      await expect(microphoneMeter).toBeVisible();
+      await expect(microphoneMeter).not.toHaveAttribute("data-muted", "true");
+      // Meter data is a stream. Keep publishing until both subscriptions have
+      // received it after the preference update, rather than racing one sample
+      // against React's effect installation on slower runners.
+      await expect
+         .poll(async () => {
+            await publish({ type: "audio-levels", levels: { capture: 85, microphone: 0, additional: { "microphone-default": 32, "source-audio": 5 } } });
+            return {
+               source: Number(await sourceMeter.getAttribute("aria-valuenow")) > -15,
+               microphone: Number(await microphoneMeter.getAttribute("aria-valuenow")) > -45,
+            };
+         })
+         .toEqual({ source: true, microphone: true });
       await publish({ type: "audio-levels", levels: { capture: 85, microphone: 0, additional: {} } });
       await expect.poll(async () => Number(await microphoneMeter.getAttribute("aria-valuenow"))).toBeGreaterThan(-45);
       await publish({

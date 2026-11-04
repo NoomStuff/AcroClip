@@ -1,3 +1,4 @@
+import { useFieldDescription } from "./field-accessibility";
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
@@ -23,6 +24,7 @@ export function TimeInput({
    max: number;
    onValueChange: (value: number) => void;
 }) {
+   const description = useFieldDescription();
    const [draft, setDraft] = useState<string | null>(null);
    const commit = (next: number) => {
       setDraft(null);
@@ -38,6 +40,7 @@ export function TimeInput({
       <div className="time-input">
          <input
             aria-label={label}
+            aria-describedby={description}
             role="spinbutton"
             inputMode="numeric"
             aria-valuemin={min}
