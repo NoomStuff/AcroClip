@@ -59,7 +59,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await page.getByRole("button", { name: "List view", exact: true }).click();
       const listScale = page.getByRole("slider", { name: "List thumbnail size", exact: true });
       expect(await listScale.evaluate((node, previous) => node === previous, sliderElement)).toBe(true);
-      await expect(listScale).toHaveValue("128");
+      await expect(listScale).toHaveValue("96");
       await listScale.press("End");
       await page.getByRole("button", { name: "Grid view", exact: true }).click();
       await expect.poll(() => gridScale.evaluate((node: HTMLInputElement) => node.value === node.max)).toBe(true);

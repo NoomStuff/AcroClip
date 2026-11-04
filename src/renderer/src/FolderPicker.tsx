@@ -17,6 +17,13 @@ export function FolderPicker({
    navigationHighlighted?: boolean;
    ref?: Ref<HTMLDivElement>;
 }) {
+   const name = path.split(/[\\/]/).filter(Boolean).at(-1) || path;
+   const location = (
+      <span className="folder-picker-location">
+         <strong>{name || "No folder selected"}</strong>
+         <span>{path}</span>
+      </span>
+   );
    return (
       <div
          className="folder-picker"
@@ -36,11 +43,11 @@ export function FolderPicker({
                disabled={revealDisabled || !path}
                onClick={onReveal}
             >
-               <span>{path || "No folder selected"}</span>
+               {location}
                <ExternalLink size={16} aria-hidden="true" />
             </button>
          ) : (
-            <span title={path}>{path || "No folder selected"}</span>
+            <span title={path}>{location}</span>
          )}
          <Button data-choose-folder onClick={onChoose}>
             Choose collection folder

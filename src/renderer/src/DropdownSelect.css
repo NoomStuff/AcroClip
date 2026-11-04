@@ -16,7 +16,7 @@
    background: var(--raised);
    border: 1px solid var(--border-control);
    border-radius: var(--radius-control);
-   font-size: 13px;
+   font-size: var(--text-body);
    text-align: left;
    transition:
       background 150ms var(--ease),
@@ -64,7 +64,7 @@
    gap: 18px;
    padding: 9px 10px;
    border-radius: 4px;
-   font-size: 13px;
+   font-size: var(--text-body);
    text-align: left;
 }
 .select-menu button > span:first-child {

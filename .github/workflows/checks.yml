@@ -89,6 +89,8 @@ jobs:
               ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
            run: pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
          - run: bun run test:ui
+           env:
+              ACROCLIP_UI_EVIDENCE: test-results/visual-review
          - run: bun run test:ui:native
          - run: bun run test:capture-loss
          - uses: actions/upload-artifact@v7

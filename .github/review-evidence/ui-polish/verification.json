@@ -1,0 +1,323 @@
+{
+   "renderedFont": {
+      "fonts": [
+         {
+            "familyName": "Inter",
+            "postScriptName": "Inter-Regular",
+            "isCustomFont": true,
+            "glyphCount": 9
+         }
+      ]
+   },
+   "screens": [
+      {
+         "screen": "clip-menu-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 12,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "clip-menu-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 12,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "library-empty-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 11,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "library-empty-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 11,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "library-empty-collection",
+         "width": 980,
+         "height": 800,
+         "sampledText": 8,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "library-grid-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 12,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "library-grid-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 12,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "library-list-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 12,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "library-list-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 12,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "onboarding-capture",
+         "width": 980,
+         "height": 800,
+         "sampledText": 5,
+         "minimumSampledContrast": 7.36
+      },
+      {
+         "screen": "onboarding-clip",
+         "width": 980,
+         "height": 800,
+         "sampledText": 6,
+         "minimumSampledContrast": 9.06
+      },
+      {
+         "screen": "onboarding-ready",
+         "width": 980,
+         "height": 800,
+         "sampledText": 7,
+         "minimumSampledContrast": 9.06
+      },
+      {
+         "screen": "recording-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 2,
+         "minimumSampledContrast": 13.06
+      },
+      {
+         "screen": "recording-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 2,
+         "minimumSampledContrast": 13.06
+      },
+      {
+         "screen": "recording-active",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 1,
+         "minimumSampledContrast": 15.38
+      },
+      {
+         "screen": "settings-app-updates-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 17,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-app-updates-760",
+         "width": 760,
+         "height": 800,
+         "sampledText": 17,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-app-updates-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 17,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-collection-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 18,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-collection-760",
+         "width": 760,
+         "height": 800,
+         "sampledText": 18,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-collection-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 18,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-games-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 10,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-games-760",
+         "width": 760,
+         "height": 800,
+         "sampledText": 10,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-games-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 10,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-notifications-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 25,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-notifications-760",
+         "width": 760,
+         "height": 800,
+         "sampledText": 25,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-notifications-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 25,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-recording-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 21,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-recording-760",
+         "width": 760,
+         "height": 800,
+         "sampledText": 21,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-recording-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 21,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-shortcuts-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 31,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-shortcuts-760",
+         "width": 760,
+         "height": 800,
+         "sampledText": 31,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "settings-shortcuts-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 31,
+         "minimumSampledContrast": 7.39
+      },
+      {
+         "screen": "tag-dialog-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 15,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "tag-dialog-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 15,
+         "minimumSampledContrast": 7.33
+      },
+      {
+         "screen": "viewer-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 6,
+         "minimumSampledContrast": 7.15
+      },
+      {
+         "screen": "viewer-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 6,
+         "minimumSampledContrast": 7.15
+      },
+      {
+         "screen": "viewer-details-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 7,
+         "minimumSampledContrast": 7.15
+      },
+      {
+         "screen": "viewer-details-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 7,
+         "minimumSampledContrast": 7.15
+      },
+      {
+         "screen": "viewer-export-progress",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 3,
+         "minimumSampledContrast": 8.01
+      },
+      {
+         "screen": "viewer-ready-to-share",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 4,
+         "minimumSampledContrast": 7.36
+      },
+      {
+         "screen": "viewer-shareable",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 5,
+         "minimumSampledContrast": 7.36
+      },
+      {
+         "screen": "viewer-size-menu-1280",
+         "width": 1280,
+         "height": 800,
+         "sampledText": 6,
+         "minimumSampledContrast": 7.15
+      },
+      {
+         "screen": "viewer-size-menu-980",
+         "width": 980,
+         "height": 800,
+         "sampledText": 6,
+         "minimumSampledContrast": 7.15
+      }
+   ],
+   "limits": "Contrast samples exclude disabled text, images, gradients and opacity layers. Static captures do not establish motion quality. Windows CI captures remain pending."
+}

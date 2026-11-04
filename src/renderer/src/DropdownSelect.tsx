@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Adapted from AttaCut's DropdownSelect. See THIRD_PARTY_NOTICES.md.
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import { useFieldDescription } from "./field-accessibility";
@@ -25,8 +25,10 @@ export function DropdownSelect({
    iconOnly = false,
    multiple,
    required = false,
+   triggerRef,
 }: {
    label: string;
+   triggerRef?: RefObject<HTMLButtonElement | null>;
    options: DropdownOption[];
    disabled?: boolean;
    className?: string;
@@ -137,7 +139,10 @@ export function DropdownSelect({
    return (
       <div className={`custom-select ${className}`} ref={root}>
          <button
-            ref={trigger}
+            ref={(node) => {
+               trigger.current = node;
+               if (triggerRef) triggerRef.current = node;
+            }}
             type="button"
             role="combobox"
             className={`select-trigger ${iconOnly ? "icon-button" : ""}`}

@@ -13,7 +13,7 @@
 .folder-picker > span {
    flex: 1;
    min-width: 0;
-   font-size: 12px;
+   font-size: var(--text-meta);
    overflow: hidden;
    text-overflow: ellipsis;
    white-space: nowrap;
@@ -33,7 +33,7 @@
    border-radius: 6px;
    color: var(--muted);
    text-align: left;
-   font-size: 12px;
+   font-size: var(--text-meta);
 }
 .folder-picker-path > span {
    min-width: 0;
@@ -47,4 +47,26 @@
 .folder-picker-path:hover:not(:disabled) {
    background: var(--raised);
    color: var(--text);
+}
+
+.folder-picker-location {
+   display: flex;
+   flex-direction: column;
+   min-width: 0;
+   gap: 2px;
+}
+.folder-picker-location strong {
+   font-size: var(--text-body);
+   font-weight: 500;
+   color: var(--text);
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+.folder-picker-location > span {
+   font-size: var(--text-meta);
+   color: var(--subtle);
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
 }

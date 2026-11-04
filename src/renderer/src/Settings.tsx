@@ -174,7 +174,7 @@ export function Settings({
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const content = useRef<HTMLDivElement>(null);
-   const sidebar = usePaneSize(layout, { key: "settings.sidebar", initial: 270, min: 210, max: 400, reserve: 520, axis: "x" });
+   const sidebar = usePaneSize(layout, { key: "settings.sidebar", initial: 230, min: 200, max: 400, reserve: 520, axis: "x" });
    const [{ section, direction }, setNavigation] = useState<{ section: Section; direction: "up" | "down" | null }>(() => ({
       section: sections.find((item) => item.id === initialLocation("settings", "recording"))?.id ?? "recording",
       direction: null,
@@ -262,7 +262,7 @@ export function Settings({
    const title = sections.find((item) => item.id === section)?.label;
    return (
       <div className="settings-page" ref={layout}>
-         <aside className="settings-sidebar" style={{ width: sidebar.size }}>
+         <aside className="settings-sidebar navigation-pane" style={{ width: sidebar.size }}>
             <div className="settings-sidebar-heading action-header">
                <h1>Settings</h1>
                <HeaderActions>

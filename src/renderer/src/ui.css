@@ -52,7 +52,7 @@
    color: var(--text);
    font-weight: 500;
    min-height: var(--control-height);
-   font-size: 13px;
+   font-size: var(--text-body);
    transition:
       transform 260ms var(--spring),
       background 160ms var(--ease),
@@ -66,6 +66,10 @@
 }
 
 .button.primary {
+   /* State changes must not interpolate through dark text on a dark fill. */
+   transition:
+      transform 160ms var(--ease),
+      opacity 160ms var(--ease);
    color: #181818;
    background: var(--accent);
    font-weight: 600;
@@ -126,17 +130,17 @@
 
 .segmented {
    display: flex;
-   padding: 4px;
-   border-radius: 12px;
+   padding: 3px;
+   border-radius: var(--radius-control);
    background: var(--base);
    gap: 3px;
 }
 
 .segmented button {
    flex: 1;
-   min-height: 35px;
+   min-height: 34px;
    color: var(--muted);
-   border-radius: 9px;
+   border-radius: 5px;
    font-weight: 500;
 }
 
@@ -169,14 +173,14 @@
 }
 
 .empty h2 {
-   font-size: 19px;
+   font-size: var(--text-heading);
    font-weight: 600;
 }
 
 .empty p {
    color: var(--muted);
    max-width: 340px;
-   font-size: 12px;
+   font-size: var(--text-meta);
 }
 
 .empty .button {
@@ -372,13 +376,13 @@
 }
 
 .field-label {
-   font-size: 14px;
+   font-size: var(--text-label);
    color: var(--text);
    font-weight: 500;
 }
 
 .field-detail {
-   font-size: 12px;
+   font-size: var(--text-meta);
    color: var(--muted);
    line-height: 1.5;
    max-width: 420px;
@@ -402,11 +406,10 @@
    align-items: center;
    gap: 9px;
    color: var(--muted);
-   font-size: 12px;
+   font-size: var(--text-meta);
 }
 
 .library-page,
-.viewer-page,
 .settings-page {
    display: flex;
    width: 100%;
@@ -414,10 +417,7 @@
    padding: 0;
 }
 
-.library-sidebar,
-.settings-sidebar,
-.viewer-sidebar {
-   width: 245px;
+.navigation-pane {
    flex-shrink: 0;
    background: var(--surface);
    border-radius: var(--radius-panel);
@@ -436,7 +436,7 @@
    border-radius: 10px;
    width: 100%;
    color: var(--muted);
-   font-size: 13px;
+   font-size: var(--text-body);
    min-height: 39px;
    overflow: hidden;
    text-overflow: ellipsis;
@@ -454,7 +454,7 @@
 
 .sidebar-item .count {
    margin-left: auto;
-   font-size: 11px;
+   font-size: var(--text-meta);
    color: var(--subtle);
 }
 
@@ -547,7 +547,7 @@
    text-align: left;
    border-radius: 7px;
    min-height: 36px;
-   font-size: 13px;
+   font-size: var(--text-body);
    color: var(--text);
 }
 
@@ -591,13 +591,13 @@
 }
 
 .dialog h2 {
-   font-size: 19px;
+   font-size: var(--text-heading);
    padding-right: 24px;
 }
 
 .dialog p {
    color: var(--muted);
-   font-size: 12px;
+   font-size: var(--text-meta);
    margin: 11px 0 20px;
 }
 
@@ -704,7 +704,7 @@
 .context-header-label {
    display: block;
    color: var(--subtle);
-   font-size: 11px;
+   font-size: var(--text-meta);
    line-height: 16px;
    margin-bottom: 2px;
 }
@@ -718,9 +718,9 @@
    padding: 0;
    text-align: left;
    color: var(--text);
-   font-size: 13px;
+   font-size: var(--text-body);
    line-height: 20px;
-   font-weight: 550;
+   font-weight: 600;
 }
 .context-header-title > svg,
 .context-header-title > .application-icon {
@@ -807,7 +807,19 @@
 }
 
 .section-description {
-   font-size: 12px;
+   font-size: var(--text-meta);
    margin: 9px 0 22px;
    max-width: 550px;
+}
+
+.panel-heading {
+   padding: var(--panel-padding);
+   display: flex;
+   align-items: center;
+   gap: var(--space-2);
+}
+.panel-heading h2 {
+   font-size: var(--text-label);
+   font-weight: 600;
+   line-height: 1.4;
 }

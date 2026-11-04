@@ -1,22 +1,22 @@
 import { shareableTargetAllowed } from "../../shared/shareable-target";
 import { useDirectionalContent } from "./useDirectionalContent";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Film, LibraryBig, FolderOpen, LoaderCircle, MoreHorizontal, Share2, SlidersHorizontal, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Film, LibraryBig, FolderOpen, LoaderCircle, MoreHorizontal, Share2, Trash2, X, Info } from "lucide-react";
 import type { AppState, Clip } from "../../shared/types";
 import { api, describeError, fileDragProps } from "./desktop";
 import { Button, Empty, HeaderActions, IconButton, Menu, MenuItem, Segmented, Select } from "./ui";
 import type { ContextMenuRequest } from "./ui";
-import { formatSize, formatTime } from "./format";
 import type { Run } from "./desktop";
-import { DropdownSelect } from "./DropdownSelect";
+import { ShareSizePicker } from "./ShareSizePicker";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { ViewerTransport } from "./ViewerTransport";
 import { PaneDivider, usePaneSize } from "./layout";
 import type { Ask } from "./Dialog";
 import { useAttaCutAvailable } from "./useAttaCutAvailable";
 import { ClipActions } from "./ClipActions";
-import { CategoryEditor, CategoryMark } from "./CategoryEditor";
-import { categoryStyle } from "./category-color";
+import { CategoryEditor } from "./CategoryEditor";
+import { formatSize } from "./format";
+import { ClipDetails, ClipTags } from "./ClipDetails";
 import { usePlaybackFade } from "./usePlaybackFade";
 
 export function Viewer({
@@ -35,7 +35,24 @@ export function Viewer({
    ask: Ask;
 }) {
    const layout = useRef<HTMLDivElement>(null);
-   const sidebar = usePaneSize(layout, { key: "viewer.sidebar", initial: 300, min: 230, max: 420, reserve: 440, axis: "x" });
+   const sidebar = usePaneSize(layout, { key: "viewer.sidebar", initial: 260, min: 230, max: 420, reserve: 440, axis: "x" });
+   const shareHintId = useId();
+   const [detailsOpen, setDetailsOpen] = useState(() => {
+      try {
+         return localStorage.getItem("acroclip.viewer.details") === "true";
+      } catch {
+         return false;
+      }
+   });
+   const toggleDetails = () => {
+      const next = !detailsOpen;
+      setDetailsOpen(next);
+      try {
+         localStorage.setItem("acroclip.viewer.details", String(next));
+      } catch {
+         /* The inspector still works without persistence. */
+      }
+   };
    const attaCutAvailable = useAttaCutAvailable(visible);
    const [contextMenu, setContextMenu] = useState<ContextMenuRequest | null>(null);
    useEffect(() => setContextMenu(null), [visible, clip?.id]);
@@ -239,61 +256,62 @@ export function Viewer({
          </div>
       );
    return (
-      <div className="viewer-page" ref={layout}>
-         <aside className="viewer-sidebar" style={{ width: sidebar.size }}>
-            <div className="viewer-sidebar-scroll">
-               <header className="viewer-title action-header">
-                  <h1>{clip.name}</h1>
-                  <HeaderActions>
-                     <Menu
-                        label="File actions"
-                        trigger={<MoreHorizontal size={17} />}
-                        contextRequest={contextMenu ?? undefined}
-                        onContextClose={() => setContextMenu(null)}
+      <div className="viewer-page" ref={layout} data-details-open={detailsOpen || undefined}>
+         <div className="viewer-header">
+            <header className="viewer-title action-header">
+               <h1>{clip.name}</h1>
+               <HeaderActions>
+                  <Menu
+                     label="File actions"
+                     trigger={<MoreHorizontal size={17} />}
+                     contextRequest={contextMenu ?? undefined}
+                     onContextClose={() => setContextMenu(null)}
+                  >
+                     <ClipActions
+                        createTag={() => setCreatingTag(true)}
+                        clip={clip}
+                        categories={state.categories}
+                        busy={!!job}
+                        canCreate={targetAllowed}
+                        attaCutAvailable={attaCutAvailable}
+                        ask={ask}
+                        run={run}
+                        create={create}
+                        remove={() => void remove()}
+                        shareable={shareable}
                      >
-                        <ClipActions
-                           createTag={() => setCreatingTag(true)}
-                           clip={clip}
-                           categories={state.categories}
-                           busy={!!job}
-                           canCreate={targetAllowed}
-                           attaCutAvailable={attaCutAvailable}
-                           ask={ask}
-                           run={run}
-                           create={create}
-                           remove={() => void remove()}
-                           shareable={shareable}
-                        >
-                           {shareable && (
-                              <MenuItem danger disabled={!!job} onClick={() => void remove(shareable.id)}>
-                                 <Trash2 size={14} />
-                                 {clip.shareables.length > 1 ? `Delete shareable ${clip.shareables.indexOf(shareable) + 1}` : "Delete shareable"}
-                              </MenuItem>
-                           )}
-                           {clip.shareables.length > 1 && (
-                              <MenuItem danger disabled={!!job} onClick={() => void remove(undefined, "shareables")}>
-                                 <Trash2 size={14} />
-                                 Delete all shareables
-                              </MenuItem>
-                           )}
-                        </ClipActions>
-                     </Menu>
-                  </HeaderActions>
-                  <div className="viewer-metadata">
-                     {clip.applicationId && state.applicationIcons[clip.applicationId] && (
-                        <ApplicationIcon src={state.applicationIcons[clip.applicationId]} size={14} />
-                     )}
-                     {clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown" && (
-                        <span className="source-label" title={clip.source}>
-                           {clip.source}
-                        </span>
-                     )}
-                     <time dateTime={new Date(clip.createdAt).toISOString()}>
-                        {new Date(clip.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
-                     </time>
-                  </div>
-               </header>
-               <section className="viewer-file" aria-label="Displayed file">
+                        {shareable && (
+                           <MenuItem danger disabled={!!job} onClick={() => void remove(shareable.id)}>
+                              <Trash2 size={14} />
+                              {clip.shareables.length > 1 ? `Delete shareable ${clip.shareables.indexOf(shareable) + 1}` : "Delete shareable"}
+                           </MenuItem>
+                        )}
+                        {clip.shareables.length > 1 && (
+                           <MenuItem danger disabled={!!job} onClick={() => void remove(undefined, "shareables")}>
+                              <Trash2 size={14} />
+                              Delete all shareables
+                           </MenuItem>
+                        )}
+                     </ClipActions>
+                  </Menu>
+               </HeaderActions>
+               <div className="viewer-metadata">
+                  {clip.applicationId && state.applicationIcons[clip.applicationId] && (
+                     <ApplicationIcon src={state.applicationIcons[clip.applicationId]} size={14} />
+                  )}
+                  {clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown" && (
+                     <span className="source-label" title={clip.source}>
+                        {clip.source}
+                     </span>
+                  )}
+                  <time dateTime={new Date(clip.createdAt).toISOString()}>
+                     {new Date(clip.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                  </time>
+                  <ClipTags ids={clip.categories} categories={state.categories} />
+               </div>
+            </header>
+            <div className="viewer-toolbar">
+               <div className="viewer-version-controls">
                   <Segmented
                      label="Clip version"
                      value={version}
@@ -303,137 +321,98 @@ export function Viewer({
                         { value: "shareable", label: "Shareable" },
                      ]}
                   />
-                  {clip.originalMissing && (
-                     <p className="permission-note" role="status">
-                        Clip missing or changed. Your shareables are still available.
-                     </p>
+                  {version === "shareable" && shareable && clip.shareables.length > 1 && (
+                     <Select
+                        label="Choose shareable"
+                        value={shareable.id}
+                        onChange={(id) => {
+                           rememberPlayback();
+                           setShareId(id);
+                        }}
+                     >
+                        {clip.shareables.map((item, index) => (
+                           <option key={item.id} value={item.id}>
+                              Shareable {index + 1} · {formatSize(item.size)}
+                           </option>
+                        ))}
+                     </Select>
                   )}
-                  <div ref={versionContent}>
-                     <div className="version-info">
-                        {version === "original" ? (
-                           <>
-                              <div>
-                                 <span>File size</span>
-                                 <strong>{clip.availability && !clip.size ? "Checking" : formatSize(clip.size)}</strong>
-                              </div>
-                              <div>
-                                 <span>Resolution</span>
-                                 <strong>
-                                    {clip.width} × {clip.height}
-                                 </strong>
-                              </div>
-                              <div>
-                                 <span>Duration</span>
-                                 <strong>{clip.availability && !clip.duration ? "Checking" : formatTime(clip.duration)}</strong>
-                              </div>
-                              <div>
-                                 <span>Audio tracks</span>
-                                 <strong>{clip.availability && !clip.tracks.length ? "Checking" : clip.tracks.length || "None"}</strong>
-                              </div>
-                           </>
-                        ) : shareable ? (
-                           <>
-                              {clip.shareables.length > 1 && (
-                                 <div className="select-wrap version-select">
-                                    <Select
-                                       label="Choose shareable"
-                                       value={shareable.id}
-                                       onChange={(value) => {
-                                          rememberPlayback();
-                                          setShareId(value);
-                                       }}
-                                    >
-                                       {clip.shareables.map((item) => (
-                                          <option key={item.id} value={item.id}>
-                                             Shareable {clip.shareables.indexOf(item) + 1} · {formatSize(item.size)}
-                                          </option>
-                                       ))}
-                                    </Select>
-                                 </div>
-                              )}
-                              <div>
-                                 <span>File size</span>
-                                 <strong>{formatSize(shareable.size)}</strong>
-                              </div>
-                              <div>
-                                 <span>Size target</span>
-                                 <strong>{shareable.targetMB} MB</strong>
-                              </div>
-                           </>
-                        ) : (
-                           <p className="muted">No shareables.</p>
+               </div>
+               <div className="viewer-share-actions" ref={versionActions}>
+                  {path && (
+                     <div className="reveal-row">
+                        <Button className="quiet" onClick={() => void run(() => api.reveal(path))}>
+                           <FolderOpen size={16} />
+                           {version === "shareable" ? "Show shareable in folder" : "Show clip in folder"}
+                        </Button>
+                     </div>
+                  )}
+                  <div className="viewer-create-row">
+                     <div className="viewer-create-main">
+                        <Button
+                           className="primary wide"
+                           onClick={create}
+                           disabled={!!clip.originalMissing || !targetAllowed}
+                           aria-describedby={!targetAllowed ? shareHintId : undefined}
+                           title={!targetAllowed ? "Choose a size target no larger than the clip" : undefined}
+                           busy={!!job}
+                           busyIndicator="content"
+                           {...(job ? { progress: job.progress } : {})}
+                           aria-label={
+                              job
+                                 ? `${job.state === "queued" ? "Waiting to create shareable" : "Creating shareable"}, ${Math.round(job.progress * 100)} percent`
+                                 : undefined
+                           }
+                        >
+                           {job ? (
+                              <>
+                                 <LoaderCircle size={17} className="spin" />
+                                 <span role="status">{Math.round(job.progress * 100)}%</span>
+                              </>
+                           ) : (
+                              <>
+                                 <Share2 size={17} />
+                                 Create shareable
+                              </>
+                           )}
+                        </Button>
+                        {job && (
+                           <IconButton className="viewer-cancel-export" label="Cancel shareable" onClick={() => void run(() => api.cancelJob(job.id))}>
+                              <X size={15} />
+                           </IconButton>
                         )}
                      </div>
-                     {clip.categories.length > 0 && (
-                        <div className="viewer-categories" aria-label="Tags">
-                           {state.categories
-                              .filter((category) => clip.categories.includes(category.id))
-                              .map((category) => (
-                                 <span key={category.id} className="viewer-category" style={categoryStyle(category.color)}>
-                                    <CategoryMark category={category} size={13} />
-                                    <span>{category.name}</span>
-                                 </span>
-                              ))}
-                        </div>
-                     )}
+                     <ShareSizePicker
+                        defaultTarget={state.preferences.shareSizeMB}
+                        target={target}
+                        override={override}
+                        disabled={!!clip.originalMissing || !!job}
+                        onOverride={setOverride}
+                        onTarget={setTarget}
+                     />
                   </div>
-               </section>
-            </div>
-            <div className="viewer-sidebar-bottom" ref={versionActions}>
-               {path && (
-                  <div className="reveal-row">
-                     <Button className="wide" onClick={() => void run(() => api.reveal(path))}>
-                        <FolderOpen size={16} />
-                        {version === "shareable" ? "Show shareable in folder" : "Show clip in folder"}
-                     </Button>
-                  </div>
-               )}
-               <div className="viewer-create-row">
-                  <div className="viewer-create-main">
-                     <Button
-                        className="primary wide"
-                        onClick={create}
-                        disabled={!!clip.originalMissing || !targetAllowed}
-                        title={!targetAllowed ? "Choose a size target no larger than the clip" : undefined}
-                        busy={!!job}
-                        busyIndicator="content"
-                        {...(job ? { progress: job.progress } : {})}
-                        aria-label={
-                           job
-                              ? `${job.state === "queued" ? "Waiting to create shareable" : "Creating shareable"}, ${Math.round(job.progress * 100)} percent`
-                              : undefined
-                        }
-                     >
-                        {job ? (
-                           <>
-                              <LoaderCircle size={17} className="spin" />
-                              <span role="status">{Math.round(job.progress * 100)}%</span>
-                           </>
-                        ) : (
-                           <>
-                              <Share2 size={17} />
-                              Create shareable
-                           </>
-                        )}
-                     </Button>
-                     {job && (
-                        <IconButton className="viewer-cancel-export" label="Cancel shareable" onClick={() => void run(() => api.cancelJob(job.id))}>
-                           <X size={15} />
-                        </IconButton>
-                     )}
-                  </div>
-                  <ShareSizePicker
-                     defaultTarget={state.preferences.shareSizeMB}
-                     target={target}
-                     override={override}
-                     disabled={!!clip.originalMissing || !!job}
-                     onOverride={setOverride}
-                     onTarget={setTarget}
-                  />
                </div>
+               <IconButton
+                  label={detailsOpen ? "Hide file details" : "Show file details"}
+                  aria-expanded={detailsOpen}
+                  aria-controls="viewer-file-details"
+                  onClick={toggleDetails}
+               >
+                  <Info size={18} />
+               </IconButton>
             </div>
-         </aside>
-         <PaneDivider label="Player sidebar width" pane={sidebar} />
+            {clip.originalMissing && (
+               <p className="permission-note" role="status">
+                  Clip missing or changed. Your shareables are still available.
+               </p>
+            )}
+
+            {!targetAllowed && !clip.originalMissing && !job && (
+               <p className="viewer-share-hint" id={shareHintId}>
+                  Already under {override ? target : state.preferences.shareSizeMB} MB. You can share this file directly.
+               </p>
+            )}
+         </div>
          <div
             className="viewer-main"
             ref={player}
@@ -506,7 +485,9 @@ export function Viewer({
                            mediaError ||
                            (clip.originalMissing && !shareable
                               ? "The clip is missing or changed. Locate it in your collection folder."
-                              : "Create a compressed copy of the full clip.")
+                              : !targetAllowed
+                                ? "The original is already below your size limit. Choose Clip to watch or share it."
+                                : "Create a compressed copy of the full clip.")
                         }
                      />
                   )
@@ -546,97 +527,20 @@ export function Viewer({
                onFullscreen={() => void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()))}
             />
          </div>
-         {creatingTag && <CategoryEditor close={() => setCreatingTag(false)} run={run} />}
-      </div>
-   );
-}
-
-function ShareSizePicker({
-   defaultTarget,
-   target,
-   override,
-   disabled,
-   onOverride,
-   onTarget,
-}: {
-   defaultTarget: number;
-   target: number;
-   override: boolean;
-   disabled: boolean;
-   onOverride: (value: boolean) => void;
-   onTarget: (value: number) => void;
-}) {
-   const [custom, setCustom] = useState(false);
-   const [editing, setEditing] = useState(false);
-   const root = useRef<HTMLDivElement>(null);
-   const close = () => {
-      setEditing(false);
-      root.current?.querySelector<HTMLButtonElement>("button")?.focus();
-   };
-   useEffect(() => {
-      if (!editing) return;
-      root.current?.querySelector<HTMLInputElement>("input")?.focus();
-      root.current?.querySelector<HTMLInputElement>("input")?.select();
-      const dismiss = (event: PointerEvent) => {
-         if (!root.current?.contains(event.target as Node)) setEditing(false);
-      };
-      document.addEventListener("pointerdown", dismiss);
-      return () => document.removeEventListener("pointerdown", dismiss);
-   }, [editing]);
-   return (
-      <div
-         className="viewer-size-picker"
-         ref={root}
-         onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false);
-         }}
-         onKeyDown={(event) => {
-            if (!editing || !["Escape", "Enter"].includes(event.key)) return;
-            event.preventDefault();
-            event.stopPropagation();
-            close();
-         }}
-      >
-         <DropdownSelect
-            label={`Shareable size: ${override ? target : defaultTarget} MB${override ? "" : " (default)"}`}
-            iconOnly
-            placement="up"
-            disabled={disabled}
-            triggerContent={<SlidersHorizontal size={17} />}
-            value={custom && override ? "custom" : String(override ? target : defaultTarget)}
-            options={[
-               ...Array.from(new Set([10, 20, 50, 100, defaultTarget]))
-                  .sort((a, b) => a - b)
-                  .map((size) => ({ value: String(size), label: `${size} MB${size === defaultTarget ? " (default)" : ""}` })),
-               { value: "custom", label: "Custom" },
-            ]}
-            onChange={(value) => {
-               setCustom(value === "custom");
-               onOverride(value === "custom" || Number(value) !== defaultTarget);
-               if (value === "custom") setEditing(true);
-               else {
-                  setEditing(false);
-                  onTarget(Number(value));
-               }
-            }}
-         />
-         {editing && (
-            <div className="viewer-size-popover">
-               <label htmlFor="viewer-custom-size">Custom size</label>
-               <div className="number-unit">
-                  <input
-                     id="viewer-custom-size"
-                     type="number"
-                     min={1}
-                     max={2000}
-                     value={target}
-                     aria-label="Shareable size target in MB"
-                     onChange={(event) => onTarget(Math.max(1, Math.min(2000, Number(event.target.value))))}
-                  />
-                  <span>MB</span>
-               </div>
+         <aside className="viewer-sidebar" id="viewer-file-details" hidden={!detailsOpen} style={{ width: sidebar.size }}>
+            <header className="panel-heading">
+               <h2>File details</h2>
+            </header>
+            <div className="viewer-sidebar-scroll">
+               <section className="viewer-file" aria-label="Displayed file">
+                  <div ref={versionContent}>
+                     <ClipDetails clip={clip} shareable={shareable} version={version} />
+                  </div>
+               </section>
             </div>
-         )}
+         </aside>
+         {detailsOpen && <PaneDivider label="Player sidebar width" pane={sidebar} />}
+         {creatingTag && <CategoryEditor close={() => setCreatingTag(false)} run={run} />}
       </div>
    );
 }

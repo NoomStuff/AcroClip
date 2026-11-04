@@ -73,7 +73,7 @@ test("the viewer rail retains its first clip, version and position when a newer 
       await page.getByRole("button", { name: "Clip", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(2);
       await rm(source);
-      await expect(page.locator(".viewer-sidebar")).toContainText("Clip missing or changed", { timeout: 15000 });
+      await expect(page.locator(".viewer-page")).toContainText("Clip missing or changed", { timeout: 15000 });
       await expect(page.getByRole("button", { name: "Clip", exact: true })).toBeDisabled();
       await expect(page.getByRole("button", { name: "Shareable", exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("button", { name: "Create shareable", exact: true })).toBeDisabled();

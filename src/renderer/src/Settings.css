@@ -9,7 +9,7 @@
 }
 
 .settings-sidebar h1 {
-   font-size: 22px;
+   font-size: var(--text-title);
    padding: 0;
    margin: 0;
 }
@@ -25,7 +25,7 @@
    display: flex;
    flex-direction: column;
    gap: 6px;
-   font-size: 11px;
+   font-size: var(--text-meta);
 }
 
 .settings-main {
@@ -41,7 +41,7 @@
 }
 
 .settings-heading h1 {
-   font-size: 23px;
+   font-size: var(--text-title);
 }
 
 .settings-scroll {
@@ -66,14 +66,14 @@
    display: flex;
    gap: 16px;
    color: var(--muted);
-   font-size: 12px;
+   font-size: var(--text-meta);
 }
 
 .filename-preview code {
    min-width: 0;
    color: var(--text);
    overflow-wrap: anywhere;
-   font-size: 12px;
+   font-size: var(--text-meta);
 }
 
 .filename-editor {
@@ -86,7 +86,7 @@
    width: 100%;
    min-width: 0;
    font-family: Consolas, monospace;
-   font-size: 12px;
+   font-size: var(--text-meta);
 }
 
 .filename-tokens {
@@ -102,7 +102,7 @@
    padding: 5px 9px;
    min-height: 30px;
    border-radius: var(--radius-control);
-   font-size: 12px;
+   font-size: var(--text-meta);
    background: var(--raised);
 }
 
@@ -131,7 +131,7 @@
    padding: 9px 14px;
    background: var(--surface);
    color: var(--muted);
-   font-size: 13px;
+   font-size: var(--text-body);
 }
 
 .size-presets button.selected {
@@ -156,7 +156,7 @@
    gap: 12px;
    padding: 10px 24px;
    color: var(--muted);
-   font-size: 12px;
+   font-size: var(--text-meta);
 }
 .settings-save-feedback .button {
    margin-left: auto;
@@ -190,7 +190,7 @@
 .settings-group > h2 {
    margin: 0 0 12px;
    color: var(--text);
-   font-size: 15px;
+   font-size: var(--text-label);
    line-height: 1.4;
    font-weight: 600;
 }
@@ -213,7 +213,7 @@
    min-width: 0;
 }
 .settings-row .field-label {
-   font-size: 13px;
+   font-size: var(--text-body);
    font-weight: 500;
 }
 .settings-row .field-detail {
@@ -247,7 +247,7 @@
    gap: 8px 18px;
 }
 .settings-filename-row .filename-heading > label {
-   font-size: 13px;
+   font-size: var(--text-body);
    font-weight: 500;
 }
 .settings-filename-row .filename-preview {
@@ -263,7 +263,7 @@
 .settings-row .size-presets button {
    min-height: 28px;
    padding: 4px 9px;
-   font-size: 11px;
+   font-size: var(--text-meta);
    background: var(--raised);
 }
 .settings-row .size-presets button.selected {
@@ -346,7 +346,7 @@
    min-width: 0;
    padding-right: 36px;
    font-family: Consolas, monospace;
-   font-size: 12px;
+   font-size: var(--text-meta);
 }
 .filename-pattern-input[data-invalid] > input {
    border-color: var(--red);
@@ -363,7 +363,7 @@
    width: 16px;
    height: 18px;
    color: #d9b56f;
-   font-size: 12px;
+   font-size: var(--text-meta);
    cursor: help;
    opacity: 0;
    pointer-events: none;
@@ -425,7 +425,7 @@
    background: var(--raised);
    box-shadow: 0 6px 18px #0003;
    color: var(--text);
-   font-size: 11px;
+   font-size: var(--text-meta);
    line-height: 1.4;
    white-space: normal;
    opacity: 0;
@@ -468,13 +468,13 @@ fieldset.settings-group:disabled {
    padding: 0 20px 8px 0;
    text-align: center;
    color: var(--subtle);
-   font-size: 12px;
+   font-size: var(--text-meta);
 }
 .notification-columns h2 {
    margin: 0;
    text-align: left;
    color: var(--text);
-   font-size: 13px;
+   font-size: var(--text-body);
    font-weight: 600;
    line-height: 1.4;
 }

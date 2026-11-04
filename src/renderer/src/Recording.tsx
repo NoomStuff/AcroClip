@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useApplicationColors } from "./useApplicationColors";
-import { Clapperboard, Circle, CircleStop, Gamepad2, LoaderCircle, Monitor, RefreshCw } from "lucide-react";
+import { Clapperboard, Circle, CircleStop, Gamepad2, LoaderCircle, Monitor, RefreshCw, ChevronDown } from "lucide-react";
 import type { AppState, CaptureSource, GameCandidate, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
 import { api, describeError, reportFeedback } from "./desktop";
-import { Button, ContextHeader, Empty, Field, Segmented, Select } from "./ui";
+import { Button, ContextHeader, Empty, Field, IconButton, Segmented, Select } from "./ui";
 import type { Run } from "./desktop";
 import { PaneDivider, usePaneSize } from "./layout";
 import { useSourcePreview } from "./useSourcePreview";
+import { formatTime } from "./format";
 import { bindingFor, formatBinding } from "../../shared/shortcuts";
 import { SelectionIndicator } from "./SelectionIndicator";
 import { MotionList } from "./MotionList";
@@ -35,8 +36,8 @@ export function Recording({
    const sourceContent = useRef<HTMLDivElement>(null);
    const sourceIndex = ["screen", "app", "auto"].indexOf(state.preferences.sourceKind);
    useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible);
-   const controls = usePaneSize(layout, { key: "recording.controls", initial: 340, min: 260, max: 460, reserve: 420, axis: "x", fromEnd: true });
-   const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 170, max: 380, reserve: 200, axis: "y", fromEnd: true });
+   const controls = usePaneSize(layout, { key: "recording.controls", initial: 300, min: 260, max: 420, reserve: 420, axis: "x", fromEnd: true });
+   const [sourcesExpanded, setSourcesExpanded] = useState(false);
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
    const [sourceRequest, setSourceRequest] = useState(0);
    const [sources, setSources] = useState<CaptureSource[]>([]);
@@ -260,11 +261,125 @@ export function Recording({
    };
    return (
       <div className="recording-page">
-         <div
-            className="recording-layout"
-            ref={layout}
-            style={{ gridTemplateColumns: `minmax(0, 1fr) 12px ${controls.size}px`, gridTemplateRows: `minmax(0, 1fr) 12px ${lower.size}px` }}
-         >
+         <div className="recording-layout" ref={layout} style={{ gridTemplateColumns: `minmax(0, 1fr) var(--pane-gap) ${controls.size}px` }}>
+            <aside className="source-panel" aria-label="Capture source" data-expanded={sourcesExpanded || undefined} data-kind={state.preferences.sourceKind}>
+               <Segmented label="Source type" value={state.preferences.sourceKind} values={sourceChoices(sources, capabilities)} onChange={switchKind} />
+               <div className="capture-source-content" ref={sourceContent}>
+                  {portal && (
+                     <p className="source-empty">
+                        {capabilities?.applicationBackend === "xwayland"
+                           ? "App and Auto support XWayland applications. Native Wayland apps are unavailable."
+                           : "Application and Auto capture are unavailable in this Wayland session."}
+                     </p>
+                  )}
+                  {state.preferences.sourceKind === "auto" ? (
+                     <div className="auto-source">
+                        <ContextHeader
+                           className="detected-game"
+                           status
+                           label={auto.label}
+                           title={auto.title}
+                           icon={
+                              detectedName ? (
+                                 <ApplicationIcon size={28} src={detectedSource?.appIcon} />
+                              ) : findingGames ? (
+                                 <LoaderCircle size={28} className="spin" />
+                              ) : (
+                                 <Gamepad2 size={28} />
+                              )
+                           }
+                        />
+                        <div className="auto-game-help">
+                           <span>Not seeing your game?</span>
+                           <button aria-label="Add game" onClick={openGames}>
+                              Add it
+                           </button>
+                        </div>
+                        <div className="auto-fallback" title="Record this screen when no game is detected. Off keeps Auto waiting.">
+                           <Field label="Screen fallback" stacked>
+                              <Select
+                                 label="Screen fallback"
+                                 value={state.preferences.desktopFallback ? state.preferences.sourceId : ""}
+                                 onChange={(id) => preferences(id ? { desktopFallback: true, sourceId: id } : { desktopFallback: false })}
+                              >
+                                 <option value="">Off</option>
+                                 {state.preferences.desktopFallback &&
+                                    !sources.some((item) => item.kind === "screen" && item.id === state.preferences.sourceId) && (
+                                       <option value={state.preferences.sourceId} disabled>
+                                          Screen unavailable
+                                       </option>
+                                    )}
+                                 {sources
+                                    .filter((item) => item.kind === "screen")
+                                    .map((item) => (
+                                       <option key={item.id} value={item.id}>
+                                          {item.name}
+                                       </option>
+                                    ))}
+                              </Select>
+                           </Field>
+                        </div>
+                     </div>
+                  ) : (
+                     <div
+                        className="source-list moving-selection"
+                        aria-busy={sourcePhase === "loading"}
+                        style={
+                           sourceColor
+                              ? ({ "--accent": sourceColor, "--selection-background": `color-mix(in srgb, ${sourceColor} 14%, transparent)` } as CSSProperties)
+                              : undefined
+                        }
+                     >
+                        <SelectionIndicator value={source?.id ?? ""} />
+                        <MotionList items={selectableSources} identity={state.preferences.sourceKind}>
+                           {(item) => (
+                              <button
+                                 data-list-control=""
+                                 className={`source-row ${item.id === source?.id ? "selected" : ""}`}
+                                 title={item.name}
+                                 aria-pressed={item.id === source?.id}
+                                 key={item.id}
+                                 onClick={() => preferences({ sourceId: item.id })}
+                              >
+                                 {item.kind === "screen" ? <Monitor size={18} /> : <ApplicationIcon size={18} src={item.appIcon} />}
+                                 <span>{item.name}</span>
+                              </button>
+                           )}
+                        </MotionList>
+                        {sourcePhase === "loading" && !sources.length && (
+                           <div className="source-loading" role="status" aria-label="Finding capture sources">
+                              {[0, 1].map((row) => (
+                                 <div key={row} className="source-row source-skeleton" aria-hidden="true">
+                                    <span className="source-skeleton-icon" />
+                                    <span className="source-skeleton-name" />
+                                 </div>
+                              ))}
+                           </div>
+                        )}
+                        {sourcePhase === "error" && (
+                           <Button className="source-retry" onClick={() => setSourceRequest((value) => value + 1)}>
+                              Retry sources
+                           </Button>
+                        )}
+                        {sourcePhase === "ready" && sources.filter((item) => item.kind === state.preferences.sourceKind).length === 0 && (
+                           <p className="source-empty">
+                              {state.preferences.sourceKind === "app" ? "Open an application to capture." : "No screens available. Check capture permissions."}
+                           </p>
+                        )}
+                     </div>
+                  )}
+               </div>
+               {state.preferences.sourceKind !== "auto" && (
+                  <IconButton
+                     label={sourcesExpanded ? "Collapse capture sources" : "Expand capture sources"}
+                     aria-expanded={sourcesExpanded}
+                     className="source-browser-toggle"
+                     onClick={() => setSourcesExpanded((value) => !value)}
+                  >
+                     <ChevronDown size={18} />
+                  </IconButton>
+               )}
+            </aside>
             <div className="recording-main">
                <div className="preview-surface">
                   <canvas ref={preview.outgoing} className="preview-outgoing" aria-hidden="true" />
@@ -356,7 +471,10 @@ export function Recording({
                   )}
                </div>
                <div className="recording-bottom">
-                  <div className="mixer">
+                  <section className="mixer" aria-label="Audio mixer">
+                     <header className="panel-heading">
+                        <h2>Audio</h2>
+                     </header>
                      <div className="mixer-scroll">
                         <AudioListening
                            active={active || state.recorder.state === "starting"}
@@ -374,7 +492,7 @@ export function Recording({
                            />
                         </AudioListening>
                      </div>
-                  </div>
+                  </section>
                   <div className="capture-actions">
                      <button
                         className={`record-action ${active ? "is-recording" : ""}`}
@@ -395,6 +513,11 @@ export function Recording({
                         <span>{active ? "Stop recording" : state.recorder.state === "starting" ? "Starting…" : "Start recording"}</span>
                         {recordShortcut && <kbd>{formatBinding(recordShortcut, state.platform === "darwin")}</kbd>}
                      </button>
+                     <div className="capture-history">
+                        <span>Clip length</span>
+                        <strong>{formatTime(state.preferences.clipSeconds)}</strong>
+                        {active && <span>{formatTime(state.recorder.availableSeconds)} available</span>}
+                     </div>
                      <button
                         className={`clip-action ${pulsing ? "shortcut-pulse" : ""}`}
                         aria-label={saving ? "Saving clip" : "Save clip"}
@@ -409,115 +532,7 @@ export function Recording({
                   </div>
                </div>
             </div>
-            <aside className="source-panel">
-               <Segmented label="Source type" value={state.preferences.sourceKind} values={sourceChoices(sources, capabilities)} onChange={switchKind} />
-               <div className="capture-source-content" ref={sourceContent}>
-                  {portal && (
-                     <p className="source-empty">
-                        {capabilities?.applicationBackend === "xwayland"
-                           ? "App and Auto support XWayland applications. Native Wayland apps are unavailable."
-                           : "Application and Auto capture are unavailable in this Wayland session."}
-                     </p>
-                  )}
-                  {state.preferences.sourceKind === "auto" ? (
-                     <div className="auto-source">
-                        <ContextHeader
-                           className="detected-game"
-                           status
-                           label={auto.label}
-                           title={auto.title}
-                           icon={
-                              detectedName ? (
-                                 <ApplicationIcon size={28} src={detectedSource?.appIcon} />
-                              ) : findingGames ? (
-                                 <LoaderCircle size={28} className="spin" />
-                              ) : (
-                                 <Gamepad2 size={28} />
-                              )
-                           }
-                        />
-                        <div className="auto-game-help">
-                           <span>Not seeing your game?</span>
-                           <button aria-label="Add game" onClick={openGames}>
-                              Add it
-                           </button>
-                        </div>
-                        <div className="auto-fallback" title="Record this screen when no game is detected. Off keeps Auto waiting.">
-                           <Field label="Screen fallback" stacked>
-                              <Select
-                                 label="Screen fallback"
-                                 value={state.preferences.desktopFallback ? state.preferences.sourceId : ""}
-                                 onChange={(id) => preferences(id ? { desktopFallback: true, sourceId: id } : { desktopFallback: false })}
-                              >
-                                 <option value="">Off</option>
-                                 {state.preferences.desktopFallback &&
-                                    !sources.some((item) => item.kind === "screen" && item.id === state.preferences.sourceId) && (
-                                       <option value={state.preferences.sourceId} disabled>
-                                          Screen unavailable
-                                       </option>
-                                    )}
-                                 {sources
-                                    .filter((item) => item.kind === "screen")
-                                    .map((item) => (
-                                       <option key={item.id} value={item.id}>
-                                          {item.name}
-                                       </option>
-                                    ))}
-                              </Select>
-                           </Field>
-                        </div>
-                     </div>
-                  ) : (
-                     <div
-                        className="source-list moving-selection"
-                        aria-busy={sourcePhase === "loading"}
-                        style={
-                           sourceColor
-                              ? ({ "--accent": sourceColor, "--selection-background": `color-mix(in srgb, ${sourceColor} 14%, transparent)` } as CSSProperties)
-                              : undefined
-                        }
-                     >
-                        <SelectionIndicator value={source?.id ?? ""} />
-                        <MotionList items={selectableSources} identity={state.preferences.sourceKind}>
-                           {(item) => (
-                              <button
-                                 data-list-control=""
-                                 className={`source-row ${item.id === source?.id ? "selected" : ""}`}
-                                 aria-pressed={item.id === source?.id}
-                                 key={item.id}
-                                 onClick={() => preferences({ sourceId: item.id })}
-                              >
-                                 {item.kind === "screen" ? <Monitor size={18} /> : <ApplicationIcon size={18} src={item.appIcon} />}
-                                 <span>{item.name}</span>
-                              </button>
-                           )}
-                        </MotionList>
-                        {sourcePhase === "loading" && !sources.length && (
-                           <div className="source-loading" role="status" aria-label="Finding capture sources">
-                              {[0, 1].map((row) => (
-                                 <div key={row} className="source-row source-skeleton" aria-hidden="true">
-                                    <span className="source-skeleton-icon" />
-                                    <span className="source-skeleton-name" />
-                                 </div>
-                              ))}
-                           </div>
-                        )}
-                        {sourcePhase === "error" && (
-                           <Button className="source-retry" onClick={() => setSourceRequest((value) => value + 1)}>
-                              Retry sources
-                           </Button>
-                        )}
-                        {sourcePhase === "ready" && sources.filter((item) => item.kind === state.preferences.sourceKind).length === 0 && (
-                           <p className="source-empty">
-                              {state.preferences.sourceKind === "app" ? "Open an application to capture." : "No screens available. Check capture permissions."}
-                           </p>
-                        )}
-                     </div>
-                  )}
-               </div>
-            </aside>
-            <PaneDivider label="Recording controls width" pane={controls} className="recording-width-divider" />
-            <PaneDivider label="Recording lower panels height" pane={lower} className="recording-height-divider" />
+            <PaneDivider label="Audio panel width" pane={controls} className="recording-width-divider" />
          </div>
       </div>
    );

@@ -33,7 +33,7 @@ import { initialLocation, reportLocation } from "./navigation-history";
 import type { NavigationLocation } from "./navigation-history";
 
 function readThumbnailSize(view: "grid" | "list"): number {
-   const fallback = view === "grid" ? 300 : 128;
+   const fallback = view === "grid" ? 250 : 96;
    try {
       const stored = localStorage.getItem(`acroclip.library.scale.${view}`);
       const value = stored === null ? fallback : Number(stored);
@@ -138,7 +138,7 @@ export function Library({
       observer.observe(node);
       return () => observer.disconnect();
    }, [visible, view, thumbnailSizes]);
-   const sidebar = usePaneSize(layout, { key: "library.sidebar", initial: 275, min: 200, max: 400, reserve: 440, axis: "x" });
+   const sidebar = usePaneSize(layout, { key: "library.sidebar", initial: 230, min: 200, max: 400, reserve: 440, axis: "x" });
    const pending = state.collectionStatus.phase === "loading" || state.collectionStatus.phase === "refreshing";
    const unavailable = state.collectionStatus.phase === "error";
    const initial = state.collectionStatus.phase === "loading" && !state.clips.length;
@@ -516,7 +516,7 @@ export function Library({
    return (
       <div className="library-page" ref={layout}>
          <aside
-            className="library-sidebar"
+            className="library-sidebar navigation-pane"
             style={{
                width: sidebar.size,
                ...(selectedCategory

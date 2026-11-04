@@ -57,7 +57,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect(tagHandle).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       await page.mouse.up();
       await page.getByRole("button", { name: "List view", exact: true }).hover();
-      await expect(emptyTags).toHaveCSS("opacity", "0.4");
+      await expect(emptyTags.getByRole("button", { name: "New tag", exact: true })).toBeEnabled();
       await page.evaluate(() => window.acroClip.createFolder("", "Saved"));
       await expect(sectionLabels).toHaveText(["Folders", "Tags", "Applications"]);
       await page.getByRole("button", { name: "List view", exact: true }).click();
@@ -113,7 +113,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       const edit = page.getByRole("dialog", { name: "Edit tag", exact: true });
       await edit.getByRole("textbox", { name: "Tag name" }).fill("Matches");
       await edit.getByRole("button", { name: "Icon: game", exact: true }).click();
-      await edit.getByRole("button", { name: "Color #73c6a1", exact: true }).click();
+      await edit.getByRole("button", { name: "Color Mint", exact: true }).click();
       await edit.getByRole("button", { name: "Save", exact: true }).click();
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories[0])

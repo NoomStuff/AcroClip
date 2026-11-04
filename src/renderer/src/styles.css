@@ -1,4 +1,5 @@
 /* Shared controls load before screen styles. All styles load eagerly so navigation does not change the cascade. */
+@import "@fontsource-variable/inter";
 @import "./global.css";
 @import "./ui.css";
 @import "./FolderPicker.css";

@@ -1,19 +1,33 @@
 :root {
    --scrollbar-size: 6px;
+   --rail-width: 68px;
    --workspace-padding: 12px;
-   --control-height: 38px;
+   --control-height: 40px;
    --radius-control: 8px;
-   --radius-panel: 14px;
-   --border-control: #ffffff18;
+   --radius-panel: 12px;
+   --radius-floating: 16px;
+   --pane-gap: 12px;
+   --panel-padding: 16px;
+   --space-1: 4px;
+   --space-2: 8px;
+   --space-3: 12px;
+   --space-4: 16px;
+   --space-5: 20px;
+   --space-6: 24px;
+   --space-8: 32px;
+   --text-meta: 12px;
+   --text-body: 13px;
+   --text-label: 14px;
+   --text-title: 22px;
+   --text-heading: 20px;
+   --media-surface: #080808;
+   --border-control: #ffffff26;
    --border-hover: #ffffff30;
    font-family:
-      "Segoe UI Variable Text",
-      "Segoe UI Variable",
-      "Segoe UI",
+      "Inter Variable",
       -apple-system,
       BlinkMacSystemFont,
-      "Noto Sans",
-      "Liberation Sans",
+      "Segoe UI",
       sans-serif;
    color: var(--text);
    background: var(--base);
@@ -167,19 +181,19 @@ p {
 }
 
 h1 {
-   font-size: 24px;
+   font-size: var(--text-title);
    font-weight: 600;
    letter-spacing: -0.3px;
 }
 
 h2 {
-   font-size: 14px;
+   font-size: var(--text-label);
    font-weight: 600;
    letter-spacing: 0;
 }
 
 h3 {
-   font-size: 13px;
+   font-size: var(--text-body);
    font-weight: 600;
 }
 
