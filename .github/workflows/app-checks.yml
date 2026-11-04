@@ -22,6 +22,8 @@ jobs:
            with:
               bun-version: 1.4.2
          - run: bun install --frozen-lockfile
+         - name: Exercise Windows unit cases skipped by Linux verification
+           run: bun run test
          - uses: actions/download-artifact@v8
            with:
               name: controlled-windows-media

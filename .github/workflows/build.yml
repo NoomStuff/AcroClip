@@ -62,9 +62,7 @@ jobs:
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
    media:
-      needs:
-         - prepare
-         - checks
+      needs: prepare
       uses: ./.github/workflows/controlled-media.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
@@ -95,15 +93,32 @@ jobs:
       uses: ./.github/workflows/candidate-build.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
-   verify:
+   verify-windows:
       needs:
          - prepare
          - build
+      uses: ./.github/workflows/candidate-verify.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         targets: '[{"target":"win-x64","os":"windows-2025"}]'
+      if: needs.prepare.outputs.build == 'true'
+   verify-linux:
+      needs:
+         - prepare
          - build-linux
+      uses: ./.github/workflows/candidate-verify.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         targets: '[{"target":"linux-x64","os":"ubuntu-24.04"},{"target":"linux-arm64","os":"ubuntu-24.04-arm"}]'
+      if: needs.prepare.outputs.build == 'true'
+   verify-mac:
+      needs:
+         - prepare
          - build-mac
       uses: ./.github/workflows/candidate-verify.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         targets: '[{"target":"mac-x64","os":"macos-15-intel"},{"target":"mac-arm64","os":"macos-15"}]'
       if: needs.prepare.outputs.build == 'true'
    check:
       permissions:
@@ -116,7 +131,9 @@ jobs:
          - app-checks
          - native-checks
          - build
-         - verify
+         - verify-windows
+         - verify-linux
+         - verify-mac
          - build-linux
          - build-mac
       if: always()
@@ -135,7 +152,7 @@ jobs:
                  const candidate = jobs.prepare.outputs.build === 'true';
                  const native = !candidate && (jobs.prepare.outputs.native_linux === 'true' || jobs.prepare.outputs.native_macos === 'true');
                  for (const [name, job] of Object.entries(jobs)) {
-                   const expected = ['build', 'build-linux', 'build-mac', 'verify'].includes(name) ? candidate : name === 'native-checks' ? native : true;
+                   const expected = ['build', 'build-linux', 'build-mac', 'verify-windows', 'verify-linux', 'verify-mac'].includes(name) ? candidate : name === 'native-checks' ? native : true;
                    if (job.result !== (expected ? 'success' : 'skipped')) throw Error(`${name}: ${job.result}`);
                  }
          - uses: actions/checkout@v7

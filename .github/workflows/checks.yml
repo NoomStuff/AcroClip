@@ -48,7 +48,11 @@ jobs:
            with:
               bun-version: 1.4.2
          - run: bun install --frozen-lockfile
+         - name: Check release inputs before expensive desktop checks
+           run: bun scripts/release-preflight.ts
          - run: bun run verify
+         - name: Validate GitHub Actions workflows before merge
+           run: bun scripts/lint-workflows.ts
    media-and-ui:
       if: inputs.interactive_suite == ''
       needs: controlled-media
@@ -65,6 +69,8 @@ jobs:
            with:
               bun-version: 1.4.2
          - run: bun install --frozen-lockfile
+         - name: Exercise Windows unit cases skipped by Linux verification
+           run: bun run test
          - uses: actions/download-artifact@v8
            with:
               name: controlled-windows-media

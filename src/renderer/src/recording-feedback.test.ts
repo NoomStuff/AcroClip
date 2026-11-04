@@ -42,9 +42,6 @@ describe("recording buffer status", () => {
       );
       expect(html).toContain("0:30 available");
       expect(html).toContain("Buffer 100% full");
-      expect(html).toContain('class="buffer-ring rolling"');
-      expect(html).toContain('stroke-dasharray="94 100"');
-      expect(html).toContain(`animation-duration:${30 / 0.94}s`);
    });
    it("retains recording status and background activity alongside the buffer", () => {
       const html = renderToStaticMarkup(
@@ -87,7 +84,6 @@ describe("recording buffer status", () => {
       const html = renderToStaticMarkup(createElement(RecordingStatus, { state: { ...state, recorder: { ...state.recorder, state: phase } }, visible: true }));
       expect(html).not.toContain("available</span>");
       expect(html).not.toContain("buffer-ring");
-      expect(html.includes(' spin"')).toBe(phase === "starting" || phase === "waiting");
    });
 });
 

@@ -5,6 +5,9 @@ name: Verify retained candidates
          candidate_sha:
             type: string
             required: true
+         targets:
+            type: string
+            required: true
 permissions:
    contents: read
 jobs:
@@ -12,17 +15,7 @@ jobs:
       strategy:
          fail-fast: false
          matrix:
-            include:
-               - target: win-x64
-                 os: windows-2025
-               - target: linux-x64
-                 os: ubuntu-24.04
-               - target: linux-arm64
-                 os: ubuntu-24.04-arm
-               - target: mac-x64
-                 os: macos-15-intel
-               - target: mac-arm64
-                 os: macos-15
+            include: ${{ fromJSON(inputs.targets) }}
       runs-on: ${{ matrix.os }}
       timeout-minutes: 90
       env:
