@@ -10,7 +10,9 @@ const roots: string[] = [];
 const children: Array<Pick<Recorder, "close">> = [];
 afterEach(async () => {
    for (const child of children.splice(0)) await child.close({ cancel: true });
-   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
+   // Windows can retain a short-lived image/scanner lock after child close.
+   // Retry deletion, but still fail cleanup if the fixture remains locked.
+   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 async function fixture(
    mode:
