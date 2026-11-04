@@ -29,8 +29,14 @@ test("Linux native decorations, exact application capture and source loss", asyn
          customHeight: 360,
          customFPS: 24,
          clipSeconds: 5,
-         notifications: "off",
-         sound: false,
+         notificationStartBanner: false,
+         notificationStartSound: false,
+         notificationStopBanner: false,
+         notificationStopSound: false,
+         notificationSaveBanner: false,
+         notificationSaveSound: false,
+         notificationErrorBanner: true as const,
+         notificationErrorSound: false,
       })
    );
    const title = `AcroClip Linux blue fixture ${Date.now()}`;
@@ -145,8 +151,14 @@ test("Linux recording saves the requested footage during a first library scan", 
          customHeight: 360,
          customFPS: 24,
          clipSeconds: 5,
-         notifications: "off",
-         sound: false,
+         notificationStartBanner: false,
+         notificationStartSound: false,
+         notificationStopBanner: false,
+         notificationStopSound: false,
+         notificationSaveBanner: false,
+         notificationSaveSound: false,
+         notificationErrorBanner: true as const,
+         notificationErrorSound: false,
       })
    );
    const app = await electron.launch({

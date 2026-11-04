@@ -242,6 +242,44 @@ try:
     measured["additional"]=additional
     assert any(e.get("additional",{}).get("fixture-a",0)>.05 for e in events if e["event"]=="audio-levels")
     assert any(e.get("additional",{}).get("fixture-b",0)>.05 for e in events if e["event"]=="audio-levels")
+    # Play the shipped feedback WAV through a child process, exactly as Linux
+    # feedback does. Silence existing private producers so a missing exclusion
+    # cannot hide underneath unrelated captured audio.
+    command(dict(action="stop"))
+    existing_inputs = json.loads(subprocess.check_output(["pactl", "-f", "json", "list", "sink-inputs"], env=env, text=True))
+    for item in existing_inputs:
+        subprocess.run(["pactl", "set-sink-input-mute", str(item["index"]), "1"], env=env, check=True)
+    feedback_wav = root / "resources/feedback/clip-saved.wav"
+    feedback_player = launch([sys.executable, "-u", "-c", """
+import signal, subprocess, sys
+signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+while True:
+    subprocess.run(['paplay', sys.argv[1]], check=True)
+""", str(feedback_wav)], "feedback-player")
+    feedback_levels = {}
+    for name, application_pid in [("included", 0), ("excluded", feedback_player.pid)]:
+        assert feedback_player.poll() is None, "The notification sound producer exited"
+        command(dict(config, action="start", sourceKind="screen", screenIndex=0, sourceId="", pid=0,
+                     sourceName="Private desktop feedback proof", bounds=dict(x=0,y=0,width=640,height=360),
+                     captureAudio=True, audioSources=[], applicationPid=application_pid))
+        time.sleep(4)
+        feedback_file = folder / ("notification-" + name + ".mkv")
+        request = "notification-" + name
+        command(dict(action="save", path=str(feedback_file), requestId=request, requestedAt=int(time.time()*1000)))
+        wait(lambda event: event["event"] == "saved" and event.get("requestId") == request)
+        subprocess.run(["ffmpeg", "-v", "error", "-i", str(feedback_file), "-map", "0", "-f", "null", "-"], check=True)
+        feedback_levels[name] = [volume(feedback_file, track) for track in range(2)]
+        command(dict(action="stop"))
+    assert all(level > -55 for level in feedback_levels["included"]), feedback_levels
+    assert all(level < -70 for level in feedback_levels["excluded"]), feedback_levels
+    import hashlib
+    measured["notificationSoundExclusion"] = dict(feedback_levels, soundSHA256=hashlib.sha256(feedback_wav.read_bytes()).hexdigest())
+    feedback_player.terminate()
+    feedback_player.wait(timeout=5)
+    for item in existing_inputs:
+        subprocess.run(["pactl", "set-sink-input-mute", str(item["index"]), "1" if item.get("mute") else "0"], env=env, check=True)
+    command(dict(config, action="start", captureAudio=False, audioSources=extras))
+    time.sleep(1)
     # A stopped private audio server must warn without stopping video or
     # substituting another output for the unavailable application tracks.
     pulse.terminate();pulse.wait(timeout=5);time.sleep(1)

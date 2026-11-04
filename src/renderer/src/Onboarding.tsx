@@ -174,7 +174,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
          easing: "ease-in",
       }).finished;
       const saved = await run(() => api.savePreferences({ ...draft, setupComplete: true }));
-      if (saved && record) await run(() => api.startRecording());
+      if (saved && record) await run(() => api.startRecording(), { feedback: "external" });
       if (!saved) root.current?.getAnimations().forEach((animation) => animation.cancel());
       setBusy(false);
    };

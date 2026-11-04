@@ -98,8 +98,14 @@ export interface Preferences {
    updateCheck: boolean;
    startWithOS: boolean;
    autoRecord: boolean;
-   notifications: "everywhere" | "outside-fullscreen" | "off";
-   sound: boolean;
+   notificationStartBanner: boolean;
+   notificationStartSound: boolean;
+   notificationStopBanner: boolean;
+   notificationStopSound: boolean;
+   notificationSaveBanner: boolean;
+   notificationSaveSound: boolean;
+   notificationErrorBanner: true;
+   notificationErrorSound: boolean;
    avoidOverlap: boolean;
    folderLayout: "flat" | "application";
    filenamePreset: "source-date" | "date-source" | "custom";
@@ -157,6 +163,7 @@ export interface RecorderState {
    state: "stopped" | "starting" | "recording" | "waiting" | "error";
    startedAt: number | null;
    availableSeconds: number;
+   startingDetail?: string;
    message: string;
    backend: string;
    supported: boolean;
@@ -218,7 +225,6 @@ export type AppEvent =
    | { type: "state"; state: AppState }
    | { type: "state-patch"; patch: Partial<AppState> }
    | { type: "recorder"; recorder: RecorderState }
-   | { type: "notice"; message: string; error: boolean }
    | { type: "clip-action" }
    | { type: "audio-levels"; levels: AudioLevels }
    | { type: "audio-monitor"; monitorError: string; listeningError?: string }

@@ -22,6 +22,8 @@ import { GameCatalog, selectGame } from "./games";
 import { nativeAudioPreferences } from "../shared/audio-model";
 import { resolveAudioSources } from "./audio-sources";
 
+export type RecorderErrorContext = "capture" | "save" | "saved-clip";
+
 interface RecorderOptions {
    nativePath?: string;
    gameCatalogPath?: string;
@@ -32,7 +34,7 @@ interface RecorderOptions {
       requestId: string,
       capture: { previousFootage: boolean; secondsSinceCapture: number; application?: ApplicationArtwork }
    ) => void | Promise<void>;
-   onError: (message: string) => void;
+   onError: (message: string, context: RecorderErrorContext) => void;
    onAudioMonitorError?: (message: string, listeningError?: string) => void;
    onAudioLevels?: (levels: AudioLevels) => void;
 }
@@ -328,8 +330,8 @@ export class Recorder {
       this.current = { ...this.current, ...value };
       this.options.onState(this.status);
    }
-   private error(message: string): void {
-      this.options.onError(message);
+   private error(message: string, context: RecorderErrorContext = "capture"): void {
+      this.options.onError(message, context);
    }
    private send(value: Record<string, unknown>): void {
       if (!this.process?.stdin.writable) throw new Error("The recording helper is not running");
@@ -590,8 +592,9 @@ export class Recorder {
          });
       }
       if (value.event === "saved" && value.path) {
-         Promise.resolve(
-            this.options.onSaved(value.path, value.source ?? this.source, value.requestId ?? "", {
+         const savedPath = value.path;
+         void (async () => {
+            await this.options.onSaved(savedPath, value.source ?? this.source, value.requestId ?? "", {
                previousFootage: value.previousFootage ?? false,
                secondsSinceCapture: value.secondsSinceCapture ?? 0,
                ...(value.requestId &&
@@ -599,9 +602,9 @@ export class Recorder {
                (value.sourceId === undefined || value.sourceId === this.requestArtwork.get(value.requestId)!.sourceId)
                   ? { application: this.requestArtwork.get(value.requestId)!.application }
                   : {}),
-            })
-         )
-            .catch((error: unknown) => this.error(error instanceof Error ? error.message : "The saved clip could not be added to the library"))
+            });
+         })()
+            .catch((error: unknown) => this.error(error instanceof Error ? error.message : "The saved clip could not be added to the library", "saved-clip"))
             .finally(() => {
                if (value.requestId) {
                   this.requests.delete(value.requestId);
@@ -616,7 +619,7 @@ export class Recorder {
             this.requestArtwork.delete(value.requestId);
          } else if (this.current.state === "starting") this.update({ state: "error", startedAt: null, message: value.message ?? "Recording could not start" });
          this.update({ pendingSaves: this.requests.size });
-         this.error(value.message ?? "Recording failed");
+         this.error(value.message ?? "Recording failed", value.requestId ? "save" : "capture");
       }
       if (value.event === "fatal") {
          this.update({ state: "error", message: value.message ?? "Recording stopped unexpectedly" });

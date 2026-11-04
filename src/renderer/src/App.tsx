@@ -77,12 +77,12 @@ export function App() {
    const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
    const [dialog, setDialog] = useState<DialogRequest | null>(null);
    const [clipPulse, setClipPulse] = useState(0);
-   const run: Run = useCallback(async (action) => {
+   const run: Run = useCallback(async (action, options) => {
       try {
          await action();
          return true;
       } catch (error) {
-         setNotice({ message: describeError(error), error: true });
+         if (options?.feedback !== "external") setNotice({ message: describeError(error), error: true });
          return false;
       }
    }, []);
@@ -115,7 +115,6 @@ export function App() {
             setState((current) => (current ? { ...current, recorder: event.recorder } : current));
          }
          if (event.type === "clip-action") setClipPulse((value) => value + 1);
-         if (event.type === "notice" && event.message) setNotice({ message: event.message, error: event.error });
       });
       const feedback = (event: Event) => {
          const value = (event as CustomEvent<RendererFeedback>).detail;

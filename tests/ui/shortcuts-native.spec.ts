@@ -33,8 +33,14 @@ test("configured global capture keys work in the tray with a controlled applicat
          customWidth: 640,
          customHeight: 360,
          customFPS: 30,
-         notifications: "off",
-         sound: false,
+         notificationStartBanner: false,
+         notificationStartSound: false,
+         notificationStopBanner: false,
+         notificationStopSound: false,
+         notificationSaveBanner: false,
+         notificationSaveSound: false,
+         notificationErrorBanner: true as const,
+         notificationErrorSound: false,
       })
    );
    const app = await electron.launch({ args: [resolve("."), "--disable-gpu-sandbox"], env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile } });

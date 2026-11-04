@@ -30,7 +30,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    const capacity = state?.preferences.clipSeconds ?? 60;
    const available = Math.max(0, Math.min(capacity, state?.recorder.availableSeconds ?? 0));
    const fill = capacity > 0 ? Math.min(1, available / capacity) : 0;
-   const active = state?.recorder.state === "recording";
+   const active = state?.recorder.state === "recording" && state.recorder.startingDetail === undefined;
    const recorder = state?.recorder;
    const captured = sources.find(
       (source) => source.id === sourceId || (source.kind === "app" && sourceId?.startsWith("window:") && source.id.split(":")[1] === sourceId.split(":")[1])
@@ -38,21 +38,24 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    const appIcon = captured?.appIcon || state?.applicationIcons[captured?.applicationId ?? ""];
    const isApplication = recorder?.sourceKind === "app";
    const audioWarning = useAudioWarning(recorder?.audioWarning || audioMessage);
-   const status = active
-      ? recorder?.message || "Recording"
-      : recorder?.state === "waiting"
-        ? recorder?.message || "Waiting for application"
-        : recorder?.state === "starting"
-          ? "Starting recording"
-          : recorder?.state === "error"
-            ? "Recording stopped"
-            : "Not recording";
+   const status =
+      recorder?.startingDetail !== undefined
+         ? "Starting recording..."
+         : active
+           ? recorder?.message || "Recording"
+           : recorder?.state === "waiting"
+             ? recorder?.message || "Waiting for application"
+             : recorder?.state === "starting"
+               ? "Starting recording"
+               : recorder?.state === "error"
+                 ? "Recording stopped"
+                 : "Not recording";
    const captureName =
       recorder?.sourceName || (state?.preferences.sourceKind === "screen" ? "Desktop" : state?.preferences.sourceKind === "auto" ? "Auto" : "Application");
    return (
       <footer className={`status-strip ${recorder?.state === "error" ? "has-error" : ""}`}>
          <div className="status-primary">
-            {recorder?.state === "starting" || recorder?.state === "waiting" || !recorder ? (
+            {recorder?.startingDetail !== undefined || recorder?.state === "starting" || recorder?.state === "waiting" || !recorder ? (
                <LoaderCircle size={12} className="spin" />
             ) : recorder?.state === "error" ? (
                <AlertCircle size={13} />
@@ -110,10 +113,19 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
                   {state.storageWarning}
                </span>
             )}
-            {recorder && !active && recorder.message && recorder.message !== status && (
-               <span className="status-message" title={recorder.message}>
-                  {recorder.message}
+            {recorder?.startingDetail !== undefined ? (
+               <span className="status-message" title={recorder.startingDetail}>
+                  {recorder.startingDetail}
                </span>
+            ) : (
+               recorder &&
+               !active &&
+               recorder.message &&
+               recorder.message !== status && (
+                  <span className="status-message" title={recorder.message}>
+                     {recorder.message}
+                  </span>
+               )
             )}
             {active && (
                <span className="status-secondary">

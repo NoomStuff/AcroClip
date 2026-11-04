@@ -41,12 +41,12 @@ test("settings autosave retains drafts, merges external changes and retries fail
       await length.fill("1:14");
       await page.evaluate(async () => {
          const state = await window.acroClip.state();
-         await window.acroClip.savePreferences({ ...state.preferences, sound: false });
+         await window.acroClip.savePreferences({ ...state.preferences, notificationStopSound: false });
       });
       await expect(length).toHaveValue("1:14");
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.clipSeconds).toBe(74);
-      expect((await page.evaluate(() => window.acroClip.state())).preferences.sound).toBe(false);
+      expect((await page.evaluate(() => window.acroClip.state())).preferences.notificationStopSound).toBe(false);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page.getByRole("button", { name: "Collection", exact: true }).click();
       await page.getByRole("button", { name: "Recording", exact: true }).last().click();

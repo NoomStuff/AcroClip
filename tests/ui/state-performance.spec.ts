@@ -40,9 +40,20 @@ test("incremental updates preserve large libraries, meter routing, visibility an
       const sourceMeter = page.getByRole("meter", { name: "Desktop peak", exact: true });
       const microphoneMeter = page.getByRole("meter", { name: "Microphone peak", exact: true });
       await expect(sourceMeter).toBeVisible();
-      await publish({ type: "audio-levels", levels: { capture: 85, microphone: 0, additional: { "microphone-default": 32, "source-audio": 5 } } });
-      await expect.poll(async () => Number(await sourceMeter.getAttribute("aria-valuenow"))).toBeGreaterThan(-15);
-      await expect.poll(async () => Number(await microphoneMeter.getAttribute("aria-valuenow"))).toBeGreaterThan(-45);
+      await expect(microphoneMeter).toBeVisible();
+      await expect(microphoneMeter).not.toHaveAttribute("data-muted", "true");
+      // Meter data is a stream. Keep publishing until both subscriptions have
+      // received it after the preference update, rather than racing one sample
+      // against React's effect installation on slower runners.
+      await expect
+         .poll(async () => {
+            await publish({ type: "audio-levels", levels: { capture: 85, microphone: 0, additional: { "microphone-default": 32, "source-audio": 5 } } });
+            return {
+               source: Number(await sourceMeter.getAttribute("aria-valuenow")) > -15,
+               microphone: Number(await microphoneMeter.getAttribute("aria-valuenow")) > -45,
+            };
+         })
+         .toEqual({ source: true, microphone: true });
       await publish({ type: "audio-levels", levels: { capture: 85, microphone: 0, additional: {} } });
       await expect.poll(async () => Number(await microphoneMeter.getAttribute("aria-valuenow"))).toBeGreaterThan(-45);
       await publish({
