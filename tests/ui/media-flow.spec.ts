@@ -209,13 +209,34 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await expect.poll(() => desktop.evaluate(() => (globalThis as typeof globalThis & { testDragPath?: string }).testDragPath)).toBe(source);
       await page.getByRole("combobox", { name: "Shareable size: 2 MB (default)", exact: true }).click();
       await page.getByRole("option", { name: "Custom", exact: true }).click();
-      await page.getByRole("spinbutton", { name: "Shareable size target in MB", exact: true }).fill("2000");
+      const sizeDraft = page.getByRole("spinbutton", { name: "Shareable size target in MB", exact: true });
+      await sizeDraft.clear();
+      await expect(sizeDraft).toHaveValue("");
+      await expect(sizeDraft).toHaveAttribute("aria-invalid", "true");
+      await sizeDraft.pressSequentially("2001");
+      await page.keyboard.press("Enter");
+      await expect(sizeDraft).toHaveValue("2001");
+      await expect(sizeDraft).toHaveAccessibleDescription("Enter a whole number, 1 to 2000 MB.");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("combobox", { name: "Shareable size: 2 MB (default)", exact: true })).toBeFocused();
+      await page.getByRole("combobox", { name: /Shareable size:/ }).click();
+      await page.getByRole("option", { name: "Custom", exact: true }).click();
+      await sizeDraft.fill("17");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("combobox", { name: "Shareable size: 2 MB (default)", exact: true })).toBeFocused();
+      await page.getByRole("combobox", { name: /Shareable size:/ }).click();
+      await page.getByRole("option", { name: "Custom", exact: true }).click();
+      await sizeDraft.fill("2000");
+      await page.keyboard.press("Enter");
       await expect(page.getByRole("button", { name: "Create shareable", exact: true })).toBeDisabled();
       await page.evaluate(() => window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: "createShareable" })));
       expect((await page.evaluate(() => window.acroClip.state())).jobs).toHaveLength(0);
-      await page.getByRole("spinbutton", { name: "Shareable size target in MB", exact: true }).fill("1");
-      await page.keyboard.press("Escape");
-      await expect(page.getByRole("combobox", { name: "Shareable size: 1 MB", exact: true })).toBeFocused();
+      await page.getByRole("combobox", { name: /Shareable size:/ }).click();
+      await page.getByRole("option", { name: "Custom", exact: true }).click();
+      await sizeDraft.fill("1");
+      await page.keyboard.press("Tab");
+      await expect(page.getByRole("combobox", { name: "Shareable size: 1 MB", exact: true })).toBeVisible();
+      await expect(sizeDraft).toHaveCount(0);
       expect((await page.evaluate(() => window.acroClip.state())).preferences.shareSizeMB).toBe(2);
       await expect
          .poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState), { timeout: 30000 })
@@ -393,7 +414,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await desktop.evaluate(({ dialog }) => {
          dialog.showMessageBox = async (windowOrOptions: Electron.BaseWindow | Electron.MessageBoxOptions, options?: Electron.MessageBoxOptions) => {
             const message = options ?? (windowOrOptions as Electron.MessageBoxOptions);
-            if (message.defaultId !== 1 || message.cancelId !== 0) throw new Error("Enter must confirm deletion and Escape must cancel");
+            if (message.defaultId !== 0 || message.cancelId !== 0) throw new Error("Deletion must default to Cancel and Escape must cancel");
             (globalThis as typeof globalThis & { testDeletePrompt?: string }).testDeletePrompt = (
                options ?? (windowOrOptions as Electron.MessageBoxOptions)
             ).message;

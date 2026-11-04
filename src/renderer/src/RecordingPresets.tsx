@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Cpu } from "lucide-react";
+import { Check, Cpu, Monitor, Gauge, SlidersHorizontal } from "lucide-react";
 import type { Preferences, RecordingCapabilities } from "../../shared/types";
 import { applyRecordingPreset } from "../../shared/recording-presets";
 import { api } from "./desktop";
@@ -63,7 +63,11 @@ function CustomQualityControls({
    const ControlToggle = compact ? SettingsToggle : Toggle;
    return (
       <div className="custom-quality">
-         <ControlField label="Resolution limit" {...(compact ? { detail: "Screens scale to this limit. Apps keep their original size." } : {})}>
+         <ControlField
+            {...(compact ? { icon: Monitor } : {})}
+            label="Resolution limit"
+            {...(compact ? { detail: "Screens scale to this limit. Apps keep their original size." } : {})}
+         >
             <Select label="Resolution limit" value={String(value.resolutionLimit)} onChange={(limit) => onChange({ resolutionLimit: Number(limit) })}>
                {[720, 1080, 1440, 2160].map((limit) => (
                   <option key={limit} value={limit}>
@@ -76,7 +80,7 @@ function CustomQualityControls({
                <option value="0">Source</option>
             </Select>
          </ControlField>
-         <ControlField label="Frame rate">
+         <ControlField {...(compact ? { icon: Gauge } : {})} label="Frame rate">
             <NumberInput
                min={1}
                max={120}
@@ -87,7 +91,7 @@ function CustomQualityControls({
                unit="fps"
             />
          </ControlField>
-         <ControlField label="Compression" detail="Lower values keep more detail and use more space.">
+         <ControlField {...(compact ? { icon: SlidersHorizontal } : {})} label="Compression" detail="Lower values keep more detail and use more space.">
             <div className="compression-slider">
                <div>
                   <span>More detail</span>
@@ -107,6 +111,7 @@ function CustomQualityControls({
             </div>
          </ControlField>
          <ControlToggle
+            {...(compact ? { icon: Cpu } : {})}
             label="Allow software encoding"
             detail="Uses your CPU if no supported hardware encoder is available."
             checked={value.allowSoftwareEncoder}

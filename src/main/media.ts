@@ -181,8 +181,8 @@ export async function createThumbnail(source: string, output: string, duration: 
       await generate(false);
    }
 }
-export async function probe(path: string): Promise<MediaInfo> {
-   const value: unknown = JSON.parse(await runMedia("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", path]));
+export async function probe(path: string, options: Pick<MediaOptions, "signal" | "belowNormal"> = {}): Promise<MediaInfo> {
+   const value: unknown = JSON.parse(await runMedia("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", path], options));
    if (!value || typeof value !== "object") throw new Error("The video metadata could not be read.");
    const result = value as ProbeResult;
    if (!Array.isArray(result.streams)) throw new Error("The file contains no readable media streams.");
@@ -194,6 +194,7 @@ export async function probe(path: string): Promise<MediaInfo> {
       // Remux to the null output to measure timestamps without decoding frames.
       const progress = await runMedia("ffmpeg", [...ffmpegBase, "-i", path, "-map", "0:v:0", "-c", "copy", "-progress", "pipe:1", "-f", "null", "-"], {
          belowNormal: true,
+         ...options,
       });
       duration = Math.max(0, ...Array.from(progress.matchAll(/^out_time_us=(\d+)$/gm), (match) => Number(match[1]) / 1e6));
    }

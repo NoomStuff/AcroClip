@@ -263,7 +263,8 @@ export interface DesktopAPI {
    attaCutAvailable(): Promise<boolean>;
    dragFile(path: string): void;
    reorderCategory(id: string, beforeId: string | null): Promise<void>;
-   playback(path: string, track?: number | number[]): Promise<string>;
+   playback(path: string, track?: number | number[], requestId?: string): Promise<string>;
+   cancelPlayback(requestId: string): Promise<void>;
    refresh(): Promise<void>;
    checkUpdate(): Promise<void>;
    downloadUpdate(): Promise<void>;

@@ -71,6 +71,14 @@ const icons = {
    video: Video,
    zap: Zap,
 };
+const colorNames: Record<string, string> = {
+   "#b197fc": "Lavender",
+   "#77b9ef": "Blue",
+   "#73c6a1": "Mint",
+   "#e3bd68": "Gold",
+   "#ed9579": "Coral",
+   "#db8eb9": "Pink",
+};
 const colors = ["#b197fc", "#77b9ef", "#73c6a1", "#e3bd68", "#ed9579", "#db8eb9"];
 export function CategoryMark({ category, size = 16 }: { category: Pick<Category, "color" | "icon">; size?: number }) {
    const Icon = icons[category.icon as keyof typeof icons] ?? Tag;
@@ -132,7 +140,7 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
             </div>
             <div className="category-color-choices" role="group" aria-label="Tag color">
                {colors.map((value) => (
-                  <button type="button" key={value} aria-label={`Color ${value}`} aria-pressed={color === value} onClick={() => setColor(value)}>
+                  <button type="button" key={value} aria-label={`Color ${colorNames[value]}`} aria-pressed={color === value} onClick={() => setColor(value)}>
                      <span aria-hidden="true" style={{ background: value }} />
                   </button>
                ))}

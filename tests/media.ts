@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { setTimeout as delay } from "node:timers/promises";
 import { mkdtemp, mkdir, copyFile, writeFile, readFile, rename, rm, stat, symlink, realpath, readdir, open } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -185,6 +186,54 @@ try {
    const repairedStreaming = await probe(streamingPlayback);
    assert.equal(repairedStreaming.durationFromPackets, undefined, "Playback copy declares its duration for browser seeking");
    assert.ok(Math.abs(repairedStreaming.duration - 8) < 0.1);
+   const cancellationSource = join(workspace, "playback-pcm.mkv");
+   await runMedia("ffmpeg", [
+      ...ffmpegBase,
+      "-y",
+      "-stream_loop",
+      "9",
+      "-i",
+      original,
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a:0",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "pcm_s16le",
+      cancellationSource,
+   ]);
+   const cancellationIdentity = await fileIdentity(cancellationSource);
+   const cancellationCache = join(workspace, "cancelled-playback");
+   await mkdir(cancellationCache);
+   const playbackQueue = new PlaybackCache();
+   const controller = new AbortController();
+   let preparationFinished = false;
+   const preparing = playbackQueue.prepare(cancellationSource, cancellationCache, undefined, controller.signal);
+   void preparing.then(
+      () => {
+         preparationFinished = true;
+      },
+      () => {
+         preparationFinished = true;
+      }
+   );
+   const cancellation = assert.rejects(preparing, /Cancelled/);
+   const deadline = Date.now() + 15000;
+   while (!(await readdir(cancellationCache)).some((name) => name.includes(".mp4."))) {
+      assert.ok(!preparationFinished && Date.now() < deadline, "Real playback conversion must begin before cancellation");
+      await delay(2);
+   }
+   controller.abort();
+   await cancellation;
+   assert.equal(
+      await playbackQueue.prepare(original, cancellationCache),
+      original,
+      "The next request waits for cancelled process cleanup and remains playable"
+   );
+   assert.deepEqual(await readdir(cancellationCache), [], "Cancelled playback leaves no published or partial copies");
+   assert.deepEqual(await fileIdentity(cancellationSource), cancellationIdentity, "Cancellation leaves the user's source unchanged");
    const before = await fileIdentity(original);
    const registrationRoot = join(workspace, "registration");
    await mkdir(registrationRoot);

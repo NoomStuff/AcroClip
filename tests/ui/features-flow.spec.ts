@@ -113,7 +113,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       const edit = page.getByRole("dialog", { name: "Edit tag", exact: true });
       await edit.getByRole("textbox", { name: "Tag name" }).fill("Matches");
       await edit.getByRole("button", { name: "Icon: game", exact: true }).click();
-      await edit.getByRole("button", { name: "Color #73c6a1", exact: true }).click();
+      await edit.getByRole("button", { name: "Color Mint", exact: true }).click();
       await edit.getByRole("button", { name: "Save", exact: true }).click();
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories[0])

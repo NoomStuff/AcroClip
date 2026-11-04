@@ -53,6 +53,7 @@ let collectionReady: Promise<void> = Promise.resolve();
 let startingCapture: Promise<void> | null = null;
 let previewSourceId: string | null = null;
 let previewOwner: string | null = null;
+let playbackRequest: { id: string; controller: AbortController } | undefined;
 const mediaFiles = new Map<string, string>();
 const mediaKeys = new Map<string, string>();
 const stateChanges = new StateChanges();
@@ -267,11 +268,14 @@ function createWindow() {
       }
    });
    mainWindow.webContents.on("render-process-gone", () => {
+      playbackRequest?.controller.abort();
       suspendShortcuts(false);
       void recorder.listenAudio(null).catch(() => undefined);
    });
-   mainWindow.webContents.on("did-start-navigation", (_event, _url, _inPlace, isMainFrame) => {
-      if (isMainFrame) {
+   mainWindow.webContents.on("did-start-navigation", (navigation) => {
+      if (navigation.isMainFrame) {
+         // In-app history updates keep the current renderer and its playback request.
+         if (!navigation.isSameDocument) playbackRequest?.controller.abort();
          suspendShortcuts(false);
          void recorder.listenAudio(null).catch(() => undefined);
       }
@@ -478,6 +482,7 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown) {
                "exit",
                "preferences",
                "playback",
+               "cancel-playback",
                "record-start",
                "record-stop",
                "record-save",
@@ -514,7 +519,8 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown) {
       } catch (e) {
          // Playback and preview report errors locally and discard obsolete requests.
          // A global notice would outlive a source or file switch.
-         if (!["playback", "preview-source", "monitor-audio", "listen-audio", "preferences"].includes(channel)) notice(errorMessage(e), true);
+         if (!["playback", "cancel-playback", "preview-source", "monitor-audio", "listen-audio", "preferences"].includes(channel))
+            notice(errorMessage(e), true);
          else void log(`${channel}: ${errorMessage(e)}`);
          throw e;
       }
@@ -735,7 +741,7 @@ function registerIPC() {
          message: `Move "${selected.split(/[\\/]/).at(-1)}" and all its contents to the trash?`,
          detail: `${contents.clips} ${contents.clips === 1 ? "clip" : "clips"}, ${contents.otherFiles} other ${contents.otherFiles === 1 ? "file" : "files"}, ${contents.folders} ${contents.folders === 1 ? "subfolder" : "subfolders"}.`,
          buttons: ["Cancel", "Move to trash"],
-         defaultId: 1,
+         defaultId: 0,
          cancelId: 0,
       });
       if (result.response !== 1) return false;
@@ -756,7 +762,7 @@ function registerIPC() {
               ? "Move all shareables for this clip to the trash?"
               : "Move this clip and its shareables to the trash?",
          buttons: ["Cancel", "Move to trash"],
-         defaultId: 1,
+         defaultId: 0,
          cancelId: 0,
       });
       if (result.response !== 1) return;
@@ -810,12 +816,24 @@ function registerIPC() {
       child.once("error", () => notice("AttaCut could not open. Show the clip in your file manager and open it there.", true));
       child.unref();
    });
-   handle("playback", (path, track) =>
-      collections.playback(
-         trustedPath(path),
-         track === undefined ? undefined : z.union([z.number().int().min(0).max(63), z.array(z.number().int().min(0).max(63)).min(1).max(64)]).parse(track)
-      )
-   );
+   handle("playback", async (path, track, requestId) => {
+      const source = trustedPath(path);
+      const selection =
+         track === undefined ? undefined : z.union([z.number().int().min(0).max(63), z.array(z.number().int().min(0).max(63)).min(1).max(64)]).parse(track);
+      if (requestId === undefined) return collections.playback(source, selection);
+      const id = z.string().uuid().parse(requestId);
+      playbackRequest?.controller.abort();
+      const request = { id, controller: new AbortController() };
+      playbackRequest = request;
+      try {
+         return await collections.playback(source, selection, request.controller.signal);
+      } finally {
+         if (playbackRequest === request) playbackRequest = undefined;
+      }
+   });
+   handle("cancel-playback", (requestId) => {
+      if (playbackRequest?.id === z.string().uuid().parse(requestId)) playbackRequest.controller.abort();
+   });
    handle("refresh", async () => {
       await collections.refresh();
    });

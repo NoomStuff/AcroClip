@@ -530,3 +530,7 @@
       transition: none;
    }
 }
+
+.viewer-size-popover .error-text {
+   color: var(--red);
+}

@@ -1,6 +1,6 @@
 import { shareableTargetAllowed } from "../../shared/shareable-target";
 import { useDirectionalContent } from "./useDirectionalContent";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Film, LibraryBig, FolderOpen, LoaderCircle, MoreHorizontal, Share2, SlidersHorizontal, Trash2, X } from "lucide-react";
 import type { AppState, Clip } from "../../shared/types";
 import { api, describeError, fileDragProps } from "./desktop";
@@ -75,6 +75,12 @@ export function Viewer({
    const shareable = clip?.shareables.find((item) => item.id === shareId) ?? clip?.shareables.at(-1);
    const path = version === "shareable" ? shareable?.path : clip?.path;
    const playbackIdentity = JSON.stringify([clip?.id, path, version, track]);
+   const currentPlayback = useRef({ identity: playbackIdentity, generation: urlGeneration });
+   useLayoutEffect(() => {
+      currentPlayback.current = { identity: playbackIdentity, generation: urlGeneration };
+   }, [playbackIdentity, urlGeneration]);
+   const ownsMedia = (media: HTMLVideoElement) =>
+      visible && urlOwner === currentPlayback.current.identity && urlGeneration === currentPlayback.current.generation && media.currentSrc === url;
    const fade = usePlaybackFade(video, playbackIdentity, url, urlOwner === playbackIdentity, visible, urlGeneration);
    const targetAllowed = shareableTargetAllowed(clip?.size ?? 0, override ? target : state.preferences.shareSizeMB);
    const job = state.jobs.find((item) => item.clipId === clip?.id && item.kind === "shareable" && ["queued", "running"].includes(item.state));
@@ -96,6 +102,7 @@ export function Viewer({
    }, [clip?.originalMissing]);
    useEffect(() => {
       if (!visible) {
+         setPlaying(false);
          setUrlOwner("");
          video.current?.pause();
          if (document.fullscreenElement === player.current) void document.exitFullscreen().catch(() => undefined);
@@ -110,14 +117,17 @@ export function Viewer({
          return;
       }
       let disposed = false;
+      const requestId = crypto.randomUUID();
       switching.current = true;
+      setPlaying(false);
       video.current?.pause();
       setLoading(true);
       setMediaError("");
       void (async () => {
          try {
-            const result = await api.playback(path, version === "original" ? track : undefined);
+            const result = await api.playback(path, version === "original" ? track : undefined, requestId);
             if (!disposed) {
+               setMediaError("");
                if (currentUrl.current === result) {
                   switching.current = false;
                   if (resume.current) void video.current?.play().catch(() => undefined);
@@ -139,6 +149,7 @@ export function Viewer({
       })();
       return () => {
          disposed = true;
+         void api.cancelPlayback(requestId).catch(() => undefined);
       };
    }, [path, track, version, visible, playbackIdentity]);
 
@@ -460,6 +471,7 @@ export function Viewer({
                      src={url}
                      onLoadedMetadata={(event) => {
                         const media = event.currentTarget;
+                        if (!ownsMedia(media)) return;
                         setDuration(media.duration);
                         media.currentTime = Math.min(seek.current, media.duration || 0);
                         setTime(media.currentTime);
@@ -472,16 +484,23 @@ export function Viewer({
                         if (resume.current) void media.play().catch(() => undefined);
                      }}
                      onTimeUpdate={(event) => {
-                        if (switching.current) return;
+                        if (switching.current || !ownsMedia(event.currentTarget)) return;
                         seek.current = event.currentTarget.currentTime;
                      }}
-                     onPlay={() => setPlaying(true)}
-                     onPause={() => setPlaying(false)}
-                     onEnded={() => {
+                     onPlay={(event) => {
+                        if (ownsMedia(event.currentTarget)) setPlaying(true);
+                     }}
+                     onPause={(event) => {
+                        if (ownsMedia(event.currentTarget)) setPlaying(false);
+                     }}
+                     onEnded={(event) => {
+                        if (!ownsMedia(event.currentTarget)) return;
                         resume.current = false;
                         setPlaying(false);
                      }}
-                     onError={() => setMediaError("This video could not be played. Try opening it in AttaCut or another player.")}
+                     onError={(event) => {
+                        if (ownsMedia(event.currentTarget)) setMediaError("This video could not be played. Try opening it in AttaCut or another player.");
+                     }}
                      onClick={(event) => {
                         const media = event.currentTarget;
                         if (!media.videoWidth || !media.videoHeight) return;
@@ -525,8 +544,8 @@ export function Viewer({
                playing={playing}
                volume={volume}
                muted={muted}
-               tracks={version === "original" ? clip.tracks : [{ index: -1, title: "Master" }]}
-               track={version === "original" ? (track ?? clip.tracks.slice(0, 1).map((item) => item.index)) : [-1]}
+               tracks={version === "original" ? clip.tracks : clip.tracks.length ? [{ index: -1, title: "Master" }] : []}
+               track={version === "original" ? (track ?? clip.tracks.slice(0, 1).map((item) => item.index)) : clip.tracks.length ? [-1] : []}
                speed={speed}
                onSpeed={setSpeed}
                disabled={!url || loading}
@@ -568,40 +587,52 @@ function ShareSizePicker({
 }) {
    const [custom, setCustom] = useState(false);
    const [editing, setEditing] = useState(false);
-   const root = useRef<HTMLDivElement>(null);
+   const [draft, setDraft] = useState("");
+   const trigger = useRef<HTMLButtonElement>(null);
+   const input = useRef<HTMLInputElement>(null);
+   const valid = draft.trim() !== "" && Number.isInteger(Number(draft)) && Number(draft) >= 1 && Number(draft) <= 2000;
+   const commit = () => {
+      if (!valid) return false;
+      onTarget(Number(draft));
+      onOverride(true);
+      setCustom(true);
+      return true;
+   };
    const close = () => {
       setEditing(false);
-      root.current?.querySelector<HTMLButtonElement>("button")?.focus();
+      trigger.current?.focus();
    };
    useEffect(() => {
       if (!editing) return;
-      root.current?.querySelector<HTMLInputElement>("input")?.focus();
-      root.current?.querySelector<HTMLInputElement>("input")?.select();
-      const dismiss = (event: PointerEvent) => {
-         if (!root.current?.contains(event.target as Node)) setEditing(false);
-      };
-      document.addEventListener("pointerdown", dismiss);
-      return () => document.removeEventListener("pointerdown", dismiss);
+      input.current?.focus();
+      input.current?.select();
    }, [editing]);
    return (
       <div
          className="viewer-size-picker"
-         ref={root}
+         onPointerDown={(event) => {
+            if (event.target instanceof Element && event.target.closest(".select-trigger")) setEditing(false);
+         }}
          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false);
+            if (editing && !event.currentTarget.contains(event.relatedTarget)) {
+               commit();
+               setEditing(false);
+            }
          }}
          onKeyDown={(event) => {
             if (!editing || !["Escape", "Enter"].includes(event.key)) return;
             event.preventDefault();
             event.stopPropagation();
-            close();
+            // Escape discards the draft. Enter and leaving the field commit a valid value.
+            if (event.key === "Escape" || commit()) close();
          }}
       >
          <DropdownSelect
+            triggerRef={trigger}
             label={`Shareable size: ${override ? target : defaultTarget} MB${override ? "" : " (default)"}`}
+            disabled={disabled}
             iconOnly
             placement="up"
-            disabled={disabled}
             triggerContent={<SlidersHorizontal size={17} />}
             value={custom && override ? "custom" : String(override ? target : defaultTarget)}
             options={[
@@ -611,11 +642,13 @@ function ShareSizePicker({
                { value: "custom", label: "Custom" },
             ]}
             onChange={(value) => {
-               setCustom(value === "custom");
-               onOverride(value === "custom" || Number(value) !== defaultTarget);
-               if (value === "custom") setEditing(true);
-               else {
+               if (value === "custom") {
+                  setDraft(String(override ? target : defaultTarget));
+                  setEditing(true);
+               } else {
+                  setCustom(false);
                   setEditing(false);
+                  onOverride(Number(value) !== defaultTarget);
                   onTarget(Number(value));
                }
             }}
@@ -625,16 +658,23 @@ function ShareSizePicker({
                <label htmlFor="viewer-custom-size">Custom size</label>
                <div className="number-unit">
                   <input
+                     ref={input}
                      id="viewer-custom-size"
                      type="number"
                      min={1}
                      max={2000}
-                     value={target}
+                     step={1}
+                     value={draft}
                      aria-label="Shareable size target in MB"
-                     onChange={(event) => onTarget(Math.max(1, Math.min(2000, Number(event.target.value))))}
+                     aria-describedby="viewer-size-range"
+                     aria-invalid={!valid}
+                     onChange={(event) => setDraft(event.target.value)}
                   />
                   <span>MB</span>
                </div>
+               <p id="viewer-size-range" hidden={valid} className={valid ? "muted" : "error-text"}>
+                  Enter a whole number, 1 to 2000 MB.
+               </p>
             </div>
          )}
       </div>
