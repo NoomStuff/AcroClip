@@ -12,17 +12,20 @@ interface PlaybackOperation {
 
 /** Owns disposable playback copies. CollectionService owns authorization and directories. */
 export class PlaybackCache {
+   private generation = 0;
    private pending = new Map<string, PlaybackOperation>();
    private queue: Promise<unknown> = Promise.resolve();
    private metadata = new Map<string, { stamp: string; info: MediaInfo }>();
 
    async prepare(source: string, directory: string, selection?: number | number[], signal?: AbortSignal): Promise<string> {
+      const generation = this.generation;
       signal?.throwIfAborted();
       const track = selection === undefined ? undefined : [...new Set(Array.isArray(selection) ? selection : [selection])].sort((a, b) => a - b);
       if (track && (!track.length || track.some((index) => !Number.isInteger(index) || index < 0 || index > 63)))
          throw new Error("Choose at least one valid audio track.");
       const info = await stat(source, { bigint: true });
       signal?.throwIfAborted();
+      if (generation !== this.generation) throw new Error("Cancelled");
       const stamp = `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
       const key = createHash("sha256")
          .update(`${source}:${stamp}:${track?.join(",") ?? "master"}`)
@@ -80,6 +83,7 @@ export class PlaybackCache {
    }
 
    cancelAll(): void {
+      this.generation++;
       for (const operation of this.pending.values()) operation.controller.abort();
    }
 

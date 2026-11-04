@@ -522,5 +522,5 @@
       "libraryMs": 718.8489239999908,
       "searchMs": 138.96031199998106
    },
-   "limits": "The large-library measurement uses 1000 synthetic clip records, not disk scanning or thumbnail decoding. Contrast excludes disabled text, images, gradients and opacity layers. Axe excludes user-supplied footage; incomplete results remain in CI artifacts. No screen-reader compliance claim. Windows and packaged-app checks passed for 88107a0; this revision needs fresh checks. macOS remains unverified."
+   "limits": "The large-library measurement uses 1000 synthetic clip records, not disk scanning or thumbnail decoding. Contrast excludes disabled text, images, gradients and opacity layers. Axe excludes user-supplied footage; incomplete results remain in CI artifacts. No screen-reader compliance claim. Windows and packaged-app checks passed for 7d95cea; this revision needs fresh checks. macOS remains unverified."
 }

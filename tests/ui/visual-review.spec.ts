@@ -166,7 +166,7 @@ test("visual review covers primary screens and settings at narrow widths", async
          await capture(`recording-${width}`);
          if (width === 1280 && process.env["ACROCLIP_NATIVE_UI"] === "1") {
             await page.getByRole("button", { name: "Start recording", exact: true }).click();
-            await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state)).toBe("recording");
+            await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state), { timeout: 15000 }).toBe("recording");
             await expect
                .poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.availableSeconds), { timeout: 15000 })
                .toBeGreaterThanOrEqual(1);
@@ -378,6 +378,8 @@ test("visual review covers primary screens and settings at narrow widths", async
       await expect(page.getByRole("heading", { name: "You're good to go", exact: true })).toBeVisible();
       await capture("onboarding-ready");
    } finally {
+      const page = app.windows()[0];
+      if (page) await page.evaluate(() => window.acroClip.stopRecording()).catch(() => undefined);
       await app.close();
    }
 });

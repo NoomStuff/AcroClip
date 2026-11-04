@@ -120,6 +120,7 @@ export class CollectionService {
    private scanned = false;
    private opening = false;
    private readonly playbackCache = new PlaybackCache();
+   private playbackLifetime = new AbortController();
    private artworkCache = new Map<string, string>();
    clips: Clip[] = [];
    folders: string[] = [];
@@ -218,7 +219,10 @@ export class CollectionService {
       if (this.scanRunning) await this.scanRunning;
       await this.writes;
       await mkdir(resolve(root), { recursive: true });
-      this.root = await realpath(resolve(root));
+      const nextRoot = await realpath(resolve(root));
+      this.playbackLifetime.abort();
+      this.playbackLifetime = new AbortController();
+      this.root = nextRoot;
       await this.safeDirectory(join(this.root, ".acroclip"));
       this.playbackCache.cancelAll();
       this.cache.clear();
@@ -1242,6 +1246,8 @@ export class CollectionService {
    }
 
    async playback(path: string, track?: number | number[], signal?: AbortSignal): Promise<string> {
+      const lifetime = this.playbackLifetime.signal;
+      const operation = signal ? AbortSignal.any([signal, lifetime]) : lifetime;
       const root = this.root;
       const actual = await realpath(path);
       if (root !== this.root || !withinRoot(root, actual)) throw new Error("The video is outside the current collection.");
@@ -1249,7 +1255,7 @@ export class CollectionService {
       if (!allowed) throw new Error("That video is not part of this collection.");
       const directory = join(root, ".acroclip", "playback");
       await this.safeDirectory(directory);
-      const result = await this.playbackCache.prepare(actual, directory, track, signal);
+      const result = await this.playbackCache.prepare(actual, directory, track, operation);
       if (root !== this.root) throw new Error("The collection changed while preparing playback.");
       return this.url(result);
    }

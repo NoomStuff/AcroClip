@@ -108,6 +108,54 @@ test("the viewer rail retains its first clip, version and position when a newer 
       await page.getByRole("button", { name: "Player", exact: true }).click();
       await expect(page.locator(".viewer-title h1")).toHaveText("Reviewed moment");
       await expect(page.getByRole("button", { name: "Shareable", exact: true })).toHaveAttribute("aria-pressed", "true");
+      // Both versions exist so the departing element stays mounted during the switch.
+      await page.evaluate(async () => {
+         const next = (await window.acroClip.state()).clips.find((clip) => clip.name === "Newly saved moment")!;
+         await window.acroClip.createShareable(next.id, 1);
+      });
+      await expect
+         .poll(() => page.evaluate(async () => (await window.acroClip.state()).clips.find((clip) => clip.name === "Newly saved moment")?.shareables.length))
+         .toBe(1);
+      await page.getByRole("button", { name: "Library", exact: true }).first().click();
+      await page.getByRole("button", { name: "Open Newly saved moment", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Clip", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(2);
+      await page.getByRole("button", { name: "Play", exact: true }).click();
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThan(0.2);
+      // Hold a version switch open while delivering events from the original.
+      const nextUrl = await page.evaluate(async () => {
+         const next = (await window.acroClip.state()).clips.find((clip) => clip.name === "Newly saved moment")!;
+         return window.acroClip.playback(next.shareables[0]!.path);
+      });
+      await desktop.evaluate(({ ipcMain }, url) => {
+         const waiting: ((url: string) => void)[] = [];
+         const fixture = globalThis as typeof globalThis & { releaseViewerPlayback?: () => void };
+         ipcMain.removeHandler("playback");
+         ipcMain.handle(
+            "playback",
+            () =>
+               new Promise<string>((resolve) => {
+                  waiting.push(resolve);
+                  fixture.releaseViewerPlayback = () => {
+                     for (const finish of waiting) finish(url);
+                  };
+               })
+         );
+      }, nextUrl);
+      await page.getByRole("button", { name: "Shareable", exact: true }).click();
+      await expect
+         .poll(() => desktop.evaluate(() => typeof (globalThis as typeof globalThis & { releaseViewerPlayback?: () => void }).releaseViewerPlayback))
+         .toBe("function");
+      const departing = page.locator(".viewer-main video");
+      await departing.dispatchEvent("error");
+      await departing.dispatchEvent("loadedmetadata");
+      await departing.dispatchEvent("ended");
+      await expect(page.locator(".playback-error")).toHaveCount(0);
+      await desktop.evaluate(() => (globalThis as typeof globalThis & { releaseViewerPlayback?: () => void }).releaseViewerPlayback?.());
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(2);
+      await expect(page.locator(".playback-error")).toHaveCount(0);
+      await expect(page.locator(".viewer-title h1")).toHaveText("Newly saved moment");
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
    } finally {
       await desktop.close();
    }

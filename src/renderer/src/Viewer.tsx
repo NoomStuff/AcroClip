@@ -1,6 +1,6 @@
 import { shareableTargetAllowed } from "../../shared/shareable-target";
 import { useDirectionalContent } from "./useDirectionalContent";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Film, LibraryBig, FolderOpen, LoaderCircle, MoreHorizontal, Share2, Trash2, X, Info } from "lucide-react";
 import type { AppState, Clip } from "../../shared/types";
 import { api, describeError, fileDragProps } from "./desktop";
@@ -92,6 +92,12 @@ export function Viewer({
    const shareable = clip?.shareables.find((item) => item.id === shareId) ?? clip?.shareables.at(-1);
    const path = version === "shareable" ? shareable?.path : clip?.path;
    const playbackIdentity = JSON.stringify([clip?.id, path, version, track]);
+   const currentPlayback = useRef({ identity: playbackIdentity, generation: urlGeneration });
+   useLayoutEffect(() => {
+      currentPlayback.current = { identity: playbackIdentity, generation: urlGeneration };
+   }, [playbackIdentity, urlGeneration]);
+   const ownsMedia = (media: HTMLVideoElement) =>
+      visible && urlOwner === currentPlayback.current.identity && urlGeneration === currentPlayback.current.generation && media.currentSrc === url;
    const fade = usePlaybackFade(video, playbackIdentity, url, urlOwner === playbackIdentity, visible, urlGeneration);
    const targetAllowed = shareableTargetAllowed(clip?.size ?? 0, override ? target : state.preferences.shareSizeMB);
    const job = state.jobs.find((item) => item.clipId === clip?.id && item.kind === "shareable" && ["queued", "running"].includes(item.state));
@@ -113,6 +119,7 @@ export function Viewer({
    }, [clip?.originalMissing]);
    useEffect(() => {
       if (!visible) {
+         setPlaying(false);
          setUrlOwner("");
          video.current?.pause();
          if (document.fullscreenElement === player.current) void document.exitFullscreen().catch(() => undefined);
@@ -129,6 +136,7 @@ export function Viewer({
       let disposed = false;
       const requestId = crypto.randomUUID();
       switching.current = true;
+      setPlaying(false);
       video.current?.pause();
       setLoading(true);
       setMediaError("");
@@ -136,6 +144,7 @@ export function Viewer({
          try {
             const result = await api.playback(path, version === "original" ? track : undefined, requestId);
             if (!disposed) {
+               setMediaError("");
                if (currentUrl.current === result) {
                   switching.current = false;
                   if (resume.current) void video.current?.play().catch(() => undefined);
@@ -441,6 +450,7 @@ export function Viewer({
                      src={url}
                      onLoadedMetadata={(event) => {
                         const media = event.currentTarget;
+                        if (!ownsMedia(media)) return;
                         setDuration(media.duration);
                         media.currentTime = Math.min(seek.current, media.duration || 0);
                         setTime(media.currentTime);
@@ -453,16 +463,23 @@ export function Viewer({
                         if (resume.current) void media.play().catch(() => undefined);
                      }}
                      onTimeUpdate={(event) => {
-                        if (switching.current) return;
+                        if (switching.current || !ownsMedia(event.currentTarget)) return;
                         seek.current = event.currentTarget.currentTime;
                      }}
-                     onPlay={() => setPlaying(true)}
-                     onPause={() => setPlaying(false)}
-                     onEnded={() => {
+                     onPlay={(event) => {
+                        if (ownsMedia(event.currentTarget)) setPlaying(true);
+                     }}
+                     onPause={(event) => {
+                        if (ownsMedia(event.currentTarget)) setPlaying(false);
+                     }}
+                     onEnded={(event) => {
+                        if (!ownsMedia(event.currentTarget)) return;
                         resume.current = false;
                         setPlaying(false);
                      }}
-                     onError={() => setMediaError("This video could not be played. Try opening it in AttaCut or another player.")}
+                     onError={(event) => {
+                        if (ownsMedia(event.currentTarget)) setMediaError("This video could not be played. Try opening it in AttaCut or another player.");
+                     }}
                      onClick={(event) => {
                         const media = event.currentTarget;
                         if (!media.videoWidth || !media.videoHeight) return;

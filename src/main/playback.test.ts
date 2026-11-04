@@ -122,3 +122,13 @@ it("skips cancelled queued requests and permits a fresh request for the same fil
    expect(maximum).toBe(1);
    expect(vi.mocked(probe)).toHaveBeenCalledTimes(2);
 });
+
+it("invalidates preparation before its filesystem lookup can register a job", async () => {
+   const service = new PlaybackCache();
+   const preparation = service.prepare(join(root, "one"), cache);
+   const cancelled = expect(preparation).rejects.toThrow("Cancelled");
+   service.cancelAll();
+   await cancelled;
+   expect(probe).not.toHaveBeenCalled();
+   expect(jobs).toHaveLength(0);
+});
