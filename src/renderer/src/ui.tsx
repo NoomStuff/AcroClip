@@ -2,6 +2,8 @@ import { Children, Fragment, isValidElement, useCallback, useEffect, useId, useL
 import { createPortal } from "react-dom";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { FieldDescription, useFieldDescription } from "./field-accessibility";
 
 import { SelectionIndicator } from "./SelectionIndicator";
 import { DropdownSelect } from "./DropdownSelect";
@@ -150,14 +152,35 @@ export function Toggle({
       </label>
    );
 }
-export function Field({ label, detail, children, stacked = false }: { label: string; detail?: string; children: ReactNode; stacked?: boolean }) {
+export interface FieldProps {
+   label: string;
+   detail?: ReactNode;
+   children: ReactNode;
+   stacked?: boolean;
+   /** Inline keeps small controls beside copy; wide stacks earlier than responsive fields. */
+   layout?: "responsive" | "wide" | "inline";
+   className?: string;
+   icon?: LucideIcon;
+}
+export function Field({ label, detail, children, stacked = false, layout = "responsive", className = "", icon: Icon }: FieldProps) {
+   const labelId = useId();
+   const detailId = useId();
    return (
-      <div className={`field ${stacked ? "field-stacked" : ""}`}>
-         <div>
-            <span className="field-label">{label}</span>
-            {detail && <p className="field-detail">{detail}</p>}
+      <div className={`field ${stacked ? "field-stacked" : ""} ${className}`} data-layout={layout} role="group" aria-labelledby={labelId}>
+         {Icon && <Icon className="field-icon" size={21} aria-hidden="true" />}
+         <div className="field-copy">
+            <span className="field-label" id={labelId}>
+               {label}
+            </span>
+            {detail && (
+               <p className="field-detail" id={detailId}>
+                  {detail}
+               </p>
+            )}
          </div>
-         <div className="field-control">{children}</div>
+         <div className="field-control">
+            <FieldDescription value={detail ? detailId : undefined}>{children}</FieldDescription>
+         </div>
       </div>
    );
 }
@@ -171,9 +194,16 @@ export function NumberInput({
    unit: string;
    onValueChange: (value: number) => void;
 }) {
+   const description = useFieldDescription(props["aria-describedby"]);
    return (
       <div className="number-unit">
-         <input {...props} type="number" value={Number.isNaN(value) ? "" : value} onChange={(event) => onValueChange(event.currentTarget.valueAsNumber)} />
+         <input
+            {...props}
+            aria-describedby={description}
+            type="number"
+            value={Number.isNaN(value) ? "" : value}
+            onChange={(event) => onValueChange(event.currentTarget.valueAsNumber)}
+         />
          <span>{unit}</span>
       </div>
    );

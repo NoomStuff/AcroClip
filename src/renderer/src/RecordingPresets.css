@@ -127,12 +127,12 @@
       gap: 8px;
       grid-template-columns: repeat(2, minmax(0, 1fr));
    }
-   .field:has(.compression-slider) {
+   .field[data-layout="wide"]:not(.settings-row) {
       flex-direction: column;
       align-items: stretch;
       gap: 12px;
    }
-   .field:has(.compression-slider) > .field-control {
+   .field[data-layout="wide"]:not(.settings-row) > .field-control {
       max-width: 100%;
    }
    .compression-slider {

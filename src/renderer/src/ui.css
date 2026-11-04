@@ -316,8 +316,8 @@
 }
 
 .toggle-row input:checked + .switch {
-   background: #b197fc26;
-   border-color: #b197fc99;
+   background: var(--accent-switch);
+   border-color: var(--accent-switch-border);
 }
 
 .toggle-row input:checked + .switch .switch-thumb {
@@ -337,7 +337,7 @@
 
 .toggle-row:not(.disabled):hover input:checked + .switch {
    border-color: var(--accent);
-   background: #b197fc36;
+   background: var(--accent-switch-hover);
 }
 
 .toggle-row:not(.disabled):active .switch-thumb {
@@ -360,6 +360,15 @@
    align-items: center;
    padding: 18px 0;
    border-bottom: 1px solid var(--line);
+}
+
+.field-icon {
+   color: var(--subtle);
+   flex: 0 0 21px;
+}
+
+.field-copy {
+   min-width: 0;
 }
 
 .field-label {

@@ -35,8 +35,8 @@ export function NotificationSettings({
             const locked = action === "error";
             return (
                <div className="settings-row notification-settings-row" key={action}>
-                  <Icon className="settings-row-icon" size={21} aria-hidden="true" />
-                  <div className="settings-row-copy">
+                  <Icon className="field-icon" size={21} aria-hidden="true" />
+                  <div className="field-copy">
                      <span className="field-label">{label}</span>
                      <p className="field-detail">{detail}</p>
                   </div>

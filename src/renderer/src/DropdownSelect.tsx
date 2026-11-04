@@ -1,3 +1,4 @@
+import { useFieldDescription } from "./field-accessibility";
 // Copyright (c) 2026 NoomStuff
 // SPDX-License-Identifier: MIT
 // Adapted from AttaCut's DropdownSelect. See THIRD_PARTY_NOTICES.md.
@@ -35,6 +36,7 @@ export function DropdownSelect({
    iconOnly?: boolean;
    required?: boolean;
 } & ({ multiple?: false; value: string; onChange: (value: string) => void } | { multiple: true; value: string[]; onChange: (value: string[]) => void })) {
+   const description = useFieldDescription();
    const [open, setOpen] = useState(false);
    const [position, setPosition] = useState<CSSProperties>({});
    const root = useRef<HTMLDivElement>(null);
@@ -140,6 +142,7 @@ export function DropdownSelect({
             role="combobox"
             className={`select-trigger ${iconOnly ? "icon-button" : ""}`}
             aria-label={label}
+            aria-describedby={description}
             title={label}
             aria-controls={shown ? listId : undefined}
             aria-haspopup="listbox"

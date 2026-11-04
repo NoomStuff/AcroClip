@@ -1,3 +1,4 @@
+import { useFieldDescription } from "./field-accessibility";
 // Interaction reference: ppy/osu FormSliderBar and RoundedSliderBar. Implemented for native HTML inputs.
 import { useEffect, useRef, useState } from "react";
 import { useSliderMotion } from "./useSliderMotion";
@@ -36,6 +37,7 @@ export function Slider({
    disabled,
    ...props
 }: SliderProps) {
+   const description = useFieldDescription(props["aria-describedby"]);
    const [editing, setEditing] = useState(false);
    const [draft, setDraft] = useState("");
    const pointer = useRef({ active: false, exact: false });
@@ -91,6 +93,7 @@ export function Slider({
                   type="number"
                   inputMode="decimal"
                   aria-label={`${props["aria-label"]} value`}
+                  aria-describedby={description}
                   min={min * displayScale}
                   max={max * displayScale}
                   step={step * displayScale}
@@ -126,6 +129,7 @@ export function Slider({
          <span className="slider-control">
             <input
                {...props}
+               aria-describedby={description}
                className="slider-input"
                type="range"
                min={min}

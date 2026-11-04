@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { Check, Cpu } from "lucide-react";
+import { Check, Cpu, Monitor, Gauge, SlidersHorizontal } from "lucide-react";
 import type { Preferences, RecordingCapabilities } from "../../shared/types";
 import { applyRecordingPreset } from "../../shared/recording-presets";
 import { api } from "./desktop";
 import { Field, Select, Toggle, NumberInput } from "./ui";
+import type { FieldProps } from "./ui";
+import type { LucideIcon } from "lucide-react";
 import { Field as SettingsField, Toggle as SettingsToggle } from "./SettingsControls";
 import { Slider } from "./Slider";
 function QualityPicker({
@@ -50,6 +52,9 @@ export function customQualityError(value: Preferences): string {
    if (!Number.isInteger(value.customFPS) || value.customFPS < 1 || value.customFPS > 120) return "Frame rate must be between 1 and 120 fps.";
    return "";
 }
+function QualityField({ compact, icon, ...props }: FieldProps & { compact: boolean; icon: LucideIcon }) {
+   return compact ? <SettingsField {...props} icon={icon} /> : <Field {...props} />;
+}
 function CustomQualityControls({
    value,
    onChange,
@@ -59,11 +64,20 @@ function CustomQualityControls({
    onChange: (patch: Partial<Preferences>) => void;
    compact?: boolean;
 }) {
-   const ControlField = compact ? SettingsField : Field;
-   const ControlToggle = compact ? SettingsToggle : Toggle;
+   const softwareEncoding = {
+      label: "Allow software encoding",
+      detail: "Uses your CPU if no supported hardware encoder is available.",
+      checked: value.allowSoftwareEncoder,
+      onChange: (enabled: boolean) => onChange({ allowSoftwareEncoder: enabled }),
+   };
    return (
       <div className="custom-quality">
-         <ControlField label="Resolution limit" {...(compact ? { detail: "Screens scale to this limit. Apps keep their original size." } : {})}>
+         <QualityField
+            compact={compact}
+            icon={Monitor}
+            label="Resolution limit"
+            {...(compact ? { detail: "Screens scale to this limit. Apps keep their original size." } : {})}
+         >
             <Select label="Resolution limit" value={String(value.resolutionLimit)} onChange={(limit) => onChange({ resolutionLimit: Number(limit) })}>
                {[720, 1080, 1440, 2160].map((limit) => (
                   <option key={limit} value={limit}>
@@ -75,8 +89,8 @@ function CustomQualityControls({
                )}
                <option value="0">Source</option>
             </Select>
-         </ControlField>
-         <ControlField label="Frame rate">
+         </QualityField>
+         <QualityField compact={compact} icon={Gauge} label="Frame rate" layout="inline">
             <NumberInput
                min={1}
                max={120}
@@ -86,8 +100,8 @@ function CustomQualityControls({
                onValueChange={(customFPS) => onChange({ customFPS })}
                unit="fps"
             />
-         </ControlField>
-         <ControlField label="Compression" detail="Lower values keep more detail and use more space.">
+         </QualityField>
+         <QualityField compact={compact} icon={SlidersHorizontal} layout="wide" label="Compression" detail="Lower values keep more detail and use more space.">
             <div className="compression-slider">
                <div>
                   <span>More detail</span>
@@ -105,13 +119,8 @@ function CustomQualityControls({
                   onValueChange={(next) => onChange({ customCQ: next })}
                />
             </div>
-         </ControlField>
-         <ControlToggle
-            label="Allow software encoding"
-            detail="Uses your CPU if no supported hardware encoder is available."
-            checked={value.allowSoftwareEncoder}
-            onChange={(enabled) => onChange({ allowSoftwareEncoder: enabled })}
-         />
+         </QualityField>
+         {compact ? <SettingsToggle icon={Cpu} {...softwareEncoding} /> : <Toggle {...softwareEncoding} />}
       </div>
    );
 }

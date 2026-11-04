@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
    AlertCircle,
+   Clock3,
+   Copy,
+   FileVideo,
+   FolderTree,
+   Power,
+   Scissors,
    TriangleAlert,
    CircleAlert,
    Info,
@@ -112,7 +118,7 @@ function FilenameEditor({
    return (
       <div className="filename-editor">
          <div className="filename-heading">
-            <FileText className="settings-row-icon" size={21} aria-hidden="true" />
+            <FileText className="field-icon" size={21} aria-hidden="true" />
             <label htmlFor="filename-pattern">File name</label>
             <Select label="Filename preset" value={preset} onChange={(next) => onPreset(next as Preferences["filenamePreset"])}>
                <option value="source-date">App + date</option>
@@ -318,7 +324,7 @@ export function Settings({
                         </section>
                         <section className="settings-group">
                            <h2>Clip</h2>
-                           <Field label="Clip length" detail="Save this much recent footage when you clip.">
+                           <Field icon={Clock3} label="Clip length" detail="Save this much recent footage when you clip.">
                               <TimeInput
                                  min={5}
                                  max={1800}
@@ -328,6 +334,7 @@ export function Settings({
                               />
                            </Field>
                            <Toggle
+                              icon={Scissors}
                               checked={draft.avoidOverlap}
                               onChange={(value) => change("avoidOverlap", value)}
                               label="Reduce clip overlap"
@@ -360,7 +367,7 @@ export function Settings({
                               <h2>{group.title}</h2>
                               <p className="section-description">{group.detail}</p>
                               {group.items.map((item) => (
-                                 <Field key={item.id} label={item.label}>
+                                 <Field icon={Keyboard} key={item.id} label={item.label}>
                                     <ShortcutInput
                                        label={item.id === "saveClip" ? "Clip shortcut" : `${item.label} shortcut`}
                                        value={bindingFor(draft, item.id)}
@@ -398,6 +405,7 @@ export function Settings({
                         <fieldset className="settings-group" disabled={locked}>
                            <h2>New clips</h2>
                            <Toggle
+                              icon={FolderTree}
                               label="Group clips by application"
                               detail="Save new clips in application folders. Existing files stay where they are."
                               checked={draft.folderLayout === "application"}
@@ -432,8 +440,8 @@ export function Settings({
                            </div>
                         </fieldset>
                         <section className="settings-group">
-                           <h2>Sharables</h2>
-                           <Field label="Default maximum size" detail="You can choose a different limit for each clip.">
+                           <h2>Shareables</h2>
+                           <Field icon={FileVideo} label="Default maximum size" detail="You can choose a different limit for each clip.">
                               <NumberInput
                                  min={1}
                                  max={2000}
@@ -456,6 +464,7 @@ export function Settings({
                               </div>
                            </Field>
                            <Toggle
+                              icon={Copy}
                               label="Automatically create shareables"
                               detail="Compress a copy after each save. Uses extra resources while recording."
                               checked={draft.autoShare}
@@ -474,8 +483,14 @@ export function Settings({
                                  ? "Closing the window exits AcroClip and stops recording."
                                  : "Closing the window keeps AcroClip running in the tray."}
                            </p>
-                           <Toggle label="Start with your computer" checked={draft.startWithOS} onChange={(value) => change("startWithOS", value)} />
                            <Toggle
+                              icon={Power}
+                              label="Start with your computer"
+                              checked={draft.startWithOS}
+                              onChange={(value) => change("startWithOS", value)}
+                           />
+                           <Toggle
+                              icon={Video}
                               label="Start recording when AcroClip opens"
                               detail="Use your saved source, or wait for its application to open."
                               checked={draft.autoRecord}
@@ -485,6 +500,7 @@ export function Settings({
                         <section className="settings-group">
                            <h2>Updates</h2>
                            <Toggle
+                              icon={RefreshCw}
                               label="Check for updates at startup"
                               checked={draft.updateCheck}
                               onChange={(updateCheck) => change("updateCheck", updateCheck)}

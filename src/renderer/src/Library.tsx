@@ -76,6 +76,7 @@ export function Library({
    openGames: () => void;
 }) {
    const layout = useRef<HTMLDivElement>(null);
+   const searchInput = useRef<HTMLInputElement>(null);
    const scrollArea = useRef<HTMLDivElement>(null);
    const [placeholderCount, setPlaceholderCount] = useState(8);
    const [view, setView] = useState<"grid" | "list">(() => {
@@ -461,7 +462,7 @@ export function Library({
    useEffect(() => {
       const command = (event: Event) => {
          const id = (event as CustomEvent<string>).detail;
-         if (id === "search") layout.current?.querySelector<HTMLInputElement>('input[aria-label="Search clips"]')?.focus();
+         if (id === "search") searchInput.current?.focus();
          else if (id === "newCategory") setEditingCategory("new");
          else if (id === "newFolder") void createFolder(folderPath ?? "");
          else if (id === "newFolderRoot") void createFolder("");
@@ -717,6 +718,7 @@ export function Library({
                   <div className="search-input">
                      <Search size={16} />
                      <input
+                        ref={searchInput}
                         aria-label="Search clips"
                         spellCheck={false}
                         placeholder="Search clips"
