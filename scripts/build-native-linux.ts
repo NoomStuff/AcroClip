@@ -57,8 +57,10 @@ for (const input of initialFiles) {
    for (const line of result.split("\n")) {
       const match = /^\s*(\S+) => (\/\S+)/.exec(line);
       if (!match?.[1] || !match[2]) continue;
-      // The loader, C runtime, and host GPU drivers belong to the target OS.
-      if (/^(?:libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|libGL|libEGL|libOpenGL|libcuda|libnvidia)/.test(match[1])) continue;
+      // The loader, C runtime, and host GPU/display dependencies belong to the OS.
+      // Mesa can require newer Wayland client symbols than the build distro has.
+      // Bundling an older client breaks even X11 EGL when Mesa loads its vendor.
+      if (/^(?:libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|libGL|libEGL|libOpenGL|libcuda|libnvidia|libwayland-client\.so)/.test(match[1])) continue;
       if (libraries.has(match[1])) continue;
       libraries.add(match[1]);
       await copyFile(match[2], path.join(runtime, "lib", match[1]));

@@ -47,3 +47,11 @@ Main advanced to `1dfd034` with capture and library changes and version `0.9.0`.
 ## Merged candidate meter check
 
 Candidate run 41731470641 passed four target verifications. Linux arm64 failed the meter-routing UI check: after the test enabled the microphone and sent one sample, its displayed level stayed at silence. The test now waits for the enabled microphone meter and publishes a stream until both expected levels arrive. It retains the original thresholds and checks that partial updates preserve the microphone level and muting another source does not affect it. This addresses the single-sample startup race without changing application audio behavior.
+
+## Integration with main at 948e524
+
+The notification branch incorporates the latest CI changes without restoring duplicate UI suites or adding workflow steps. Completed banners already use the thumbnail returned by `registerRecording`; a real-media assertion now checks that this returned image is the library's near-end blue frame, rather than the earlier red frame.
+
+Desktop audio routing excludes AcroClip's process tree. Windows and macOS feedback helpers are children of the app; Linux sound playback starts paplay as an app child. A new case in the existing Linux application-audio smoke test plays the shipped `clip-saved.wav` repeatedly from a descendant process. With exclusion disabled it records about -23 dB in both Master and Desktop. With the owner PID excluded both tracks measure -91 dB, the silence floor. The proof records the WAV's SHA-256 and decodes the actual saved videos. It does not depend on the placeholder's note frequencies, so it can validate the commissioned replacement too.
+
+The local test used private Xvfb and PipeWire services and the native recorder from the published 0.9.0 AppImage. Its recorder source hash matches this branch. The packaged Ubuntu Wayland client prevented the host's newer Mesa EGL vendor from loading because it lacks `wl_fixes_interface`. Removing that client from the temporary test runtime fixed graphics initialization. Linux staging now leaves `libwayland-client` to the host, like its GPU drivers, so it cannot override the version Mesa requires. The next candidate build verifies the newly staged package rather than treating the temporary test-runtime change as package verification.
