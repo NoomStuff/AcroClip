@@ -1,0 +1,183 @@
+{
+  "version": "0.11.0",
+  "commit": "ed311e69be2c0a7d62d1b47685557391f0235e75",
+  "run": "42274446621",
+  "files": [
+    {
+      "path": "downloads/AcroClip-0.11.0-linux-arm64.AppImage",
+      "sha256": "4f07ee7ea108e0f5cb1e0f1d4dba3fa0aec96c13d8ad5734f168222ec16c0729",
+      "size": 257797703
+    },
+    {
+      "path": "downloads/AcroClip-0.11.0-linux-x86_64.AppImage",
+      "sha256": "de59e3270bfe719970f16599be2109bd7756664f33ced80e4a65975ce68ff890",
+      "size": 266334091
+    },
+    {
+      "path": "downloads/AcroClip-0.11.0-mac-arm64.dmg",
+      "sha256": "eb30ee717d5447b1801e8901d48948e4cf593df9b865a978e9546d7871eb6cd7",
+      "size": 207486782
+    },
+    {
+      "path": "downloads/AcroClip-0.11.0-mac-arm64.zip",
+      "sha256": "62e7e245038f6704f623318e66ef3a5b74265c5b419403b2af84305622bc6f85",
+      "size": 189731495
+    },
+    {
+      "path": "downloads/AcroClip-0.11.0-mac-x64.dmg",
+      "sha256": "5e6a0902adeaf5068031446368ab29e292172c73444dc3d776c342c654d402b2",
+      "size": 216781207
+    },
+    {
+      "path": "downloads/AcroClip-0.11.0-mac-x64.zip",
+      "sha256": "88ea5f84c97334b2c6a1e1bfd758b6080762b6a59f58146fdd22844a0b44602f",
+      "size": 196835309
+    },
+    {
+      "path": "downloads/AcroClip-0.11.0-win-x64-Installer.exe",
+      "sha256": "a982028b6f81277ffb58cf524711809db2878347f6c6ffbfd57352d3a0e273d9",
+      "size": 151861482
+    },
+    {
+      "path": "downloads/AcroClip-0.11.0-win-x64.exe",
+      "sha256": "f5c65220fcc07f226a908d53e0e39c3dbcf7b6ac128fbda1f9723dc4c8f2afab",
+      "size": 151630721
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-darwin-arm64-sources-ed311e69.zip.json",
+      "sha256": "2cfcb5698d4f860866d123d73160eacaa3e12babda7009619734c3e47e8c1071",
+      "size": 130600
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-darwin-x64-sources-ed311e69.zip.json",
+      "sha256": "c03341bf05c83242eef7df09a95b670c4cabcd477e3bf30083282123ad28f0a1",
+      "size": 130566
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-linux-arm64-sources-ed311e69.zip.json",
+      "sha256": "54c512a03dafc9cc6df75e062693761bcbca946574530e02678a600a30039092",
+      "size": 473909
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-linux-arm64.AppImage.release.json",
+      "sha256": "758ffd46e97596345c84001b565032ac0439769ddd39b45063d2f1f6e8c3aa14",
+      "size": 969864
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-linux-x64-sources-ed311e69.zip.json",
+      "sha256": "dbd8a6111fcdd40c95c32b594193b78d6c0fd673e655f38be9209ab232040cf8",
+      "size": 491037
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-linux-x86_64.AppImage.release.json",
+      "sha256": "cc6f8f3bf2121a57cb6e9cb2fad28a5389e3a5bd8c05cd5ee50aba0f47a0fe42",
+      "size": 1006861
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-mac-arm64.dmg.verification.json",
+      "sha256": "6474c65825454ca46b67297718840371017a4af34ba24503dfc0610477ef5f7e",
+      "size": 295
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-mac-arm64.zip.blockmap",
+      "sha256": "484d3d69eeaaa25da25f15602a9f981fe2b1d4691e945311c2fa61652a6b2328",
+      "size": 200100
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-mac-arm64.zip.release.json",
+      "sha256": "d95715984fa226bf0b1065a3848355be886c6295590ccd00b54467c7d16ff6a1",
+      "size": 351919
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-mac-x64.dmg.verification.json",
+      "sha256": "89f26d75cc8753bdfc543ceba4d382fe454170926b40570ee67413b0e91ae094",
+      "size": 291
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-mac-x64.zip.blockmap",
+      "sha256": "039c8abe0c8bfdb9cfa9d597ae93fddc357ec86d356c6a0a5534bcf668082caa",
+      "size": 206235
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-mac-x64.zip.release.json",
+      "sha256": "dc6acbd224bf6ca7544b6b0ac59b6773d4d7d31593018202a360034046f17f7b",
+      "size": 351848
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-win-x64-Installer.exe.blockmap",
+      "sha256": "cb8a8e2a59e457a5ee961d195493e93c627281ae5c756e9de5148f0726059098",
+      "size": 159351
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-windows-x64-SHA256SUMS.txt",
+      "sha256": "87c7f2696a425452fd00edd4cde88593f9cd4c6bebfec7b5ae33a5bfc1ff1e20",
+      "size": 610
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-windows-x64-release.json",
+      "sha256": "c2b102a022eed93fdb1f380b86c4008d818cbed0d42cfdc46ff690746e4f8e71",
+      "size": 256180
+    },
+    {
+      "path": "evidence/AcroClip-0.11.0-windows-x64-sources-ed311e69.zip.json",
+      "sha256": "01d7ecdf3eba2b11c0919faafab82d01b83ad1dc360f69825abdeb67e758dde2",
+      "size": 115374
+    },
+    {
+      "path": "evidence/latest-linux-arm64.yml",
+      "sha256": "d2f521710b6d8c5fa30dc007aa870aa43db64582ad25f044ad6b084a8d6cc4e0",
+      "size": 446
+    },
+    {
+      "path": "evidence/latest-linux.yml",
+      "sha256": "2746f216c83e31231582398fba9eadc5099ae76269f442b180429fbf12541c57",
+      "size": 448
+    },
+    {
+      "path": "evidence/latest.yml",
+      "sha256": "709568991d9f303aeaa2f6024895c758e9b046e77ce7129277e3e28f7347f827",
+      "size": 423
+    },
+    {
+      "path": "feeds/latest-linux-arm64.yml",
+      "sha256": "28a59bb6488ef2d1747a07c8c1fcc4ca9774f7adfbfa98e07ccc6b926886996a",
+      "size": 577
+    },
+    {
+      "path": "feeds/latest-linux.yml",
+      "sha256": "cdd7decad44d31ffdb5f3380aff260c0ec98ba66749b03f0b59de42f77033ca6",
+      "size": 579
+    },
+    {
+      "path": "feeds/latest.yml",
+      "sha256": "f8e5925a6dcdd1e6ca482de0989cc1c38fa364601310b66f740bd391f256c189",
+      "size": 579
+    },
+    {
+      "path": "sources/AcroClip-0.11.0-darwin-arm64-sources-ed311e69.zip",
+      "sha256": "ef449264615972d05dff8c3a99ad1d5e63f0383f88516f43e49f92c8d97922b4",
+      "size": 156348453
+    },
+    {
+      "path": "sources/AcroClip-0.11.0-darwin-x64-sources-ed311e69.zip",
+      "sha256": "e6c4b3343a4d9890444b439d956df489aa7a3f571447670877caf6fa5cf2d215",
+      "size": 156354317
+    },
+    {
+      "path": "sources/AcroClip-0.11.0-linux-arm64-sources-ed311e69.zip",
+      "sha256": "fc2035b1612cbb893b16e7a511b3a9625fc789545edc225ab7077b14abe1b638",
+      "size": 1647534563
+    },
+    {
+      "path": "sources/AcroClip-0.11.0-linux-x64-sources-ed311e69.zip",
+      "sha256": "a975436aff5fd3ba685a922fd87b701d964ff73c2b0c7fe5b7ef91c728b3e84a",
+      "size": 1749611034
+    },
+    {
+      "path": "sources/AcroClip-0.11.0-windows-x64-sources-ed311e69.zip",
+      "sha256": "48b79adf0a0266feb013216f9e8c9173de7f0a15f9d78ae69c0bc99a4811e47e",
+      "size": 175534998
+    }
+  ],
+  "sourceRelease": "https://github.com/NoomStuff/AcroClip/releases/tag/v0.11.0-sources-5f439c1fd964"
+}
