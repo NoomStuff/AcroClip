@@ -159,6 +159,27 @@ export function leave(toast: HTMLElement | null, commit: () => void): void {
       .finished.then(done, done);
 }
 
+/** Clear all: the pills shrink away right to left, then the store empties. */
+export function sweepOut(commit: () => void): void {
+   const pills = Array.from(document.querySelectorAll<HTMLElement>(".notification-area > .notification-pill")).reverse();
+   if (!pills.length || still()) return commit();
+   const animations = pills.map((pill, index) =>
+      pill.animate(
+         [
+            { transform: "none", opacity: 1 },
+            { transform: "scale(0.6)", opacity: 0 },
+         ],
+         {
+            duration: 180,
+            delay: index * 40,
+            easing: "cubic-bezier(0.4, 0, 1, 1)",
+            fill: "forwards",
+         }
+      )
+   );
+   void Promise.all(animations.map((animation) => animation.finished.catch(() => undefined))).then(commit);
+}
+
 /** A pill that appears without a flight pops in. */
 export function popIn(element: HTMLElement): void {
    if (still()) return;
