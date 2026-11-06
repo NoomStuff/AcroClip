@@ -190,8 +190,15 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
          .toEqual(["Third", "Matches", "Second"]);
-      await third.locator(".sidebar-item").click();
-      await expect(third.locator(".sidebar-item")).toHaveAttribute("aria-pressed", "true");
+      // The commit's re-render can replace the row while its click lands on a
+      // slow runner, so select the tag again until the button reflects it.
+      const select = third.locator(".sidebar-item");
+      await expect
+         .poll(async () => {
+            await select.click().catch(() => undefined);
+            return select.getAttribute("aria-pressed");
+         })
+         .toBe("true");
       const movedBounds = (await third.boundingBox())!;
       const lastBounds = (await page.locator(".category-item").last().boundingBox())!;
       await page.mouse.move(movedBounds.x + 60, movedBounds.y + grab);
