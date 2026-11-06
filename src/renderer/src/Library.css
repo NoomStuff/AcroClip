@@ -1,9 +1,10 @@
 .library-sidebar {
    --library-action-size: 30px;
-   --collection-header-height: 62px;
-   padding-inline: 0;
-   /* Single-cell grid so the Collection header overlays the scrolling list,
-      mirroring .library-content's heading treatment. */
+   --collection-header-height: 80px;
+   padding: 0;
+   overflow: hidden;
+   /* Single-cell grid so the Collection header overlays the list, which runs
+      the full panel height like .library-content. */
    display: grid;
    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 }
@@ -14,17 +15,17 @@
    top: 0;
    align-self: start;
    z-index: 3;
+   padding-top: 18px;
 }
 
 .collection-drop::before {
    content: "";
    position: absolute;
    z-index: -1;
-   /* Overscan past the sidebar padding so the blur has no hard edge. */
-   inset: -12px -4px -48px -4px;
-   background: color-mix(in srgb, var(--base) 68%, transparent);
+   inset: 0 0 -40px;
+   background: color-mix(in srgb, var(--surface) 80%, transparent);
    backdrop-filter: blur(6px);
-   mask-image: linear-gradient(to bottom, #000 0%, #000e 20%, #000a 40%, #0005 65%, #0001 85%, transparent 100%);
+   mask-image: linear-gradient(to bottom, #000 0%, #000e 30%, #000a 50%, #0005 70%, #0001 88%, transparent 100%);
    pointer-events: none;
 }
 
@@ -62,8 +63,13 @@
    grid-area: 1 / 1;
    min-height: 0;
    overflow-y: auto;
-   padding: calc(var(--collection-header-height) + 14px) calc(11px - var(--scrollbar-size)) 12px 11px;
+   padding: calc(var(--collection-header-height) + 14px) calc(11px - var(--scrollbar-size)) 24px 11px;
    scroll-padding-top: calc(var(--collection-header-height) + 20px);
+}
+
+/* The track starts below the Collection header instead of running under it. */
+.sidebar-scroll::-webkit-scrollbar-track {
+   margin-top: var(--collection-header-height);
 }
 
 .sidebar-group-title {
