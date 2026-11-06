@@ -1,10 +1,62 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { clearAll, closeOpen, dismiss, expire, getSnapshot, notify, resetNotifications, setCondition, splitMessage, toggleOpen } from "./notifications";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+   chipGroups,
+   clearAll,
+   clearNotification,
+   closeOpen,
+   dismiss,
+   expire,
+   getSnapshot,
+   notify,
+   resetNotifications,
+   setCondition,
+   splitMessage,
+   toggleOpen,
+} from "./notifications";
 
 const entries = () => getSnapshot().entries;
 
 describe("notifications", () => {
    beforeEach(() => resetNotifications());
+   afterEach(() => vi.useRealTimers());
+
+   it("replaces and clears keyed notifications", () => {
+      notify({ message: "Update downloading", key: "update" });
+      notify({ message: "Update ready", key: "update" });
+      expect(entries().map((entry) => entry.title)).toEqual(["Update ready"]);
+      clearNotification("update");
+      expect(entries()).toHaveLength(0);
+   });
+
+   it("lands quiet notifications straight in the status bar", () => {
+      notify({ message: "Capture stopped", tone: "error", toast: false });
+      expect(entries()[0]).toMatchObject({ phase: "chip", chip: true });
+   });
+
+   it("removes chips when their lifetime ends, but waits while one is open", () => {
+      vi.useFakeTimers();
+      notify({ message: "Shareable ready", chip: true, chipFor: 1000 });
+      const id = entries()[0]!.id;
+      vi.advanceTimersByTime(5000);
+      expect(entries()).toHaveLength(1);
+      expire(id);
+      toggleOpen(id);
+      vi.advanceTimersByTime(1000);
+      expect(entries()).toHaveLength(1);
+      closeOpen();
+      vi.advanceTimersByTime(5000);
+      expect(entries()).toHaveLength(0);
+   });
+
+   it("keeps errors until dismissed and orders chip groups by severity", () => {
+      vi.useFakeTimers();
+      notify({ message: "Export failed", tone: "error", toast: false });
+      notify({ message: "Storage is low", tone: "warning", toast: false });
+      notify({ message: "Shareable ready", tone: "success", toast: false });
+      expect(chipGroups(entries()).map((group) => group.tone)).toEqual(["error", "warning", "success"]);
+      vi.advanceTimersByTime(60 * 60_000);
+      expect(entries().map((entry) => entry.title)).toEqual(["Export failed"]);
+   });
 
    it("splits the first sentence into a title and keeps the rest as detail", () => {
       expect(splitMessage("Save shortcut is unavailable. Choose another in Settings.")).toEqual({

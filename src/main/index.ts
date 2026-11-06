@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { AppEvent, AppState, Preferences, RecorderState } from "../shared/types";
+import type { AppEvent, AppState, NoticeOptions, Preferences, RecorderState } from "../shared/types";
 import { recordingArtwork, type RecordingArtwork } from "./recording-artwork";
 import { categoryRequest, idSchema } from "../shared/validation";
 import { assertDistinctAudioSources } from "./audio-sources";
@@ -112,7 +112,7 @@ const recorder = new Recorder({
    onSaved: async (path, source, _requestId, capture) => {
       const clip = await collections.registerRecording(path, source, capture.application);
       emitState();
-      notice(capture.previousFootage ? "Saved last available footage" : "Clip saved", false, "saved", false);
+      notice(capture.previousFootage ? "Saved the footage that was still available" : "Clip saved", false, "saved");
       if (preferences.autoShare && shareableTargetAllowed(clip.size, preferences.shareSizeMB)) {
          void collections.createShareable(clip.id, preferences.shareSizeMB).catch((e) => notice(errorMessage(e), true));
       }
@@ -213,8 +213,22 @@ async function log(message: string) {
       /* Diagnostics must not break capture. */
    }
 }
-function notice(message: string, error = false, kind: "info" | "saving" | "saved" = "info", chip: boolean = error) {
-   send({ type: "notice", message, error, chip });
+/**
+ * Where a notice shows in the app. Actions taken in the window answer there.
+ * Background events toast only while the window has focus; otherwise errors
+ * wait quietly as a status-bar chip and the rest stay out of the app.
+ */
+type NoticeSurface = "action" | "background" | "none";
+function notice(
+   message: string,
+   error = false,
+   kind: "info" | "saving" | "saved" = "info",
+   surface: NoticeSurface = "background",
+   options: NoticeOptions = {}
+) {
+   const focused = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && mainWindow.isFocused();
+   if (surface === "action" || (surface === "background" && (focused || error)))
+      send({ type: "notice", message, error, chip: error, ...options, ...(surface === "background" && !focused ? { toast: false } : {}) });
    void log(message);
    if (preferences?.sound && (error || kind === "saved")) shell.beep();
    if (preferences?.notifications !== "off") void showFeedback(message, error, kind === "saving").catch(() => undefined);
@@ -374,7 +388,8 @@ async function saveClip() {
       throw new Error("The capture folder points outside this collection. Choose another folder.");
    void storage.check(collections.root);
    await recorder.save(destination, requestedAt, lastRecordingArtwork?.application);
-   notice("Saving clip…", false, "saving", false);
+   // The status bar shows saves in progress, so this only reaches the desktop banner.
+   notice("Saving clip…", false, "saving", "none");
 }
 function pendingJobs() {
    return collections.pendingJobs;
@@ -532,7 +547,7 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown) {
          // Playback and preview report errors locally and discard obsolete requests.
          // A global notice would outlive a source or file switch.
          if (!["playback", "cancel-playback", "preview-source", "monitor-audio", "listen-audio", "preferences"].includes(channel))
-            notice(errorMessage(e), true);
+            notice(errorMessage(e), true, "info", "action");
          else void log(`${channel}: ${errorMessage(e)}`);
          throw e;
       }
@@ -645,7 +660,7 @@ function registerIPC() {
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
             if (!isValidShortcut(next.shortcut)) throw new Error("That key combination is not supported. Try a letter, number, or function key.");
             if (recorder.status.state !== "stopped" && recorder.status.state !== "error" && requiresCaptureRestart(preferences, next))
-               throw new Error("Stop capturing before applying capture or audio changes. Unsaved history will clear.");
+               throw new Error("Stop capturing to apply these changes. Footage you haven't saved will be discarded.");
             if (next.collection !== preferences.collection && (recorder.status.state !== "stopped" || recorder.status.pendingSaves || pendingJobs().length))
                throw new Error("Stop capturing and finish shareables before changing the collection folder.");
             const conflict = shortcutConflict(next, process.platform === "darwin");
@@ -711,7 +726,7 @@ function registerIPC() {
       const clipId = idSchema.parse(id);
       const targetMB = target === undefined ? preferences.shareSizeMB : z.number().min(1).max(2000).parse(target);
       const clip = collections.clips.find((item) => item.id === clipId);
-      if (!clip) throw new Error("Clip not found");
+      if (!clip) throw new Error("This clip is no longer in the collection.");
       if (!shareableTargetAllowed(clip.size, targetMB)) throw new Error("Choose a shareable size target no larger than the clip.");
       return collections.createShareable(clipId, targetMB);
    });
@@ -820,7 +835,7 @@ function registerIPC() {
    handle("attacut-available", async () => !!(await detectAttaCut()));
    handle("attacut", async (id) => {
       const clip = collections.clips.find((c) => c.id === idSchema.parse(id));
-      if (!clip || clip.originalMissing) throw new Error("Clip not found");
+      if (!clip || clip.originalMissing) throw new Error("This clip is no longer in the collection.");
       const executable = await detectAttaCut();
       if (!executable) throw new Error("AttaCut is no longer available. Install it to open this clip there.");
       const { spawn } = await import("node:child_process");

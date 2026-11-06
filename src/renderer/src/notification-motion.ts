@@ -1,24 +1,34 @@
 import { flushSync } from "react-dom";
+import type { NotificationTone } from "./notifications";
 
 /**
- * Notification movement between the toast stack and the status-bar pill.
+ * Notification movement between the toast stack and the status-bar pills.
  *
- * The store changes right away, so the real toast and pill always match the
+ * The store changes right away, so the real toast and pills always match the
  * state. The motion runs on a ghost, a fixed box that resizes from one shape
  * to the other with a copy of each inside. Resizing (not scaling) keeps text
- * at its real size, so the toast looks like it is drawn into the pill instead of
- * squashed. The ghost is aria-hidden and inert, so nothing can find or click it.
+ * at its real size, and the copies crossfade through a light blur so the
+ * shape reads as one surface flowing into the other. The ghost is aria-hidden
+ * and inert, so nothing can find or click it.
  */
 
-const EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
-const FLIGHT_MS = 520;
+/** Fast start, long soft stop, no overshoot. */
+export const FLUID = "cubic-bezier(0.22, 1, 0.36, 1)";
+const FLIGHT_MS = 420;
 const LEAVE_MS = 160;
 
-/** The pill lists every id it stands for, space separated. */
+/** Each pill lists every id it stands for, space separated. */
 export const chipSelector = (id: number) => `[data-notification-chip~="${id}"]`;
 const toastSelector = (id: number) => `[data-toast-id="${id}"]`;
+const pillSelector = (tone: NotificationTone) => `.notification-pill[data-tone="${tone}"]`;
 
-const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+export const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * Where each pill ends up after the latest render, measured before its own
+ * glide starts. Flights aim here rather than at a pill that is still moving.
+ */
+export const pillTargets = new Map<NotificationTone, DOMRect>();
 
 interface Look {
    rect: DOMRect;
@@ -28,9 +38,8 @@ interface Look {
    shadow: string;
 }
 
-function look(element: HTMLElement, radius?: string): Look {
+function look(element: HTMLElement, rect = element.getBoundingClientRect(), radius?: string): Look {
    const style = getComputedStyle(element);
-   const rect = element.getBoundingClientRect();
    return {
       rect,
       radius: radius ?? style.borderTopLeftRadius,
@@ -55,9 +64,10 @@ const box = (value: Look): Keyframe => ({
 function layer(element: HTMLElement, rect: DOMRect): HTMLElement {
    const copy = element.cloneNode(true) as HTMLElement;
    // Keep the copy out of class and attribute lookups meant for the real thing.
-   copy.classList.remove("toast");
+   copy.classList.remove("toast", "receiving", "awaiting", "holding");
    copy.removeAttribute("data-notification-chip");
    copy.removeAttribute("data-toast-id");
+   copy.removeAttribute("data-tone");
    copy.removeAttribute("role");
    copy.classList.add("notification-layer");
    copy.style.width = `${rect.width}px`;
@@ -75,48 +85,51 @@ function ghost(...layers: HTMLElement[]): HTMLDivElement {
    return element;
 }
 
-const pillLook = (pill: HTMLElement) => look(pill, `${pill.getBoundingClientRect().height / 2}px`);
+const pillLook = (pill: HTMLElement, rect = pill.getBoundingClientRect()) => look(pill, rect, `${rect.height / 2}px`);
 
-/** Resize the ghost between two looks while one copy fades out and the other fades in. */
+/** Resize the ghost between two looks while one copy dissolves into the other. */
 function fly(from: Look, to: Look, leaving: HTMLElement, arriving: HTMLElement): Promise<void> {
    const element = ghost(leaving, arriving);
-   const timing = { duration: FLIGHT_MS, easing: EASE, fill: "both" as const };
-   // The box shrinks fastest early on, so the toast text stays until it is mostly clipped away.
-   leaving.animate([{ opacity: 1 }, { opacity: 1, offset: 0.15 }, { opacity: 0, offset: 0.5 }, { opacity: 0 }], timing);
-   arriving.animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1, offset: 0.7 }, { opacity: 1 }], timing);
+   const timing = { duration: FLIGHT_MS, easing: FLUID, fill: "both" as const };
+   leaving.animate(
+      [
+         { opacity: 1, filter: "blur(0)" },
+         { opacity: 0, filter: "blur(3px)", offset: 0.45 },
+         { opacity: 0, filter: "blur(3px)" },
+      ],
+      { ...timing, easing: "linear" }
+   );
+   arriving.animate(
+      [
+         { opacity: 0, filter: "blur(3px)" },
+         { opacity: 0, filter: "blur(3px)", offset: 0.25 },
+         { opacity: 1, filter: "blur(0)", offset: 0.75 },
+         { opacity: 1, filter: "blur(0)" },
+      ],
+      { ...timing, easing: "linear" }
+   );
    const done = () => element.remove();
    return element.animate([box(from), box(to)], timing).finished.then(done, done);
-}
-
-function land(pill: HTMLElement) {
-   pill.animate([{ transform: "scale(1.08)" }, { transform: "scale(0.98)", offset: 0.55 }, { transform: "none" }], { duration: 300, easing: "ease-out" });
 }
 
 /**
  * Move a toast into its pill. `commit` makes the store change (toast to chip,
  * or pinned to closed). It runs synchronously so the pill is in place to aim at.
  */
-export function flyToChip(toast: HTMLElement | null, id: number, commit: () => void): void {
+export function flyToChip(toast: HTMLElement | null, id: number, tone: NotificationTone, commit: () => void): void {
    if (!toast || still()) return commit();
    const from = look(toast);
    const leaving = layer(toast, from.rect);
-   const before = document.querySelector(".notification-pill")?.getBoundingClientRect().width;
+   const existed = !!document.querySelector(pillSelector(tone));
    flushSync(commit);
    const pill = document.querySelector<HTMLElement>(chipSelector(id));
    if (!pill) return;
-   // Aim at the pill's final size; the flight drives the widening itself.
-   for (const animation of pill.getAnimations()) animation.cancel();
-   const to = pillLook(pill);
-   const existed = before !== undefined;
-   if (existed && Math.abs(before - to.rect.width) > 1)
-      pill.animate([{ width: `${before}px` }, { width: `${to.rect.width}px` }], { duration: FLIGHT_MS * 0.8, easing: EASE });
+   const to = pillLook(pill, pillTargets.get(tone) ?? pill.getBoundingClientRect());
    const arriving = layer(pill, to.rect);
-   // An existing pill stays as an empty shell that widens to make room; a new one waits hidden.
-   pill.classList.add(existed ? "receiving" : "awaiting");
-   void fly(from, to, leaving, arriving).then(() => {
-      pill.classList.remove("receiving", "awaiting");
-      land(pill);
-   });
+   // An existing pill stays as an empty shell that eases to its new size; a new one waits hidden.
+   const waiting = existed ? "receiving" : "awaiting";
+   pill.classList.add(waiting);
+   void fly(from, to, leaving, arriving).then(() => pill.classList.remove(waiting));
 }
 
 /** A pinned toast just mounted: grow it out of its pill. */
@@ -133,8 +146,8 @@ export function flyFromChip(toast: HTMLElement, id: number): void {
 }
 
 /** Close the pinned toast back into its pill. */
-export function closePinned(id: number, commit: () => void): void {
-   flyToChip(document.querySelector<HTMLElement>(toastSelector(id)), id, commit);
+export function closePinned(id: number, tone: NotificationTone, commit: () => void): void {
+   flyToChip(document.querySelector<HTMLElement>(toastSelector(id)), id, tone, commit);
 }
 
 /** Slide a toast out to the right, for dismissals and plain notices that time out. */
@@ -159,24 +172,25 @@ export function leave(toast: HTMLElement | null, commit: () => void): void {
       .finished.then(done, done);
 }
 
-/** Glide the stack's toasts to their new places after one arrives or leaves. */
-export function glide(container: HTMLElement, last: Map<string, number>): void {
-   const next = new Map<string, number>();
+/**
+ * Glide children to their new layout places. Positions come from offsetTop and
+ * offsetLeft, which ignore transforms, so an entrance animation in progress
+ * can't be mistaken for a move.
+ */
+export function glide(container: HTMLElement, last: Map<string, { x: number; y: number }>, key: (element: HTMLElement) => string | undefined): void {
+   const next = new Map<string, { x: number; y: number }>();
    for (const child of Array.from(container.children) as HTMLElement[]) {
-      const key = child.dataset["toastId"];
-      if (!key) continue;
-      const top = child.getBoundingClientRect().top;
-      next.set(key, top);
-      const before = last.get(key);
-      if (before === undefined || Math.abs(before - top) < 1 || still()) continue;
-      child.animate([{ transform: `translateY(${before - top}px)` }, { transform: "none" }], {
-         duration: 380,
-         delay: 40,
-         easing: EASE,
-         fill: "backwards",
-         composite: "add",
-      });
+      const id = key(child);
+      if (!id) continue;
+      const place = { x: child.offsetLeft, y: child.offsetTop };
+      next.set(id, place);
+      const before = last.get(id);
+      if (!before || still()) continue;
+      const dx = before.x - place.x;
+      const dy = before.y - place.y;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+      child.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 380, easing: FLUID, composite: "add" });
    }
    last.clear();
-   for (const [key, top] of next) last.set(key, top);
+   for (const [id, place] of next) last.set(id, place);
 }

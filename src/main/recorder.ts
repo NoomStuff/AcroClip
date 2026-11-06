@@ -256,7 +256,7 @@ export class Recorder {
       this.candidatesPending = new Promise<GameCandidate[]>((resolve, reject) => {
          const timeout = setTimeout(() => {
             this.candidatesResolve = null;
-            reject(new Error("Application detection timed out."));
+            reject(new Error("Finding open apps took too long. Refresh the source list."));
          }, 3000);
          this.candidatesResolve = (items) => {
             clearTimeout(timeout);
@@ -332,7 +332,7 @@ export class Recorder {
       this.options.onError(message);
    }
    private send(value: Record<string, unknown>): void {
-      if (!this.process?.stdin.writable) throw new Error("The capture helper is not running");
+      if (!this.process?.stdin.writable) throw new Error("Capture isn't running. Start capturing and try again.");
       this.process.stdin.write(`${JSON.stringify(value)}\n`);
    }
    private command(value: Record<string, unknown>, onNotAccepted: () => void = () => undefined): Promise<void> {
@@ -340,7 +340,7 @@ export class Recorder {
       return new Promise((resolve, reject) => {
          const timeout = setTimeout(() => {
             this.commands.delete(id);
-            reject(new Error("The capture helper did not finish the requested action"));
+            reject(new Error("Capture didn't respond in time."));
          }, 20_000);
          this.commands.set(id, { resolve, reject, timeout, onNotAccepted });
          try {
@@ -349,7 +349,7 @@ export class Recorder {
             clearTimeout(timeout);
             this.commands.delete(id);
             onNotAccepted();
-            reject(error instanceof Error ? error : new Error("The recording action failed"));
+            reject(error instanceof Error ? error : new Error("Capture stopped responding. Try again."));
          }
       });
    }
@@ -359,7 +359,7 @@ export class Recorder {
       // Unpackaged development uses the same staged runtime as packaged builds.
       if (!existsSync(executable) && !this.options.nativePath) executable = this.developmentExecutable;
       if ((process.platform !== "win32" && process.platform !== "linux" && process.platform !== "darwin") || !existsSync(executable))
-         throw new Error("Native capture is not available on this platform yet");
+         throw new Error("Capture isn't supported on this system yet.");
       const root = path.dirname(executable);
       this.expectedExit = false;
       const child = spawn(executable, [root], {
@@ -378,17 +378,17 @@ export class Recorder {
          this.readyReject?.(error);
          for (const command of this.commands.values()) {
             clearTimeout(command.timeout);
-            command.reject(new Error("The capture helper connection closed"));
+            command.reject(new Error("Capture stopped unexpectedly. Start capturing again."));
          }
          this.commands.clear();
-         this.error("The capture helper connection closed");
+         this.error("Capture stopped unexpectedly. Start capturing again.");
       });
       createInterface({ input: child.stdout }).on("line", (line: string) => {
          try {
             const value: unknown = JSON.parse(line);
             if (value && typeof value === "object" && "event" in value && typeof value.event === "string") this.message(value as NativeMessage);
          } catch {
-            this.error("The capture helper returned an unreadable response");
+            this.error("Capture stopped unexpectedly. Start capturing again.");
          }
       });
       // Diagnostic text remains local and is never forwarded as user-facing errors.
@@ -407,7 +407,7 @@ export class Recorder {
       const closed = new Promise<void>((resolve) =>
          child.once("close", (code, signal) => {
             if (process.env["ACROCLIP_TEST"] === "1") console.log(`Test native: closed with code ${code}, signal ${signal}\n${testDiagnostics}`);
-            this.readyReject?.(new Error("The capture helper exited before becoming ready"));
+            this.readyReject?.(new Error("Capture couldn't start. Try again, or restart AcroClip."));
             this.readyResolve = null;
             this.readyReject = null;
             this.process = null;
@@ -437,7 +437,7 @@ export class Recorder {
             this.requestArtwork.clear();
             for (const command of this.commands.values()) {
                clearTimeout(command.timeout);
-               command.reject(new Error("The capture helper exited during this action"));
+               command.reject(new Error("Capture stopped unexpectedly. Start capturing again."));
             }
             this.commands.clear();
             this.update({ state: unexpected ? "error" : "stopped", message, availableSeconds: 0, startedAt: null, pendingSaves: 0 });
@@ -445,7 +445,7 @@ export class Recorder {
          })
       );
       const timeout = setTimeout(() => {
-         this.readyReject?.(new Error("The capture helper took too long to start"));
+         this.readyReject?.(new Error("Capture took too long to start. Try again."));
          child.kill();
       }, 20_000);
       try {
@@ -642,13 +642,13 @@ export class Recorder {
          throw new Error("Application and Auto capture are unavailable in this Wayland session. Choose Screen to use the system picker.");
       if (preferences.sourceKind === "auto") return this.autoConfiguration(preferences, sources);
       const selected = selectedCaptureSource(sources, preferences);
-      if (!selected) throw new Error("The selected capture source is unavailable");
+      if (!selected) throw new Error("The selected source is gone. Choose another one.");
       this.source = selected.kind === "screen" ? "Desktop" : (selected.applicationName ?? selected.name);
       const screenIndex = sources.filter((s) => s.kind === "screen").findIndex((s) => s.id === selected.id);
       // Match OBS's available window list rather than inventing an executable identity.
       const window = this.windows.find((w) => w.value.split(":")[0] === selected.name || w.name.endsWith(`: ${selected.name}`));
       if (preferences.sourceKind === "app" && !selected.id.startsWith("window:"))
-         throw new Error("This application does not have a supported capture identity");
+         throw new Error("This app can't be captured on its own. Choose Screen instead.");
       return {
          ...nativeAudioPreferences(preferences),
          pixelSize: selected.pixelSize,

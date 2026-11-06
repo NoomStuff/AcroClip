@@ -19,13 +19,13 @@ export function NotificationIcon({ tone, size }: { tone: NotificationTone; size:
 export function NotificationToast() {
    const { entries, open } = useNotifications();
    const stack = useRef<HTMLDivElement>(null);
-   const places = useRef(new Map<string, number>());
+   const places = useRef(new Map<string, { x: number; y: number }>());
    const pinned = open !== null ? entries.find((entry) => entry.id === open) : undefined;
    const live = entries.filter((entry) => entry.phase === "toast").slice(0, MAX_TOASTS);
    // Newest sits nearest the status bar.
    const shown = [...(pinned ? [pinned] : []), ...live].reverse();
    useLayoutEffect(() => {
-      if (stack.current) glide(stack.current, places.current);
+      if (stack.current) glide(stack.current, places.current, (element) => element.dataset["toastId"]);
    });
    return (
       <div className="toast-stack" ref={stack}>
@@ -40,17 +40,17 @@ function Toast({ entry, pinned }: { entry: NotificationEntry; pinned: boolean })
    const element = useRef<HTMLDivElement>(null);
    const [hovering, setHovering] = useState(false);
    const counting = !pinned && !hovering;
-   const duration = entry.tone === "info" ? NOTICE_MS : ERROR_MS;
+   const duration = entry.tone === "success" ? NOTICE_MS : ERROR_MS;
 
    // Hovering holds the toast; leaving starts the countdown over.
    useEffect(() => {
       if (!counting) return;
       const timer = window.setTimeout(() => {
-         if (entry.chip) flyToChip(element.current, entry.id, () => expire(entry.id));
+         if (entry.chip) flyToChip(element.current, entry.id, entry.tone, () => expire(entry.id));
          else leave(element.current, () => expire(entry.id));
       }, duration);
       return () => window.clearTimeout(timer);
-   }, [counting, duration, entry.id, entry.chip]);
+   }, [counting, duration, entry.id, entry.chip, entry.tone]);
 
    useLayoutEffect(() => {
       if (pinned && element.current) flyFromChip(element.current, entry.id);
@@ -61,7 +61,7 @@ function Toast({ entry, pinned }: { entry: NotificationEntry; pinned: boolean })
          ref={element}
          data-toast-id={entry.id}
          className={`toast toast-surface ${entry.tone}${pinned ? " pinned" : ""}`}
-         role={entry.tone === "info" ? "status" : "alert"}
+         role={entry.tone === "success" ? "status" : "alert"}
          onMouseEnter={() => setHovering(true)}
          onMouseLeave={() => setHovering(false)}
       >
