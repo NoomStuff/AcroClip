@@ -17,7 +17,7 @@ export function autoCapturePresentation(games: readonly GameCandidate[], recorde
       finding,
       name,
       title: name || (finding ? "Finding games" : "No game detected"),
-      label: recording ? "Recording game" : game ? (recorder.state === "waiting" ? "Waiting for game" : "Detected game") : "Auto capture",
+      label: recording ? "Capturing game" : game ? (recorder.state === "waiting" ? "Waiting for game" : "Detected game") : "Auto capture",
       previewApplication: !finding && active && !!matching,
    };
 }

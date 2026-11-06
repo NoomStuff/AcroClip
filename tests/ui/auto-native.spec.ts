@@ -105,8 +105,8 @@ $form.Dispose()
       const page = await desktop.firstWindow();
       await expect(page.locator(".recording-page")).toBeVisible({ timeout: 15000 });
       console.log("Auto fixture and app opened");
-      await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeEnabled();
-      await page.getByRole("button", { name: "Start recording", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Start capturing", exact: true })).toBeEnabled();
+      await page.getByRole("button", { name: "Start capturing", exact: true }).click();
       console.log("Auto recording start requested");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.state, { timeout: 30_000 }).toBe("waiting");
       expect((await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds).toBe(0);
@@ -119,7 +119,7 @@ $form.Dispose()
       const applicationName = await applicationLabel(candidate.executable);
       await selectOption(page, "Running application", candidate.id);
       await page.getByRole("button", { name: "Add selected game", exact: true }).click();
-      await page.locator(".rail").getByRole("button", { name: "Recording", exact: true }).click();
+      await page.locator(".rail").getByRole("button", { name: "Capture", exact: true }).click();
       console.log("Local fixture game added");
       await writeFile(action, "focus");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.sourceId, { timeout: 20_000 }).toBe(candidate.id);

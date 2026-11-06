@@ -69,7 +69,7 @@ test("mismatched and stale sources stay unselected without preview or capture fa
          });
       }, initial);
       await page.reload();
-      const start = page.getByRole("button", { name: "Start recording", exact: true });
+      const start = page.getByRole("button", { name: "Start capturing", exact: true });
       await expect(page.getByText("Choose what to capture", { exact: true })).toBeVisible();
       await expect(start).toBeDisabled();
       await expect(page.locator(".audio-listen").first()).toBeDisabled();

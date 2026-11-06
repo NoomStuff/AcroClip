@@ -218,7 +218,7 @@ export type AppEvent =
    | { type: "state"; state: AppState }
    | { type: "state-patch"; patch: Partial<AppState> }
    | { type: "recorder"; recorder: RecorderState }
-   | { type: "notice"; message: string; error: boolean }
+   | { type: "notice"; message: string; error: boolean; chip?: boolean }
    | { type: "clip-action" }
    | { type: "audio-levels"; levels: AudioLevels }
    | { type: "audio-monitor"; monitorError: string; listeningError?: string }

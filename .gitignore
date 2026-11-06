@@ -7,6 +7,7 @@ work/
 .zcode/
 build/.icons-cache
 test-results/
+.acroclip/
 *.tsbuildinfo
 .DS_Store
 

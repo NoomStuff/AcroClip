@@ -112,7 +112,7 @@ const recorder = new Recorder({
    onSaved: async (path, source, _requestId, capture) => {
       const clip = await collections.registerRecording(path, source, capture.application);
       emitState();
-      notice(capture.previousFootage ? "Saved last available footage" : "Clip saved", false, "saved");
+      notice(capture.previousFootage ? "Saved last available footage" : "Clip saved", false, "saved", false);
       if (preferences.autoShare && shareableTargetAllowed(clip.size, preferences.shareSizeMB)) {
          void collections.createShareable(clip.id, preferences.shareSizeMB).catch((e) => notice(errorMessage(e), true));
       }
@@ -145,7 +145,7 @@ function errorMessage(error: unknown): string {
 }
 function recorderState(): RecorderState {
    const current = recorder.status;
-   return startingCapture && current.state === "stopped" ? { ...current, state: "starting", message: "Starting recording" } : current;
+   return startingCapture && current.state === "stopped" ? { ...current, state: "starting", message: "Starting capture" } : current;
 }
 function state(): AppState {
    return {
@@ -213,8 +213,8 @@ async function log(message: string) {
       /* Diagnostics must not break capture. */
    }
 }
-function notice(message: string, error = false, kind: "info" | "saving" | "saved" = "info") {
-   send({ type: "notice", message, error });
+function notice(message: string, error = false, kind: "info" | "saving" | "saved" = "info", chip: boolean = error) {
+   send({ type: "notice", message, error, chip });
    void log(message);
    if (preferences?.sound && (error || kind === "saved")) shell.beep();
    if (preferences?.notifications !== "off") void showFeedback(message, error, kind === "saving").catch(() => undefined);
@@ -331,9 +331,9 @@ async function ensureMicrophoneAccess(value: Preferences): Promise<void> {
 }
 async function startRecording() {
    lastRecordingArtwork = undefined;
-   if (!preferences.setupComplete) throw new Error("Finish setup before recording.");
+   if (!preferences.setupComplete) throw new Error("Finish setup before capturing.");
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to record.");
-   if (startingCapture || ["starting", "recording", "waiting"].includes(recorder.status.state)) throw new Error("Recording is already running.");
+   if (startingCapture || ["starting", "recording", "waiting"].includes(recorder.status.state)) throw new Error("Capture is already running.");
    startingCapture = (async () => {
       await preferenceWrites.catch(() => undefined);
       await ensureMicrophoneAccess(preferences);
@@ -354,7 +354,7 @@ async function startRecording() {
 async function saveClip() {
    const requestedAt = Date.now();
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to save another clip.");
-   if (recorder.status.state !== "recording" && recorder.status.state !== "waiting") throw new Error("Start recording before saving a clip.");
+   if (recorder.status.state !== "recording" && recorder.status.state !== "waiting") throw new Error("Start capturing before saving a clip.");
    if (!collections.root) throw new Error("The collection folder is still opening. Try saving again when it is available.");
    send({ type: "clip-action" });
    const footage = bufferedCaptureSource(recorder.status);
@@ -371,10 +371,10 @@ async function saveClip() {
    );
    mkdirSync(dirname(destination), { recursive: true });
    if (!withinRoot(collections.root, realpathSync(dirname(destination))))
-      throw new Error("The recording folder points outside this collection. Choose another folder.");
+      throw new Error("The capture folder points outside this collection. Choose another folder.");
    void storage.check(collections.root);
    await recorder.save(destination, requestedAt, lastRecordingArtwork?.application);
-   notice("Saving clip…", false, "saving");
+   notice("Saving clip…", false, "saving", false);
 }
 function pendingJobs() {
    return collections.pendingJobs;
@@ -437,9 +437,9 @@ async function prepareExit(): Promise<boolean> {
          if (["recording", "waiting"].includes(recorder.status.state)) {
             const result = await dialog.showMessageBox({
                type: "question",
-               message: "Stop recording and exit?",
+               message: "Stop capturing and exit?",
                detail: "Unsaved recent footage will be cleared.",
-               buttons: ["Exit", "Keep recording"],
+               buttons: ["Exit", "Keep capturing"],
                defaultId: 0,
                cancelId: 1,
             });
@@ -609,8 +609,8 @@ function registerIPC() {
       }
       if (requested === portalScreenId) throw new Error("System-selected capture does not provide a separate live preview.");
       if (process.platform === "linux" && (await recorder.capabilities()).captureBackend === "wayland-portal")
-         throw new Error("Live preview is unavailable in this Wayland session. Recording uses the selected application directly.");
-      if (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete) throw new Error("Open Recording to preview the capture source.");
+         throw new Error("Live preview is unavailable in this Wayland session. Capture uses the selected application directly.");
+      if (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete) throw new Error("Open Capture to preview the capture source.");
       const selected = previewCaptureSource(captureSources.cached, preferences, recorder.status);
       if (!selected || selected.id !== requested) throw new Error("The selected preview source is unavailable.");
       previewSourceId = requested;
@@ -618,7 +618,7 @@ function registerIPC() {
    });
    handle("listen-audio", async (source) => {
       const id = z.string().max(200).nullable().parse(source);
-      if (id && (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete)) throw new Error("Open Recording to listen.");
+      if (id && (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete)) throw new Error("Open Capture to listen.");
       if (id && !["starting", "recording", "waiting"].includes(recorder.status.state)) await recorder.monitorAudio(preferences);
       return recorder.listenAudio(id);
    });
@@ -638,16 +638,16 @@ function registerIPC() {
       const operation = preferenceWrites
          .catch(() => undefined)
          .then(async () => {
-            if (startingCapture) throw new Error("Recording is starting. Wait before applying settings.");
+            if (startingCapture) throw new Error("Capture is starting. Wait before applying settings.");
             const next = synchronizeLegacyAudio(preferences, mergePreferenceChanges(preferences, value, changedKeys));
             if (audioTopology(next) !== audioTopology(preferences) || next.sourceKind !== preferences.sourceKind || next.sourceId !== preferences.sourceId)
                assertDistinctAudioSources(next, captureSources.cached);
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
             if (!isValidShortcut(next.shortcut)) throw new Error("That key combination is not supported. Try a letter, number, or function key.");
             if (recorder.status.state !== "stopped" && recorder.status.state !== "error" && requiresCaptureRestart(preferences, next))
-               throw new Error("Stop recording before applying recording or audio changes. Unsaved history will clear.");
+               throw new Error("Stop capturing before applying capture or audio changes. Unsaved history will clear.");
             if (next.collection !== preferences.collection && (recorder.status.state !== "stopped" || recorder.status.pendingSaves || pendingJobs().length))
-               throw new Error("Stop recording and finish shareables before changing the collection folder.");
+               throw new Error("Stop capturing and finish shareables before changing the collection folder.");
             const conflict = shortcutConflict(next, process.platform === "darwin");
             if (conflict) throw new Error(conflict);
             for (const item of shortcutRegistry) {

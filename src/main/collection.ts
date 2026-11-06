@@ -1030,7 +1030,7 @@ export class CollectionService {
    }
    async registerRecording(path: string, source: string, application?: ApplicationArtwork): Promise<Clip> {
       const actual = await realpath(path);
-      if (!withinRoot(this.root, actual)) throw new Error("The saved recording is outside the collection.");
+      if (!withinRoot(this.root, actual)) throw new Error("The saved clip is outside the collection.");
       // Registration scans publish library updates before this method returns.
       // Give those scans the known source before they expose the new recording.
       this.registeringSources.set(normal(actual), source);
@@ -1049,7 +1049,7 @@ export class CollectionService {
          await this.scan();
          clip = this.clips.find((entry) => normal(entry.path) === normal(actual));
       }
-      if (!clip) throw new Error("The recording finished, but could not be opened. Its file has been kept.");
+      if (!clip) throw new Error("The capture finished, but could not be opened. Its file has been kept.");
       this.stored(clip.id).source = source;
       if (application) {
          try {

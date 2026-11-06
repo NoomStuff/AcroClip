@@ -18,7 +18,7 @@ test("field descriptions reach controls and folders support keyboard selection",
       );
       for (const role of ["slider", "spinbutton"] as const) {
          await expect(
-            page.getByRole(role, { name: role === "slider" ? "Recording compression" : "Recording compression value", exact: true })
+            page.getByRole(role, { name: role === "slider" ? "Capture compression" : "Capture compression value", exact: true })
          ).toHaveAccessibleDescription("Lower values keep more detail and use more space.");
       }
       await expect(page.getByRole("spinbutton", { name: "Clip length", exact: true })).toHaveAccessibleDescription(

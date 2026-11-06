@@ -179,7 +179,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
          observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
       });
       await holdPreview();
-      await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await page.getByRole("button", { name: "Capture", exact: true }).click();
       await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
       await expect(page.locator(".preview-still")).toHaveClass(/cached/);
       expect(await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).toBe(cachedA);
@@ -232,7 +232,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.locator(".preview-still")).toHaveClass(/cached/);
       const cachedB = await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
-      await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await page.getByRole("button", { name: "Capture", exact: true }).click();
       await expect(page.locator(".preview-note")).toHaveText("Live preview");
       // Returning to A must restore A's frame, rather than B's frame or a blank canvas.
       await holdPreview();
@@ -283,7 +283,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
             throw new DOMException("Source temporarily unreadable", "NotReadableError");
          };
       });
-      await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await page.getByRole("button", { name: "Capture", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Preview unavailable", exact: true })).toBeVisible();
       await expect(page.locator(".preview-still")).not.toHaveClass(/cached/);
       await page.getByRole("button", { name: "Retry preview", exact: true }).click();

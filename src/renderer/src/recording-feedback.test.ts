@@ -62,7 +62,7 @@ describe("recording buffer status", () => {
       );
       expect(html).toContain("0:10 available");
       expect(html).toContain("Window title");
-      expect(html).toContain("Recording");
+      expect(html).toContain("Capturing");
       expect(html).toContain("Saving");
       expect(html).not.toContain("2:05");
    });

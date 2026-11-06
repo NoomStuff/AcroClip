@@ -33,7 +33,7 @@ test("a failed update install leaves the app usable and the clip shortcut regist
    });
    try {
       const page = await desktop.firstWindow();
-      await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Start capturing", exact: true })).toBeVisible();
       await expect.poll(() => desktop.evaluate(({ globalShortcut }, value) => globalShortcut.isRegistered(value), shortcut)).toBe(true);
       // Exercise the production Updates object and shutdown callback. Replace only
       // its external installer boundary, which can fail without quitting Electron.
@@ -74,7 +74,7 @@ test("a failed update install leaves the app usable and the clip shortcut regist
       await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).update.state)).toBe("ready");
       await page.evaluate(() => window.acroClip.installUpdate());
       await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).update.state)).toBe("error");
-      await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Start capturing", exact: true })).toBeVisible();
       await expect.poll(() => desktop.evaluate(({ globalShortcut }, value) => globalShortcut.isRegistered(value), shortcut)).toBe(true);
       await page.evaluate(async () => {
          const state = await window.acroClip.state();

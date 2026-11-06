@@ -332,7 +332,7 @@ export class Recorder {
       this.options.onError(message);
    }
    private send(value: Record<string, unknown>): void {
-      if (!this.process?.stdin.writable) throw new Error("The recording helper is not running");
+      if (!this.process?.stdin.writable) throw new Error("The capture helper is not running");
       this.process.stdin.write(`${JSON.stringify(value)}\n`);
    }
    private command(value: Record<string, unknown>, onNotAccepted: () => void = () => undefined): Promise<void> {
@@ -340,7 +340,7 @@ export class Recorder {
       return new Promise((resolve, reject) => {
          const timeout = setTimeout(() => {
             this.commands.delete(id);
-            reject(new Error("The recording helper did not finish the requested action"));
+            reject(new Error("The capture helper did not finish the requested action"));
          }, 20_000);
          this.commands.set(id, { resolve, reject, timeout, onNotAccepted });
          try {
@@ -359,7 +359,7 @@ export class Recorder {
       // Unpackaged development uses the same staged runtime as packaged builds.
       if (!existsSync(executable) && !this.options.nativePath) executable = this.developmentExecutable;
       if ((process.platform !== "win32" && process.platform !== "linux" && process.platform !== "darwin") || !existsSync(executable))
-         throw new Error("Native recording is not available on this platform yet");
+         throw new Error("Native capture is not available on this platform yet");
       const root = path.dirname(executable);
       this.expectedExit = false;
       const child = spawn(executable, [root], {
@@ -378,17 +378,17 @@ export class Recorder {
          this.readyReject?.(error);
          for (const command of this.commands.values()) {
             clearTimeout(command.timeout);
-            command.reject(new Error("The recording helper connection closed"));
+            command.reject(new Error("The capture helper connection closed"));
          }
          this.commands.clear();
-         this.error("The recording helper connection closed");
+         this.error("The capture helper connection closed");
       });
       createInterface({ input: child.stdout }).on("line", (line: string) => {
          try {
             const value: unknown = JSON.parse(line);
             if (value && typeof value === "object" && "event" in value && typeof value.event === "string") this.message(value as NativeMessage);
          } catch {
-            this.error("The recording helper returned an unreadable response");
+            this.error("The capture helper returned an unreadable response");
          }
       });
       // Diagnostic text remains local and is never forwarded as user-facing errors.
@@ -407,7 +407,7 @@ export class Recorder {
       const closed = new Promise<void>((resolve) =>
          child.once("close", (code, signal) => {
             if (process.env["ACROCLIP_TEST"] === "1") console.log(`Test native: closed with code ${code}, signal ${signal}\n${testDiagnostics}`);
-            this.readyReject?.(new Error("The recording helper exited before becoming ready"));
+            this.readyReject?.(new Error("The capture helper exited before becoming ready"));
             this.readyResolve = null;
             this.readyReject = null;
             this.process = null;
@@ -430,14 +430,14 @@ export class Recorder {
             const message = unexpected
                ? this.current.state === "error" && this.current.message
                   ? this.current.message
-                  : `Recording stopped unexpectedly${code ? ` with exit code ${code}` : ""}`
+                  : `Capture stopped unexpectedly${code ? ` with exit code ${code}` : ""}`
                : "";
             if (unexpected && this.current.state !== "error") this.error(message);
             this.requests.clear();
             this.requestArtwork.clear();
             for (const command of this.commands.values()) {
                clearTimeout(command.timeout);
-               command.reject(new Error("The recording helper exited during this action"));
+               command.reject(new Error("The capture helper exited during this action"));
             }
             this.commands.clear();
             this.update({ state: unexpected ? "error" : "stopped", message, availableSeconds: 0, startedAt: null, pendingSaves: 0 });
@@ -445,7 +445,7 @@ export class Recorder {
          })
       );
       const timeout = setTimeout(() => {
-         this.readyReject?.(new Error("The recording helper took too long to start"));
+         this.readyReject?.(new Error("The capture helper took too long to start"));
          child.kill();
       }, 20_000);
       try {
@@ -471,7 +471,7 @@ export class Recorder {
             this.commands.delete(value.id);
             if (value.event === "error") {
                command.onNotAccepted();
-               command.reject(new Error(value.message ?? "Recording action failed"));
+               command.reject(new Error(value.message ?? "Capture action failed"));
                // The caller owns command failures. Monitor setup and rejected
                // source switches must not turn a healthy recording into an error.
                return;
@@ -572,9 +572,9 @@ export class Recorder {
                     message: value.waiting
                        ? value.message || this.autoFailure || (this.autoPreferences ? "Waiting for game" : "Waiting for application")
                        : this.autoFailure
-                         ? `Recording current source. ${this.autoFailure}`
+                         ? `Capturing current source. ${this.autoFailure}`
                          : value.sourceKind === "screen" && this.autoPreferences
-                           ? "Recording screen fallback"
+                           ? "Capturing screen fallback"
                            : "",
                  }
                : {}),
@@ -614,12 +614,12 @@ export class Recorder {
          if (value.requestId) {
             this.requests.delete(value.requestId);
             this.requestArtwork.delete(value.requestId);
-         } else if (this.current.state === "starting") this.update({ state: "error", startedAt: null, message: value.message ?? "Recording could not start" });
+         } else if (this.current.state === "starting") this.update({ state: "error", startedAt: null, message: value.message ?? "Capture could not start" });
          this.update({ pendingSaves: this.requests.size });
-         this.error(value.message ?? "Recording failed");
+         this.error(value.message ?? "Capture failed");
       }
       if (value.event === "fatal") {
-         this.update({ state: "error", message: value.message ?? "Recording stopped unexpectedly" });
+         this.update({ state: "error", message: value.message ?? "Capture stopped unexpectedly" });
          this.error(this.current.message);
       }
    }
@@ -665,7 +665,7 @@ export class Recorder {
          if (this.process) await this.command({ action: "listen-audio", source: "" });
          return;
       }
-      if (this.current.state === "starting") throw new Error("Wait for recording to start before listening.");
+      if (this.current.state === "starting") throw new Error("Wait for capturing to start before listening.");
       await this.initialize();
       if (!this.audioListen) throw new Error("Restart AcroClip to enable source listening.");
       await this.command({
@@ -756,7 +756,7 @@ export class Recorder {
       this.monitorGeneration++;
       this.monitorKey = "";
       this.monitorLevels = { capture: 0, microphone: 0 };
-      this.update({ state: "starting", message: "Starting recording" });
+      this.update({ state: "starting", message: "Starting capture" });
       try {
          await this.initialize();
          const configuration = await this.configuration(preferences, sources);
@@ -770,7 +770,7 @@ export class Recorder {
          this.autoSources = sources;
          this.autoKey = this.configurationKey(configuration);
       } catch (error) {
-         this.update({ state: "error", message: error instanceof Error ? error.message : "Recording could not start" });
+         this.update({ state: "error", message: error instanceof Error ? error.message : "Capture could not start" });
          throw error;
       }
    }
@@ -802,7 +802,7 @@ export class Recorder {
       return [...this.requests.values()];
    }
    async save(file?: string, requestedAt = Date.now(), application?: ApplicationArtwork): Promise<void> {
-      if (this.current.state !== "recording" && this.current.state !== "waiting") throw new Error("Start recording before saving a clip");
+      if (this.current.state !== "recording" && this.current.state !== "waiting") throw new Error("Start capturing before saving a clip");
       if (!file) throw new Error("A destination path is required for the clip");
       const requestId = randomUUID();
       this.requests.set(requestId, file);

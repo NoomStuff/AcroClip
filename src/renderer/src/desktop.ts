@@ -14,7 +14,7 @@ export function describeError(error: unknown): string {
    return message.replace(/^Error invoking remote method '[^']+':\s*/, "").replace(/^Error:\s*/, "");
 }
 
-export type RendererFeedback = { kind: "notice"; message: string; error: boolean } | { kind: "audio-status"; message: string };
+export type RendererFeedback = { kind: "notice"; message: string; error: boolean; chip?: boolean } | { kind: "audio-status"; message: string };
 export function reportFeedback(value: RendererFeedback): void {
    window.dispatchEvent(new CustomEvent<RendererFeedback>("acroclip-feedback", { detail: value }));
 }

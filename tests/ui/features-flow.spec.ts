@@ -35,7 +35,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
             if (!window) throw new Error("The test window is not visible");
             window.focus();
          });
-         const recording = page.getByRole("button", { name: "Recording", exact: true });
+         const recording = page.getByRole("button", { name: "Capture", exact: true });
          await recording.focus();
          await expect(recording).toBeFocused();
          await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
@@ -228,7 +228,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
          .toEqual(["Third", "Matches", "Second"]);
       await expect(thirdControl).toBeFocused();
-      await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await page.getByRole("button", { name: "Capture", exact: true }).click();
       await expect(page.locator(".library-page")).toBeHidden();
       const tags = (await page.evaluate(() => window.acroClip.state())).categories;
       const secondId = tags.find((item) => item.name === "Second")!.id;

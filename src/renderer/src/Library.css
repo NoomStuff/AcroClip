@@ -1,6 +1,31 @@
 .library-sidebar {
    --library-action-size: 30px;
+   --collection-header-height: 62px;
    padding-inline: 0;
+   /* Single-cell grid so the Collection header overlays the scrolling list,
+      mirroring .library-content's heading treatment. */
+   display: grid;
+   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+
+.collection-drop {
+   grid-area: 1 / 1;
+   position: sticky;
+   top: 0;
+   align-self: start;
+   z-index: 3;
+}
+
+.collection-drop::before {
+   content: "";
+   position: absolute;
+   z-index: -1;
+   /* Overscan past the sidebar padding so the blur has no hard edge. */
+   inset: -12px -4px -48px -4px;
+   background: color-mix(in srgb, var(--base) 68%, transparent);
+   backdrop-filter: blur(6px);
+   mask-image: linear-gradient(to bottom, #000 0%, #000e 20%, #000a 40%, #0005 65%, #0001 85%, transparent 100%);
+   pointer-events: none;
 }
 
 .collection-home {
@@ -34,9 +59,11 @@
 }
 
 .sidebar-scroll {
+   grid-area: 1 / 1;
+   min-height: 0;
    overflow-y: auto;
-   padding: 5px calc(11px - var(--scrollbar-size)) 5px 11px;
-   flex: 1;
+   padding: calc(var(--collection-header-height) + 14px) calc(11px - var(--scrollbar-size)) 12px 11px;
+   scroll-padding-top: calc(var(--collection-header-height) + 20px);
 }
 
 .sidebar-group-title {
@@ -136,12 +163,6 @@
 }
 .application-filter:not(.selected):hover {
    background: color-mix(in srgb, var(--application-color, #bdbdbd) 8%, transparent);
-}
-
-.sidebar-bottom {
-   color: var(--subtle);
-   font-size: 11px;
-   padding: 18px 23px 3px;
 }
 
 .library-content {
@@ -313,6 +334,12 @@
    width: 27px;
    height: 27px;
 }
+.library-scale-divider {
+   width: 1px;
+   height: 20px;
+   margin: 0 3px;
+   background: var(--border-control);
+}
 
 .clip-card {
    background: transparent;
@@ -386,15 +413,13 @@
 }
 .library-view-switch {
    display: flex;
-   padding: 3px;
    gap: 2px;
-   border: 1px solid var(--border-control);
-   border-radius: var(--radius-control);
-   background: var(--surface);
 }
+/* The switch lives inside the floating .library-scale pill, so it has no
+   border or background of its own anymore. */
 .library-view-switch .icon-button {
-   width: 30px;
-   height: 30px;
+   width: 27px;
+   height: 27px;
    border-radius: 5px;
 }
 .library-view-switch .icon-button[aria-pressed="true"],
@@ -867,6 +892,12 @@
       flex: 1;
       min-width: 140px;
       width: auto;
+   }
+   .library-scale .slider {
+      display: none;
+   }
+   .library-scale-divider {
+      display: none;
    }
 }
 

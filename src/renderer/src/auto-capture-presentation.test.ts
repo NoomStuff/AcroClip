@@ -57,7 +57,7 @@ it("distinguishes a detected game, a waiting target, and confirmed game capture"
    };
    expect(autoCapturePresentation([game], recorder, true)).toMatchObject({ label: "Waiting for game", title: "Game", previewApplication: true });
    expect(autoCapturePresentation([game], { ...recorder, state: "recording" }, true)).toMatchObject({
-      label: "Recording game",
+      label: "Capturing game",
       title: "Game window",
       previewApplication: true,
    });

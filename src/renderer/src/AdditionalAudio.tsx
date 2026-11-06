@@ -55,7 +55,7 @@ export function AdditionalAudio({
          }
       })()
          .catch((reason) => {
-            if (!cancelled) reportFeedback({ kind: "notice", error: true, message: describeError(reason) });
+            if (!cancelled) reportFeedback({ kind: "notice", error: true, chip: true, message: describeError(reason) });
          })
          .finally(() => {
             if (!cancelled) setLoading(false);
@@ -97,7 +97,7 @@ export function AdditionalAudio({
          });
          setOpen(false);
       } catch (reason) {
-         reportFeedback({ kind: "notice", error: true, message: describeError(reason) });
+         reportFeedback({ kind: "notice", error: true, chip: true, message: describeError(reason) });
       } finally {
          setSaving(false);
       }
@@ -162,7 +162,7 @@ export function AdditionalAudio({
             )}
          </MotionList>
          {preferences.audioSources.length < 5 && (
-            <Button className="audio-add" disabled={active} title={active ? "Stop recording to add audio sources" : undefined} onClick={() => show()}>
+            <Button className="audio-add" disabled={active} title={active ? "Stop capturing to add audio sources" : undefined} onClick={() => show()}>
                <Plus size={14} />
                Add audio source
             </Button>

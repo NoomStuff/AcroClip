@@ -56,7 +56,7 @@ test("Linux native decorations, exact application capture and source loss", asyn
          const state = await window.acroClip.state();
          await window.acroClip.savePreferences({ ...state.preferences, sourceKind: "app", sourceId: id });
       }, source.id);
-      await page.getByRole("button", { name: "Start recording", exact: true }).click();
+      await page.getByRole("button", { name: "Start capturing", exact: true }).click();
       cover = spawn(
          "ffplay",
          ["-v", "error", "-f", "lavfi", "-i", "color=red:size=1600x1000:rate=30", "-window_title", "Unrelated red cover", "-fs", "-alwaysontop", "-an"],
@@ -162,7 +162,7 @@ test("Linux recording saves the requested footage during a first library scan", 
          const state = await window.acroClip.state();
          await window.acroClip.savePreferences({ ...state.preferences, sourceKind: "screen", sourceId: id });
       }, source.id);
-      await page.getByRole("button", { name: "Start recording", exact: true }).click();
+      await page.getByRole("button", { name: "Start capturing", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds, { timeout: 20000 }).toBeGreaterThan(1);
       await page.getByRole("button", { name: "Save clip", exact: true }).click();
       await expect
@@ -180,7 +180,7 @@ test("Linux recording saves the requested footage during a first library scan", 
          })
          .toBe(2);
       expect(["loading", "refreshing"]).toContain((await page.evaluate(() => window.acroClip.state())).collectionStatus.phase);
-      await page.getByRole("button", { name: "Stop recording", exact: true }).click();
+      await page.getByRole("button", { name: "Stop capturing", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length, { timeout: 120000 }).toBe(602);
       const file = (await readdir(collection, { recursive: true })).find((file) => file.endsWith(".mkv") && !file.endsWith(".saving.mkv"))!;
       await promisify(execFile)(mediaTool("ffmpeg"), ["-v", "error", "-i", join(collection, file), "-f", "null", "-"]);
