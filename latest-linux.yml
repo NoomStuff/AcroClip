@@ -1,13 +1,12 @@
-version: 0.11.0
+version: 0.12.0
 path: >-
-  https://github.com/NoomStuff/AcroClip/releases/download/v0.11.0/AcroClip-0.11.0-linux-x86_64.AppImage
+  https://github.com/NoomStuff/AcroClip/releases/download/v0.12.0/AcroClip-0.12.0-linux-x86_64.AppImage
 sha512: >-
-  SHhU5Vgt2UcG5Vw4iwsCSs9lZuoTJF+BDKVDFNET+PH8LtH9fb9BtxZLshvlF+5xBqHZOyGMtTWHh+dbY2RD5g==
+  dXwJDekqM8UUi6wULx5PX2y6siba1vnD69vdq4mFtySZU25v2sT++xD6OjVg/6NQyxHoCjsFo4P7GLQPVH3D4A==
 files:
   - url: >-
-      https://github.com/NoomStuff/AcroClip/releases/download/v0.11.0/AcroClip-0.11.0-linux-x86_64.AppImage
+      https://github.com/NoomStuff/AcroClip/releases/download/v0.12.0/AcroClip-0.12.0-linux-x86_64.AppImage
     sha512: >-
-      SHhU5Vgt2UcG5Vw4iwsCSs9lZuoTJF+BDKVDFNET+PH8LtH9fb9BtxZLshvlF+5xBqHZOyGMtTWHh+dbY2RD5g==
-    size: 266334091
-releaseName: Library refinement and playback fixes
-releaseDate: '2026-11-06T19:02:52.975Z'
+      dXwJDekqM8UUi6wULx5PX2y6siba1vnD69vdq4mFtySZU25v2sT++xD6OjVg/6NQyxHoCjsFo4P7GLQPVH3D4A==
+    size: 266334199
+releaseDate: '2026-11-06T21:52:17.804Z'
