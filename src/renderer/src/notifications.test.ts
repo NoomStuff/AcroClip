@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearAll, dismiss, expire, getSnapshot, notify, resetNotifications, setCondition, settle, splitMessage, toggleOpen, closed } from "./notifications";
+import { clearAll, closeOpen, dismiss, expire, getSnapshot, notify, resetNotifications, setCondition, splitMessage, toggleOpen } from "./notifications";
 
 const entries = () => getSnapshot().entries;
 
@@ -22,9 +22,7 @@ describe("notifications", () => {
       const [failure, saved] = entries();
       expire(saved!.id);
       expire(failure!.id);
-      expect(entries().map((entry) => [entry.title, entry.phase])).toEqual([["Export failed", "collapsing"]]);
-      settle(failure!.id);
-      expect(entries()[0]!.phase).toBe("chip");
+      expect(entries().map((entry) => [entry.title, entry.phase])).toEqual([["Export failed", "chip"]]);
    });
 
    it("moves a repeated message to the front instead of stacking it", () => {
@@ -57,14 +55,18 @@ describe("notifications", () => {
       expect(entries()).toHaveLength(1);
    });
 
-   it("toggles a chip open, then closes it through the collapse step", () => {
+   it("toggles a chip open and closed, and forgets it once dismissed", () => {
       notify({ message: "Export failed", tone: "error", chip: true });
       const id = entries()[0]!.id;
       toggleOpen(id);
-      expect(getSnapshot().open).toEqual({ id, closing: false });
+      expect(getSnapshot().open).toBe(id);
       toggleOpen(id);
-      expect(getSnapshot().open).toEqual({ id, closing: true });
-      closed(id);
+      expect(getSnapshot().open).toBeNull();
+      toggleOpen(id);
+      closeOpen();
+      expect(getSnapshot().open).toBeNull();
+      toggleOpen(id);
+      dismiss(id);
       expect(getSnapshot().open).toBeNull();
    });
 
@@ -72,7 +74,6 @@ describe("notifications", () => {
       notify({ message: "Export failed", tone: "error", chip: true });
       const id = entries()[0]!.id;
       expire(id);
-      settle(id);
       notify({ message: "Rename failed", tone: "error", chip: true });
       clearAll();
       expect(entries().map((entry) => entry.title)).toEqual(["Rename failed"]);

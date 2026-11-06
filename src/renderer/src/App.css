@@ -168,84 +168,146 @@
    pointer-events: none;
 }
 
+/* Shared by real toasts and their flight copies, so both look the same. */
+.toast-surface {
+   --tone: var(--accent);
+   --tone-surface: var(--raised);
+   --tone-border: var(--border-control);
+   position: relative;
+   display: flex;
+   align-items: flex-start;
+   gap: 11px;
+   width: min(340px, 60vw);
+   padding: 11px 9px 12px 11px;
+   overflow: hidden;
+   background: var(--tone-surface);
+   border: 1px solid var(--tone-border);
+   border-radius: 12px;
+   box-shadow:
+      0 10px 30px #0009,
+      0 1px 0 #ffffff08 inset;
+   color: var(--text);
+   font-size: 12px;
+}
+
+.toast-surface.error {
+   --tone: var(--red);
+   --tone-surface: #2b1d23;
+   --tone-border: #d65f7042;
+}
+
+.toast-surface.warning {
+   --tone: #e3be78;
+   --tone-surface: #29251b;
+   --tone-border: #e3be783d;
+}
+
 .toast {
    pointer-events: auto;
    transform-origin: bottom right;
-   background: var(--raised);
-   border: 1px solid var(--border-control);
-   border-radius: 12px;
-   box-shadow: 0 5px 25px #0008;
-   color: var(--text);
-   width: max-content;
-   max-width: min(420px, 60vw);
-   font-size: 12px;
-   animation: toast-in 380ms var(--spring);
+   animation: toast-in 420ms var(--spring) both;
 }
 
 .toast.pinned {
    animation: none;
 }
 
-.toast-body {
-   display: flex;
-   gap: 10px;
-   align-items: flex-start;
-   padding: 10px 10px 10px 14px;
-}
-
-.toast-body > svg {
+.toast-icon {
+   display: grid;
+   place-items: center;
    flex-shrink: 0;
-   margin-top: 3px;
-   color: var(--accent);
+   width: 28px;
+   height: 28px;
+   border-radius: 8px;
+   color: var(--tone);
+   background: color-mix(in srgb, var(--tone) 15%, transparent);
 }
 
 .toast-text {
    flex: 1;
    min-width: 0;
-   padding-top: 2px;
-   line-height: 1.5;
+   padding-top: 1px;
+   line-height: 1.45;
 }
 
 .toast-title {
    display: block;
    font-weight: 600;
+   overflow-wrap: anywhere;
 }
 
 .toast-detail {
-   margin-top: 3px;
+   margin-top: 2px;
    color: var(--muted);
-   animation: menu-in 160ms var(--ease);
+   overflow-wrap: anywhere;
 }
 
-.toast.error {
-   background: #33222a;
-   color: #f0c3cb;
-}
-
-.toast.error .toast-body > svg {
-   color: var(--red);
-}
-
-.toast.error .toast-detail {
+.toast-surface.error .toast-detail {
    color: #d9a7b0;
 }
 
-.toast.warning .toast-body > svg {
-   color: #e3be78;
-}
-
-.toast .icon-button {
-   width: 25px;
-   height: 25px;
+.toast-surface .icon-button {
+   width: 24px;
+   height: 24px;
    flex-shrink: 0;
+   margin-top: 2px;
+   color: var(--muted);
 }
 
-.toast-expand svg {
-   transition: transform 180ms var(--ease);
+/* Countdown until the toast moves into the status bar. */
+.toast-timer {
+   position: absolute;
+   left: 0;
+   right: 0;
+   bottom: 0;
+   height: 2px;
+   background: var(--tone);
+   opacity: 0.55;
+   transform-origin: left;
+   animation: toast-timer linear both;
 }
 
-.toast-expand[aria-expanded="true"] svg {
-   transform: rotate(180deg);
+.toast-timer.held {
+   animation: none;
+   opacity: 0.3;
+}
+
+@keyframes toast-timer {
+   to {
+      transform: scaleX(0);
+   }
+}
+
+/* A fixed box that resizes between toast and pill; see notification-motion.ts. */
+.notification-ghost {
+   position: fixed;
+   z-index: 125;
+   overflow: hidden;
+   border: 1px solid transparent;
+   pointer-events: none;
+}
+
+.notification-ghost.leaving {
+   z-index: 119;
+}
+
+.notification-pill.awaiting {
+   opacity: 0;
+}
+
+.notification-pill.receiving > * {
+   opacity: 0;
+}
+
+.notification-ghost > .notification-layer {
+   position: absolute;
+   top: -1px;
+   left: -1px;
+   margin: 0;
+   background: transparent;
+   border-color: transparent;
+   box-shadow: none;
+   animation: none;
 }
 
 .loading-app {
@@ -259,7 +321,7 @@
    font-size: 12px;
 }
 
-/* Notifications and conditions collapsed into status-bar chips. */
+/* Activity chips (saving, shareables). */
 .status-chips {
    display: flex;
    align-items: center;
@@ -271,77 +333,93 @@
    display: inline-flex;
    align-items: center;
    gap: 5px;
-   max-width: 240px;
    height: 22px;
-   overflow: hidden;
-   white-space: nowrap;
    padding: 0 9px 0 7px;
-   border-radius: 999px;
-   font-size: 11px;
-   flex-shrink: 0;
-   background: var(--raised);
    border: 1px solid var(--border-control);
+   border-radius: 999px;
+   white-space: nowrap;
+   font-size: 11px;
    color: var(--muted);
 }
 
-.status-chip > svg {
+/* Chipped notifications and conditions: one pill showing the newest. */
+.notification-area {
+   position: relative;
+   display: flex;
+   min-width: 0;
+}
+
+.notification-pill {
+   --tone: var(--muted);
+   --tone-surface: var(--raised);
+   --tone-border: var(--border-control);
+   display: flex;
+   align-items: stretch;
+   height: 22px;
+   max-width: 280px;
+   overflow: hidden;
+   border: 1px solid var(--tone-border);
+   border-radius: 999px;
+   background: var(--tone-surface);
+   color: var(--tone);
+   font-size: 11px;
+   white-space: nowrap;
+}
+
+.notification-pill.error {
+   --tone: var(--red);
+   --tone-surface: #2b1d23;
+   --tone-border: #d65f7042;
+}
+
+.notification-pill.warning {
+   --tone: #e3be78;
+   --tone-surface: #29251b;
+   --tone-border: #e3be783d;
+}
+
+.notification-pill button {
+   display: flex;
+   align-items: center;
+   color: inherit;
+   transition: background 140ms var(--ease);
+}
+
+.notification-pill button:hover,
+.notification-pill button[aria-expanded="true"] {
+   background: color-mix(in srgb, var(--tone) 14%, transparent);
+}
+
+.notification-pill-main {
+   gap: 5px;
+   min-width: 0;
+   padding: 0 9px 0 7px;
+}
+
+.notification-pill-main > svg {
    flex-shrink: 0;
 }
 
-.status-chip > span {
+.notification-pill-main > span {
    overflow: hidden;
    text-overflow: ellipsis;
 }
 
-.status-chip.error {
-   background: #d65f7017;
-   border-color: #d65f7038;
-   color: var(--red);
+.notification-pill-count {
+   flex-shrink: 0;
+   padding: 0 8px 0 7px;
+   border-left: 1px solid var(--tone-border);
+   font-variant-numeric: tabular-nums;
 }
 
-.status-chip.warning {
-   background: #e3be7817;
-   border-color: #e3be7838;
-   color: #e3be78;
+.notification-pill-count > span {
+   animation: count-bump 280ms var(--spring);
 }
 
-.status-chip.progress {
-   background: transparent;
-}
-
-button.status-chip {
-   cursor: pointer;
-   transition:
-      border-color 140ms var(--ease),
-      background 140ms var(--ease),
-      filter 140ms var(--ease);
-}
-
-button.status-chip:hover,
-button.status-chip[aria-expanded="true"] {
-   filter: brightness(1.25);
-   border-color: currentColor;
-}
-
-/* Held invisible while the toast morphs onto it; the toast lands on its exact box. */
-.status-chip.arriving {
-   opacity: 0;
-}
-
-.status-chip.icon-only {
-   width: 22px;
-   padding: 0;
-   justify-content: center;
-}
-
-.status-chip.log-toggle {
-   gap: 3px;
-   padding: 0 6px 0 8px;
-}
-
-.notification-log {
-   position: relative;
-   display: flex;
+@keyframes count-bump {
+   from {
+      transform: scale(1.35);
+   }
 }
 
 .notification-log-popover {
@@ -349,32 +427,41 @@ button.status-chip[aria-expanded="true"] {
    right: 12px;
    bottom: 34px;
    z-index: 130;
-   width: 380px;
+   width: 360px;
    max-width: calc(100vw - 24px);
-   padding: 6px;
+   padding: 5px;
    border: 1px solid var(--line);
-   border-radius: 11px;
+   border-radius: 12px;
    background: var(--surface);
-   box-shadow: 0 8px 24px #0006;
-   animation: menu-in 140ms var(--ease);
+   box-shadow: 0 10px 30px #0009;
+   transform-origin: bottom right;
+   animation: menu-in 160ms var(--ease);
 }
 
 .notification-log-entries {
    display: flex;
    flex-direction: column;
-   gap: 2px;
+   gap: 1px;
    max-height: 320px;
    overflow-y: auto;
 }
 
 .notification-log-row {
+   --tone: var(--accent);
    display: flex;
    align-items: flex-start;
-   gap: 8px;
-   padding: 7px 6px 7px 8px;
-   border-radius: 7px;
+   gap: 9px;
+   padding: 8px 6px 8px 9px;
+   border-radius: 8px;
    font-size: 12px;
-   color: var(--text);
+}
+
+.notification-log-row.error {
+   --tone: var(--red);
+}
+
+.notification-log-row.warning {
+   --tone: #e3be78;
 }
 
 .notification-log-row:hover {
@@ -384,40 +471,31 @@ button.status-chip[aria-expanded="true"] {
 .notification-log-row > svg {
    flex-shrink: 0;
    margin-top: 2px;
-   color: var(--accent);
-}
-
-.notification-log-row.error > svg {
-   color: var(--red);
-}
-
-.notification-log-row.warning > svg {
-   color: #e3be78;
+   color: var(--tone);
 }
 
 .notification-log-text {
    flex: 1;
    min-width: 0;
+   text-align: left;
    line-height: 1.45;
+   color: var(--text);
 }
 
 .notification-log-text > span {
    display: block;
-   overflow: hidden;
-   text-overflow: ellipsis;
-   white-space: nowrap;
+   font-weight: 600;
 }
 
 .notification-log-text > p {
    color: var(--muted);
-   font-size: 11px;
 }
 
 .notification-log-age {
-   color: var(--subtle);
-   font-size: 11px;
    flex-shrink: 0;
    margin-top: 1px;
+   color: var(--subtle);
+   font-size: 11px;
 }
 
 .notification-log-row .icon-button {
@@ -430,21 +508,18 @@ button.status-chip[aria-expanded="true"] {
    display: flex;
    align-items: center;
    justify-content: space-between;
-   padding: 6px 8px 4px;
+   margin-top: 4px;
+   padding: 7px 8px 3px;
+   border-top: 1px solid var(--line);
    color: var(--subtle);
    font-size: 11px;
-   border-top: 1px solid var(--line);
-   margin-top: 4px;
 }
 
 .notification-log-clear {
-   background: none;
-   border: none;
+   padding: 2px 5px;
+   border-radius: 5px;
    color: var(--accent);
    font-size: 11px;
-   cursor: pointer;
-   padding: 2px 4px;
-   border-radius: 5px;
 }
 
 .notification-log-clear:hover {
@@ -452,23 +527,19 @@ button.status-chip[aria-expanded="true"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-   .toast {
+   .toast,
+   .notification-pill-count > span {
       animation: none;
+   }
+   .toast-timer {
+      display: none;
    }
 }
 
 @keyframes toast-in {
    from {
       opacity: 0;
-      transform: translateY(14px) scale(0.92);
-   }
-   60% {
-      opacity: 1;
-      transform: translateY(-3px) scale(1.02);
-   }
-   to {
-      opacity: 1;
-      transform: none;
+      transform: translateY(22px) scale(0.9);
    }
 }
 
