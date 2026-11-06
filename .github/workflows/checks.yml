@@ -151,13 +151,13 @@ jobs:
            env:
               ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
            run: |
-              if ($env:ACROCLIP_INTERACTIVE_SUITE -in @('packaged','portable','installer')) {
+              if ($env:ACROCLIP_INTERACTIVE_SUITE -in @('packaged','portable','installer','update')) {
                  pwsh -File scripts/setup-windows-runner-audio.ps1
               } else {
                  pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
               }
          - name: Prepare executable packages when requested
-           if: contains(fromJSON('["packaged","portable","installer"]'), inputs.interactive_suite)
+           if: contains(fromJSON('["packaged","portable","installer","update"]'), inputs.interactive_suite)
            run: bunx electron-builder --win --x64 --publish never
          - name: Run the unchanged interactive checks
            run: bun scripts/run-interactive-tests.ts "$env:ACROCLIP_INTERACTIVE_SUITE"
@@ -180,6 +180,7 @@ jobs:
                  .cache/native-*/**/*.json
                  .cache/native-*/**/*.log
                  .cache/native-*/**/*.mkv
+                 .cache/update-restart/
               include-hidden-files: true
               if-no-files-found: ignore
               retention-days: 7

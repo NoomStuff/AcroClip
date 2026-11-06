@@ -11,6 +11,7 @@ const commands = {
    packaged: [["tests/packaged.ts"]],
    portable: [["scripts/test-portable.ts"]],
    installer: [["installer"]],
+   update: [["scripts/test-update-restart.ts"]],
    native: [["scripts/smoke-recorder.ts"]],
    lifecycle: [["scripts/smoke-start-lifecycle.ts", "resources/recorder/acroclip-recorder.exe"]],
    "capture-loss": [["scripts/smoke-capture-loss.ts"]],
@@ -69,7 +70,7 @@ if (!hostedTestIsolation(process.env, process.platform) && !(process.platform ==
    console.log(`Isolated ${suite} passed for exact commit ${commit}. No interactive test ran on this desktop.`);
 } else {
    requireTestIsolation();
-   if (!["ui", "ui-native", "packaged", "portable", "installer"].includes(suite)) {
+   if (!["ui", "ui-native", "packaged", "portable", "installer", "update"].includes(suite)) {
       for (const args of [
          ["-S", "native/tests", "-B", ".cache/native-tests"],
          ["--build", ".cache/native-tests", "--config", "Release"],

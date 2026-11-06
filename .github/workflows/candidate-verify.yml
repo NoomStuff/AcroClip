@@ -102,6 +102,9 @@ jobs:
          - name: Verify installed upgrade in an isolated installer identity
            run: pwsh -File scripts/test-installer-upgrade.ps1
            if: runner.os == 'Windows'
+         - name: Verify the in-app update restarts silently and quickly
+           run: bun run test:update
+           if: runner.os == 'Windows'
          - name: Stop the private tone producer
            if: always() && runner.os == 'Windows'
            shell: pwsh
@@ -149,6 +152,7 @@ jobs:
                  .cache/macos-audio/
                  .cache/macos-feedback/
                  work/installer-evidence/
+                 .cache/update-restart/
               include-hidden-files: true
               if-no-files-found: ignore
               retention-days: 7

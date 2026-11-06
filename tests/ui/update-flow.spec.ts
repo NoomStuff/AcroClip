@@ -96,7 +96,7 @@ test("verified portable update lifecycle shares state with Settings", async () =
          },
          { downloads, bytes: [...bytes], digest }
       );
-      const startup = page.getByRole("checkbox", { name: "Check for updates at startup", exact: true });
+      const startup = page.getByRole("checkbox", { name: "Check for updates automatically", exact: true });
       await startup.uncheck();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.updateCheck).toBe(false);
       await expect(page.locator(".settings-sidebar").getByRole("status", { name: "Settings saved", exact: true })).toBeVisible();

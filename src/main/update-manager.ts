@@ -44,11 +44,21 @@ export function isNewerVersion(candidate: string, current: string): boolean {
    return false;
 }
 
+// Isolated update tests serve releases and the feed locally. Only test runs may redirect them.
+export function testUpdateServer(environment: NodeJS.ProcessEnv = process.env): string | null {
+   const server = environment["ACROCLIP_UPDATE_SERVER"];
+   if (environment["ACROCLIP_TEST"] !== "1" || !server) return null;
+   const url = new URL(server);
+   if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Test update servers must be local.");
+   return url.href.replace(/\/$/, "");
+}
+
 export async function fetchAvailableUpdate(
    currentVersion: string,
    request: (url: string, init: RequestInit) => Promise<Response>
 ): Promise<AvailableUpdate | null> {
-   const response = await request("https://api.github.com/repos/NoomStuff/AcroClip/releases/latest", {
+   const server = testUpdateServer();
+   const response = await request(server ? `${server}/releases/latest` : "https://api.github.com/repos/NoomStuff/AcroClip/releases/latest", {
       headers: { Accept: "application/vnd.github+json", "User-Agent": `AcroClip/${currentVersion}` },
       signal: AbortSignal.timeout(30_000),
    });
@@ -70,6 +80,8 @@ function updateMode(): AvailableUpdate["mode"] {
 
 export class UpdateManager {
    private readonly changed: (status: UpdateStatus) => void;
+   private readonly log: (message: string) => void;
+   private installFailed: ((message: string) => void) | null = null;
    private updater: AppUpdater | null = null;
    private current: AvailableUpdate | null = null;
    private busy = false;
@@ -78,8 +90,9 @@ export class UpdateManager {
    private automaticRunning = false;
    private automaticWired = false;
    downloadedPath: string | null = null;
-   constructor(changed: (status: UpdateStatus) => void) {
+   constructor(changed: (status: UpdateStatus) => void, log: (message: string) => void = () => undefined) {
       this.changed = changed;
+      this.log = log;
    }
 
    private emit(status: UpdateStatus): void {
@@ -100,7 +113,15 @@ export class UpdateManager {
          const module = await import("electron-updater");
          const updater = module.autoUpdater ?? module.default.autoUpdater;
          this.updater = updater;
-         updater.setFeedURL({ provider: "generic", url: "https://raw.githubusercontent.com/NoomStuff/AcroClip/updates/" });
+         const server = testUpdateServer();
+         updater.setFeedURL({ provider: "generic", url: server ? `${server}/feed/` : "https://raw.githubusercontent.com/NoomStuff/AcroClip/updates/" });
+         // Install failures are otherwise invisible: electron-updater falls back to
+         // elevation or an interactive installer without telling the app why.
+         updater.logger = {
+            info: (message?: unknown) => this.log(`updater: ${String(message)}`),
+            warn: (message?: unknown) => this.log(`updater warning: ${String(message)}`),
+            error: (message?: unknown) => this.log(`updater error: ${String(message)}`),
+         };
          updater.autoDownload = true;
          updater.autoInstallOnAppQuit = false;
          // Only app packages appear on GitHub Releases; NSIS must download the
@@ -120,7 +141,14 @@ export class UpdateManager {
                this.readyVersion = info.version;
                this.emit({ phase: "ready", version: info.version, percent: 100 });
             });
-            updater.on("error", () =>
+            updater.on("error", (error: unknown) => {
+               this.log(`updater error: ${error instanceof Error ? error.message : String(error)}`);
+               const failed = this.installFailed;
+               this.installFailed = null;
+               if (failed) {
+                  failed("Could not apply the update. Open the release to update manually.");
+                  return;
+               }
                this.emit({
                   phase: "error",
                   version: this.automaticVersion!,
@@ -128,8 +156,8 @@ export class UpdateManager {
                   message: this.isReady
                      ? "Could not apply the update. Open the release to update manually."
                      : "Could not download the update. Open the release to update manually.",
-               })
-            );
+               });
+            });
          }
          this.emit({ phase: "downloading", version: update.version, percent: null });
          const result = await updater.checkForUpdates();
@@ -150,9 +178,20 @@ export class UpdateManager {
       }
    }
 
-   install(): void {
+   /** Starts the silent installer and quits. `failed` runs when the installer could not start. */
+   install(failed: (message: string) => void = () => undefined): void {
       if (!this.isReady) throw new Error("The update is not ready yet.");
-      this.updater!.quitAndInstall(true, true);
+      const updater = this.updater!;
+      // A missing package makes electron-updater open the installer interactively
+      // (its ENOENT fallback). Refuse instead, so the update never asks for clicks.
+      const installer = (updater as unknown as { installerPath?: string | null }).installerPath;
+      if (process.platform === "win32" && installer !== undefined && (!installer || !existsSync(installer))) {
+         this.readyVersion = null;
+         throw new Error("The downloaded update is missing. Check for updates to download it again.");
+      }
+      this.installFailed = failed;
+      // Silent, then relaunch: the NSIS installer receives --updated /S --force-run.
+      updater.quitAndInstall(true, true);
    }
    get isReady(): boolean {
       return this.readyVersion !== null && this.readyVersion === this.current?.version && this.updater !== null;
