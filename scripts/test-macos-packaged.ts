@@ -162,7 +162,7 @@ try {
    desktop.process().stderr?.on("data", (data: Buffer) => applicationErrors.push(data.toString()));
    const page = await desktop.firstWindow();
    expect((await page.evaluate(() => window.acroClip.state())).preferences).toMatchObject({ setupComplete: true, sourceKind: "app", recordingSizeVersion: 2 });
-   await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeVisible();
+   await expect(page.getByRole("button", { name: "Start capturing", exact: true })).toBeVisible();
    const candidates = await page.evaluate(() => window.acroClip.games());
    const selected = candidates.find((candidate) => candidate.pid === identity.pid);
    const other = candidates.find((candidate) => candidate.pid === decoyIdentity.pid);
@@ -218,7 +218,7 @@ try {
       { sources: audioSources, sourceId: captureSource!.id }
    );
    expect(await page.evaluate(() => window.acroClip.audioDevices("output"))).toEqual([{ id: "system", name: "System audio" }]);
-   await page.getByRole("button", { name: "Start recording", exact: true }).click();
+   await page.getByRole("button", { name: "Start capturing", exact: true }).click();
    await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
    await expect
       .poll(

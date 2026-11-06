@@ -8,6 +8,11 @@ import type { ControlledMediaBuild } from "./controlled-media";
 import { githubSourceApi } from "./github-source-api";
 import { collectWasapiPacket, exactWasapiException, validateWasapiPacket, wasapiRecordSchema, type WasapiRecord } from "./windows-wasapi-source";
 
+// Windows schannel fails outright when a certificate revocation server is
+// unreachable, which has blocked upstream archive hosts. Best effort still
+// rejects revoked certificates, and every archive is checked against its digest.
+const curlPlatformOptions = process.platform === "win32" ? ["--ssl-revoke-best-effort"] : [];
+
 interface SourcePin {
    name: string;
    repository: string;
@@ -171,6 +176,7 @@ async function collectSource(pin: SourcePin, destination: string): Promise<Sourc
    if (!existsSync(file)) {
       const temporary = `${file}.download`;
       run(process.platform === "win32" ? "curl.exe" : "curl", [
+         ...curlPlatformOptions,
          "--fail",
          "--location",
          "--silent",
@@ -412,6 +418,7 @@ export async function collectDependency(
       const temporary = `${file}.download`;
       try {
          await runAsync(process.platform === "win32" ? "curl.exe" : "curl", [
+            ...curlPlatformOptions,
             "--fail",
             "--location",
             "--silent",
