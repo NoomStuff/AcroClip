@@ -184,7 +184,7 @@ export interface UpdateStatus {
 }
 export interface UpdateState {
    lastChecked?: number;
-   state: "idle" | "checking" | "available" | "downloading" | "ready" | "downloaded" | "error";
+   state: "idle" | "checking" | "available" | "downloading" | "ready" | "downloaded" | "installing" | "error";
    version: string;
    progress: number;
    message: string;

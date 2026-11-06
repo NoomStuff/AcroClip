@@ -21,7 +21,8 @@ import type { ShortcutAction } from "../shared/shortcuts";
 import { Recorder } from "./recorder";
 import { CaptureSources } from "./capture-sources";
 import { serveMedia } from "./serve";
-import { Updates } from "./updates";
+import { BACKGROUND_CHECK_INTERVAL, Updates } from "./updates";
+import { testUpdateServer } from "./update-manager";
 import { isWaylandSession } from "./linux-session";
 import { linuxDesktopIdentity, linuxStartup, linuxDesktopName, xdgDirectory } from "./startup";
 import { pendingExitDecision } from "./lifecycle";
@@ -74,7 +75,10 @@ const collections = new CollectionService({
    onWarning: (message, level) => (level === "log" ? void log(message) : notice(message, level === "error", "info", "app", { tone: level })),
    mediaUrl,
 });
-const updates = new Updates(() => emitState());
+const updates = new Updates(
+   () => emitState(),
+   (message) => void log(message)
+);
 const feedback = new Feedback(
    isPackagedApp()
       ? join(process.resourcesPath, "recorder", process.platform === "win32" ? "acroclip-notifier.exe" : "acroclip-notifier")
@@ -411,15 +415,32 @@ async function applyStartup(enabled: boolean) {
       await linuxStartup(enabled, xdgDirectory(process.env["XDG_CONFIG_HOME"], join(app.getPath("home"), ".config")), executable, args);
    else app.setLoginItemSettings({ openAtLogin: enabled, path: executable, args });
 }
-async function prepareExit(): Promise<boolean> {
+interface ExitOptions {
+   /** The user asked to restart into an update: only destructive choices may still prompt. */
+   update?: boolean;
+   progress?: (message: string) => void;
+}
+async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
    if (exiting) return exiting;
    closingRequested = true;
+   const update = options.update === true;
+   const started = Date.now();
+   const phase = (name: string) => {
+      if (update) void log(`update: exit ${name} at ${Date.now() - started} ms`);
+   };
    exiting = (async () => {
       await preferenceWrites.catch(() => undefined);
       await startingCapture?.catch(() => undefined);
       await collections.finishFileChanges();
+      phase("settled files");
       const saves = recorder.status.pendingSaves;
-      if (saves || pendingJobs().length) {
+      if (update && !pendingJobs().length) {
+         // Restarting into an update is already the user's answer to "exit?". Clip
+         // saves finish first, so no requested moment is lost to the installer.
+         if (saves) options.progress?.(`Finishing ${saves === 1 ? "clip save" : `${saves} clip saves`}`);
+         await recorder.close();
+         phase("closed the recorder");
+      } else if (saves || pendingJobs().length) {
          const decision = await pendingExitDecision(
             () => !!recorder.status.pendingSaves || pendingJobs().length > 0,
             async (signal) =>
@@ -453,10 +474,12 @@ async function prepareExit(): Promise<boolean> {
             await recorder.close({ cancel: true });
             while (pendingJobs().length) await new Promise((r) => setTimeout(r, 100));
          } else {
+            options.progress?.("Finishing work");
             await recorder.stop();
             await recorder.close();
             while (pendingJobs().length) await new Promise((r) => setTimeout(r, 150));
          }
+         phase("finished work");
       } else {
          if (["recording", "waiting"].includes(recorder.status.state)) {
             const result = await dialog.showMessageBox({
@@ -479,6 +502,27 @@ async function prepareExit(): Promise<boolean> {
       exiting = null;
       if (!quitting) closingRequested = false;
    }
+}
+async function prepareUpdateExit(progress: (message: string) => void): Promise<boolean> {
+   // The window goes away at once so the click feels immediate. Shareables still
+   // ask first, because finishing or cancelling them is the user's decision.
+   if (!pendingJobs().length) mainWindow?.hide();
+   if (!(await prepareExit({ update: true, progress }))) {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+      return false;
+   }
+   // before-quit must not run the exit flow again while the installer waits for this process.
+   quitting = true;
+   closingRequested = true;
+   return true;
+}
+function recoverUpdateExit() {
+   quitting = false;
+   closingRequested = false;
+   if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+   else mainWindow.show();
+   if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
+      void startRecording().catch((e) => notice(errorMessage(e), true));
 }
 async function requestExit() {
    try {
@@ -879,7 +923,7 @@ function registerIPC() {
    handle("update-download", () => updates.download());
    handle("update-reveal", () => updates.reveal());
    handle("update-release", () => updates.release());
-   handle("update-install", () => updates.install(prepareExit));
+   handle("update-install", () => updates.install({ prepare: prepareUpdateExit, recover: recoverUpdateExit }));
    handle("exit", () => requestExit());
    ipcMain.on("window", (event, action) => {
       if (event.sender !== mainWindow?.webContents) return;
@@ -924,7 +968,11 @@ else {
       if (!quitting) {
          event.preventDefault();
          void requestExit();
-      } else feedback.close();
+      } else {
+         storage.close();
+         feedback.close();
+         globalShortcut.unregisterAll();
+      }
    });
    app.on("window-all-closed", () => {
       /* The recorder and tray own the app lifecycle. */
@@ -1039,10 +1087,15 @@ else {
          if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
             void startRecording().catch((e) => notice(errorMessage(e), true));
          await collectionReady;
-         if (isPackagedApp() && process.env["ACROCLIP_TEST"] !== "1") {
-            setTimeout(() => {
+         const previousInstall = await updates.reviewPreviousInstall();
+         if (previousInstall) notice(previousInstall, true);
+         if (isPackagedApp() && (process.env["ACROCLIP_TEST"] !== "1" || testUpdateServer())) {
+            const check = () => {
                if (preferences.updateCheck) void updates.check(false);
-            }, 10000).unref();
+            };
+            setTimeout(check, 10000).unref();
+            // A tray recorder can run for days; keep offering releases published meanwhile.
+            setInterval(check, BACKGROUND_CHECK_INTERVAL).unref();
          }
       })
       .catch((e) => {

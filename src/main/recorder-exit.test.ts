@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, link, copyFile, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Recorder } from "./recorder";
+import { Recorder, RECORDER_EXIT_TIMEOUT_MS } from "./recorder";
 import { defaultPreferences } from "../shared/defaults";
 import type { ApplicationArtwork, RecorderState } from "../shared/types";
 
@@ -23,7 +23,8 @@ async function fixture(
       | "devices-exit"
       | "candidates-timeout"
       | "candidates-retry"
-      | "saved-source-mismatch",
+      | "saved-source-mismatch"
+      | "hang-exit",
    invalidExecutable = false
 ) {
    const root = await mkdtemp(join(tmpdir(), "acroclip-protocol-exit-"));
@@ -63,6 +64,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  if(v.action==='save' && mode==='unacknowledged-save') return;
  if(v.action==='save' && mode==='saved-source-mismatch') emit({event:'saved',requestId:v.requestId,path:v.path,source:'Previous game',sourceId:'window:previous:0'});
  if(v.action==='audio-devices' && mode==='devices-exit') process.exit(0);
+ if(v.action==='exit' && mode==='hang-exit') return;
  if(v.action==='exit') process.exit(0);
  if(v.id) emit({event:'response',id:v.id});
 });`
@@ -93,6 +95,19 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
 // Real process startup can exceed five seconds on Windows, especially with two fixtures.
 const helperTestTimeout = process.platform === "win32" ? 15000 : 5000;
 describe("recorder helper termination", () => {
+   it(
+      "ends a helper that does not exit after every save has finished",
+      async () => {
+         const { child, errors } = await fixture("hang-exit");
+         const started = Date.now();
+         await child.close();
+         const elapsed = Date.now() - started;
+         expect(elapsed).toBeGreaterThanOrEqual(RECORDER_EXIT_TIMEOUT_MS - 100);
+         expect(elapsed).toBeLessThan(RECORDER_EXIT_TIMEOUT_MS + 5000);
+         expect(errors).toEqual([]);
+      },
+      RECORDER_EXIT_TIMEOUT_MS + 15000
+   );
    it(
       "exits an already stopped helper without restarting native stop work",
       async () => {

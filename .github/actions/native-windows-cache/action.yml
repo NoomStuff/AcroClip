@@ -1,0 +1,16 @@
+name: native-windows-cache
+description: Reuse the pinned OBS inputs and the Windows helper build for identical native sources
+# build-native.ts verifies the OBS tag, commit and archive digest on every run,
+# so a restored cache is checked before use. The build directory is keyed on
+# every native source and build script, so it only ever matches identical inputs.
+runs:
+   using: composite
+   steps:
+      - uses: actions/cache@v6.1.0
+        with:
+           path: |
+              .cache/obs-source
+              .cache/obs-runtime
+              .cache/OBS-Studio-*-Windows-x64.zip
+              .cache/native-build
+           key: native-windows-${{ hashFiles('native/**', 'scripts/build-native.ts', 'scripts/windows-wasapi-source.ts') }}

@@ -96,7 +96,7 @@ test("verified portable update lifecycle shares state with Settings", async () =
          },
          { downloads, bytes: [...bytes], digest }
       );
-      const startup = page.getByRole("checkbox", { name: "Check for updates at startup", exact: true });
+      const startup = page.getByRole("checkbox", { name: "Check for updates automatically", exact: true });
       await startup.uncheck();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.updateCheck).toBe(false);
       await expect(page.locator(".settings-sidebar").getByRole("status", { name: "Settings saved", exact: true })).toBeVisible();
@@ -142,6 +142,8 @@ test("verified portable update lifecycle shares state with Settings", async () =
          const updater = process.getBuiltinModule("module").createRequire(`${app.getAppPath()}/package.json`)("electron-updater") as typeof ElectronUpdater;
          updater.autoUpdater.checkForUpdates = async () =>
             ({ downloadPromise: new Promise<never>(() => {}) }) as unknown as Awaited<ReturnType<typeof updater.autoUpdater.checkForUpdates>>;
+         // A finished download leaves the installer on disk; the app refuses to start a missing one.
+         Object.defineProperty(updater.autoUpdater, "installerPath", { configurable: true, get: () => process.execPath });
          updater.autoUpdater.quitAndInstall = (isSilent, isForceRunAfter) => {
             (globalThis as typeof globalThis & { updateFixture: { installs: number } }).updateFixture.installs++;
             (globalThis as typeof globalThis & { updateFixture: { installOptions: unknown } }).updateFixture.installOptions = [isSilent, isForceRunAfter];

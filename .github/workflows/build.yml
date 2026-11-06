@@ -102,23 +102,43 @@ jobs:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
          targets: '[{"target":"win-x64","os":"windows-2025"}]'
       if: needs.prepare.outputs.build == 'true'
-   verify-linux:
+   # Each target verifies as soon as its own package exists, instead of waiting
+   # for the slower architecture of the same platform.
+   verify-linux-x64:
       needs:
          - prepare
-         - build-linux
+         - build-linux-x64
       uses: ./.github/workflows/candidate-verify.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
-         targets: '[{"target":"linux-x64","os":"ubuntu-24.04"},{"target":"linux-arm64","os":"ubuntu-24.04-arm"}]'
+         targets: '[{"target":"linux-x64","os":"ubuntu-24.04"}]'
       if: needs.prepare.outputs.build == 'true'
-   verify-mac:
+   verify-linux-arm64:
       needs:
          - prepare
-         - build-mac
+         - build-linux-arm64
       uses: ./.github/workflows/candidate-verify.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
-         targets: '[{"target":"mac-x64","os":"macos-15-intel"},{"target":"mac-arm64","os":"macos-15"}]'
+         targets: '[{"target":"linux-arm64","os":"ubuntu-24.04-arm"}]'
+      if: needs.prepare.outputs.build == 'true'
+   verify-mac-x64:
+      needs:
+         - prepare
+         - build-mac-x64
+      uses: ./.github/workflows/candidate-verify.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         targets: '[{"target":"mac-x64","os":"macos-15-intel"}]'
+      if: needs.prepare.outputs.build == 'true'
+   verify-mac-arm64:
+      needs:
+         - prepare
+         - build-mac-arm64
+      uses: ./.github/workflows/candidate-verify.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         targets: '[{"target":"mac-arm64","os":"macos-15"}]'
       if: needs.prepare.outputs.build == 'true'
    check:
       permissions:
@@ -132,10 +152,14 @@ jobs:
          - native-checks
          - build
          - verify-windows
-         - verify-linux
-         - verify-mac
-         - build-linux
-         - build-mac
+         - verify-linux-x64
+         - verify-linux-arm64
+         - verify-mac-x64
+         - verify-mac-arm64
+         - build-linux-x64
+         - build-linux-arm64
+         - build-mac-x64
+         - build-mac-arm64
       if: always()
       runs-on: ubuntu-24.04
       timeout-minutes: 30
@@ -152,7 +176,7 @@ jobs:
                  const candidate = jobs.prepare.outputs.build === 'true';
                  const native = !candidate && (jobs.prepare.outputs.native_linux === 'true' || jobs.prepare.outputs.native_macos === 'true');
                  for (const [name, job] of Object.entries(jobs)) {
-                   const expected = ['build', 'build-linux', 'build-mac', 'verify-windows', 'verify-linux', 'verify-mac'].includes(name) ? candidate : name === 'native-checks' ? native : true;
+                   const expected = name === 'build' || /^(build|verify)-(windows|linux|mac)/.test(name) ? candidate : name === 'native-checks' ? native : true;
                    if (job.result !== (expected ? 'success' : 'skipped')) throw Error(`${name}: ${job.result}`);
                  }
          - uses: actions/checkout@v7
@@ -225,36 +249,41 @@ jobs:
            with:
               script: |
                  const publish = require('./scripts/publish-release.cjs');
-                 const releaseName = require('./package.json').build.releaseInfo?.releaseName;
-                 await publish({github, context, core, releaseName});
+                 await publish({github, context, core});
       # Override the implicit success() check after the optional native job is skipped.
       if: ${{ !cancelled() && needs.prepare.outputs.publish == 'true' && needs.check.result == 'success' }}
-   build-linux:
-      strategy:
-         fail-fast: false
-         matrix:
-            architecture:
-               - x64
-               - arm64
+   build-linux-x64:
       uses: ./.github/workflows/native-linux.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
-         architecture: ${{ matrix.architecture }}
+         architecture: x64
       needs:
          - prepare
          - checks
       if: needs.prepare.outputs.build == 'true'
-   build-mac:
-      strategy:
-         fail-fast: false
-         matrix:
-            architecture:
-               - x64
-               - arm64
+   build-linux-arm64:
+      uses: ./.github/workflows/native-linux.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         architecture: arm64
+      needs:
+         - prepare
+         - checks
+      if: needs.prepare.outputs.build == 'true'
+   build-mac-x64:
       uses: ./.github/workflows/native-macos.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
-         architecture: ${{ matrix.architecture }}
+         architecture: x64
+      needs:
+         - prepare
+         - checks
+      if: needs.prepare.outputs.build == 'true'
+   build-mac-arm64:
+      uses: ./.github/workflows/native-macos.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         architecture: arm64
       needs:
          - prepare
          - checks

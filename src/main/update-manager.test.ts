@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { app, net } from "electron";
 import type * as NodeFs from "node:fs";
-import { UpdateManager, fetchAvailableUpdate } from "./update-manager";
-import { Updates } from "./updates";
+import { UpdateManager, fetchAvailableUpdate, testUpdateServer } from "./update-manager";
+import { BACKGROUND_CHECK_INTERVAL, Updates } from "./updates";
 
 vi.mock("electron", () => ({ app: { isPackaged: true, getVersion: () => "0.14.1", getPath: vi.fn() }, net: { fetch: vi.fn() } }));
 vi.mock("node:fs", async (original) => {
@@ -227,16 +227,81 @@ it.skipIf(process.platform === "darwin")("shares ready state and asks before res
          finish = resolve;
       }),
    });
+   const profile = await mkdtemp(join(tmpdir(), "acroclip-update-record-"));
+   folders.push(profile);
+   vi.mocked(app.getPath).mockReturnValue(profile);
    const updates = new Updates(() => {});
    await updates.check();
    await vi.waitFor(() => expect(updates.state.state).toBe("downloading"));
    automatic.emit("update-downloaded", { version: "0.15.0" });
    finish();
    expect(updates.state.state).toBe("ready");
-   await updates.install(async () => false);
+   const recover = vi.fn();
+   const messages: string[] = [];
+   await updates.install({ prepare: async () => false, recover });
    expect(automatic.quitAndInstall).not.toHaveBeenCalled();
-   await updates.install(async () => true);
+   expect(updates.state.state).toBe("ready");
+   await updates.install({
+      prepare: async (progress) => {
+         progress("Finishing clip save");
+         messages.push(updates.state.message);
+         return true;
+      },
+      recover,
+   });
+   expect(messages).toEqual(["Finishing clip save"]);
    expect(automatic.quitAndInstall).toHaveBeenCalledWith(true, true);
+   expect(updates.state.state).toBe("installing");
+   expect(JSON.parse(await readFile(join(profile, "update-install.json"), "utf8"))).toMatchObject({ fromVersion: "0.14.1", targetVersion: "0.15.0" });
+   // electron-updater reports a failed installer launch as an error instead of quitting.
+   automatic.emit("error", new Error("spawn EACCES"));
+   expect(recover).toHaveBeenCalledOnce();
+   expect(updates.state).toMatchObject({ state: "error", version: "0.15.0" });
+   await vi.waitFor(async () => expect(await readdir(profile)).toEqual([]));
+});
+
+it("reports an install that did not change the version on the next launch", async () => {
+   const profile = await mkdtemp(join(tmpdir(), "acroclip-update-review-"));
+   folders.push(profile);
+   vi.mocked(app.getPath).mockReturnValue(profile);
+   const updates = new Updates(() => {});
+   const record = join(profile, "update-install.json");
+   expect(await updates.reviewPreviousInstall()).toBeNull();
+   await writeFile(record, JSON.stringify({ fromVersion: "0.14.1", targetVersion: "0.15.0", startedAt: Date.now() }));
+   expect(await updates.reviewPreviousInstall()).toMatch("0.15.0 didn't install");
+   expect(await readdir(profile)).toEqual([]);
+   for (const fromVersion of ["0.14.0", "0.13.0"]) {
+      // A different running version means the install (or a manual one) applied.
+      await writeFile(record, JSON.stringify({ fromVersion, targetVersion: "0.14.1", startedAt: Date.now() }));
+      expect(await updates.reviewPreviousInstall()).toBeNull();
+   }
+   await writeFile(record, "not json");
+   expect(await updates.reviewPreviousInstall()).toBeNull();
+   expect(await readdir(profile)).toEqual([]);
+});
+
+it.skipIf(process.platform !== "win32")("refuses to open the installer interactively when the downloaded package is missing", async () => {
+   vi.stubEnv("PORTABLE_EXECUTABLE_FILE", "");
+   Object.defineProperty(process, "resourcesPath", { value: tmpdir(), configurable: true });
+   automatic.checkForUpdates.mockResolvedValue({ downloadPromise: Promise.resolve([]) });
+   const { manager: updates } = manager();
+   await updates.offer(release);
+   await vi.waitFor(() => expect(automatic.checkForUpdates).toHaveBeenCalled());
+   automatic.emit("update-downloaded", { version: release.version });
+   Object.defineProperty(automatic, "installerPath", { value: join(tmpdir(), "acroclip-missing-installer.exe"), configurable: true });
+   try {
+      expect(() => updates.install()).toThrow("missing");
+      expect(automatic.quitAndInstall).not.toHaveBeenCalled();
+      expect(updates.isReady).toBe(false);
+   } finally {
+      Reflect.deleteProperty(automatic, "installerPath");
+   }
+});
+
+it("only serves updates from a local server during tests", async () => {
+   expect(testUpdateServer({ ACROCLIP_UPDATE_SERVER: "http://127.0.0.1:4000/" })).toBeNull();
+   expect(testUpdateServer({ ACROCLIP_TEST: "1", ACROCLIP_UPDATE_SERVER: "http://127.0.0.1:4000/" })).toBe("http://127.0.0.1:4000");
+   expect(() => testUpdateServer({ ACROCLIP_TEST: "1", ACROCLIP_UPDATE_SERVER: "https://example.com/" })).toThrow("local");
 });
 
 it.skipIf(process.platform !== "win32").each(["destination", "temporary"])("keeps another download's %s created in flight", async (scope) => {
@@ -262,7 +327,8 @@ it.skipIf(process.platform !== "win32").each(["destination", "temporary"])("keep
    expect(updates.downloadedPath).toBeNull();
 });
 
-it("does not repeat the startup lookup after a manual check", async () => {
+it("throttles background lookups but keeps checking during long sessions", async () => {
+   vi.useFakeTimers({ toFake: ["Date"] });
    vi.stubEnv("PORTABLE_EXECUTABLE_FILE", "/portable.exe");
    vi.mocked(net.fetch).mockImplementation(async () =>
       Response.json({ tag_name: "v0.15.0", name: "Next", html_url: release.url, draft: false, prerelease: false })
@@ -273,6 +339,9 @@ it("does not repeat the startup lookup after a manual check", async () => {
    expect(net.fetch).toHaveBeenCalledTimes(1);
    await updates.check();
    expect(net.fetch).toHaveBeenCalledTimes(2);
+   vi.setSystemTime(Date.now() + BACKGROUND_CHECK_INTERVAL);
+   await updates.check(false);
+   expect(net.fetch).toHaveBeenCalledTimes(3);
 });
 
 it("checks release metadata in branded development without a download or install path", async () => {
@@ -289,7 +358,7 @@ it("checks release metadata in branded development without a download or install
       expect(automatic.checkForUpdates).not.toHaveBeenCalled();
       await updates.download();
       expect(updates.state).toMatchObject({ state: "error", message: "This download is not available." });
-      await expect(updates.install(async () => true)).rejects.toThrow("not ready");
+      await expect(updates.install({ prepare: async () => true, recover: () => undefined })).rejects.toThrow("not ready");
       expect(net.fetch).toHaveBeenCalledTimes(1);
       expect(automatic.quitAndInstall).not.toHaveBeenCalled();
       const checked = updates.state.lastChecked;

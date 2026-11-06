@@ -1,6 +1,6 @@
 {
    "name": "acroclip",
-   "version": "0.11.0",
+   "version": "0.12.0",
    "description": "Clip it. Watch it. Share It.",
    "license": "GPL-3.0-or-later",
    "type": "module",
@@ -16,12 +16,13 @@
       "format:check": "prettier --check src scripts tests .github .vscode \"*.{ts,mjs,json,md}\" .prettierrc.json",
       "lint": "eslint src scripts tests \"*.{ts,mjs}\" --max-warnings 0",
       "verify": "bun run format:check && bun run lint && bun run test && bun run build",
-      "verify:release": "bun run verify && bun run test:media && bun run test:ui && bun run test:ui:native && bun run test:capture-loss && bun run test:packaged",
+      "verify:release": "bun run verify && bun run test:media && bun run test:ui && bun run test:ui:native && bun run test:capture-loss && bun run test:packaged && bun run test:update",
       "test:ui": "bun scripts/run-interactive-tests.ts ui",
       "test:ui:native": "bun scripts/run-interactive-tests.ts ui-native",
       "test:isolated": "bun scripts/run-interactive-tests.ts",
       "test:media": "bun tests/media.ts",
       "test:packaged": "bun scripts/run-interactive-tests.ts packaged",
+      "test:update": "bun scripts/run-interactive-tests.ts update",
       "test:packaged:linux": "python3 scripts/test-linux-packaged.py",
       "test:native": "bun scripts/run-interactive-tests.ts native",
       "test:native:lifecycle": "bun scripts/run-interactive-tests.ts lifecycle",
@@ -40,9 +41,6 @@
       "test:ui:native:linux": "ACROCLIP_NATIVE_UI=1 python3 scripts/run-linux-ui.py bun x playwright test linux-native linux-desktop"
    },
    "build": {
-      "releaseInfo": {
-         "releaseName": "Library refinement and playback fixes"
-      },
       "appId": "dev.acroclip.app",
       "productName": "AcroClip",
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
@@ -141,6 +139,7 @@
       "zod": "^4.6.5"
    },
    "devDependencies": {
+      "@electron/asar": "3.4.1",
       "@eslint/js": "^10.0.1",
       "@playwright/test": "^1.63.0",
       "@swc/core": "^1.16.13",

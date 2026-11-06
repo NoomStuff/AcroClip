@@ -524,7 +524,7 @@ export function Settings({
                            <h2>Updates</h2>
                            <Toggle
                               icon={RefreshCw}
-                              label="Check for updates at startup"
+                              label="Check for updates automatically"
                               checked={draft.updateCheck}
                               onChange={(updateCheck) => change("updateCheck", updateCheck)}
                            />

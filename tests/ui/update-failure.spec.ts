@@ -54,6 +54,8 @@ test("a failed update install leaves the app usable and the clip shortcut regist
          const updater = module.autoUpdater;
          updater.checkForUpdates = async () =>
             ({ downloadPromise: new Promise<never>(() => {}) }) as unknown as Awaited<ReturnType<typeof updater.checkForUpdates>>;
+         // The package exists, so this exercises the installer failing to start, not a missing download.
+         Object.defineProperty(updater, "installerPath", { configurable: true, get: () => process.execPath });
          updater.quitAndInstall = () => {
             updater.emit("error", new Error("The update installer could not start"));
          };

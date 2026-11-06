@@ -74,6 +74,9 @@ interface NativeMessage {
    bufferedSourceKind?: "screen" | "app";
 }
 
+/** How long the helper may take to exit after every save has finished. */
+export const RECORDER_EXIT_TIMEOUT_MS = 5000;
+
 export class Recorder {
    private readonly options: RecorderOptions;
    private process: ChildProcessWithoutNullStreams | null = null;
@@ -381,7 +384,8 @@ export class Recorder {
             command.reject(new Error("Capture stopped unexpectedly. Start capturing again."));
          }
          this.commands.clear();
-         this.error("Capture stopped unexpectedly. Start capturing again.");
+         // A write racing a deliberate exit or kill breaks the pipe; that is not a capture failure.
+         if (!this.expectedExit) this.error("Capture stopped unexpectedly. Start capturing again.");
       });
       createInterface({ input: child.stdout }).on("line", (line: string) => {
          try {
@@ -837,6 +841,19 @@ export class Recorder {
          this.expectedExit = true;
          this.send({ action: "exit" });
       }
-      await exited;
+      // Every requested save has finished by now. A helper that hangs while
+      // releasing devices must not hold the app (or an update) open indefinitely.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const settled = await Promise.race([
+         exited.then(() => true),
+         new Promise<false>((resolve) => {
+            timer = setTimeout(() => resolve(false), RECORDER_EXIT_TIMEOUT_MS);
+         }),
+      ]);
+      clearTimeout(timer);
+      if (!settled) {
+         child.kill();
+         await exited;
+      }
    }
 }
