@@ -2,13 +2,8 @@ import { useEffect, useSyncExternalStore } from "react";
 
 export type NotificationTone = "error" | "warning" | "info";
 
-/**
- * Where an entry is in its life:
- * - `toast`: in the bottom-right stack, counting down.
- * - `collapsing`: the toast is morphing into its status-bar chip.
- * - `chip`: lives in the status bar until dismissed or no longer relevant.
- */
-export type NotificationPhase = "toast" | "collapsing" | "chip";
+/** `toast` while it counts down in the bottom-right stack, `chip` once it lives in the status bar. */
+export type NotificationPhase = "toast" | "chip";
 
 export interface NotificationEntry {
    id: number;
@@ -32,8 +27,8 @@ export interface NotificationInput {
 
 interface NotificationState {
    entries: NotificationEntry[];
-   /** A chipped entry reopened as a pinned toast. `closing` while it morphs back. */
-   open: { id: number; closing: boolean } | null;
+   /** A chipped entry reopened as a pinned toast. */
+   open: number | null;
 }
 
 const MAX_ENTRIES = 20;
@@ -83,7 +78,7 @@ export function notify(input: NotificationInput): void {
    if (state.entries.some((item) => item.key !== null && same(item, entry))) return;
    // A repeated message moves to the front instead of stacking a duplicate.
    const entries = [entry, ...state.entries.filter((item) => item.key !== null || !same(item, entry))].slice(0, MAX_ENTRIES);
-   commit({ entries, open: state.open && entries.some((item) => item.id === state.open?.id) ? state.open : null });
+   commit({ entries, open: entries.some((item) => item.id === state.open) ? state.open : null });
 }
 
 /** Show, update or clear a condition. It toasts once, then stays as a chip until cleared. */
@@ -122,21 +117,14 @@ export function useCondition(key: string, input: NotificationInput | null): void
 }
 
 function remove(id: number) {
-   commit({ entries: state.entries.filter((item) => item.id !== id), open: state.open?.id === id ? null : state.open });
+   commit({ entries: state.entries.filter((item) => item.id !== id), open: state.open === id ? null : state.open });
 }
 
-/** The countdown ended. Chipped entries start morphing into the bar; the rest leave. */
+/** The countdown ended. Chipped entries move into the status bar; the rest leave. */
 export function expire(id: number): void {
    const entry = state.entries.find((item) => item.id === id);
    if (!entry || entry.phase !== "toast") return;
    if (!entry.chip) return remove(id);
-   commit({ ...state, entries: state.entries.map((item) => (item.id === id ? { ...item, phase: "collapsing" } : item)) });
-}
-
-/** The morph into the chip finished. */
-export function settle(id: number): void {
-   const entry = state.entries.find((item) => item.id === id);
-   if (!entry || entry.phase === "chip") return;
    commit({ ...state, entries: state.entries.map((item) => (item.id === id ? { ...item, phase: "chip" } : item)) });
 }
 
@@ -150,15 +138,13 @@ export function clearAll(): void {
    for (const entry of state.entries) if (entry.phase === "chip") dismiss(entry.id);
 }
 
-/** Chip click: open the entry as a pinned toast, or morph an open one back. */
+/** Open a chipped entry as a pinned toast, or close it when it already is. */
 export function toggleOpen(id: number): void {
-   if (state.open?.id === id) commit({ ...state, open: { id, closing: true } });
-   else commit({ ...state, open: { id, closing: false } });
+   commit({ ...state, open: state.open === id ? null : id });
 }
 
-/** The pinned toast finished morphing back into its chip. */
-export function closed(id: number): void {
-   if (state.open?.id === id) commit({ ...state, open: null });
+export function closeOpen(): void {
+   if (state.open !== null) commit({ ...state, open: null });
 }
 
 export function subscribe(listener: () => void): () => void {

@@ -1,12 +1,13 @@
-import { AlertCircle, ChevronUp, LoaderCircle, Monitor, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { AlertCircle, LoaderCircle, Monitor, X } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppState, CaptureSource } from "../../shared/types";
 import { age, formatTime } from "./format";
 import { api } from "./desktop";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { useAudioWarning } from "./useAudioWarning";
 import { IconButton } from "./ui";
-import { clearAll, dismiss, toggleOpen, useCondition, useNotifications, type NotificationEntry } from "./notifications";
+import { clearAll, closeOpen, dismiss, toggleOpen, useCondition, useNotifications, type NotificationEntry } from "./notifications";
+import { closePinned } from "./notification-motion";
 import { NotificationIcon } from "./NotificationToast";
 
 export function RecordingStatus({ state, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
@@ -58,7 +59,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    useCondition(
       "recorder",
       recorder && !recorder.supported
-         ? { message: "Recorder unavailable", detail: recorder.message || "This build has no native recorder, so capture is off.", tone: "error" }
+         ? { message: "Recorder unavailable", detail: "Reinstall AcroClip to capture clips.", tone: "error" }
          : recorder && !active && recorder.message && recorder.message !== status
            ? { message: recorder.message, tone: "error" }
            : null
@@ -138,109 +139,121 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    );
 }
 
-/** How many chips show before the rest only live in the log. */
-const VISIBLE_CHIPS = 3;
-
 /**
- * Chipped notifications and conditions, newest first. The newest shows its
- * title, older ones shrink to an icon, and the log lists all of them.
+ * One pill for every chipped notification and condition. It shows the newest
+ * title; clicking it reopens that message, and the count opens the log.
  */
 function NotificationChips() {
    const { entries, open } = useNotifications();
-   const chips = entries.filter((entry) => entry.chip && entry.phase !== "toast");
-   if (!chips.length) return null;
-   const shown = chips.slice(0, VISIBLE_CHIPS);
-   const hidden = chips.slice(VISIBLE_CHIPS);
+   const chips = entries.filter((entry) => entry.chip && entry.phase === "chip");
+   const [logOpen, setLogOpen] = useState(false);
+   const closeLog = useCallback(() => setLogOpen(false), []);
+   const pill = useRef<HTMLDivElement>(null);
+   const width = useRef(0);
+   const newest = chips[0];
+   // The pill eases to its new width when the title changes, instead of jumping.
+   useLayoutEffect(() => {
+      const element = pill.current;
+      if (!element) {
+         width.current = 0;
+         return;
+      }
+      const next = element.getBoundingClientRect().width;
+      if (width.current && Math.abs(width.current - next) > 1 && !window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+         element.animate([{ width: `${width.current}px` }, { width: `${next}px` }], { duration: 380, easing: "cubic-bezier(0.32, 0.72, 0, 1)" });
+      width.current = next;
+   }, [newest?.id, newest?.title, chips.length]);
+   useEffect(() => {
+      if (chips.length < 2) setLogOpen(false);
+   }, [chips.length]);
+   if (!newest) return null;
+   const opened = open === newest.id;
    return (
-      <div className="status-chips" role="group" aria-label="Notifications">
-         {chips.length > 1 && <NotificationLog entries={chips} hidden={hidden} />}
-         {[...shown].reverse().map((entry) => (
-            <NotificationChip key={entry.id} entry={entry} iconOnly={entry !== chips[0]} open={open?.id === entry.id && !open.closing} />
-         ))}
+      <div className="notification-area">
+         <div ref={pill} className={`notification-pill ${newest.tone}`} data-notification-chip={chips.map((entry) => entry.id).join(" ")}>
+            <button
+               className="notification-pill-main"
+               title={newest.detail ? `${newest.title}. ${newest.detail}` : newest.title}
+               aria-label={`Notification: ${newest.title}`}
+               aria-expanded={opened}
+               onClick={() => (opened ? closePinned(newest.id, closeOpen) : toggleOpen(newest.id))}
+            >
+               <NotificationIcon tone={newest.tone} size={12} />
+               <span>{newest.title}</span>
+            </button>
+            {chips.length > 1 && (
+               <button
+                  className="notification-pill-count"
+                  aria-label={`Notification log, ${chips.length} notifications`}
+                  aria-expanded={logOpen}
+                  onClick={() => setLogOpen((value) => !value)}
+               >
+                  <span key={chips.length} className="tabular">
+                     +{chips.length - 1}
+                  </span>
+               </button>
+            )}
+         </div>
+         {logOpen && <NotificationLog entries={chips} open={open} close={closeLog} />}
       </div>
    );
 }
 
-function NotificationChip({ entry, iconOnly, open }: { entry: NotificationEntry; iconOnly: boolean; open: boolean }) {
-   return (
-      <button
-         className={`status-chip ${entry.tone}${iconOnly ? " icon-only" : ""}${entry.phase === "collapsing" ? " arriving" : ""}`}
-         data-notification-chip={entry.id}
-         title={entry.detail ? `${entry.title}. ${entry.detail}` : entry.title}
-         aria-label={`Notification: ${entry.title}`}
-         aria-expanded={open}
-         onClick={() => toggleOpen(entry.id)}
-      >
-         <NotificationIcon tone={entry.tone} size={12} />
-         {!iconOnly && <span>{entry.title}</span>}
-      </button>
-   );
-}
-
-/** Popover listing every chipped notification, with per-item and bulk dismiss. */
-function NotificationLog({ entries, hidden }: { entries: NotificationEntry[]; hidden: NotificationEntry[] }) {
-   const [open, setOpen] = useState(false);
+/** Every chipped notification. A row reopens its message; dismiss removes it. */
+function NotificationLog({ entries, open, close }: { entries: NotificationEntry[]; open: number | null; close: () => void }) {
    const root = useRef<HTMLDivElement>(null);
    useEffect(() => {
-      if (!open) return;
-      const close = (event: PointerEvent) => {
-         if (!root.current?.contains(event.target as Node)) setOpen(false);
+      const outside = (event: PointerEvent) => {
+         const target = event.target as Element;
+         if (!root.current?.contains(target) && !target.closest?.(".notification-pill-count")) close();
       };
       const key = (event: KeyboardEvent) => {
-         if (event.key === "Escape") setOpen(false);
+         if (event.key === "Escape") close();
       };
-      window.addEventListener("pointerdown", close);
+      window.addEventListener("pointerdown", outside);
       window.addEventListener("keydown", key);
       return () => {
-         window.removeEventListener("pointerdown", close);
+         window.removeEventListener("pointerdown", outside);
          window.removeEventListener("keydown", key);
       };
-   }, [open]);
+   }, [close]);
    return (
-      <div className="notification-log" ref={root}>
-         <button
-            className={`status-chip log-toggle${open ? " open" : ""}`}
-            data-notification-chip={hidden.map((entry) => entry.id).join(" ") || undefined}
-            aria-label={`Notification log, ${entries.length} notifications`}
-            aria-expanded={open}
-            onClick={() => setOpen((current) => !current)}
-         >
-            <span className="tabular">{entries.length}</span>
-            <ChevronUp size={12} />
-         </button>
-         {open && (
-            <div className="notification-log-popover" role="dialog" aria-label="Notification log">
-               <div className="notification-log-entries">
-                  {entries.map((entry) => (
-                     <div key={entry.id} className={`notification-log-row ${entry.tone}`}>
-                        <NotificationIcon tone={entry.tone} size={13} />
-                        <div className="notification-log-text">
-                           <span>{entry.title}</span>
-                           {entry.detail && <p>{entry.detail}</p>}
-                        </div>
-                        <span className="notification-log-age">{entry.key ? "Active" : age(entry.createdAt)}</span>
-                        <IconButton label={`Dismiss: ${entry.title}`} onClick={() => dismiss(entry.id)}>
-                           <X size={12} />
-                        </IconButton>
-                     </div>
-                  ))}
-               </div>
-               <div className="notification-log-footer">
-                  <span>
-                     {entries.length} {entries.length === 1 ? "notification" : "notifications"}
-                  </span>
+      <div className="notification-log-popover" role="dialog" aria-label="Notification log" ref={root}>
+         <div className="notification-log-entries">
+            {entries.map((entry) => (
+               <div key={entry.id} className={`notification-log-row ${entry.tone}`}>
+                  <NotificationIcon tone={entry.tone} size={13} />
                   <button
-                     className="notification-log-clear"
+                     className="notification-log-text"
                      onClick={() => {
-                        clearAll();
-                        setOpen(false);
+                        close();
+                        if (open !== entry.id) toggleOpen(entry.id);
                      }}
                   >
-                     Clear all
+                     <span>{entry.title}</span>
+                     {entry.detail && <p>{entry.detail}</p>}
                   </button>
+                  <span className="notification-log-age">{entry.key ? "Active" : age(entry.createdAt)}</span>
+                  <IconButton label={`Dismiss: ${entry.title}`} onClick={() => dismiss(entry.id)}>
+                     <X size={12} />
+                  </IconButton>
                </div>
-            </div>
-         )}
+            ))}
+         </div>
+         <div className="notification-log-footer">
+            <span>
+               {entries.length} {entries.length === 1 ? "notification" : "notifications"}
+            </span>
+            <button
+               className="notification-log-clear"
+               onClick={() => {
+                  clearAll();
+                  close();
+               }}
+            >
+               Clear all
+            </button>
+         </div>
       </div>
    );
 }
