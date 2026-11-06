@@ -1,13 +1,13 @@
-version: 0.10.0
+version: 0.11.0
 path: >-
-  https://github.com/NoomStuff/AcroClip/releases/download/v0.10.0/AcroClip-0.10.0-win-x64-Installer.exe
+  https://github.com/NoomStuff/AcroClip/releases/download/v0.11.0/AcroClip-0.11.0-win-x64-Installer.exe
 sha512: >-
-  Uv7bf1NJH8mudiH+rRNMwxS9EMnm6Zfjp1DIyXPcTezP2S+lrqioNBPMo8z9wBK5pYWHh6BdBVq5Aw22W/E++A==
+  +vCVWWLtMZTDKpEVdJETPmQVrLyCx7mVi4vWxHyjwqeTU9jrqYB8w4P3ZD8mrRAWMX5mXyxLdsmMssguRB9WXA==
 files:
   - url: >-
-      https://github.com/NoomStuff/AcroClip/releases/download/v0.10.0/AcroClip-0.10.0-win-x64-Installer.exe
+      https://github.com/NoomStuff/AcroClip/releases/download/v0.11.0/AcroClip-0.11.0-win-x64-Installer.exe
     sha512: >-
-      Uv7bf1NJH8mudiH+rRNMwxS9EMnm6Zfjp1DIyXPcTezP2S+lrqioNBPMo8z9wBK5pYWHh6BdBVq5Aw22W/E++A==
-    size: 151857310
+      +vCVWWLtMZTDKpEVdJETPmQVrLyCx7mVi4vWxHyjwqeTU9jrqYB8w4P3ZD8mrRAWMX5mXyxLdsmMssguRB9WXA==
+    size: 151861482
 releaseName: Library refinement and playback fixes
-releaseDate: '2026-11-04T22:33:37.881Z'
+releaseDate: '2026-11-06T19:01:32.800Z'
