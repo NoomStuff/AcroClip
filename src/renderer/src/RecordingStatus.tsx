@@ -1,4 +1,4 @@
-import { AlertCircle, LoaderCircle, Monitor, X } from "lucide-react";
+import { AlertCircle, ChevronDown, LoaderCircle, Monitor, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppState, CaptureSource } from "../../shared/types";
 import { age, formatTime } from "./format";
@@ -17,7 +17,7 @@ import {
    type NotificationEntry,
    type NotificationTone,
 } from "./notifications";
-import { closePinned, glide, pillTargets } from "./notification-motion";
+import { closePinned, glide, pillTargets, popIn } from "./notification-motion";
 import { NotificationIcon } from "./NotificationToast";
 
 export function RecordingStatus({ state, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
@@ -179,6 +179,8 @@ function NotificationChips() {
          const tone = pill.dataset["tone"] as NotificationTone | undefined;
          if (tone) pillTargets.set(tone, new DOMRect(origin.left + pill.offsetLeft, origin.top + pill.offsetTop, pill.offsetWidth, pill.offsetHeight));
       }
+      for (const pill of Array.from(element.querySelectorAll<HTMLElement>(".notification-pill")))
+         if (!places.current.has(pill.dataset["tone"] ?? "") && !pill.classList.contains("awaiting")) popIn(pill);
       glide(element, places.current, (child) => child.dataset["tone"]);
    });
    useEffect(() => {
@@ -201,6 +203,7 @@ function NotificationChips() {
                      onClick={() => toggle(group[0]!)}
                   >
                      <NotificationIcon tone={tone} size={12} />
+                     <ChevronDown className="notification-pill-collapse" size={13} aria-hidden="true" />
                   </button>
                ) : (
                   <button
@@ -230,6 +233,7 @@ function NotificationChips() {
             >
                <NotificationIcon tone={newest.tone} size={12} />
                <span>{newest.title}</span>
+               <ChevronDown className="notification-pill-collapse" size={13} aria-hidden="true" />
             </button>
             {primary!.entries.length > 1 && (
                <button

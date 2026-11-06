@@ -378,7 +378,7 @@ describe("damaged metadata action identity", () => {
          await recovered.open(root);
          const displayedA = recovered.clips.find((clip) => clip.relativePath === "A.mp4")!;
          expect(await recovered.filesForDeletion(displayedA.id)).toEqual([await realpath(a)]);
-         expect(recovered.warnings).toContain("Collection metadata was recovered from its backup.");
+         expect(recovered.warnings).toContain("Collection info was restored from its backup. Recent tag or shareable changes may be missing.");
          io.exported = [];
          await recovered.createShareable(displayedA.id, 1);
          expect(io.exported).toEqual([await realpath(a)]);
@@ -411,10 +411,10 @@ describe("damaged metadata action identity", () => {
          await recovered.open(root);
          expect(new Set(recovered.clips.map((clip) => clip.id)).size).toBe(2);
          expect(recovered.warnings).toContain(
-            "Collection metadata is damaged. Videos remain available, but tags and shareable changes are disabled to preserve recovery information."
+            "Collection info is damaged. Your videos still play, but tags and shareables are locked so the backup stays intact."
          );
-         await expect(recovered.rename(recovered.clips[0]!.id, "Changed")).rejects.toThrow("metadata");
-         await expect(recovered.createShareable(recovered.clips[0]!.id, 1)).rejects.toThrow("metadata");
+         await expect(recovered.rename(recovered.clips[0]!.id, "Changed")).rejects.toThrow("collection info is damaged");
+         await expect(recovered.createShareable(recovered.clips[0]!.id, 1)).rejects.toThrow("collection info is damaged");
          expect(await readFile(metadata, "utf8")).toBe(bytes);
          expect(await readFile(`${metadata}.bak`, "utf8")).toBe(bytes);
          expect(await readFile(join(root, "A.mp4"), "utf8")).toBe("original A");

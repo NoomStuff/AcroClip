@@ -71,7 +71,7 @@ const collections = new CollectionService({
       emitState();
       if (job.state === "failed") notice(job.message, true);
    },
-   onWarning: (message) => notice(message, true),
+   onWarning: (message, level) => (level === "log" ? void log(message) : notice(message, level === "error", "info", "app", { tone: level })),
    mediaUrl,
 });
 const updates = new Updates(() => emitState());
@@ -82,7 +82,8 @@ const feedback = new Feedback(
    (message) => void log(message),
    iconPath()
 );
-const storage = new StorageMonitor({ onChange: () => emitState(), onWarning: (message) => notice(message, true) });
+// The status bar shows low storage as a condition, so the app side stays quiet here.
+const storage = new StorageMonitor({ onChange: () => emitState(), onWarning: (message) => notice(message, false, "info", "native", { tone: "warning" }) });
 const recorder = new Recorder({
    gameCatalogPath: join(app.getPath("userData"), "game-catalog.json"),
    onAudioMonitorError: (monitorError, listeningError) =>
@@ -112,7 +113,7 @@ const recorder = new Recorder({
    onSaved: async (path, source, _requestId, capture) => {
       const clip = await collections.registerRecording(path, source, capture.application);
       emitState();
-      notice(capture.previousFootage ? "Saved the footage that was still available" : "Clip saved", false, "saved");
+      notice(capture.previousFootage ? "Saved the footage that was still available" : "Clip saved", false, "saved", "native");
       if (preferences.autoShare && shareableTargetAllowed(clip.size, preferences.shareSizeMB)) {
          void collections.createShareable(clip.id, preferences.shareSizeMB).catch((e) => notice(errorMessage(e), true));
       }
@@ -214,11 +215,15 @@ async function log(message: string) {
    }
 }
 /**
- * Where a notice shows in the app. Actions taken in the window answer there.
- * Background events toast only while the window has focus; otherwise errors
- * wait quietly as a status-bar chip and the rest stay out of the app.
+ * Where a notice goes.
+ * - `action`: answers something done in the window. In-app toast, no banner.
+ * - `background`: happens while the user may be in a game. Desktop banner;
+ *   errors and warnings also wait in the app as a quiet chip, and toast there
+ *   instead when banners are off.
+ * - `native`: desktop banner only, like clip saving.
+ * - `app`: in-app only, toasting while the window has focus.
  */
-type NoticeSurface = "action" | "background" | "none";
+type NoticeSurface = "action" | "background" | "native" | "app";
 function notice(
    message: string,
    error = false,
@@ -226,12 +231,16 @@ function notice(
    surface: NoticeSurface = "background",
    options: NoticeOptions = {}
 ) {
+   const banner = (surface === "background" || surface === "native") && preferences?.notifications !== "off";
+   const serious = error || options.tone === "warning";
    const focused = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && mainWindow.isFocused();
-   if (surface === "action" || (surface === "background" && (focused || error)))
-      send({ type: "notice", message, error, chip: error, ...options, ...(surface === "background" && !focused ? { toast: false } : {}) });
+   if (surface === "action") send({ type: "notice", message, error, chip: error, ...options });
+   else if (surface === "app" || (surface === "background" && serious))
+      send({ type: "notice", message, error, chip: serious, ...options, toast: surface === "app" ? focused : !banner });
    void log(message);
+   if (!banner) return;
    if (preferences?.sound && (error || kind === "saved")) shell.beep();
-   if (preferences?.notifications !== "off") void showFeedback(message, error, kind === "saving").catch(() => undefined);
+   void showFeedback(message, error, kind === "saving").catch(() => undefined);
 }
 async function showFeedback(message: string, error: boolean, saving: boolean) {
    if (preferences.notifications === "outside-fullscreen" && (await recorder.foregroundFullscreen())) return;
@@ -389,7 +398,7 @@ async function saveClip() {
    void storage.check(collections.root);
    await recorder.save(destination, requestedAt, lastRecordingArtwork?.application);
    // The status bar shows saves in progress, so this only reaches the desktop banner.
-   notice("Saving clip…", false, "saving", "none");
+   notice("Saving clip…", false, "saving", "native");
 }
 function pendingJobs() {
    return collections.pendingJobs;
@@ -573,7 +582,7 @@ function suspendShortcuts(enabled: boolean): void {
    for (const [id, key] of installedShortcuts) {
       if (enabled) globalShortcut.unregister(key);
       else if (!globalShortcut.register(key, () => globalAction(id)))
-         notice(`${shortcutRegistry.find((item) => item.id === id)!.label} shortcut is unavailable. Choose another in Settings.`, true);
+         notice(`${shortcutRegistry.find((item) => item.id === id)!.label} shortcut is unavailable. Choose another in Settings.`, true, "info", "action");
    }
 }
 function installShortcuts(next: Preferences, startup = false): () => void {
@@ -690,7 +699,7 @@ function registerIPC() {
             } catch (e) {
                rollbackShortcuts();
                if (next.collection !== preferences.collection && collections.root !== resolve(preferences.collection))
-                  await collections.open(preferences.collection).catch((error: unknown) => notice(errorMessage(error), true));
+                  await collections.open(preferences.collection).catch((error: unknown) => notice(errorMessage(error), true, "info", "action"));
                if (
                   ["recording", "waiting"].includes(recorder.status.state) &&
                   (next.sourceId !== preferences.sourceId ||
@@ -698,9 +707,11 @@ function registerIPC() {
                      next.desktopFallback !== preferences.desktopFallback ||
                      JSON.stringify(next.customGames) !== JSON.stringify(preferences.customGames))
                )
-                  await recorder.switchSource(preferences, captureSources.cached).catch((error: unknown) => notice(errorMessage(error), true));
+                  await recorder
+                     .switchSource(preferences, captureSources.cached)
+                     .catch((error: unknown) => notice(errorMessage(error), true, "info", "action"));
                if (next.startWithOS !== preferences.startWithOS)
-                  await applyStartup(preferences.startWithOS).catch((error: unknown) => notice(errorMessage(error), true));
+                  await applyStartup(preferences.startWithOS).catch((error: unknown) => notice(errorMessage(error), true, "info", "action"));
                if (["recording", "waiting"].includes(recorder.status.state)) {
                   for (const source of preferences.audioSources.filter((source) => source.enabled))
                      await recorder.setAudio({ source: source.id, volume: source.volume, muted: source.muted }).catch(() => undefined);
@@ -840,7 +851,7 @@ function registerIPC() {
       if (!executable) throw new Error("AttaCut is no longer available. Install it to open this clip there.");
       const { spawn } = await import("node:child_process");
       const child = spawn(executable, [clip.path], { detached: true, stdio: "ignore", windowsHide: true, env: attaCutEnvironment(process.env) });
-      child.once("error", () => notice("AttaCut could not open. Show the clip in your file manager and open it there.", true));
+      child.once("error", () => notice("AttaCut couldn't open. Show the clip in your file manager and open it from there.", true, "info", "action"));
       child.unref();
    });
    handle("playback", async (path, track, requestId) => {
@@ -890,7 +901,7 @@ function registerIPC() {
       try {
          event.sender.startDrag({ file: trustedPath(path), icon: trayIcon() });
       } catch (e) {
-         notice(errorMessage(e), true);
+         notice(errorMessage(e), true, "info", "action");
       }
    });
 }
