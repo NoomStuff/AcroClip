@@ -125,9 +125,10 @@ export function flyFromChip(toast: HTMLElement, id: number): void {
    if (!pill || still()) return;
    const from = pillLook(pill);
    const to = look(toast);
-   toast.style.visibility = "hidden";
+   // Opacity, not visibility, so its buttons work while the copy is still growing.
+   toast.style.opacity = "0";
    void fly(from, to, layer(pill, from.rect), layer(toast, to.rect)).then(() => {
-      toast.style.visibility = "";
+      toast.style.opacity = "";
    });
 }
 
