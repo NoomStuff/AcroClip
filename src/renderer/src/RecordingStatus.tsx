@@ -17,7 +17,7 @@ import {
    type NotificationEntry,
    type NotificationTone,
 } from "./notifications";
-import { closePinned, glide, pillTargets, popIn } from "./notification-motion";
+import { closePinned, glide, pillTargets, popIn, sweepOut } from "./notification-motion";
 import { NotificationIcon } from "./NotificationToast";
 
 export function RecordingStatus({ state, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
@@ -301,8 +301,8 @@ function NotificationLog({ entries, open, close }: { entries: NotificationEntry[
             <button
                className="notification-log-clear"
                onClick={() => {
-                  clearAll();
                   close();
+                  sweepOut(clearAll);
                }}
             >
                Clear all
