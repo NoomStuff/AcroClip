@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clapperboard, LibraryBig, Play, Minus, Settings2, Square, Video, X } from "lucide-react";
 import { AppLogo } from "./AppLogo";
-import type { AppState, Clip, RecorderState } from "../../shared/types";
+import type { AppState, Clip, NoticeOptions, RecorderState } from "../../shared/types";
 import { SelectionIndicator, TabMarker } from "./SelectionIndicator";
 import { api, describeError } from "./desktop";
 import { Dialog } from "./Dialog";
@@ -16,7 +16,7 @@ import { Viewer } from "./Viewer";
 import { Settings } from "./Settings";
 import type { SettingsTarget } from "./Settings";
 import { UpdateChip } from "./UpdateChip";
-import { notify } from "./notifications";
+import { clearNotification, notify, type NotificationInput } from "./notifications";
 import { NotificationToast } from "./NotificationToast";
 import { Onboarding } from "./Onboarding";
 import { useNavigationHistory } from "./navigation-history";
@@ -28,6 +28,10 @@ const ViewerPage = memo(Viewer);
 const SettingsPage = memo(Settings);
 const pageOrder: readonly Page[] = ["recording", "library", "viewer", "settings"];
 import type { Ask } from "./Dialog";
+function noticeInput({ message, error, tone, ...options }: { message: string; error: boolean } & NoticeOptions): NotificationInput {
+   return { ...options, message, tone: tone ?? (error ? "error" : "success") };
+}
+
 export function App() {
    const [state, setState] = useState<AppState | null>(null);
    const [{ page, direction, visited }, setNavigation] = useState<{ page: Page; direction: "up" | "down"; visited: Page[] }>({
@@ -116,12 +120,13 @@ export function App() {
             setState((current) => (current ? { ...current, recorder: event.recorder } : current));
          }
          if (event.type === "clip-action") setClipPulse((value) => value + 1);
-         if (event.type === "notice" && event.message) notify({ message: event.message, tone: event.error ? "error" : "info", chip: event.chip === true });
+         if (event.type === "notice" && event.message) notify(noticeInput(event));
+         if (event.type === "notice-clear") clearNotification(event.key);
       });
       const feedback = (event: Event) => {
          const value = (event as CustomEvent<RendererFeedback>).detail;
          if (value.kind === "audio-status") setAudioStatus(value.message);
-         else notify({ message: value.message, tone: value.error ? "error" : "info", chip: value.chip === true });
+         else notify(noticeInput(value));
       };
       window.addEventListener("acroclip-feedback", feedback);
       return () => {

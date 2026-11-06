@@ -6,8 +6,18 @@ import { api } from "./desktop";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { useAudioWarning } from "./useAudioWarning";
 import { IconButton } from "./ui";
-import { clearAll, closeOpen, dismiss, toggleOpen, useCondition, useNotifications, type NotificationEntry } from "./notifications";
-import { closePinned } from "./notification-motion";
+import {
+   chipGroups,
+   clearAll,
+   closeOpen,
+   dismiss,
+   toggleOpen,
+   useCondition,
+   useNotifications,
+   type NotificationEntry,
+   type NotificationTone,
+} from "./notifications";
+import { closePinned, glide, pillTargets } from "./notification-motion";
 import { NotificationIcon } from "./NotificationToast";
 
 export function RecordingStatus({ state, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
@@ -139,73 +149,113 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    );
 }
 
+const toneNames: Record<NotificationTone, [string, string]> = {
+   error: ["error", "errors"],
+   warning: ["warning", "warnings"],
+   success: ["message", "messages"],
+};
+const countLabel = (tone: NotificationTone, count: number) => `${count} ${toneNames[tone][count === 1 ? 0 : 1]}`;
+
 /**
- * One pill for every chipped notification and condition. It shows the newest
- * title; clicking it reopens that message, and the count opens the log.
+ * Chips grouped into one pill per tone. The most severe group sits on the
+ * right with its newest title, so an error is never hidden behind a success.
+ * The other groups shrink to an icon and count.
  */
 function NotificationChips() {
    const { entries, open } = useNotifications();
-   const chips = entries.filter((entry) => entry.chip && entry.phase === "chip");
+   const groups = chipGroups(entries);
    const [logOpen, setLogOpen] = useState(false);
    const closeLog = useCallback(() => setLogOpen(false), []);
-   const pill = useRef<HTMLDivElement>(null);
-   const width = useRef(0);
-   const newest = chips[0];
-   // The pill eases to its new width when the title changes, instead of jumping.
+   const area = useRef<HTMLDivElement>(null);
+   const places = useRef(new Map<string, { x: number; y: number }>());
+   const total = groups.reduce((sum, group) => sum + group.entries.length, 0);
    useLayoutEffect(() => {
-      const element = pill.current;
-      if (!element) {
-         width.current = 0;
-         return;
+      pillTargets.clear();
+      const element = area.current;
+      if (!element) return;
+      // Final boxes from layout offsets, so flights aim past any glide in progress.
+      const origin = element.getBoundingClientRect();
+      for (const pill of Array.from(element.querySelectorAll<HTMLElement>(".notification-pill"))) {
+         const tone = pill.dataset["tone"] as NotificationTone | undefined;
+         if (tone) pillTargets.set(tone, new DOMRect(origin.left + pill.offsetLeft, origin.top + pill.offsetTop, pill.offsetWidth, pill.offsetHeight));
       }
-      const next = element.getBoundingClientRect().width;
-      if (width.current && Math.abs(width.current - next) > 1 && !window.matchMedia("(prefers-reduced-motion: reduce)").matches)
-         element.animate([{ width: `${width.current}px` }, { width: `${next}px` }], { duration: 380, easing: "cubic-bezier(0.32, 0.72, 0, 1)" });
-      width.current = next;
-   }, [newest?.id, newest?.title, chips.length]);
+      glide(element, places.current, (child) => child.dataset["tone"]);
+   });
    useEffect(() => {
-      if (chips.length < 2) setLogOpen(false);
-   }, [chips.length]);
-   if (!newest) return null;
-   const opened = open === newest.id;
+      if (total < 2) setLogOpen(false);
+   }, [total]);
+   if (!groups.length) return null;
+   const toggle = (entry: NotificationEntry) => (open === entry.id ? closePinned(entry.id, entry.tone, closeOpen) : toggleOpen(entry.id));
+   const [primary, ...others] = groups;
+   const newest = primary!.entries[0]!;
    return (
-      <div className="notification-area">
-         <div ref={pill} className={`notification-pill ${newest.tone}`} data-notification-chip={chips.map((entry) => entry.id).join(" ")}>
+      <div className="notification-area" ref={area}>
+         {[...others].reverse().map(({ tone, entries: group }) => (
+            <div key={tone} className="notification-pill" data-tone={tone} data-notification-chip={group.map((entry) => entry.id).join(" ")}>
+               {group.length === 1 ? (
+                  <button
+                     className={`notification-pill-main${open === group[0]!.id ? " holding" : ""}`}
+                     aria-label={`Notification: ${group[0]!.title}`}
+                     aria-expanded={open === group[0]!.id}
+                     title={group[0]!.title}
+                     onClick={() => toggle(group[0]!)}
+                  >
+                     <NotificationIcon tone={tone} size={12} />
+                  </button>
+               ) : (
+                  <button
+                     className="notification-pill-main notification-log-toggle"
+                     aria-label={`${countLabel(tone, group.length)}, show all`}
+                     aria-expanded={logOpen}
+                     onClick={() => setLogOpen((value) => !value)}
+                  >
+                     <NotificationIcon tone={tone} size={12} />
+                     <span className="tabular">{group.length}</span>
+                  </button>
+               )}
+            </div>
+         ))}
+         <div
+            key={primary!.tone}
+            className="notification-pill primary"
+            data-tone={primary!.tone}
+            data-notification-chip={primary!.entries.map((entry) => entry.id).join(" ")}
+         >
             <button
-               className="notification-pill-main"
+               className={`notification-pill-main${open === newest.id ? " holding" : ""}`}
                title={newest.detail ? `${newest.title}. ${newest.detail}` : newest.title}
                aria-label={`Notification: ${newest.title}`}
-               aria-expanded={opened}
-               onClick={() => (opened ? closePinned(newest.id, closeOpen) : toggleOpen(newest.id))}
+               aria-expanded={open === newest.id}
+               onClick={() => toggle(newest)}
             >
                <NotificationIcon tone={newest.tone} size={12} />
                <span>{newest.title}</span>
             </button>
-            {chips.length > 1 && (
+            {primary!.entries.length > 1 && (
                <button
-                  className="notification-pill-count"
-                  aria-label={`Notification log, ${chips.length} notifications`}
+                  className="notification-pill-count notification-log-toggle"
+                  aria-label={`${countLabel(primary!.tone, primary!.entries.length)}, show all`}
                   aria-expanded={logOpen}
                   onClick={() => setLogOpen((value) => !value)}
                >
-                  <span key={chips.length} className="tabular">
-                     +{chips.length - 1}
+                  <span key={primary!.entries.length} className="tabular">
+                     +{primary!.entries.length - 1}
                   </span>
                </button>
             )}
          </div>
-         {logOpen && <NotificationLog entries={chips} open={open} close={closeLog} />}
+         {logOpen && <NotificationLog entries={groups.flatMap((group) => group.entries)} open={open} close={closeLog} />}
       </div>
    );
 }
 
-/** Every chipped notification. A row reopens its message; dismiss removes it. */
+/** Every chip, most severe first. A row reopens its message; dismiss removes it. */
 function NotificationLog({ entries, open, close }: { entries: NotificationEntry[]; open: number | null; close: () => void }) {
    const root = useRef<HTMLDivElement>(null);
    useEffect(() => {
       const outside = (event: PointerEvent) => {
          const target = event.target as Element;
-         if (!root.current?.contains(target) && !target.closest?.(".notification-pill-count")) close();
+         if (!root.current?.contains(target) && !target.closest?.(".notification-log-toggle")) close();
       };
       const key = (event: KeyboardEvent) => {
          if (event.key === "Escape") close();
@@ -233,7 +283,7 @@ function NotificationLog({ entries, open, close }: { entries: NotificationEntry[
                      <span>{entry.title}</span>
                      {entry.detail && <p>{entry.detail}</p>}
                   </button>
-                  <span className="notification-log-age">{entry.key ? "Active" : age(entry.createdAt)}</span>
+                  <span className="notification-log-age">{entry.condition ? "Ongoing" : age(entry.createdAt)}</span>
                   <IconButton label={`Dismiss: ${entry.title}`} onClick={() => dismiss(entry.id)}>
                      <X size={12} />
                   </IconButton>

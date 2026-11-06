@@ -346,6 +346,8 @@
 .notification-area {
    position: relative;
    display: flex;
+   align-items: center;
+   gap: 5px;
    min-width: 0;
 }
 
@@ -366,13 +368,19 @@
    white-space: nowrap;
 }
 
-.notification-pill.error {
+.notification-pill[data-tone="error"] {
    --tone: var(--red);
    --tone-surface: #2b1d23;
    --tone-border: #d65f7042;
 }
 
-.notification-pill.warning {
+.notification-pill[data-tone="success"] {
+   --tone: var(--accent);
+   --tone-surface: color-mix(in srgb, var(--accent) 9%, var(--raised));
+   --tone-border: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.notification-pill[data-tone="warning"] {
    --tone: #e3be78;
    --tone-surface: #29251b;
    --tone-border: #e3be783d;
@@ -398,6 +406,20 @@
 
 .notification-pill-main > svg {
    flex-shrink: 0;
+}
+
+.notification-pill:not(.primary) .notification-pill-main {
+   gap: 4px;
+   padding: 0 7px;
+}
+
+/* Its message is open above, so the pill keeps its place but not its text. */
+.notification-pill-main > * {
+   transition: opacity 160ms var(--ease);
+}
+
+.notification-pill-main.holding > * {
+   opacity: 0;
 }
 
 .notification-pill-main > span {

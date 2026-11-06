@@ -131,7 +131,7 @@ describe("recorder helper termination", () => {
          }
          vi.useFakeTimers();
          try {
-            const query = expect(child.applicationCandidates()).rejects.toThrow("Application detection timed out");
+            const query = expect(child.applicationCandidates()).rejects.toThrow("Finding open apps took too long");
             await vi.advanceTimersByTimeAsync(10_001);
             await query;
             expect(child.status.state).toBe("recording");
@@ -159,7 +159,7 @@ describe("recorder helper termination", () => {
          const { child, root } = await fixture("unacknowledged-save");
          vi.useFakeTimers();
          try {
-            const saving = expect(child.save(join(root, "uncertain.mkv"))).rejects.toThrow("did not finish");
+            const saving = expect(child.save(join(root, "uncertain.mkv"))).rejects.toThrow("didn't respond in time");
             await vi.advanceTimersByTimeAsync(20_001);
             await saving;
             expect(child.status.pendingSaves).toBe(1);
