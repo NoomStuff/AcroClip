@@ -83,7 +83,7 @@ export function App() {
          await action();
          return true;
       } catch (error) {
-         notify({ message: describeError(error), error: true, chip: true });
+         notify({ message: describeError(error), tone: "error", chip: true });
          return false;
       }
    }, []);
@@ -116,12 +116,12 @@ export function App() {
             setState((current) => (current ? { ...current, recorder: event.recorder } : current));
          }
          if (event.type === "clip-action") setClipPulse((value) => value + 1);
-         if (event.type === "notice" && event.message) notify({ message: event.message, error: event.error, chip: event.chip === true });
+         if (event.type === "notice" && event.message) notify({ message: event.message, tone: event.error ? "error" : "info", chip: event.chip === true });
       });
       const feedback = (event: Event) => {
          const value = (event as CustomEvent<RendererFeedback>).detail;
          if (value.kind === "audio-status") setAudioStatus(value.message);
-         else notify({ message: value.message, error: value.error, chip: value.chip === true });
+         else notify({ message: value.message, tone: value.error ? "error" : "info", chip: value.chip === true });
       };
       window.addEventListener("acroclip-feedback", feedback);
       return () => {

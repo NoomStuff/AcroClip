@@ -1,80 +1,164 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+
+export type NotificationTone = "error" | "warning" | "info";
+
+/**
+ * Where an entry is in its life:
+ * - `toast`: in the bottom-right stack, counting down.
+ * - `collapsing`: the toast is morphing into its status-bar chip.
+ * - `chip`: lives in the status bar until dismissed or no longer relevant.
+ */
+export type NotificationPhase = "toast" | "collapsing" | "chip";
 
 export interface NotificationEntry {
    id: number;
-   message: string;
-   error: boolean;
-   /** Chipped notifications stay in the status bar after the toast hides. */
+   /** Conditions carry a key and leave on their own once the condition clears. */
+   key: string | null;
+   title: string;
+   detail: string;
+   tone: NotificationTone;
+   /** Chipped entries stay in the status bar after the toast hides; the rest disappear. */
    chip: boolean;
    createdAt: number;
-   /** While true the entry shows as the toast; afterwards it lives as a chip. */
-   toasted: boolean;
+   phase: NotificationPhase;
+}
+
+export interface NotificationInput {
+   message: string;
+   detail?: string;
+   tone?: NotificationTone;
+   chip?: boolean;
 }
 
 interface NotificationState {
    entries: NotificationEntry[];
-   /** Entry currently pinned open in a toast, usually reopened from its chip. */
-   openId: number | null;
+   /** A chipped entry reopened as a pinned toast. `closing` while it morphs back. */
+   open: { id: number; closing: boolean } | null;
 }
 
 const MAX_ENTRIES = 20;
 
-let state: NotificationState = { entries: [], openId: null };
+let state: NotificationState = { entries: [], open: null };
 const listeners = new Set<() => void>();
 let nextId = 1;
+/** Conditions the user dismissed, by key, so the same message does not return. */
+const dismissedConditions = new Map<string, string>();
+/** The raw message each active condition was raised with. */
+const conditionMessages = new Map<string, string>();
 
-function emit() {
+function commit(next: NotificationState) {
+   state = next;
    for (const listener of listeners) listener();
 }
 
-function replaceEntry(id: number, update: Partial<NotificationEntry>) {
-   state = { ...state, entries: state.entries.map((entry) => (entry.id === id ? { ...entry, ...update } : entry)) };
-   emit();
+/** First sentence as the title, the rest as expandable detail. */
+export function splitMessage(message: string): { title: string; detail: string } {
+   const text = message.trim();
+   const match = /^(.+?[.!?])\s+(\S[\s\S]*)$/.exec(text);
+   const title = (match ? match[1]! : text).replace(/(?<!\.)\.$/, "");
+   return { title, detail: match ? match[2]!.trim() : "" };
 }
 
-export function notify(input: { message: string; error?: boolean; chip?: boolean }): void {
-   const message = input.message.trim();
-   if (!message) return;
-   const entry: NotificationEntry = {
+function create(input: NotificationInput, key: string | null): NotificationEntry | null {
+   const split = splitMessage(input.message);
+   if (!split.title) return null;
+   return {
       id: nextId++,
-      message,
-      error: !!input.error,
-      chip: !!input.chip,
+      key,
+      title: split.title,
+      detail: input.detail?.trim() || split.detail,
+      tone: input.tone ?? "info",
+      chip: key !== null || !!input.chip,
       createdAt: Date.now(),
-      toasted: true,
+      phase: "toast",
    };
-   // A repeated message moves to the top instead of stacking a duplicate.
-   const entries = [entry, ...state.entries.filter((item) => item.message !== message)].slice(0, MAX_ENTRIES);
-   state = { entries, openId: null };
-   emit();
 }
 
-/** The toast countdown ended: chipped entries collapse into the bar, the rest are gone. */
+const same = (a: NotificationEntry, b: NotificationEntry) => a.title === b.title && a.detail === b.detail;
+
+export function notify(input: NotificationInput): void {
+   const entry = create(input, null);
+   if (!entry) return;
+   // An active condition already says this; don't repeat it as a notification.
+   if (state.entries.some((item) => item.key !== null && same(item, entry))) return;
+   // A repeated message moves to the front instead of stacking a duplicate.
+   const entries = [entry, ...state.entries.filter((item) => item.key !== null || !same(item, entry))].slice(0, MAX_ENTRIES);
+   commit({ entries, open: state.open && entries.some((item) => item.id === state.open?.id) ? state.open : null });
+}
+
+/** Show, update or clear a condition. It toasts once, then stays as a chip until cleared. */
+export function setCondition(key: string, input: NotificationInput | null): void {
+   const current = state.entries.find((item) => item.key === key);
+   if (!input || !input.message.trim()) {
+      dismissedConditions.delete(key);
+      conditionMessages.delete(key);
+      if (current) remove(current.id);
+      return;
+   }
+   if (dismissedConditions.get(key) === input.message) return;
+   dismissedConditions.delete(key);
+   conditionMessages.set(key, input.message);
+   const entry = create(input, key);
+   if (!entry) return;
+   if (current) {
+      if (same(current, entry) && current.tone === entry.tone) return;
+      // Updated wording keeps its place instead of toasting again.
+      commit({ ...state, entries: state.entries.map((item) => (item.id === current.id ? { ...entry, id: current.id, phase: current.phase } : item)) });
+      return;
+   }
+   // Drop plain notifications that this condition now covers.
+   const entries = [entry, ...state.entries.filter((item) => item.key !== null || !same(item, entry))].slice(0, MAX_ENTRIES);
+   commit({ ...state, entries });
+}
+
+export function useCondition(key: string, input: NotificationInput | null): void {
+   const message = input?.message ?? "";
+   const detail = input?.detail ?? "";
+   const tone = input?.tone ?? "info";
+   useEffect(() => {
+      setCondition(key, message ? { message, detail, tone } : null);
+   }, [key, message, detail, tone]);
+   useEffect(() => () => setCondition(key, null), [key]);
+}
+
+function remove(id: number) {
+   commit({ entries: state.entries.filter((item) => item.id !== id), open: state.open?.id === id ? null : state.open });
+}
+
+/** The countdown ended. Chipped entries start morphing into the bar; the rest leave. */
 export function expire(id: number): void {
    const entry = state.entries.find((item) => item.id === id);
-   if (!entry || !entry.toasted) return;
-   if (entry.chip) replaceEntry(id, { toasted: false });
-   else {
-      state = { entries: state.entries.filter((item) => item.id !== id), openId: state.openId === id ? null : state.openId };
-      emit();
-   }
+   if (!entry || entry.phase !== "toast") return;
+   if (!entry.chip) return remove(id);
+   commit({ ...state, entries: state.entries.map((item) => (item.id === id ? { ...item, phase: "collapsing" } : item)) });
+}
+
+/** The morph into the chip finished. */
+export function settle(id: number): void {
+   const entry = state.entries.find((item) => item.id === id);
+   if (!entry || entry.phase === "chip") return;
+   commit({ ...state, entries: state.entries.map((item) => (item.id === id ? { ...item, phase: "chip" } : item)) });
 }
 
 export function dismiss(id: number): void {
-   state = { entries: state.entries.filter((item) => item.id !== id), openId: state.openId === id ? null : state.openId };
-   emit();
+   const entry = state.entries.find((item) => item.id === id);
+   if (entry?.key) dismissedConditions.set(entry.key, conditionMessages.get(entry.key) ?? "");
+   remove(id);
 }
 
 export function clearAll(): void {
-   state = { entries: state.entries.filter((item) => item.toasted), openId: null };
-   emit();
+   for (const entry of state.entries) if (entry.phase === "chip") dismiss(entry.id);
 }
 
-/** Reopen (or close) a chipped notification as a pinned toast. */
-export function setToastOpen(id: number | null): void {
-   if (state.openId === id) return;
-   state = { ...state, openId: id };
-   emit();
+/** Chip click: open the entry as a pinned toast, or morph an open one back. */
+export function toggleOpen(id: number): void {
+   if (state.open?.id === id) commit({ ...state, open: { id, closing: true } });
+   else commit({ ...state, open: { id, closing: false } });
+}
+
+/** The pinned toast finished morphing back into its chip. */
+export function closed(id: number): void {
+   if (state.open?.id === id) commit({ ...state, open: null });
 }
 
 export function subscribe(listener: () => void): () => void {
@@ -88,4 +172,11 @@ export function getSnapshot(): NotificationState {
 
 export function useNotifications(): NotificationState {
    return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** Test hook: start from an empty store. */
+export function resetNotifications(): void {
+   dismissedConditions.clear();
+   conditionMessages.clear();
+   commit({ entries: [], open: null });
 }

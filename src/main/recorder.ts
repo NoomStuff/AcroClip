@@ -677,7 +677,8 @@ export class Recorder {
    async monitorAudio(preferences: Preferences | null): Promise<string[]> {
       const generation = ++this.monitorGeneration;
       try {
-         if (["starting", "recording", "waiting"].includes(this.current.state)) return [];
+         // Without a recorder the status bar already says so; a monitor error would repeat it.
+         if (!this.current.supported || ["starting", "recording", "waiting"].includes(this.current.state)) return [];
          if (!preferences) {
             this.monitorKey = "";
             this.monitorLevels = { capture: 0, microphone: 0 };

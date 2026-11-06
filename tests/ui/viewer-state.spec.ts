@@ -100,7 +100,7 @@ test("the viewer rail retains its first clip, version and position when a newer 
       // reopen it pinned from the chip and dismiss it there.
       const dismiss = page.getByRole("button", { name: "Dismiss", exact: true });
       await dismiss
-         .or(page.getByRole("button", { name: "Notification: This clip is no longer in the collection.", exact: true }))
+         .or(page.getByRole("button", { name: "Notification: This clip is no longer in the collection", exact: true }))
          .first()
          .click();
       if (await dismiss.isVisible()) await dismiss.click();

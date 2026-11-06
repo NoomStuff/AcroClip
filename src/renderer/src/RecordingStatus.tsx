@@ -1,4 +1,4 @@
-import { AlertCircle, Check, LoaderCircle, Monitor, X } from "lucide-react";
+import { AlertCircle, ChevronUp, LoaderCircle, Monitor, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { AppState, CaptureSource } from "../../shared/types";
 import { age, formatTime } from "./format";
@@ -6,10 +6,8 @@ import { api } from "./desktop";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { useAudioWarning } from "./useAudioWarning";
 import { IconButton } from "./ui";
-import { clearAll, dismiss, setToastOpen, useNotifications, type NotificationEntry } from "./notifications";
-
-/** How many chipped notifications show before the rest collapse into the log. */
-const MAX_ICON_CHIPS = 4;
+import { clearAll, dismiss, toggleOpen, useCondition, useNotifications, type NotificationEntry } from "./notifications";
+import { NotificationIcon } from "./NotificationToast";
 
 export function RecordingStatus({ state, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
    const [sources, setSources] = useState<CaptureSource[]>([]);
@@ -43,19 +41,30 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    const appIcon = captured?.appIcon || state?.applicationIcons[captured?.applicationId ?? ""];
    const isApplication = recorder?.sourceKind === "app";
    const audioWarning = useAudioWarning(recorder?.audioWarning || audioMessage);
-   const status = active
-      ? recorder?.message || "Capturing"
-      : recorder?.state === "waiting"
-        ? recorder?.message || "Waiting for application"
-        : recorder?.state === "starting"
-          ? "Starting capture"
-          : recorder?.state === "error"
-            ? "Capture stopped"
-            : "Not capturing";
+   const status =
+      recorder && !recorder.supported
+         ? "Capture unavailable"
+         : active
+           ? recorder?.message || "Capturing"
+           : recorder?.state === "waiting"
+             ? recorder?.message || "Waiting for application"
+             : recorder?.state === "starting"
+               ? "Starting capture"
+               : recorder?.state === "error"
+                 ? "Capture stopped"
+                 : "Not capturing";
    const captureName =
       recorder?.sourceName || (state?.preferences.sourceKind === "screen" ? "Desktop" : state?.preferences.sourceKind === "auto" ? "Auto" : "Application");
-   const { entries, openId } = useNotifications();
-   const chips = entries.filter((entry) => entry.chip && !entry.toasted);
+   useCondition(
+      "recorder",
+      recorder && !recorder.supported
+         ? { message: "Recorder unavailable", detail: recorder.message || "This build has no native recorder, so capture is off.", tone: "error" }
+         : recorder && !active && recorder.message && recorder.message !== status
+           ? { message: recorder.message, tone: "error" }
+           : null
+   );
+   useCondition("audio", audioWarning ? { message: audioWarning, tone: "warning" } : null);
+   useCondition("storage", state?.storageWarning ? { message: state.storageWarning, tone: "warning" } : null);
    const pendingSaves = recorder?.pendingSaves ?? 0;
    const hasShareableJob = !!state?.jobs.some((job) => job.kind === "shareable" && ["running", "queued"].includes(job.state));
    return (
@@ -107,37 +116,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
             )}
          </div>
          <div className="status-right">
-            {(audioWarning || state?.storageWarning || (recorder && !active && recorder.message && recorder.message !== status)) && (
-               <div className="status-chips" role="list" aria-label="Warnings">
-                  {audioWarning && (
-                     <span className="status-chip condition error" role="listitem" title={audioWarning}>
-                        <AlertCircle size={12} />
-                        <span>{audioWarning}</span>
-                     </span>
-                  )}
-                  {state?.storageWarning && (
-                     <span className="status-chip condition warning" role="listitem" title={state.storageWarning}>
-                        <AlertCircle size={12} />
-                        <span>{state.storageWarning}</span>
-                     </span>
-                  )}
-                  {recorder && !active && recorder.message && recorder.message !== status && (
-                     <span className="status-chip condition error" role="listitem" title={recorder.message}>
-                        <AlertCircle size={12} />
-                        <span>{recorder.message}</span>
-                     </span>
-                  )}
-               </div>
-            )}
-            <div className="status-chips" role="group" aria-label="Notifications">
-               {chips
-                  .slice(0, MAX_ICON_CHIPS - 1)
-                  .reverse()
-                  .map((entry) => (
-                     <NotificationChip key={entry.id} entry={entry} iconOnly={entry !== chips[0]} />
-                  ))}
-               {chips.length >= MAX_ICON_CHIPS && <NotificationLog entries={chips} openId={openId} />}
-            </div>
+            <NotificationChips />
             {(pendingSaves > 0 || hasShareableJob) && (
                <div className="status-chips" role="list" aria-label="Activity">
                   {pendingSaves > 0 && (
@@ -159,26 +138,47 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    );
 }
 
+/** How many chips show before the rest only live in the log. */
+const VISIBLE_CHIPS = 3;
+
 /**
- * The newest chipped notification shows its text; older ones degrade to an
- * icon. Clicking either reopens the message as a pinned toast.
+ * Chipped notifications and conditions, newest first. The newest shows its
+ * title, older ones shrink to an icon, and the log lists all of them.
  */
-function NotificationChip({ entry, iconOnly }: { entry: NotificationEntry; iconOnly: boolean }) {
+function NotificationChips() {
+   const { entries, open } = useNotifications();
+   const chips = entries.filter((entry) => entry.chip && entry.phase !== "toast");
+   if (!chips.length) return null;
+   const shown = chips.slice(0, VISIBLE_CHIPS);
+   const hidden = chips.slice(VISIBLE_CHIPS);
+   return (
+      <div className="status-chips" role="group" aria-label="Notifications">
+         {chips.length > 1 && <NotificationLog entries={chips} hidden={hidden} />}
+         {[...shown].reverse().map((entry) => (
+            <NotificationChip key={entry.id} entry={entry} iconOnly={entry !== chips[0]} open={open?.id === entry.id && !open.closing} />
+         ))}
+      </div>
+   );
+}
+
+function NotificationChip({ entry, iconOnly, open }: { entry: NotificationEntry; iconOnly: boolean; open: boolean }) {
    return (
       <button
-         className={`status-chip ${entry.error ? "error" : "info"}${iconOnly ? " icon-only" : ""}`}
-         title={entry.message}
-         aria-label={`Notification: ${entry.message}`}
-         onClick={() => setToastOpen(entry.id)}
+         className={`status-chip ${entry.tone}${iconOnly ? " icon-only" : ""}${entry.phase === "collapsing" ? " arriving" : ""}`}
+         data-notification-chip={entry.id}
+         title={entry.detail ? `${entry.title}. ${entry.detail}` : entry.title}
+         aria-label={`Notification: ${entry.title}`}
+         aria-expanded={open}
+         onClick={() => toggleOpen(entry.id)}
       >
-         {entry.error ? <AlertCircle size={12} /> : <Check size={12} />}
-         {!iconOnly && <span>{entry.message}</span>}
+         <NotificationIcon tone={entry.tone} size={12} />
+         {!iconOnly && <span>{entry.title}</span>}
       </button>
    );
 }
 
-/** Overflow popover listing chipped notifications with per-item dismiss. */
-function NotificationLog({ entries, openId }: { entries: NotificationEntry[]; openId: number | null }) {
+/** Popover listing every chipped notification, with per-item and bulk dismiss. */
+function NotificationLog({ entries, hidden }: { entries: NotificationEntry[]; hidden: NotificationEntry[] }) {
    const [open, setOpen] = useState(false);
    const root = useRef<HTMLDivElement>(null);
    useEffect(() => {
@@ -199,22 +199,27 @@ function NotificationLog({ entries, openId }: { entries: NotificationEntry[]; op
    return (
       <div className="notification-log" ref={root}>
          <button
-            className={`status-chip icon-only ${openId !== null ? "open" : ""}`}
+            className={`status-chip log-toggle${open ? " open" : ""}`}
+            data-notification-chip={hidden.map((entry) => entry.id).join(" ") || undefined}
             aria-label={`Notification log, ${entries.length} notifications`}
             aria-expanded={open}
             onClick={() => setOpen((current) => !current)}
          >
-            <span aria-hidden="true">…</span>
+            <span className="tabular">{entries.length}</span>
+            <ChevronUp size={12} />
          </button>
          {open && (
             <div className="notification-log-popover" role="dialog" aria-label="Notification log">
                <div className="notification-log-entries">
                   {entries.map((entry) => (
-                     <div key={entry.id} className="notification-log-row">
-                        {entry.error ? <AlertCircle size={13} /> : <Check size={13} />}
-                        <span title={entry.message}>{entry.message}</span>
-                        <span className="notification-log-age">{age(entry.createdAt)}</span>
-                        <IconButton label={`Dismiss: ${entry.message}`} onClick={() => dismiss(entry.id)}>
+                     <div key={entry.id} className={`notification-log-row ${entry.tone}`}>
+                        <NotificationIcon tone={entry.tone} size={13} />
+                        <div className="notification-log-text">
+                           <span>{entry.title}</span>
+                           {entry.detail && <p>{entry.detail}</p>}
+                        </div>
+                        <span className="notification-log-age">{entry.key ? "Active" : age(entry.createdAt)}</span>
+                        <IconButton label={`Dismiss: ${entry.title}`} onClick={() => dismiss(entry.id)}>
                            <X size={12} />
                         </IconButton>
                      </div>
@@ -224,7 +229,13 @@ function NotificationLog({ entries, openId }: { entries: NotificationEntry[]; op
                   <span>
                      {entries.length} {entries.length === 1 ? "notification" : "notifications"}
                   </span>
-                  <button className="notification-log-clear" onClick={() => clearAll()}>
+                  <button
+                     className="notification-log-clear"
+                     onClick={() => {
+                        clearAll();
+                        setOpen(false);
+                     }}
+                  >
                      Clear all
                   </button>
                </div>

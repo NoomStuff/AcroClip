@@ -156,31 +156,65 @@
    min-width: 0;
 }
 
-.toast {
+.toast-stack {
    position: fixed;
    z-index: 120;
    right: 21px;
    bottom: 42px;
    display: flex;
-   gap: 11px;
-   align-items: center;
+   flex-direction: column;
+   align-items: flex-end;
+   gap: 8px;
+   pointer-events: none;
+}
+
+.toast {
+   pointer-events: auto;
+   transform-origin: bottom right;
    background: var(--raised);
    border: 1px solid var(--border-control);
    border-radius: 12px;
-   padding: 12px 13px 12px 17px;
    box-shadow: 0 5px 25px #0008;
    color: var(--text);
-   max-width: min(520px, 60vw);
+   width: max-content;
+   max-width: min(420px, 60vw);
    font-size: 12px;
-   animation: toast-in 260ms var(--spring);
+   animation: toast-in 380ms var(--spring);
 }
 
-.toast > span {
+.toast.pinned {
+   animation: none;
+}
+
+.toast-body {
+   display: flex;
+   gap: 10px;
+   align-items: flex-start;
+   padding: 10px 10px 10px 14px;
+}
+
+.toast-body > svg {
+   flex-shrink: 0;
+   margin-top: 3px;
+   color: var(--accent);
+}
+
+.toast-text {
+   flex: 1;
+   min-width: 0;
+   padding-top: 2px;
    line-height: 1.5;
 }
 
-.toast > svg {
-   color: var(--accent);
+.toast-title {
+   display: block;
+   font-weight: 600;
+}
+
+.toast-detail {
+   margin-top: 3px;
+   color: var(--muted);
+   animation: menu-in 160ms var(--ease);
 }
 
 .toast.error {
@@ -188,15 +222,30 @@
    color: #f0c3cb;
 }
 
-.toast.error > svg {
+.toast.error .toast-body > svg {
    color: var(--red);
 }
 
+.toast.error .toast-detail {
+   color: #d9a7b0;
+}
+
+.toast.warning .toast-body > svg {
+   color: #e3be78;
+}
+
 .toast .icon-button {
-   pointer-events: auto;
    width: 25px;
    height: 25px;
-   margin-left: 5px;
+   flex-shrink: 0;
+}
+
+.toast-expand svg {
+   transition: transform 180ms var(--ease);
+}
+
+.toast-expand[aria-expanded="true"] svg {
+   transform: rotate(180deg);
 }
 
 .loading-app {
@@ -210,7 +259,7 @@
    font-size: 12px;
 }
 
-/* Warnings and notifications collapsed into status-bar chips. */
+/* Notifications and conditions collapsed into status-bar chips. */
 .status-chips {
    display: flex;
    align-items: center;
@@ -222,13 +271,20 @@
    display: inline-flex;
    align-items: center;
    gap: 5px;
-   max-width: 300px;
+   max-width: 240px;
+   height: 22px;
    overflow: hidden;
    white-space: nowrap;
-   text-overflow: ellipsis;
-   padding: 2px 9px 2px 7px;
+   padding: 0 9px 0 7px;
    border-radius: 999px;
    font-size: 11px;
+   flex-shrink: 0;
+   background: var(--raised);
+   border: 1px solid var(--border-control);
+   color: var(--muted);
+}
+
+.status-chip > svg {
    flex-shrink: 0;
 }
 
@@ -237,48 +293,50 @@
    text-overflow: ellipsis;
 }
 
-.status-chip.error,
-.status-chip.condition.error {
+.status-chip.error {
    background: #d65f7017;
-   border: 1px solid #d65f7038;
+   border-color: #d65f7038;
    color: var(--red);
 }
 
-.status-chip.condition.warning {
+.status-chip.warning {
    background: #e3be7817;
-   border: 1px solid #e3be7838;
+   border-color: #e3be7838;
    color: #e3be78;
-}
-
-.status-chip.info {
-   background: var(--raised);
-   border: 1px solid var(--border-control);
-   color: var(--muted);
 }
 
 .status-chip.progress {
    background: transparent;
-   border: 1px solid var(--border-control);
-   color: var(--muted);
 }
 
 button.status-chip {
    cursor: pointer;
    transition:
       border-color 140ms var(--ease),
-      background 140ms var(--ease);
+      background 140ms var(--ease),
+      filter 140ms var(--ease);
 }
 
-button.status-chip:hover {
-   border-color: var(--border-hover);
-   background: var(--hover);
+button.status-chip:hover,
+button.status-chip[aria-expanded="true"] {
+   filter: brightness(1.25);
+   border-color: currentColor;
+}
+
+/* Held invisible while the toast morphs onto it; the toast lands on its exact box. */
+.status-chip.arriving {
+   opacity: 0;
 }
 
 .status-chip.icon-only {
    width: 22px;
-   height: 22px;
    padding: 0;
    justify-content: center;
+}
+
+.status-chip.log-toggle {
+   gap: 3px;
+   padding: 0 6px 0 8px;
 }
 
 .notification-log {
@@ -290,7 +348,7 @@ button.status-chip:hover {
    position: fixed;
    right: 12px;
    bottom: 34px;
-   z-index: 110;
+   z-index: 130;
    width: 380px;
    max-width: calc(100vw - 24px);
    padding: 6px;
@@ -304,48 +362,67 @@ button.status-chip:hover {
 .notification-log-entries {
    display: flex;
    flex-direction: column;
+   gap: 2px;
    max-height: 320px;
    overflow-y: auto;
 }
 
 .notification-log-row {
    display: flex;
-   align-items: center;
+   align-items: flex-start;
    gap: 8px;
-   padding: 7px 8px;
+   padding: 7px 6px 7px 8px;
    border-radius: 7px;
    font-size: 12px;
    color: var(--text);
 }
 
+.notification-log-row:hover {
+   background: var(--hover);
+}
+
 .notification-log-row > svg {
    flex-shrink: 0;
-   color: var(--muted);
+   margin-top: 2px;
+   color: var(--accent);
 }
 
-.notification-log-row:nth-child(odd) {
-   background: #ffffff05;
+.notification-log-row.error > svg {
+   color: var(--red);
 }
 
-.notification-log-row > span:first-of-type {
+.notification-log-row.warning > svg {
+   color: #e3be78;
+}
+
+.notification-log-text {
    flex: 1;
    min-width: 0;
+   line-height: 1.45;
+}
+
+.notification-log-text > span {
+   display: block;
    overflow: hidden;
    text-overflow: ellipsis;
    white-space: nowrap;
 }
 
-.notification-log-row:nth-child(odd) > svg:first-child {
-   color: inherit;
-}
-
-.notification-log-row span:first-of-type {
-   color: var(--text);
+.notification-log-text > p {
+   color: var(--muted);
+   font-size: 11px;
 }
 
 .notification-log-age {
    color: var(--subtle);
    font-size: 11px;
+   flex-shrink: 0;
+   margin-top: 1px;
+}
+
+.notification-log-row .icon-button {
+   width: 20px;
+   height: 20px;
    flex-shrink: 0;
 }
 
@@ -372,6 +449,12 @@ button.status-chip:hover {
 
 .notification-log-clear:hover {
    background: var(--hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+   .toast {
+      animation: none;
+   }
 }
 
 @keyframes toast-in {

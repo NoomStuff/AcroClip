@@ -670,6 +670,8 @@ export function Library({
                         `Loaded ${headingClipCount} of ${discoveredCount} clips · ${formatSize(matchSize)}`
                      ) : initial ? (
                         <span aria-hidden="true">&nbsp;</span>
+                     ) : query && headingClipCount === 0 ? (
+                        "No results"
                      ) : scopeClips ? (
                         <>
                            Showing {headingClipCount} of {scopeClips.length} {scopeClips.length === 1 ? "clip" : "clips"} · {formatSize(matchSize)}
