@@ -129,7 +129,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
                   )}
                </div>
             )}
-            <div className="status-chips" role="list" aria-label="Notifications">
+            <div className="status-chips" role="group" aria-label="Notifications">
                {chips
                   .slice(0, MAX_ICON_CHIPS - 1)
                   .reverse()
@@ -167,7 +167,6 @@ function NotificationChip({ entry, iconOnly }: { entry: NotificationEntry; iconO
    return (
       <button
          className={`status-chip ${entry.error ? "error" : "info"}${iconOnly ? " icon-only" : ""}`}
-         role="listitem"
          title={entry.message}
          aria-label={`Notification: ${entry.message}`}
          onClick={() => setToastOpen(entry.id)}
