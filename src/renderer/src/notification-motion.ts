@@ -7,20 +7,20 @@ import type { NotificationTone } from "./notifications";
  * The store changes right away, so the real toast and pills always match the
  * state. The motion runs on a ghost, a fixed box that resizes from one shape
  * to the other with a copy of each inside. Resizing (not scaling) keeps text
- * at its real size, and the copies crossfade through a light blur so the
- * shape reads as one surface flowing into the other. The ghost is aria-hidden
+ * at its real size while the two copies crossfade. The copy keeps its tone
+ * attribute so its colors match the real pill exactly. The ghost is aria-hidden
  * and inert, so nothing can find or click it.
  */
 
-/** Fast start, long soft stop, no overshoot. */
-export const FLUID = "cubic-bezier(0.22, 1, 0.36, 1)";
-const FLIGHT_MS = 420;
+/** Quick, with a small overshoot before it settles. */
+export const SPRING = "cubic-bezier(0.34, 1.36, 0.64, 1)";
+const FLIGHT_MS = 340;
 const LEAVE_MS = 160;
 
 /** Each pill lists every id it stands for, space separated. */
 export const chipSelector = (id: number) => `[data-notification-chip~="${id}"]`;
 const toastSelector = (id: number) => `[data-toast-id="${id}"]`;
-const pillSelector = (tone: NotificationTone) => `.notification-pill[data-tone="${tone}"]`;
+const pillSelector = (tone: NotificationTone) => `.notification-area > .notification-pill[data-tone="${tone}"]`;
 
 export const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -67,7 +67,6 @@ function layer(element: HTMLElement, rect: DOMRect): HTMLElement {
    copy.classList.remove("toast", "receiving", "awaiting", "holding");
    copy.removeAttribute("data-notification-chip");
    copy.removeAttribute("data-toast-id");
-   copy.removeAttribute("data-tone");
    copy.removeAttribute("role");
    copy.classList.add("notification-layer");
    copy.style.width = `${rect.width}px`;
@@ -87,27 +86,13 @@ function ghost(...layers: HTMLElement[]): HTMLDivElement {
 
 const pillLook = (pill: HTMLElement, rect = pill.getBoundingClientRect()) => look(pill, rect, `${rect.height / 2}px`);
 
-/** Resize the ghost between two looks while one copy dissolves into the other. */
+/** Resize the ghost between two looks while one copy fades into the other. */
 function fly(from: Look, to: Look, leaving: HTMLElement, arriving: HTMLElement): Promise<void> {
    const element = ghost(leaving, arriving);
-   const timing = { duration: FLIGHT_MS, easing: FLUID, fill: "both" as const };
-   leaving.animate(
-      [
-         { opacity: 1, filter: "blur(0)" },
-         { opacity: 0, filter: "blur(3px)", offset: 0.45 },
-         { opacity: 0, filter: "blur(3px)" },
-      ],
-      { ...timing, easing: "linear" }
-   );
-   arriving.animate(
-      [
-         { opacity: 0, filter: "blur(3px)" },
-         { opacity: 0, filter: "blur(3px)", offset: 0.25 },
-         { opacity: 1, filter: "blur(0)", offset: 0.75 },
-         { opacity: 1, filter: "blur(0)" },
-      ],
-      { ...timing, easing: "linear" }
-   );
+   const timing = { duration: FLIGHT_MS, easing: SPRING, fill: "both" as const };
+   const fade = { duration: FLIGHT_MS, easing: "linear", fill: "both" as const };
+   leaving.animate([{ opacity: 1 }, { opacity: 0, offset: 0.4 }, { opacity: 0 }], fade);
+   arriving.animate([{ opacity: 0 }, { opacity: 0, offset: 0.2 }, { opacity: 1, offset: 0.6 }, { opacity: 1 }], fade);
    const done = () => element.remove();
    return element.animate([box(from), box(to)], timing).finished.then(done, done);
 }
@@ -129,6 +114,8 @@ export function flyToChip(toast: HTMLElement | null, id: number, tone: Notificat
    // An existing pill stays as an empty shell that eases to its new size; a new one waits hidden.
    const waiting = existed ? "receiving" : "awaiting";
    pill.classList.add(waiting);
+   // The flight is this pill's entrance, so drop the pop-in the render just started.
+   if (!existed) for (const animation of pill.getAnimations()) animation.cancel();
    void fly(from, to, leaving, arriving).then(() => pill.classList.remove(waiting));
 }
 
@@ -172,6 +159,18 @@ export function leave(toast: HTMLElement | null, commit: () => void): void {
       .finished.then(done, done);
 }
 
+/** A pill that appears without a flight pops in. */
+export function popIn(element: HTMLElement): void {
+   if (still()) return;
+   element.animate(
+      [
+         { transform: "scale(0.6)", opacity: 0 },
+         { transform: "none", opacity: 1 },
+      ],
+      { duration: 300, easing: SPRING }
+   );
+}
+
 /**
  * Glide children to their new layout places. Positions come from offsetTop and
  * offsetLeft, which ignore transforms, so an entrance animation in progress
@@ -189,7 +188,7 @@ export function glide(container: HTMLElement, last: Map<string, { x: number; y: 
       const dx = before.x - place.x;
       const dy = before.y - place.y;
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
-      child.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 380, easing: FLUID, composite: "add" });
+      child.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 360, easing: SPRING, composite: "add" });
    }
    last.clear();
    for (const [id, place] of next) last.set(id, place);

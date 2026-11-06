@@ -114,7 +114,6 @@
    display: flex;
    justify-content: space-between;
    align-items: center;
-   margin-right: 21px;
    padding: 0 10px;
    font-size: 11px;
    color: var(--muted);
@@ -159,7 +158,7 @@
 .toast-stack {
    position: fixed;
    z-index: 120;
-   right: 21px;
+   right: 12px;
    bottom: 42px;
    display: flex;
    flex-direction: column;
@@ -413,13 +412,32 @@
    padding: 0 7px;
 }
 
-/* Its message is open above, so the pill keeps its place but not its text. */
-.notification-pill-main > * {
-   transition: opacity 160ms var(--ease);
+/* Its message is open above, so the pill keeps its size and shows a collapse arrow instead of repeating the text. */
+.notification-pill-main {
+   position: relative;
 }
 
-.notification-pill-main.holding > * {
+.notification-pill-main > * {
+   transition:
+      opacity 160ms var(--ease),
+      transform 220ms var(--spring);
+}
+
+.notification-pill-main.holding > :not(.notification-pill-collapse) {
    opacity: 0;
+}
+
+.notification-pill-collapse {
+   position: absolute;
+   inset: 0;
+   margin: auto;
+   opacity: 0;
+   transform: translateY(-3px);
+}
+
+.notification-pill-main.holding > .notification-pill-collapse {
+   opacity: 1;
+   transform: none;
 }
 
 .notification-pill-main > span {
