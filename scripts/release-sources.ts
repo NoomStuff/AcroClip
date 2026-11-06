@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rename, writeFile, stat } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rename, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createGunzip } from "node:zlib";
@@ -435,9 +435,18 @@ export async function collectDependency(
          ]);
          await rename(temporary, file);
       } catch (error) {
-         if (expectedDigest || !uri.hostname.endsWith("googlesource.com") || !/^[a-f\d]{40}$/i.test(revision)) throw error;
-         console.warn(`Archive download failed for ${ref.uri}. Exporting the same pinned Git commit.`);
-         exportedRevision = await exportRepository(ref, file, directory);
+         // An upstream host can be down at release time. The last published source
+         // packet holds the same archive under the same name, and it still has to
+         // pass the pinned digest and commit checks below.
+         const recovered = process.env["ACROCLIP_RECOVERED_SOURCES"] ? path.join(process.env["ACROCLIP_RECOVERED_SOURCES"], "dependencies", name) : "";
+         if (recovered && existsSync(recovered)) {
+            console.warn(`Archive download failed for ${ref.uri}. Using the copy from the last published source packet.`);
+            await copyFile(recovered, file);
+         } else {
+            if (expectedDigest || !uri.hostname.endsWith("googlesource.com") || !/^[a-f\d]{40}$/i.test(revision)) throw error;
+            console.warn(`Archive download failed for ${ref.uri}. Exporting the same pinned Git commit.`);
+            exportedRevision = await exportRepository(ref, file, directory);
+         }
       }
    }
    const digest = await hashFile(file);
