@@ -249,8 +249,7 @@ jobs:
            with:
               script: |
                  const publish = require('./scripts/publish-release.cjs');
-                 const releaseName = require('./package.json').build.releaseInfo?.releaseName;
-                 await publish({github, context, core, releaseName});
+                 await publish({github, context, core});
       # Override the implicit success() check after the optional native job is skipped.
       if: ${{ !cancelled() && needs.prepare.outputs.publish == 'true' && needs.check.result == 'success' }}
    build-linux-x64:

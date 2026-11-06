@@ -41,9 +41,6 @@
       "test:ui:native:linux": "ACROCLIP_NATIVE_UI=1 python3 scripts/run-linux-ui.py bun x playwright test linux-native linux-desktop"
    },
    "build": {
-      "releaseInfo": {
-         "releaseName": "Silent updates and faster restarts"
-      },
       "appId": "dev.acroclip.app",
       "productName": "AcroClip",
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",

@@ -27,7 +27,6 @@ const publish = createRequire(import.meta.url)("./publish-release.cjs") as (args
    context: unknown;
    core: unknown;
    directory: string;
-   releaseName?: string;
 }) => Promise<void>;
 const roots: string[] = [];
 afterEach(async () => {
@@ -146,10 +145,10 @@ it("automatically publishes sources before app downloads and feeds, with blank d
    expect(provenance).not.toHaveProperty("attempt");
 });
 
-it("sets the requested app release title at creation without renaming the corresponding sources", async () => {
+it("titles app releases by version at creation without renaming the corresponding sources", async () => {
    const { args, repos } = await fixture();
-   await publish({ ...args, releaseName: "Major UI improvements" });
-   expect(repos.createRelease).toHaveBeenCalledWith(expect.objectContaining({ prerelease: false, name: "Major UI improvements", draft: true }));
+   await publish(args);
+   expect(repos.createRelease).toHaveBeenCalledWith(expect.objectContaining({ prerelease: false, name: "AcroClip 0.3.1", draft: true }));
    expect(repos.createRelease).toHaveBeenCalledWith(expect.objectContaining({ prerelease: true, name: "AcroClip 0.3.1 corresponding sources" }));
 });
 
