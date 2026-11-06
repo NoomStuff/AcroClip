@@ -250,7 +250,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await page.keyboard.press("Control+,");
       await expect(page.locator(".settings-page")).toBeVisible();
       await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
-      const binding = page.getByRole("button", { name: "Start / stop recording shortcut", exact: true });
+      const binding = page.getByRole("button", { name: "Start / stop capture shortcut", exact: true });
       await binding.click();
       await expect(binding).toHaveText(/Press a shortcut/);
       expect(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Control+Alt+Shift+F5"))).toBe(false);
@@ -258,7 +258,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.shortcuts.toggleRecording).toBe("Control+Alt+Shift+F4");
       expect(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Control+Alt+Shift+F4"))).toBe(true);
       expect(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Control+Alt+Shift+F5"))).toBe(true);
-      const navigation = page.getByRole("button", { name: "Recording page shortcut", exact: true });
+      const navigation = page.getByRole("button", { name: "Capture page shortcut", exact: true });
       await navigation.click();
       await expect(navigation).toHaveText(/Press a shortcut/);
       await navigation.press("Control+2");

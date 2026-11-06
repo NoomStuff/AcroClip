@@ -95,7 +95,14 @@ test("the viewer rail retains its first clip, version and position when a newer 
       await expect(page.locator(".toast.error")).toBeVisible();
       await page.getByRole("button", { name: "Play", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThan(2.1);
-      await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+      // Playback's slow start can outlast the toast's expiry, so the error may
+      // already be parked as a status-bar chip whose dismiss button names it.
+      // Both surfaces remove it.
+      await page
+         .getByRole("button", { name: "Dismiss", exact: true })
+         .or(page.getByRole("button", { name: "Dismiss: This clip is no longer in the collection.", exact: true }))
+         .first()
+         .click();
       await expect(page.locator(".toast.error")).toHaveCount(0);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
       await page.getByRole("button", { name: "Library", exact: true }).first().click();
