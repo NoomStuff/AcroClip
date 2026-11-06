@@ -1,10 +1,10 @@
 import type { Preferences } from "./types";
 export const shortcutRegistry = [
    { id: "saveClip", label: "Save clip", scope: "global", page: "all", binding: "" },
-   { id: "toggleRecording", label: "Start / stop recording", scope: "global", page: "all", binding: "" },
-   { id: "startRecording", label: "Start recording", scope: "global", page: "all", binding: "" },
-   { id: "stopRecording", label: "Stop recording", scope: "global", page: "all", binding: "" },
-   { id: "recording", label: "Recording page", scope: "local", page: "all", binding: "CommandOrControl+1" },
+   { id: "toggleRecording", label: "Start / stop capture", scope: "global", page: "all", binding: "" },
+   { id: "startRecording", label: "Start capture", scope: "global", page: "all", binding: "" },
+   { id: "stopRecording", label: "Stop capture", scope: "global", page: "all", binding: "" },
+   { id: "recording", label: "Capture page", scope: "local", page: "all", binding: "CommandOrControl+1" },
    { id: "library", label: "Library page", scope: "local", page: "all", binding: "CommandOrControl+2" },
    { id: "viewer", label: "Player page", scope: "local", page: "all", binding: "CommandOrControl+3" },
    { id: "settings", label: "Settings page", scope: "local", page: "all", binding: "CommandOrControl+," },

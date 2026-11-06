@@ -444,7 +444,7 @@ try {
    await writeFile(primary, "broken metadata");
    const recovered = new CollectionService();
    await recovered.open(root);
-   assert.ok(recovered.warnings.some((warning) => warning.includes("recovered")));
+   assert.ok(recovered.warnings.some((warning) => warning.includes("restored from its backup")));
    assert.equal(recovered.clips.find((entry) => entry.id === clip.id)?.shareables.length, 1);
 
    const moved = join(workspace, "moved-collection");
@@ -486,7 +486,7 @@ try {
    const damaged = new CollectionService();
    await damaged.open(moved);
    assert.ok(damaged.clips.length > 0, "damaged metadata never makes ordinary videos inaccessible");
-   await assert.rejects(damaged.createCategory("Do not overwrite recovery data"), /Restore/);
+   await assert.rejects(damaged.createCategory("Do not overwrite recovery data"), /locked while collection info is damaged/);
    assert.equal(await readFile(movedMetadataPath, "utf8"), "broken", "unrecoverable metadata remains untouched");
    console.log(
       "Media verification passed: last-keyframe thumbnails and cache migration, real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, and deletion boundaries."

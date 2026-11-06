@@ -1,3 +1,4 @@
+import type { NoticeOptions } from "../../shared/types";
 import type { DragEvent } from "react";
 import { clipDragType } from "./clip-drag";
 import type { ClipDrag } from "./clip-drag";
@@ -14,7 +15,7 @@ export function describeError(error: unknown): string {
    return message.replace(/^Error invoking remote method '[^']+':\s*/, "").replace(/^Error:\s*/, "");
 }
 
-export type RendererFeedback = { kind: "notice"; message: string; error: boolean } | { kind: "audio-status"; message: string };
+export type RendererFeedback = ({ kind: "notice"; message: string; error: boolean } & NoticeOptions) | { kind: "audio-status"; message: string };
 export function reportFeedback(value: RendererFeedback): void {
    window.dispatchEvent(new CustomEvent<RendererFeedback>("acroclip-feedback", { detail: value }));
 }

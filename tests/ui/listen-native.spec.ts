@@ -111,12 +111,12 @@ test("Listen is one direct default-output toggle and survives gain changes with 
       await expect(listening).toHaveAttribute("aria-pressed", "true");
       await listening.click();
       await expect(page.getByRole("button", { name: "Listen to Application", exact: true })).toHaveAttribute("aria-pressed", "false");
-      await page.getByRole("button", { name: "Start recording", exact: true }).click();
+      await page.getByRole("button", { name: "Start capturing", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.state, { timeout: 25000 }).toBe("recording");
       await page.getByRole("button", { name: "Listen to Application", exact: true }).click();
       await expect(listening).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("button", { name: "Library", exact: true }).click();
-      await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await page.getByRole("button", { name: "Capture", exact: true }).click();
       await expect(page.getByRole("button", { name: "Listen to Application", exact: true })).toHaveAttribute("aria-pressed", "false");
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
       await page.getByRole("button", { name: "Settings", exact: true }).click();

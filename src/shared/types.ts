@@ -213,12 +213,28 @@ export interface AppState {
    version: string;
    platform: string;
 }
+/** How an in-app notice behaves. See src/renderer/src/notifications.ts. */
+export interface NoticeOptions {
+   tone?: "error" | "warning" | "success";
+   /** Shown under the title. Without it, sentences after the first become the detail. */
+   detail?: string;
+   /** Keep it as a status-bar chip after the toast. */
+   chip?: boolean;
+   /** false lands it straight in the status bar, for messages the user already saw elsewhere. */
+   toast?: boolean;
+   /** Replaces the previous notice with this key; `notice-clear` removes it. */
+   key?: string;
+   /** Chip lifetime in milliseconds. */
+   chipFor?: number;
+}
+
 export type AppEvent =
    | { type: "capture-sources"; sources: CaptureSource[] }
    | { type: "state"; state: AppState }
    | { type: "state-patch"; patch: Partial<AppState> }
    | { type: "recorder"; recorder: RecorderState }
-   | { type: "notice"; message: string; error: boolean }
+   | ({ type: "notice"; message: string; error: boolean } & NoticeOptions)
+   | { type: "notice-clear"; key: string }
    | { type: "clip-action" }
    | { type: "audio-levels"; levels: AudioLevels }
    | { type: "audio-monitor"; monitorError: string; listeningError?: string }

@@ -291,7 +291,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                                     )}
                                  </>
                               )}
-                              {portal && draft.sourceKind === "screen" && <p className="setup-note">The system picker opens when recording starts.</p>}
+                              {portal && draft.sourceKind === "screen" && <p className="setup-note">The system picker opens when capturing starts.</p>}
                            </div>
                         </div>
                         <div className="setup-audio">
@@ -324,7 +324,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                      </>
                   ) : step === 1 ? (
                      <>
-                        <p className="setup-description">Your shortcut saves recent footage while recording.</p>
+                        <p className="setup-description">Your shortcut saves recent footage while capturing.</p>
                         <div className="setup-shortcut">
                            <ShortcutInput value={draft.shortcut} onChange={(value) => change("shortcut", value)} />
                         </div>
@@ -359,7 +359,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                         <div className="setup-startup">
                            <Toggle label="Start with your computer" checked={draft.startWithOS} onChange={(value) => change("startWithOS", value)} />
                            <Toggle
-                              label="Start recording when AcroClip opens"
+                              label="Start capturing when AcroClip opens"
                               checked={draft.autoRecord}
                               onChange={(value) => change("autoRecord", value)}
                               disabled={!draft.autoRecord && (!sourceReady || !capabilities?.supported)}
@@ -371,7 +371,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
             </div>
             {(capabilityError || (capabilities && !capabilities.supported)) && (
                <p className="setup-note" role="status">
-                  {capabilityError || capabilities?.message || "Recording is unavailable. You can set it up later."}
+                  {capabilityError || capabilities?.message || "Capture is unavailable. You can set it up later."}
                </p>
             )}
             <footer className="onboarding-actions">

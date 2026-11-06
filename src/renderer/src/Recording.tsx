@@ -274,8 +274,8 @@ export function Recording({
                         title={source.kind === "screen" ? "Screen capture" : source.name}
                         detail={
                            source.kind === "screen"
-                              ? "Choose a screen in the system picker when you start recording. Live preview is unavailable in this session."
-                              : "This application records directly. Live preview is unavailable in this Wayland session."
+                              ? "Choose a screen in the system picker when you start capturing. Live preview is unavailable in this session."
+                              : "This application is captured directly. Live preview is unavailable in this Wayland session."
                         }
                      />
                   ) : source ? (
@@ -332,7 +332,7 @@ export function Recording({
                         detail={
                            state.preferences.sourceKind === "auto"
                               ? detectedGame
-                                 ? "Start recording to capture detected games."
+                                 ? "Start capturing to save detected games."
                                  : "Open a game, or add an application to your games."
                               : "Select a screen or application from the list."
                         }
@@ -371,9 +371,9 @@ export function Recording({
                   <div className="capture-actions">
                      <button
                         className={`record-action ${active ? "is-recording" : ""}`}
-                        aria-label={active ? "Stop recording" : state.recorder.state === "starting" ? "Starting recording" : "Start recording"}
+                        aria-label={active ? "Stop capturing" : state.recorder.state === "starting" ? "Starting capture" : "Start capturing"}
                         aria-busy={state.recorder.state === "starting"}
-                        title={active ? "Stop recording. Unsaved history will clear." : undefined}
+                        title={active ? "Stop capturing. Footage you haven't saved will be discarded." : undefined}
                         aria-description={active ? "Stopping clears unsaved history." : undefined}
                         disabled={state.recorder.state === "starting" || !state.recorder.supported || (!active && !captureAvailable)}
                         onClick={() => void run(active ? () => api.stopRecording() : () => api.startRecording())}
@@ -385,7 +385,7 @@ export function Recording({
                         ) : (
                            <Circle size={50} strokeWidth={1.7} />
                         )}
-                        <span>{active ? "Stop recording" : state.recorder.state === "starting" ? "Starting…" : "Start recording"}</span>
+                        <span>{active ? "Stop capturing" : state.recorder.state === "starting" ? "Starting…" : "Start capturing"}</span>
                         {recordShortcut && <kbd>{formatBinding(recordShortcut, state.platform === "darwin")}</kbd>}
                      </button>
                      <button
@@ -435,7 +435,7 @@ export function Recording({
                               Add it
                            </button>
                         </div>
-                        <div className="auto-fallback" title="Record this screen when no game is detected. Off keeps Auto waiting.">
+                        <div className="auto-fallback" title="Capture this screen when no game is detected. Off keeps Auto waiting.">
                            <Field label="Screen fallback" stacked>
                               <Select
                                  label="Screen fallback"
@@ -509,8 +509,8 @@ export function Recording({
                   )}
                </div>
             </aside>
-            <PaneDivider label="Recording controls width" pane={controls} className="recording-width-divider" />
-            <PaneDivider label="Recording lower panels height" pane={lower} className="recording-height-divider" />
+            <PaneDivider label="Capture controls width" pane={controls} className="recording-width-divider" />
+            <PaneDivider label="Capture lower panels height" pane={lower} className="recording-height-divider" />
          </div>
       </div>
    );

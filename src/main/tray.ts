@@ -12,15 +12,15 @@ export function updateTray(
       status.state === "waiting"
          ? status.message || "Waiting for capture"
          : status.state === "error"
-           ? status.message || "Recording stopped"
+           ? status.message || "Capture stopped"
            : active
-             ? "Recording"
+             ? "Capturing"
              : "";
    tray.setToolTip(detail ? `AcroClip · ${detail}` : "AcroClip");
    tray.setContextMenu(
       Menu.buildFromTemplate([
          { label: "Open AcroClip", click: actions.open },
-         { label: active ? "Stop recording" : "Start recording", enabled: !starting, click: actions.toggleRecording },
+         { label: active ? "Stop capturing" : "Start capturing", enabled: !starting, click: actions.toggleRecording },
          { label: "Save clip", enabled: active, click: actions.saveClip },
          { type: "separator" },
          { label: "Exit", click: actions.exit },

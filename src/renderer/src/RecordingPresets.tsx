@@ -85,7 +85,7 @@ function CustomQualityControls({
                min={1}
                max={120}
                step={1}
-               aria-label="Recording frame rate"
+               aria-label="Capture frame rate"
                value={value.customFPS}
                onValueChange={(customFPS) => onChange({ customFPS })}
                unit="fps"
@@ -98,7 +98,7 @@ function CustomQualityControls({
                   <span>Smaller files</span>
                </div>
                <Slider
-                  aria-label="Recording compression"
+                  aria-label="Capture compression"
                   min={12}
                   max={35}
                   step={1}
@@ -138,7 +138,7 @@ export function RecordingPresets({ value, onChange, compact = false }: { value: 
          />
          {!compact && (
             <p className="preset-source-note">
-               Screens use the resolution limit. Apps start at their original size. The recording size stays fixed until you stop.
+               Screens use the resolution limit. Apps start at their original size. The capture size stays fixed until you stop.
             </p>
          )}
          <CustomQualityControls compact={compact} value={value} onChange={(patch) => onChange({ ...value, ...patch, quality: "custom" })} />

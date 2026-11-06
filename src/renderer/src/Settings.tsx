@@ -46,7 +46,7 @@ import type { NavigationLocation } from "./navigation-history";
 import { updateAction, updateDownloading, updateDownloadLabel } from "./update-action";
 
 const sections = [
-   { id: "recording", label: "Recording", icon: Video },
+   { id: "recording", label: "Capture", icon: Video },
    { id: "collection", label: "Collection", icon: Folder },
    { id: "games", label: "Games", icon: Gamepad2 },
    { id: "notifications", label: "Notifications", icon: Bell },
@@ -347,7 +347,7 @@ export function Settings({
                      <>
                         {[
                            {
-                              title: "Recording",
+                              title: "Capture",
                               detail: "Global shortcuts work in the tray. Stopping clears unsaved recent footage.",
                               items: shortcutRegistry.filter((item) => item.scope === "global"),
                            },
@@ -466,7 +466,7 @@ export function Settings({
                            <Toggle
                               icon={Copy}
                               label="Automatically create shareables"
-                              detail="Compress a copy after each save. Uses extra resources while recording."
+                              detail="Compress a copy after each save. Uses extra resources while capturing."
                               checked={draft.autoShare}
                               onChange={(value) => change("autoShare", value)}
                            />
@@ -503,7 +503,7 @@ export function Settings({
                            <h2>Startup</h2>
                            <p className="section-description">
                               {state.platform === "linux"
-                                 ? "Closing the window exits AcroClip and stops recording."
+                                 ? "Closing the window exits AcroClip and stops capturing."
                                  : "Closing the window keeps AcroClip running in the tray."}
                            </p>
                            <Toggle
@@ -514,7 +514,7 @@ export function Settings({
                            />
                            <Toggle
                               icon={FileVideo}
-                              label="Start recording when AcroClip opens"
+                              label="Start capturing when AcroClip opens"
                               detail="Use your saved source, or wait for its application to open."
                               checked={draft.autoRecord}
                               onChange={(value) => change("autoRecord", value)}
@@ -567,7 +567,7 @@ export function Settings({
                   <span>
                      {qualityError ||
                         saveError ||
-                        (recording ? "Stop recording to change recording or collection settings." : "Finish pending work before changing the collection.")}
+                        (recording ? "Stop capturing to change capture or collection settings." : "Finish pending work before changing the collection.")}
                   </span>
                   {saveError && !filenameError && <Button onClick={retry}>Retry save</Button>}
                </div>

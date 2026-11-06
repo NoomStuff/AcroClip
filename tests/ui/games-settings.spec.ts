@@ -98,7 +98,7 @@ test("Auto game management searches the saved catalogue and persists application
       const state = await page.evaluate(() => window.acroClip.state());
       expect(state.preferences.desktopFallback).toBe(false);
       expect(state.recorder.state).toBe("stopped");
-      await page.locator(".rail").getByRole("button", { name: "Recording", exact: true }).click();
+      await page.locator(".rail").getByRole("button", { name: "Capture", exact: true }).click();
       await expect(page.locator(".detected-game")).toContainText("No game detected");
       await expect(page.getByRole("combobox", { name: "Screen fallback", exact: true })).toContainText("Off");
       const screen = (await page.evaluate(() => window.acroClip.sources())).find((source) => source.kind === "screen");

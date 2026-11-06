@@ -81,6 +81,7 @@ export function Library({
    const searchInput = useRef<HTMLInputElement>(null);
    const scrollArea = useRef<HTMLDivElement>(null);
    const headingElement = useRef<HTMLElement>(null);
+   const collectionHeaderElement = useRef<HTMLDivElement>(null);
    useLayoutEffect(() => {
       const heading = headingElement.current;
       if (!heading) return;
@@ -91,6 +92,18 @@ export function Library({
       measure();
       const observer = new ResizeObserver(measure);
       observer.observe(heading);
+      return () => observer.disconnect();
+   }, []);
+   useLayoutEffect(() => {
+      const header = collectionHeaderElement.current;
+      if (!header) return;
+      const measure = () => {
+         const height = header.getBoundingClientRect().height;
+         if (height) header.parentElement?.style.setProperty("--collection-header-height", `${height}px`);
+      };
+      measure();
+      const observer = new ResizeObserver(measure);
+      observer.observe(header);
       return () => observer.disconnect();
    }, []);
    const [placeholderCount, setPlaceholderCount] = useState(8);
@@ -356,6 +369,15 @@ export function Library({
    }, [clips, contextMenu]);
    const selectedCategory = state.categories.find((item) => `category:${item.id}` === filter);
    const headingClipCount = folderPath !== null ? (folderStats.get(folderPath)?.matchingCount ?? 0) : clips.length;
+   // Narrowed scopes (search, tag/source filters) can show the match against the unsearched scope with the matched size.
+   const scopeClips = useMemo(
+      () => (query || filter !== "all" ? selectLibraryClips(state.clips, { search: "", filter, folderPath, order, applications: appKeys }) : null),
+      [query, filter, state.clips, folderPath, order, appKeys]
+   );
+   const matchSize = useMemo(
+      () => clips.reduce((total, clip) => total + (clip.originalMissing ? (clip.shareables.at(-1)?.size ?? clip.size) : clip.size), 0),
+      [clips]
+   );
    const discovering = state.collectionStatus.phase === "loading";
    const discovery = state.collectionStatus.discovery;
    const discoveredCount =
@@ -476,7 +498,7 @@ export function Library({
                     : {}),
             }}
          >
-            <div className="collection-drop" {...folderDropProps("")}>
+            <div className="collection-drop" ref={collectionHeaderElement} {...folderDropProps("")}>
                <ContextHeader
                   className="collection-home"
                   label="Collection"
@@ -632,15 +654,6 @@ export function Library({
                   )}
                </MotionList>
             </div>
-            <div className="sidebar-bottom">
-               {initial ? (
-                  <span aria-hidden="true">&nbsp;</span>
-               ) : (
-                  <>
-                     {state.clips.length} {state.clips.length === 1 ? "clip" : "clips"} · {formatSize(summary.size)}
-                  </>
-               )}
-            </div>
          </aside>
          <PaneDivider label="Library sidebar width" pane={sidebar} />
          <div className="library-content" style={{ "--grid-thumbnail-size": `${thumbnailSizes.grid}px` } as CSSProperties}>
@@ -654,12 +667,18 @@ export function Library({
                      {pending && <LoaderCircle size={13} className="spin" aria-label="Loading clips" />}
                      {childFolders.length > 0 && `${childFolders.length} ${childFolders.length === 1 ? "folder" : "folders"} · `}
                      {discovering && discovery && discoveredCount !== undefined ? (
-                        `${headingClipCount}/${discoveredCount} clips`
+                        `Loaded ${headingClipCount} of ${discoveredCount} clips · ${formatSize(matchSize)}`
                      ) : initial ? (
                         <span aria-hidden="true">&nbsp;</span>
+                     ) : query && headingClipCount === 0 ? (
+                        "No results"
+                     ) : scopeClips ? (
+                        <>
+                           Showing {headingClipCount} of {scopeClips.length} {scopeClips.length === 1 ? "clip" : "clips"} · {formatSize(matchSize)}
+                        </>
                      ) : (
                         <>
-                           {headingClipCount} {headingClipCount === 1 ? "clip" : "clips"}
+                           {headingClipCount} {headingClipCount === 1 ? "clip" : "clips"} · {formatSize(summary.size)}
                         </>
                      )}
                   </p>
@@ -694,33 +713,6 @@ export function Library({
                         <option value="oldest">Oldest first</option>
                         <option value="name">Name</option>
                      </Select>
-                  </div>
-                  <div className="library-view-switch moving-selection" role="group" aria-label="Library view">
-                     <SelectionIndicator value={view} selector={'button[aria-pressed="true"]'} />
-                     <IconButton
-                        label="Grid view"
-                        aria-pressed={view === "grid"}
-                        onClick={() => {
-                           if (view !== "grid") {
-                              captureLayout();
-                              setView("grid");
-                           }
-                        }}
-                     >
-                        <Grid2X2 size={16} />
-                     </IconButton>
-                     <IconButton
-                        label="List view"
-                        aria-pressed={view === "list"}
-                        onClick={() => {
-                           if (view !== "list") {
-                              captureLayout();
-                              setView("list");
-                           }
-                        }}
-                     >
-                        <List size={18} />
-                     </IconButton>
                   </div>
                </div>
             </header>
@@ -812,7 +804,7 @@ export function Library({
                                ? "Tag clips using their actions menu."
                                : filter.startsWith("source:")
                                  ? "Clips recorded from this application appear here."
-                                 : "Save a clip while recording, or put supported videos into your collection folder."
+                                 : "Save a clip while capturing, or put supported videos into your collection folder."
                      }
                   >
                      {query && <Button onClick={() => setQuery("")}>Clear search</Button>}
@@ -865,6 +857,34 @@ export function Library({
                >
                   <ZoomIn size={15} />
                </IconButton>
+               <span className="library-scale-divider" aria-hidden="true" />
+               <div className="library-view-switch moving-selection" role="group" aria-label="Library view">
+                  <SelectionIndicator value={view} selector={'button[aria-pressed="true"]'} />
+                  <IconButton
+                     label="Grid view"
+                     aria-pressed={view === "grid"}
+                     onClick={() => {
+                        if (view !== "grid") {
+                           captureLayout();
+                           setView("grid");
+                        }
+                     }}
+                  >
+                     <Grid2X2 size={16} />
+                  </IconButton>
+                  <IconButton
+                     label="List view"
+                     aria-pressed={view === "list"}
+                     onClick={() => {
+                        if (view !== "list") {
+                           captureLayout();
+                           setView("list");
+                        }
+                     }}
+                  >
+                     <List size={18} />
+                  </IconButton>
+               </div>
             </div>
          </div>
          {moveRequest && (

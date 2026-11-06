@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { AppEvent, AppState, Preferences, RecorderState } from "../shared/types";
+import type { AppEvent, AppState, NoticeOptions, Preferences, RecorderState } from "../shared/types";
 import { recordingArtwork, type RecordingArtwork } from "./recording-artwork";
 import { categoryRequest, idSchema } from "../shared/validation";
 import { assertDistinctAudioSources } from "./audio-sources";
@@ -71,7 +71,7 @@ const collections = new CollectionService({
       emitState();
       if (job.state === "failed") notice(job.message, true);
    },
-   onWarning: (message) => notice(message, true),
+   onWarning: (message, level) => (level === "log" ? void log(message) : notice(message, level === "error", "info", "app", { tone: level })),
    mediaUrl,
 });
 const updates = new Updates(() => emitState());
@@ -82,7 +82,8 @@ const feedback = new Feedback(
    (message) => void log(message),
    iconPath()
 );
-const storage = new StorageMonitor({ onChange: () => emitState(), onWarning: (message) => notice(message, true) });
+// The status bar shows low storage as a condition, so the app side stays quiet here.
+const storage = new StorageMonitor({ onChange: () => emitState(), onWarning: (message) => notice(message, false, "info", "native", { tone: "warning" }) });
 const recorder = new Recorder({
    gameCatalogPath: join(app.getPath("userData"), "game-catalog.json"),
    onAudioMonitorError: (monitorError, listeningError) =>
@@ -112,7 +113,7 @@ const recorder = new Recorder({
    onSaved: async (path, source, _requestId, capture) => {
       const clip = await collections.registerRecording(path, source, capture.application);
       emitState();
-      notice(capture.previousFootage ? "Saved last available footage" : "Clip saved", false, "saved");
+      notice(capture.previousFootage ? "Saved the footage that was still available" : "Clip saved", false, "saved", "native");
       if (preferences.autoShare && shareableTargetAllowed(clip.size, preferences.shareSizeMB)) {
          void collections.createShareable(clip.id, preferences.shareSizeMB).catch((e) => notice(errorMessage(e), true));
       }
@@ -145,7 +146,7 @@ function errorMessage(error: unknown): string {
 }
 function recorderState(): RecorderState {
    const current = recorder.status;
-   return startingCapture && current.state === "stopped" ? { ...current, state: "starting", message: "Starting recording" } : current;
+   return startingCapture && current.state === "stopped" ? { ...current, state: "starting", message: "Starting capture" } : current;
 }
 function state(): AppState {
    return {
@@ -213,11 +214,33 @@ async function log(message: string) {
       /* Diagnostics must not break capture. */
    }
 }
-function notice(message: string, error = false, kind: "info" | "saving" | "saved" = "info") {
-   send({ type: "notice", message, error });
+/**
+ * Where a notice goes.
+ * - `action`: answers something done in the window. In-app toast, no banner.
+ * - `background`: happens while the user may be in a game. Desktop banner;
+ *   errors and warnings also wait in the app as a quiet chip, and toast there
+ *   instead when banners are off.
+ * - `native`: desktop banner only, like clip saving.
+ * - `app`: in-app only, toasting while the window has focus.
+ */
+type NoticeSurface = "action" | "background" | "native" | "app";
+function notice(
+   message: string,
+   error = false,
+   kind: "info" | "saving" | "saved" = "info",
+   surface: NoticeSurface = "background",
+   options: NoticeOptions = {}
+) {
+   const banner = (surface === "background" || surface === "native") && preferences?.notifications !== "off";
+   const serious = error || options.tone === "warning";
+   const focused = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && mainWindow.isFocused();
+   if (surface === "action") send({ type: "notice", message, error, chip: error, ...options });
+   else if (surface === "app" || (surface === "background" && serious))
+      send({ type: "notice", message, error, chip: serious, ...options, toast: surface === "app" ? focused : !banner });
    void log(message);
+   if (!banner) return;
    if (preferences?.sound && (error || kind === "saved")) shell.beep();
-   if (preferences?.notifications !== "off") void showFeedback(message, error, kind === "saving").catch(() => undefined);
+   void showFeedback(message, error, kind === "saving").catch(() => undefined);
 }
 async function showFeedback(message: string, error: boolean, saving: boolean) {
    if (preferences.notifications === "outside-fullscreen" && (await recorder.foregroundFullscreen())) return;
@@ -331,9 +354,9 @@ async function ensureMicrophoneAccess(value: Preferences): Promise<void> {
 }
 async function startRecording() {
    lastRecordingArtwork = undefined;
-   if (!preferences.setupComplete) throw new Error("Finish setup before recording.");
+   if (!preferences.setupComplete) throw new Error("Finish setup before capturing.");
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to record.");
-   if (startingCapture || ["starting", "recording", "waiting"].includes(recorder.status.state)) throw new Error("Recording is already running.");
+   if (startingCapture || ["starting", "recording", "waiting"].includes(recorder.status.state)) throw new Error("Capture is already running.");
    startingCapture = (async () => {
       await preferenceWrites.catch(() => undefined);
       await ensureMicrophoneAccess(preferences);
@@ -354,7 +377,7 @@ async function startRecording() {
 async function saveClip() {
    const requestedAt = Date.now();
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to save another clip.");
-   if (recorder.status.state !== "recording" && recorder.status.state !== "waiting") throw new Error("Start recording before saving a clip.");
+   if (recorder.status.state !== "recording" && recorder.status.state !== "waiting") throw new Error("Start capturing before saving a clip.");
    if (!collections.root) throw new Error("The collection folder is still opening. Try saving again when it is available.");
    send({ type: "clip-action" });
    const footage = bufferedCaptureSource(recorder.status);
@@ -371,10 +394,11 @@ async function saveClip() {
    );
    mkdirSync(dirname(destination), { recursive: true });
    if (!withinRoot(collections.root, realpathSync(dirname(destination))))
-      throw new Error("The recording folder points outside this collection. Choose another folder.");
+      throw new Error("The capture folder points outside this collection. Choose another folder.");
    void storage.check(collections.root);
    await recorder.save(destination, requestedAt, lastRecordingArtwork?.application);
-   notice("Saving clip…", false, "saving");
+   // The status bar shows saves in progress, so this only reaches the desktop banner.
+   notice("Saving clip…", false, "saving", "native");
 }
 function pendingJobs() {
    return collections.pendingJobs;
@@ -437,9 +461,9 @@ async function prepareExit(): Promise<boolean> {
          if (["recording", "waiting"].includes(recorder.status.state)) {
             const result = await dialog.showMessageBox({
                type: "question",
-               message: "Stop recording and exit?",
+               message: "Stop capturing and exit?",
                detail: "Unsaved recent footage will be cleared.",
-               buttons: ["Exit", "Keep recording"],
+               buttons: ["Exit", "Keep capturing"],
                defaultId: 0,
                cancelId: 1,
             });
@@ -532,7 +556,7 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown) {
          // Playback and preview report errors locally and discard obsolete requests.
          // A global notice would outlive a source or file switch.
          if (!["playback", "cancel-playback", "preview-source", "monitor-audio", "listen-audio", "preferences"].includes(channel))
-            notice(errorMessage(e), true);
+            notice(errorMessage(e), true, "info", "action");
          else void log(`${channel}: ${errorMessage(e)}`);
          throw e;
       }
@@ -558,7 +582,7 @@ function suspendShortcuts(enabled: boolean): void {
    for (const [id, key] of installedShortcuts) {
       if (enabled) globalShortcut.unregister(key);
       else if (!globalShortcut.register(key, () => globalAction(id)))
-         notice(`${shortcutRegistry.find((item) => item.id === id)!.label} shortcut is unavailable. Choose another in Settings.`, true);
+         notice(`${shortcutRegistry.find((item) => item.id === id)!.label} shortcut is unavailable. Choose another in Settings.`, true, "info", "action");
    }
 }
 function installShortcuts(next: Preferences, startup = false): () => void {
@@ -609,8 +633,8 @@ function registerIPC() {
       }
       if (requested === portalScreenId) throw new Error("System-selected capture does not provide a separate live preview.");
       if (process.platform === "linux" && (await recorder.capabilities()).captureBackend === "wayland-portal")
-         throw new Error("Live preview is unavailable in this Wayland session. Recording uses the selected application directly.");
-      if (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete) throw new Error("Open Recording to preview the capture source.");
+         throw new Error("Live preview is unavailable in this Wayland session. Capture uses the selected application directly.");
+      if (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete) throw new Error("Open Capture to preview the capture source.");
       const selected = previewCaptureSource(captureSources.cached, preferences, recorder.status);
       if (!selected || selected.id !== requested) throw new Error("The selected preview source is unavailable.");
       previewSourceId = requested;
@@ -618,7 +642,7 @@ function registerIPC() {
    });
    handle("listen-audio", async (source) => {
       const id = z.string().max(200).nullable().parse(source);
-      if (id && (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete)) throw new Error("Open Recording to listen.");
+      if (id && (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete)) throw new Error("Open Capture to listen.");
       if (id && !["starting", "recording", "waiting"].includes(recorder.status.state)) await recorder.monitorAudio(preferences);
       return recorder.listenAudio(id);
    });
@@ -638,16 +662,16 @@ function registerIPC() {
       const operation = preferenceWrites
          .catch(() => undefined)
          .then(async () => {
-            if (startingCapture) throw new Error("Recording is starting. Wait before applying settings.");
+            if (startingCapture) throw new Error("Capture is starting. Wait before applying settings.");
             const next = synchronizeLegacyAudio(preferences, mergePreferenceChanges(preferences, value, changedKeys));
             if (audioTopology(next) !== audioTopology(preferences) || next.sourceKind !== preferences.sourceKind || next.sourceId !== preferences.sourceId)
                assertDistinctAudioSources(next, captureSources.cached);
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
             if (!isValidShortcut(next.shortcut)) throw new Error("That key combination is not supported. Try a letter, number, or function key.");
             if (recorder.status.state !== "stopped" && recorder.status.state !== "error" && requiresCaptureRestart(preferences, next))
-               throw new Error("Stop recording before applying recording or audio changes. Unsaved history will clear.");
+               throw new Error("Stop capturing to apply these changes. Footage you haven't saved will be discarded.");
             if (next.collection !== preferences.collection && (recorder.status.state !== "stopped" || recorder.status.pendingSaves || pendingJobs().length))
-               throw new Error("Stop recording and finish shareables before changing the collection folder.");
+               throw new Error("Stop capturing and finish shareables before changing the collection folder.");
             const conflict = shortcutConflict(next, process.platform === "darwin");
             if (conflict) throw new Error(conflict);
             for (const item of shortcutRegistry) {
@@ -675,7 +699,7 @@ function registerIPC() {
             } catch (e) {
                rollbackShortcuts();
                if (next.collection !== preferences.collection && collections.root !== resolve(preferences.collection))
-                  await collections.open(preferences.collection).catch((error: unknown) => notice(errorMessage(error), true));
+                  await collections.open(preferences.collection).catch((error: unknown) => notice(errorMessage(error), true, "info", "action"));
                if (
                   ["recording", "waiting"].includes(recorder.status.state) &&
                   (next.sourceId !== preferences.sourceId ||
@@ -683,9 +707,11 @@ function registerIPC() {
                      next.desktopFallback !== preferences.desktopFallback ||
                      JSON.stringify(next.customGames) !== JSON.stringify(preferences.customGames))
                )
-                  await recorder.switchSource(preferences, captureSources.cached).catch((error: unknown) => notice(errorMessage(error), true));
+                  await recorder
+                     .switchSource(preferences, captureSources.cached)
+                     .catch((error: unknown) => notice(errorMessage(error), true, "info", "action"));
                if (next.startWithOS !== preferences.startWithOS)
-                  await applyStartup(preferences.startWithOS).catch((error: unknown) => notice(errorMessage(error), true));
+                  await applyStartup(preferences.startWithOS).catch((error: unknown) => notice(errorMessage(error), true, "info", "action"));
                if (["recording", "waiting"].includes(recorder.status.state)) {
                   for (const source of preferences.audioSources.filter((source) => source.enabled))
                      await recorder.setAudio({ source: source.id, volume: source.volume, muted: source.muted }).catch(() => undefined);
@@ -711,7 +737,7 @@ function registerIPC() {
       const clipId = idSchema.parse(id);
       const targetMB = target === undefined ? preferences.shareSizeMB : z.number().min(1).max(2000).parse(target);
       const clip = collections.clips.find((item) => item.id === clipId);
-      if (!clip) throw new Error("Clip not found");
+      if (!clip) throw new Error("This clip is no longer in the collection.");
       if (!shareableTargetAllowed(clip.size, targetMB)) throw new Error("Choose a shareable size target no larger than the clip.");
       return collections.createShareable(clipId, targetMB);
    });
@@ -820,12 +846,12 @@ function registerIPC() {
    handle("attacut-available", async () => !!(await detectAttaCut()));
    handle("attacut", async (id) => {
       const clip = collections.clips.find((c) => c.id === idSchema.parse(id));
-      if (!clip || clip.originalMissing) throw new Error("Clip not found");
+      if (!clip || clip.originalMissing) throw new Error("This clip is no longer in the collection.");
       const executable = await detectAttaCut();
       if (!executable) throw new Error("AttaCut is no longer available. Install it to open this clip there.");
       const { spawn } = await import("node:child_process");
       const child = spawn(executable, [clip.path], { detached: true, stdio: "ignore", windowsHide: true, env: attaCutEnvironment(process.env) });
-      child.once("error", () => notice("AttaCut could not open. Show the clip in your file manager and open it there.", true));
+      child.once("error", () => notice("AttaCut couldn't open. Show the clip in your file manager and open it from there.", true, "info", "action"));
       child.unref();
    });
    handle("playback", async (path, track, requestId) => {
@@ -875,7 +901,7 @@ function registerIPC() {
       try {
          event.sender.startDrag({ file: trustedPath(path), icon: trayIcon() });
       } catch (e) {
-         notice(errorMessage(e), true);
+         notice(errorMessage(e), true, "info", "action");
       }
    });
 }

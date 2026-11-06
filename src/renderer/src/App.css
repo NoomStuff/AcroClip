@@ -114,7 +114,6 @@
    display: flex;
    justify-content: space-between;
    align-items: center;
-   margin-right: 21px;
    padding: 0 10px;
    font-size: 11px;
    color: var(--muted);
@@ -151,62 +150,163 @@
    color: var(--red);
 }
 
-.status-message {
-   max-width: 500px;
-   overflow: hidden;
-   text-overflow: ellipsis;
-   white-space: nowrap;
-   color: var(--muted);
-}
-
 .status-right {
-   gap: 18px;
+   gap: 10px;
    min-width: 0;
 }
 
-.toast {
-   pointer-events: none;
+.toast-stack {
    position: fixed;
    z-index: 120;
-   bottom: 50px;
-   left: calc(50% + 35px);
-   translate: -50% 0;
+   right: 12px;
+   bottom: 42px;
    display: flex;
+   flex-direction: column;
+   align-items: flex-end;
+   gap: 8px;
+   pointer-events: none;
+}
+
+/* Shared by real toasts and their flight copies, so both look the same. */
+.toast-surface {
+   --tone: var(--accent);
+   --tone-surface: var(--raised);
+   --tone-border: var(--border-control);
+   position: relative;
+   display: flex;
+   align-items: flex-start;
    gap: 11px;
-   align-items: center;
-   background: var(--raised);
-   border: 1px solid var(--border-control);
+   width: min(340px, 60vw);
+   padding: 11px 9px 12px 11px;
+   overflow: hidden;
+   background: var(--tone-surface);
+   border: 1px solid var(--tone-border);
    border-radius: 12px;
-   padding: 12px 13px 12px 17px;
-   box-shadow: 0 5px 25px #0008;
+   box-shadow:
+      0 10px 30px #0009,
+      0 1px 0 #ffffff08 inset;
    color: var(--text);
-   max-width: min(640px, 80vw);
    font-size: 12px;
-   animation: menu-in 160ms var(--ease);
 }
 
-.toast > span {
-   line-height: 1.5;
+.toast-surface.error {
+   --tone: var(--red);
+   --tone-surface: #2b1d23;
+   --tone-border: #d65f7042;
 }
 
-.toast > svg {
-   color: var(--accent);
+.toast-surface.warning {
+   --tone: #e3be78;
+   --tone-surface: #29251b;
+   --tone-border: #e3be783d;
 }
 
-.toast.error {
-   background: #33222a;
-   color: #f0c3cb;
-}
-
-.toast.error > svg {
-   color: var(--red);
-}
-
-.toast .icon-button {
+.toast {
    pointer-events: auto;
-   width: 25px;
-   height: 25px;
-   margin-left: 5px;
+   transform-origin: bottom right;
+   animation: toast-in 420ms var(--spring) both;
+}
+
+.toast.pinned {
+   animation: none;
+}
+
+.toast-icon {
+   display: grid;
+   place-items: center;
+   flex-shrink: 0;
+   width: 28px;
+   height: 28px;
+   border-radius: 8px;
+   color: var(--tone);
+   background: color-mix(in srgb, var(--tone) 15%, transparent);
+}
+
+.toast-text {
+   flex: 1;
+   min-width: 0;
+   padding-top: 1px;
+   line-height: 1.45;
+}
+
+.toast-title {
+   display: block;
+   font-weight: 600;
+   overflow-wrap: anywhere;
+}
+
+.toast-detail {
+   margin-top: 2px;
+   color: var(--muted);
+   overflow-wrap: anywhere;
+}
+
+.toast-surface.error .toast-detail {
+   color: #d9a7b0;
+}
+
+.toast-surface .icon-button {
+   width: 24px;
+   height: 24px;
+   flex-shrink: 0;
+   margin-top: 2px;
+   color: var(--muted);
+}
+
+/* Countdown until the toast moves into the status bar. */
+.toast-timer {
+   position: absolute;
+   left: 0;
+   right: 0;
+   bottom: 0;
+   height: 2px;
+   background: var(--tone);
+   opacity: 0.55;
+   transform-origin: left;
+   animation: toast-timer linear both;
+}
+
+.toast-timer.held {
+   animation: none;
+   opacity: 0.3;
+}
+
+@keyframes toast-timer {
+   to {
+      transform: scaleX(0);
+   }
+}
+
+/* A fixed box that resizes between toast and pill; see notification-motion.ts. */
+.notification-ghost {
+   position: fixed;
+   z-index: 125;
+   overflow: hidden;
+   border: 1px solid transparent;
+   pointer-events: none;
+}
+
+.notification-ghost.leaving {
+   z-index: 119;
+}
+
+.notification-pill.awaiting {
+   opacity: 0;
+}
+
+.notification-pill.receiving > * {
+   opacity: 0;
+}
+
+.notification-ghost > .notification-layer {
+   position: absolute;
+   top: -1px;
+   left: -1px;
+   margin: 0;
+   background: transparent;
+   border-color: transparent;
+   box-shadow: none;
+   animation: none;
 }
 
 .loading-app {
@@ -220,18 +320,267 @@
    font-size: 12px;
 }
 
-@media (max-width: 1120px) {
-   .status-message {
-      max-width: 350px;
+/* Activity chips (saving, shareables). */
+.status-chips {
+   display: flex;
+   align-items: center;
+   gap: 6px;
+   min-width: 0;
+}
+
+.status-chip {
+   display: inline-flex;
+   align-items: center;
+   gap: 5px;
+   height: 22px;
+   padding: 0 9px 0 7px;
+   border: 1px solid var(--border-control);
+   border-radius: 999px;
+   white-space: nowrap;
+   font-size: 11px;
+   color: var(--muted);
+}
+
+/* Chipped notifications and conditions: one pill showing the newest. */
+.notification-area {
+   position: relative;
+   display: flex;
+   align-items: center;
+   gap: 5px;
+   min-width: 0;
+}
+
+.notification-pill {
+   --tone: var(--muted);
+   --tone-surface: var(--raised);
+   --tone-border: var(--border-control);
+   display: flex;
+   align-items: stretch;
+   height: 22px;
+   max-width: 280px;
+   overflow: hidden;
+   border: 1px solid var(--tone-border);
+   border-radius: 999px;
+   background: var(--tone-surface);
+   color: var(--tone);
+   font-size: 11px;
+   white-space: nowrap;
+}
+
+.notification-pill[data-tone="error"] {
+   --tone: var(--red);
+   --tone-surface: #2b1d23;
+   --tone-border: #d65f7042;
+}
+
+.notification-pill[data-tone="success"] {
+   --tone: var(--accent);
+   --tone-surface: color-mix(in srgb, var(--accent) 9%, var(--raised));
+   --tone-border: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.notification-pill[data-tone="warning"] {
+   --tone: #e3be78;
+   --tone-surface: #29251b;
+   --tone-border: #e3be783d;
+}
+
+.notification-pill button {
+   display: flex;
+   align-items: center;
+   color: inherit;
+   transition: background 140ms var(--ease);
+}
+
+.notification-pill button:hover,
+.notification-pill button[aria-expanded="true"] {
+   background: color-mix(in srgb, var(--tone) 14%, transparent);
+}
+
+.notification-pill-main {
+   gap: 5px;
+   min-width: 0;
+   padding: 0 9px 0 7px;
+}
+
+.notification-pill-main > svg {
+   flex-shrink: 0;
+}
+
+.notification-pill:not(.primary) .notification-pill-main {
+   gap: 4px;
+   padding: 0 7px;
+}
+
+/* Its message is open above, so the pill keeps its size and shows a collapse arrow instead of repeating the text. */
+.notification-pill-main {
+   position: relative;
+}
+
+.notification-pill-main > * {
+   transition:
+      opacity 160ms var(--ease),
+      transform 220ms var(--spring);
+}
+
+.notification-pill-main.holding > :not(.notification-pill-collapse) {
+   opacity: 0;
+}
+
+.notification-pill-collapse {
+   position: absolute;
+   inset: 0;
+   margin: auto;
+   opacity: 0;
+   transform: translateY(-3px);
+}
+
+.notification-pill-main.holding > .notification-pill-collapse {
+   opacity: 1;
+   transform: none;
+}
+
+.notification-pill-main > span {
+   overflow: hidden;
+   text-overflow: ellipsis;
+}
+
+.notification-pill-count {
+   flex-shrink: 0;
+   padding: 0 8px 0 7px;
+   border-left: 1px solid var(--tone-border);
+   font-variant-numeric: tabular-nums;
+}
+
+.notification-pill-count > span {
+   animation: count-bump 280ms var(--spring);
+}
+
+@keyframes count-bump {
+   from {
+      transform: scale(1.35);
    }
 }
 
-.storage-warning {
-   color: #e3be78;
-   max-width: 300px;
-   overflow: hidden;
-   text-overflow: ellipsis;
-   white-space: nowrap;
+.notification-log-popover {
+   position: fixed;
+   right: 12px;
+   bottom: 34px;
+   z-index: 130;
+   width: 360px;
+   max-width: calc(100vw - 24px);
+   padding: 5px;
+   border: 1px solid var(--line);
+   border-radius: 12px;
+   background: var(--surface);
+   box-shadow: 0 10px 30px #0009;
+   transform-origin: bottom right;
+   animation: menu-in 160ms var(--ease);
+}
+
+.notification-log-entries {
+   display: flex;
+   flex-direction: column;
+   gap: 1px;
+   max-height: 320px;
+   overflow-y: auto;
+}
+
+.notification-log-row {
+   --tone: var(--accent);
+   display: flex;
+   align-items: flex-start;
+   gap: 9px;
+   padding: 8px 6px 8px 9px;
+   border-radius: 8px;
+   font-size: 12px;
+}
+
+.notification-log-row.error {
+   --tone: var(--red);
+}
+
+.notification-log-row.warning {
+   --tone: #e3be78;
+}
+
+.notification-log-row:hover {
+   background: var(--hover);
+}
+
+.notification-log-row > svg {
+   flex-shrink: 0;
+   margin-top: 2px;
+   color: var(--tone);
+}
+
+.notification-log-text {
+   flex: 1;
+   min-width: 0;
+   text-align: left;
+   line-height: 1.45;
+   color: var(--text);
+}
+
+.notification-log-text > span {
+   display: block;
+   font-weight: 600;
+}
+
+.notification-log-text > p {
+   color: var(--muted);
+}
+
+.notification-log-age {
+   flex-shrink: 0;
+   margin-top: 1px;
+   color: var(--subtle);
+   font-size: 11px;
+}
+
+.notification-log-row .icon-button {
+   width: 20px;
+   height: 20px;
+   flex-shrink: 0;
+}
+
+.notification-log-footer {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   margin-top: 4px;
+   padding: 7px 8px 3px;
+   border-top: 1px solid var(--line);
+   color: var(--subtle);
+   font-size: 11px;
+}
+
+.notification-log-clear {
+   padding: 2px 5px;
+   border-radius: 5px;
+   color: var(--accent);
+   font-size: 11px;
+}
+
+.notification-log-clear:hover {
+   background: var(--hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+   .toast,
+   .notification-pill-count > span {
+      animation: none;
+   }
+   .toast-timer {
+      display: none;
+   }
+}
+
+@keyframes toast-in {
+   from {
+      opacity: 0;
+      transform: translateY(22px) scale(0.9);
+   }
 }
 
 .window-controls .icon-button:active:not(:disabled) {
@@ -273,25 +622,6 @@
       opacity: 1;
       transform: translateY(0);
    }
-}
-
-.status-audio {
-   min-width: 0;
-   max-width: min(440px, 40vw);
-   display: inline-flex;
-   align-items: center;
-   gap: 6px;
-   color: var(--red);
-   font-size: 11px;
-   padding: 4px 0;
-   white-space: nowrap;
-}
-.status-audio > svg {
-   flex-shrink: 0;
-}
-.status-audio > span {
-   overflow: hidden;
-   text-overflow: ellipsis;
 }
 
 .status-primary {

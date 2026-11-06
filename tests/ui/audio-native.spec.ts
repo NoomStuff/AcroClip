@@ -67,7 +67,7 @@ test("extra audio rows persist, obey recording boundaries and produce named isol
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.audioSources.length).toBe(3);
       const source = (await page.evaluate(() => window.acroClip.state())).preferences.audioSources.find((item) => item.name === audioTitle)!;
       expect(source).toMatchObject({ kind: "application", includeInMaster: false, enabled: true });
-      await page.getByRole("button", { name: "Start recording", exact: true }).click();
+      await page.getByRole("button", { name: "Start capturing", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds, { timeout: 20_000 }).toBeGreaterThan(3);
       await expect(page.getByRole("button", { name: "Add audio source", exact: true })).toBeDisabled();
       await page.getByRole("slider", { name: `${source.name} level`, exact: true }).fill("0.5");
@@ -80,7 +80,7 @@ test("extra audio rows persist, obey recording boundaries and produce named isol
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length, { timeout: 20_000 }).toBe(1);
       const saved = (await page.evaluate(() => window.acroClip.state())).clips[0]!;
       expect(saved.tracks.map((track) => track.title)).toEqual(["Master", "Application", "Microphone", source.name]);
-      await page.getByRole("button", { name: /^Stop recording/ }).click();
+      await page.getByRole("button", { name: /^Stop capturing/ }).click();
       await page.getByRole("button", { name: `${source.name} options`, exact: true }).click();
       await page.getByRole("menuitem", { name: "Remove source", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.audioSources).toHaveLength(2);

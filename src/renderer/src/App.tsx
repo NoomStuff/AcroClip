@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Check, Clapperboard, LibraryBig, Play, Minus, Settings2, Square, Video, X } from "lucide-react";
+import { Clapperboard, LibraryBig, Play, Minus, Settings2, Square, Video, X } from "lucide-react";
 import { AppLogo } from "./AppLogo";
-import type { AppState, Clip, RecorderState } from "../../shared/types";
+import type { AppState, Clip, NoticeOptions, RecorderState } from "../../shared/types";
 import { SelectionIndicator, TabMarker } from "./SelectionIndicator";
 import { api, describeError } from "./desktop";
 import { Dialog } from "./Dialog";
@@ -16,6 +16,8 @@ import { Viewer } from "./Viewer";
 import { Settings } from "./Settings";
 import type { SettingsTarget } from "./Settings";
 import { UpdateChip } from "./UpdateChip";
+import { clearNotification, notify, type NotificationInput } from "./notifications";
+import { NotificationToast } from "./NotificationToast";
 import { Onboarding } from "./Onboarding";
 import { useNavigationHistory } from "./navigation-history";
 
@@ -26,6 +28,10 @@ const ViewerPage = memo(Viewer);
 const SettingsPage = memo(Settings);
 const pageOrder: readonly Page[] = ["recording", "library", "viewer", "settings"];
 import type { Ask } from "./Dialog";
+function noticeInput({ message, error, tone, ...options }: { message: string; error: boolean } & NoticeOptions): NotificationInput {
+   return { ...options, message, tone: tone ?? (error ? "error" : "success") };
+}
+
 export function App() {
    const [state, setState] = useState<AppState | null>(null);
    const [{ page, direction, visited }, setNavigation] = useState<{ page: Page; direction: "up" | "down"; visited: Page[] }>({
@@ -74,7 +80,6 @@ export function App() {
       setSelected(location.clipId);
    });
    const [audioStatus, setAudioStatus] = useState("");
-   const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
    const [dialog, setDialog] = useState<DialogRequest | null>(null);
    const [clipPulse, setClipPulse] = useState(0);
    const run: Run = useCallback(async (action) => {
@@ -82,7 +87,7 @@ export function App() {
          await action();
          return true;
       } catch (error) {
-         setNotice({ message: describeError(error), error: true });
+         notify({ message: describeError(error), tone: "error", chip: true });
          return false;
       }
    }, []);
@@ -115,12 +120,13 @@ export function App() {
             setState((current) => (current ? { ...current, recorder: event.recorder } : current));
          }
          if (event.type === "clip-action") setClipPulse((value) => value + 1);
-         if (event.type === "notice" && event.message) setNotice({ message: event.message, error: event.error });
+         if (event.type === "notice" && event.message) notify(noticeInput(event));
+         if (event.type === "notice-clear") clearNotification(event.key);
       });
       const feedback = (event: Event) => {
          const value = (event as CustomEvent<RendererFeedback>).detail;
          if (value.kind === "audio-status") setAudioStatus(value.message);
-         else setNotice({ message: value.message, error: value.error });
+         else notify(noticeInput(value));
       };
       window.addEventListener("acroclip-feedback", feedback);
       return () => {
@@ -128,11 +134,6 @@ export function App() {
          window.removeEventListener("acroclip-feedback", feedback);
       };
    }, [run]);
-   useEffect(() => {
-      if (!notice || notice.error) return;
-      const timer = window.setTimeout(() => setNotice(null), 5000);
-      return () => window.clearTimeout(timer);
-   }, [notice]);
    useEffect(() => {
       if (!state) return;
       const key = (event: KeyboardEvent) => {
@@ -208,7 +209,7 @@ export function App() {
       [preferences, recorder, jobs, update, version, state?.platform]
    );
    const pages = [
-      { id: "recording", title: "Recording", icon: Video },
+      { id: "recording", title: "Capture", icon: Video },
       { id: "library", title: "Library", icon: LibraryBig },
       { id: "viewer", title: "Player", icon: Play },
    ] as const;
@@ -219,10 +220,7 @@ export function App() {
                <Clapperboard size={17} aria-hidden="true" />
                <span>AcroClip</span>
             </div>
-            <span className="window-page">
-               {page === "viewer" ? "Player" : page[0]?.toUpperCase()}
-               {page === "viewer" ? "" : page.slice(1)}
-            </span>
+            <span className="window-page">{pages.find((item) => item.id === page)?.title ?? page}</span>
             <div className="titlebar-drag" />
             {state?.update.version && state.update.mode && !["idle", "checking"].includes(state.update.state) && <UpdateChip state={state.update} run={run} />}
             {state?.platform === "win32" && (
@@ -323,15 +321,7 @@ export function App() {
             )}
          </main>
          <RecordingStatus state={state} visible={windowVisible} audioMessage={page === "recording" ? audioStatus : ""} />
-         {notice && (
-            <div className={`toast ${notice.error ? "error" : ""}`} role={notice.error ? "alert" : "status"}>
-               {notice.error ? <AlertCircle size={18} /> : <Check size={18} />}
-               <span>{notice.message}</span>
-               <IconButton label="Dismiss" onClick={() => setNotice(null)}>
-                  <X size={15} />
-               </IconButton>
-            </div>
-         )}
+         <NotificationToast />
          {dialog && <Dialog key={dialog.title} request={dialog} close={() => setDialog(null)} />}
          {state && !state.preferences.setupComplete && <Onboarding state={state} run={run} />}
       </div>

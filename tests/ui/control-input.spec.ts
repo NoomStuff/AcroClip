@@ -99,11 +99,11 @@ test("gain entry commits, rejects invalid input and supports keyboard resets", a
       await page.keyboard.press("Enter");
       await expect(resolution).toHaveText("Source");
       await expect(resolution).toHaveAttribute("data-value", "0");
-      const compression = page.getByRole("spinbutton", { name: "Recording compression value" });
+      const compression = page.getByRole("spinbutton", { name: "Capture compression value" });
       await compression.fill("22");
       await compression.press("Enter");
-      await expect(page.getByRole("slider", { name: "Recording compression", exact: true })).toHaveValue("22");
-      await page.getByRole("slider", { name: "Recording compression", exact: true }).press("Delete");
+      await expect(page.getByRole("slider", { name: "Capture compression", exact: true })).toHaveValue("22");
+      await page.getByRole("slider", { name: "Capture compression", exact: true }).press("Delete");
       await expect(compression).toHaveValue("23");
    } finally {
       await desktop.close();

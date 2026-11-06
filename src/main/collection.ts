@@ -108,7 +108,8 @@ export interface CollectionOptions {
    beforeFolderChange?: () => void;
    onChange?: () => void;
    onJob?: (job: Job) => void;
-   onWarning?: (message: string) => void;
+   /** `log` only reaches the app log; the others reach the user at that tone. */
+   onWarning?: (message: string, level: "log" | "warning" | "error") => void;
    mediaUrl?: (path: string) => string;
    scanConcurrency?: () => number;
 }
@@ -185,10 +186,10 @@ export class CollectionService {
    private notify() {
       this.options.onChange?.();
    }
-   private warn(text: string) {
+   private warn(text: string, level: "log" | "warning" | "error" = "warning") {
       if (!this.warnings.includes(text)) {
          this.warnings.push(text);
-         this.options.onWarning?.(text);
+         this.options.onWarning?.(text, level);
       }
    }
    private url(path: string) {
@@ -250,7 +251,7 @@ export class CollectionService {
                   snapshot: JSON.stringify(this.metadata, null, 2),
                   stamp: fileStamp(await stat(path, { bigint: true })),
                };
-            if (broken) this.warn("Collection metadata was recovered from its backup.");
+            if (broken) this.warn("Collection info was restored from its backup. Recent tag or shareable changes may be missing.");
             broken = false;
             break;
          } catch (error) {
@@ -259,7 +260,7 @@ export class CollectionService {
       }
       if (broken) {
          this.metadataWritable = false;
-         this.warn("Collection metadata is damaged. Videos remain available, but tags and shareable changes are disabled to preserve recovery information.");
+         this.warn("Collection info is damaged. Your videos still play, but tags and shareables are locked so the backup stays intact.", "error");
       }
       // Render the collection's own indexed previews before touching the video files.
       let previewsSafe = true;
@@ -341,7 +342,7 @@ export class CollectionService {
    }
 
    private async writeMetadata(): Promise<void> {
-      if (!this.metadataWritable) throw new Error("Collection metadata needs recovery before making this change.");
+      if (!this.metadataWritable) throw new Error("Changes are locked while collection info is damaged.");
       const snapshot = JSON.stringify(this.metadata, null, 2);
       const path = this.metaPath();
       const write = this.writes
@@ -414,7 +415,7 @@ export class CollectionService {
                }
             }
          } catch (error) {
-            this.warn(`Preview thumbnail unavailable for ${basename(actual)}: ${message(error)}`);
+            this.warn(`Preview thumbnail unavailable for ${basename(actual)}: ${message(error)}`, "log");
             const legacy = join(this.root, ".acroclip", "thumbnails", `${identity}.jpg`);
             const image = await lstat(legacy).catch(() => undefined);
             thumb = image?.isFile() && image.size > 0 ? legacy : "";
@@ -441,7 +442,7 @@ export class CollectionService {
          const actual = await realpath(file.absolutePath);
          if ((await identity(actual)) !== file.identity) return undefined;
          if (!withinRoot(this.root, actual)) {
-            this.warn("A missing video was found outside this collection. Relink or copy it into this folder before using it here.");
+            this.warn("A clip's video is outside this collection. Move it back into the collection folder to use it here.");
             return undefined;
          }
          file.relativePath = relative(this.root, actual);
@@ -737,7 +738,8 @@ export class CollectionService {
                   result.push({ ...previous, availability: "unverified" });
                   used.add(previous.id);
                }
-               this.warn(`Could not read ${basename(path)}: ${message(error)}`);
+               this.warn(`Couldn't read ${basename(path)}. It may be damaged or still being written.`);
+               this.warn(`Could not read ${basename(path)}: ${message(error)}`, "log");
             }
             publishProgress();
          }
@@ -798,7 +800,7 @@ export class CollectionService {
             this.scanRetryNeeded = true;
             const previous = this.clips.find((clip) => clip.id === stored.id);
             if (previous) result.push({ ...previous, availability: "unverified" });
-            this.warn(`Could not open retained shareables for ${stored.name}: ${message(error)}`);
+            this.warn(`Could not open retained shareables for ${stored.name}: ${message(error)}`, "log");
          }
       }
       const artwork = new Map<string, string>();
@@ -849,7 +851,7 @@ export class CollectionService {
       const root = this.root;
       const result = this.fileChanges.then(async () => {
          if (root !== this.root || this.opening || !this.scanned) throw new Error("Wait for the collection to finish opening.");
-         if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing files.");
+         if (!this.metadataWritable) throw new Error("Changing files is locked while collection info is damaged.");
          if (this.scanRunning) await this.scanRunning;
          let release!: () => void;
          this.fileMutation = new Promise<void>((resolve) => {
@@ -981,7 +983,7 @@ export class CollectionService {
          /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(cleaned)
       )
          throw new Error("That name contains characters reserved for files. Choose another name.");
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before renaming clips.");
+      if (!this.metadataWritable) throw new Error("Renaming clips is locked while collection info is damaged.");
       if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's shareable before renaming it.");
       const stored = this.stored(id);
       const original = await this.resolveFile(stored);
@@ -1030,7 +1032,7 @@ export class CollectionService {
    }
    async registerRecording(path: string, source: string, application?: ApplicationArtwork): Promise<Clip> {
       const actual = await realpath(path);
-      if (!withinRoot(this.root, actual)) throw new Error("The saved recording is outside the collection.");
+      if (!withinRoot(this.root, actual)) throw new Error("The saved clip is outside the collection.");
       // Registration scans publish library updates before this method returns.
       // Give those scans the known source before they expose the new recording.
       this.registeringSources.set(normal(actual), source);
@@ -1049,7 +1051,7 @@ export class CollectionService {
          await this.scan();
          clip = this.clips.find((entry) => normal(entry.path) === normal(actual));
       }
-      if (!clip) throw new Error("The recording finished, but could not be opened. Its file has been kept.");
+      if (!clip) throw new Error("The capture finished, but could not be opened. Its file has been kept.");
       this.stored(clip.id).source = source;
       if (application) {
          try {
@@ -1065,7 +1067,7 @@ export class CollectionService {
       return this.visible(clip.id);
    }
    async createCategory(name: string, color = "#b197fc", icon = "tag"): Promise<void> {
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing tags.");
+      if (!this.metadataWritable) throw new Error("Changing tags is locked while collection info is damaged.");
       const cleaned = name.trim();
       if (!cleaned || cleaned.length > 80) throw new Error("Choose a tag name between 1 and 80 characters.");
       if (icon.length > 80) throw new Error("Choose a valid tag icon.");
@@ -1076,7 +1078,7 @@ export class CollectionService {
       this.notify();
    }
    async updateCategory(id: string, name: string, color: string, icon: string): Promise<void> {
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing tags.");
+      if (!this.metadataWritable) throw new Error("Changing tags is locked while collection info is damaged.");
       const category = this.metadata.categories.find((item) => item.id === id);
       if (!category) throw new Error("That tag no longer exists.");
       const cleaned = name.trim();
@@ -1088,7 +1090,7 @@ export class CollectionService {
       this.notify();
    }
    async reorderCategory(id: string, beforeId: string | null): Promise<void> {
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing tags.");
+      if (!this.metadataWritable) throw new Error("Changing tags is locked while collection info is damaged.");
       const category = this.categories.find((item) => item.id === id);
       if (!category || (beforeId !== null && !this.categories.some((item) => item.id === beforeId))) throw new Error("That tag no longer exists.");
       if (id === beforeId) return;
@@ -1100,14 +1102,14 @@ export class CollectionService {
       this.notify();
    }
    async deleteCategory(id: string): Promise<void> {
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing tags.");
+      if (!this.metadataWritable) throw new Error("Changing tags is locked while collection info is damaged.");
       this.metadata.categories = this.categories.filter((category) => category.id !== id);
       for (const clip of this.metadata.clips) clip.categories = clip.categories.filter((category) => category !== id);
       await this.writeMetadata();
       await this.scan();
    }
    async assignCategories(id: string, ids: string[]): Promise<void> {
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before changing tags.");
+      if (!this.metadataWritable) throw new Error("Changing tags is locked while collection info is damaged.");
       if (ids.some((category) => !this.categories.some((entry) => entry.id === category))) throw new Error("That tag no longer exists.");
       this.stored(id).categories = [...new Set(ids)];
       await this.writeMetadata();
@@ -1152,7 +1154,7 @@ export class CollectionService {
    }
    async createShareable(id: string, targetMB: number): Promise<void> {
       if (!Number.isFinite(targetMB) || targetMB < 0.1 || targetMB > 10000) throw new Error("Choose a size limit between 0.1 and 10,000 MB.");
-      if (!this.metadataWritable) throw new Error("Restore the collection metadata before creating shareables.");
+      if (!this.metadataWritable) throw new Error("Creating shareables is locked while collection info is damaged.");
       const clip = this.visible(id);
       if (clip.originalMissing) throw new Error("The original is missing. Existing shareables are still available.");
       const job: Job = { id: randomUUID(), clipId: id, kind: "shareable", state: "queued", progress: 0, message: "Waiting to create shareable" };

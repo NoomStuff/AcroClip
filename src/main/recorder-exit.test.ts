@@ -131,7 +131,7 @@ describe("recorder helper termination", () => {
          }
          vi.useFakeTimers();
          try {
-            const query = expect(child.applicationCandidates()).rejects.toThrow("Application detection timed out");
+            const query = expect(child.applicationCandidates()).rejects.toThrow("Finding open apps took too long");
             await vi.advanceTimersByTimeAsync(10_001);
             await query;
             expect(child.status.state).toBe("recording");
@@ -159,7 +159,7 @@ describe("recorder helper termination", () => {
          const { child, root } = await fixture("unacknowledged-save");
          vi.useFakeTimers();
          try {
-            const saving = expect(child.save(join(root, "uncertain.mkv"))).rejects.toThrow("did not finish");
+            const saving = expect(child.save(join(root, "uncertain.mkv"))).rejects.toThrow("didn't respond in time");
             await vi.advanceTimersByTimeAsync(20_001);
             await saving;
             expect(child.status.pendingSaves).toBe(1);
@@ -222,7 +222,7 @@ describe("recorder helper termination", () => {
       async () => {
          const { child, errors } = await fixture("crash");
          await expect.poll(() => child.status.state).toBe("error");
-         expect(errors).toEqual(["Recording stopped unexpectedly with exit code 17"]);
+         expect(errors).toEqual(["Capture stopped unexpectedly with exit code 17"]);
          expect(child.status).toMatchObject({ message: errors[0], availableSeconds: 0, startedAt: null, pendingSaves: 0 });
       },
       helperTestTimeout
@@ -234,7 +234,7 @@ describe("recorder helper termination", () => {
          await child.save(join(root, "unsaved.mkv"));
          await child.stop();
          await child.close();
-         expect(errors).toEqual(["Recording stopped unexpectedly with exit code 19"]);
+         expect(errors).toEqual(["Capture stopped unexpectedly with exit code 19"]);
          expect(child.status).toMatchObject({ state: "error", pendingSaves: 0 });
       },
       helperTestTimeout

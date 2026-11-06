@@ -81,7 +81,7 @@ test("cached loading states, enumeration retry, and interrupted library movement
       });
       await expect(page.getByLabel("Opening collection")).toBeVisible();
       await expect(page.locator(".clip-placeholder")).toHaveCount(114);
-      await expect(page.getByText("0/114 clips", { exact: true })).toBeVisible();
+      await expect(page.getByText(/Loaded 0 of 114 clips/)).toBeVisible();
       await expect(page.getByLabel("Loading clips", { exact: true })).toBeVisible();
       const headingBounds = await page.locator(".library-heading").boundingBox();
       const headingTop = headingBounds!.y;
@@ -101,7 +101,7 @@ test("cached loading states, enumeration retry, and interrupted library movement
       await send({ ...actual, collectionStatus: { root: collection, phase: "loading", discovery: { videos: 114, byFolder: { "": 114 }, complete: true } } });
       await expect(page.locator(".clip-card")).toHaveCount(6);
       await expect(page.locator(".clip-placeholder")).toHaveCount(108);
-      await expect(page.getByText("6/114 clips", { exact: true })).toBeVisible();
+      await expect(page.getByText(/Loaded 6 of 114 clips/)).toBeVisible();
       const contentBounds = await page.locator(".library-content").boundingBox();
       const scrollBounds = await page.locator(".library-scroll").boundingBox();
       expect(scrollBounds!.y).toBeLessThanOrEqual(contentBounds!.y);

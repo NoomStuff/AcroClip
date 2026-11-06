@@ -95,7 +95,16 @@ test("the viewer rail retains its first clip, version and position when a newer 
       await expect(page.locator(".toast.error")).toBeVisible();
       await page.getByRole("button", { name: "Play", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThan(2.1);
-      await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+      // Playback's slow start can outlast the toast's expiry, so the error
+      // may already sit as a status-bar chip. Either dismiss the toast, or
+      // reopen it pinned from the chip and dismiss it there.
+      const dismiss = page.getByRole("button", { name: "Dismiss", exact: true });
+      await dismiss
+         .or(page.getByRole("button", { name: "Notification: This clip is no longer in the collection", exact: true }))
+         .first()
+         .click();
+      // A chip click reopens the message as a pinned toast; dismiss it there.
+      if (await page.locator(".toast.error").count()) await dismiss.click();
       await expect(page.locator(".toast.error")).toHaveCount(0);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
       await page.getByRole("button", { name: "Library", exact: true }).first().click();

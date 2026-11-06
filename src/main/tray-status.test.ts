@@ -23,10 +23,10 @@ describe("actual tray status", () => {
       expect(update({ ...stoppedRecorder, state: "waiting", message: "" })).toBe("AcroClip · Waiting for capture");
    });
    it("keeps persistent failure visible and ordinary idle/capture wording intact", () => {
-      expect(update({ ...stoppedRecorder, state: "error", message: "Recording stopped unexpectedly with exit code 17" })).toBe(
-         "AcroClip · Recording stopped unexpectedly with exit code 17"
+      expect(update({ ...stoppedRecorder, state: "error", message: "Capture stopped unexpectedly with exit code 17" })).toBe(
+         "AcroClip · Capture stopped unexpectedly with exit code 17"
       );
-      expect(update({ ...stoppedRecorder, state: "recording" })).toBe("AcroClip · Recording");
+      expect(update({ ...stoppedRecorder, state: "recording" })).toBe("AcroClip · Capturing");
       expect(update(stoppedRecorder)).toBe("AcroClip");
    });
 });

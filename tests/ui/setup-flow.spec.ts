@@ -50,7 +50,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await page.getByRole("button", { name: "Continue", exact: true }).click();
       await expect(page.getByRole("heading", { name: "You're good to go", exact: true })).toBeVisible();
       await expect(page.getByRole("checkbox", { name: "Start with your computer", exact: true })).not.toBeChecked();
-      await expect(page.getByRole("checkbox", { name: "Start recording when AcroClip opens", exact: true })).not.toBeChecked();
+      await expect(page.getByRole("checkbox", { name: "Start capturing when AcroClip opens", exact: true })).not.toBeChecked();
       await page.getByRole("button", { name: "Finish", exact: true }).click();
       await expect(page.locator(".onboarding"), "Setup should close after saving")
          .toHaveCount(0)
@@ -91,11 +91,11 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect(page.getByRole("option").last()).toHaveText("Source");
       await expect(page.getByRole("option", { name: "Original", exact: true })).toHaveCount(0);
       await page.keyboard.press("Escape");
-      await expect(page.getByRole("slider", { name: "Recording compression", exact: true })).toHaveValue("18");
+      await expect(page.getByRole("slider", { name: "Capture compression", exact: true })).toHaveValue("18");
       await selectOption(page, "Resolution limit", "1440");
       await expect(page.getByRole("button", { name: "Custom", exact: true })).toHaveAttribute("aria-pressed", "true");
-      await page.getByRole("spinbutton", { name: "Recording frame rate" }).fill("48");
-      await page.getByRole("slider", { name: "Recording compression" }).fill("25");
+      await page.getByRole("spinbutton", { name: "Capture frame rate" }).fill("48");
+      await page.getByRole("slider", { name: "Capture compression" }).fill("25");
       await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).toBeVisible();
       await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).not.toBeChecked();
       await page.getByRole("checkbox", { name: /Allow software encoding/ }).check();

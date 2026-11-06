@@ -8,7 +8,7 @@ const Context = createContext<{ listening: string | null; disabled: boolean; bus
    listening: null,
    disabled: true,
    busy: false,
-   reason: "Open Recording to listen",
+   reason: "Open Capture to listen",
    toggle: () => {},
 });
 export function ListenButton({ id, name, enabled }: { id: string; name: string; enabled: boolean }) {
@@ -81,7 +81,7 @@ export function AudioListening({
          api.onEvent((event) => {
             if (event.type === "audio-monitor" && event.listeningError) {
                invalidate();
-               if (current.current) reportFeedback({ kind: "notice", error: true, message: `Listening stopped. ${event.listeningError}` });
+               if (current.current) reportFeedback({ kind: "notice", error: true, chip: true, message: `Listening stopped. ${event.listeningError}` });
                setListening(null);
                setBusy(false);
                void api.listenAudio(null).catch(() => undefined);
@@ -100,7 +100,7 @@ export function AudioListening({
       } catch (reason) {
          if (token === generation.current) {
             setListening(null);
-            reportFeedback({ kind: "notice", error: true, message: describeError(reason) });
+            reportFeedback({ kind: "notice", error: true, chip: true, message: describeError(reason) });
          }
       } finally {
          if (token === generation.current) setBusy(false);
@@ -112,7 +112,7 @@ export function AudioListening({
             listening,
             busy,
             disabled: busy || !visible || platform !== "win32",
-            reason: platform !== "win32" ? "Listening is available on Windows only" : !visible ? "Open Recording to listen" : "",
+            reason: platform !== "win32" ? "Listening is available on Windows only" : !visible ? "Open Capture to listen" : "",
             toggle: (id) => void toggle(id),
          }}
       >

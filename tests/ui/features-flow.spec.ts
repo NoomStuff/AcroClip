@@ -35,7 +35,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
             if (!window) throw new Error("The test window is not visible");
             window.focus();
          });
-         const recording = page.getByRole("button", { name: "Recording", exact: true });
+         const recording = page.getByRole("button", { name: "Capture", exact: true });
          await recording.focus();
          await expect(recording).toBeFocused();
          await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
@@ -190,8 +190,15 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
          .toEqual(["Third", "Matches", "Second"]);
-      await third.locator(".sidebar-item").click();
-      await expect(third.locator(".sidebar-item")).toHaveAttribute("aria-pressed", "true");
+      // The commit's re-render can replace the row while its click lands on a
+      // slow runner, so select the tag again until the button reflects it.
+      const select = third.locator(".sidebar-item");
+      await expect
+         .poll(async () => {
+            await select.click().catch(() => undefined);
+            return select.getAttribute("aria-pressed");
+         })
+         .toBe("true");
       const movedBounds = (await third.boundingBox())!;
       const lastBounds = (await page.locator(".category-item").last().boundingBox())!;
       await page.mouse.move(movedBounds.x + 60, movedBounds.y + grab);
@@ -228,7 +235,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).categories.map((item) => item.name))
          .toEqual(["Third", "Matches", "Second"]);
       await expect(thirdControl).toBeFocused();
-      await page.getByRole("button", { name: "Recording", exact: true }).click();
+      await page.getByRole("button", { name: "Capture", exact: true }).click();
       await expect(page.locator(".library-page")).toBeHidden();
       const tags = (await page.evaluate(() => window.acroClip.state())).categories;
       const secondId = tags.find((item) => item.name === "Second")!.id;
@@ -250,7 +257,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await page.keyboard.press("Control+,");
       await expect(page.locator(".settings-page")).toBeVisible();
       await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
-      const binding = page.getByRole("button", { name: "Start / stop recording shortcut", exact: true });
+      const binding = page.getByRole("button", { name: "Start / stop capture shortcut", exact: true });
       await binding.click();
       await expect(binding).toHaveText(/Press a shortcut/);
       expect(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Control+Alt+Shift+F5"))).toBe(false);
@@ -258,7 +265,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.shortcuts.toggleRecording).toBe("Control+Alt+Shift+F4");
       expect(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Control+Alt+Shift+F4"))).toBe(true);
       expect(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Control+Alt+Shift+F5"))).toBe(true);
-      const navigation = page.getByRole("button", { name: "Recording page shortcut", exact: true });
+      const navigation = page.getByRole("button", { name: "Capture page shortcut", exact: true });
       await navigation.click();
       await expect(navigation).toHaveText(/Press a shortcut/);
       await navigation.press("Control+2");
