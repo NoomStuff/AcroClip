@@ -32,76 +32,85 @@ concurrency:
    group: checks-${{ github.workflow }}-${{ github.ref }}-${{ inputs.interactive_suite || 'verify' }}
    cancel-in-progress: true
 jobs:
+   # Release-only packaging steps run on PRs that can affect them, so a release
+   # never discovers them broken after merge. Detection fails open: if the PR's
+   # files cannot be listed, the release smoke runs.
+   changes:
+      if: inputs.interactive_suite == ''
+      runs-on: ubuntu-24.04
+      timeout-minutes: 5
+      permissions:
+         contents: read
+         pull-requests: read
+      outputs:
+         release: ${{ steps.detect.outputs.release }}
+      steps:
+         - id: detect
+           uses: actions/github-script@v9
+           with:
+              script: |
+                 const releaseInputs = /^(scripts\/|native\/|build\/|resources\/|licenses\/|\.github\/|package\.json$|bun\.lock$|electron\.vite\.config\.ts$|THIRD_PARTY_NOTICES\.md$)/;
+                 let release = true;
+                 if (context.eventName === 'pull_request') {
+                   try {
+                     const files = await github.paginate(github.rest.pulls.listFiles, { ...context.repo, pull_number: context.payload.pull_request.number, per_page: 100 });
+                     release = files.some((file) => releaseInputs.test(file.filename) || (file.previous_filename && releaseInputs.test(file.previous_filename)));
+                   } catch (error) {
+                     core.warning(`Could not list changed files, running the release smoke: ${error.message}`);
+                   }
+                 }
+                 core.setOutput('release', String(release));
    controlled-media:
       uses: ./.github/workflows/controlled-media.yml
       with:
          candidate_sha: ${{ inputs.candidate_sha || github.sha }}
    verify:
       if: inputs.interactive_suite == ''
-      runs-on: ubuntu-24.04
-      timeout-minutes: 10
-      steps:
-         - uses: actions/checkout@v7
-           with:
-              ref: ${{ inputs.candidate_sha || github.sha }}
-         - uses: oven-sh/setup-bun@v2
-           with:
-              bun-version: 1.4.2
-         - run: bun install --frozen-lockfile
-         - name: Check release inputs before expensive desktop checks
-           run: bun scripts/release-preflight.ts
-         - run: bun run verify
-         - name: Validate GitHub Actions workflows before merge
-           run: bun scripts/lint-workflows.ts
-   media-and-ui:
+      uses: ./.github/workflows/verify.yml
+      with:
+         candidate_sha: ${{ inputs.candidate_sha || github.sha }}
+   app:
       if: inputs.interactive_suite == ''
       needs: controlled-media
-      runs-on: windows-2025
-      timeout-minutes: 45
-      env:
-         ACROCLIP_ISOLATED_TEST_RUNNER: github-hosted
-         ACROCLIP_NATIVE_TEST_SOFTWARE: "1"
+      uses: ./.github/workflows/app-checks.yml
+      with:
+         candidate_sha: ${{ inputs.candidate_sha || github.sha }}
+   release-smoke:
+      if: inputs.interactive_suite == '' && needs.changes.outputs.release == 'true'
+      needs:
+         - changes
+         - controlled-media
+      uses: ./.github/workflows/candidate-build.yml
+      with:
+         candidate_sha: ${{ inputs.candidate_sha || github.sha }}
+         retain: false
+   # The single result to require for merging. It fails when any job failed or
+   # was cancelled, and allows a skip only where change detection explains it.
+   check:
+      name: Check
+      if: always() && inputs.interactive_suite == ''
+      needs:
+         - changes
+         - controlled-media
+         - verify
+         - app
+         - release-smoke
+      runs-on: ubuntu-24.04
+      timeout-minutes: 5
       steps:
-         - uses: actions/checkout@v7
-           with:
-              ref: ${{ inputs.candidate_sha || github.sha }}
-         - uses: oven-sh/setup-bun@v2
-           with:
-              bun-version: 1.4.2
-         - run: bun install --frozen-lockfile
-         - name: Exercise Windows unit cases skipped by Linux verification
-           run: bun run test
-         - uses: actions/download-artifact@v8
-           with:
-              name: controlled-windows-media
-              path: work/
-         - name: Verify and record the cross build on Windows
-           run: bun scripts/controlled-media.ts
-         - run: bun scripts/provision-media.ts
-         - run: bun run bundle:media
-         - run: bun run build:icons
-         - run: bun run build:notices
-         - name: Stage the native helper used by real preview tests
-           run: bun run build:native
-         - run: bun run test:media
-         - name: Prepare private playback output for UI checks
+         - name: Require every check
+           uses: actions/github-script@v9
            env:
-              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
-           run: pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
-         - run: bun run test:ui
-         - run: bun run test:ui:native
-         - run: bun run test:capture-loss
-         - uses: actions/upload-artifact@v7
-           if: always()
+              RESULTS: ${{ toJSON(needs) }}
            with:
-              overwrite: true
-              name: ui-verification
-              path: |
-                 test-results/
-                 .cache/native-loss/**/events.json
-                 .cache/native-loss/**/native.log
-              include-hidden-files: true
-              retention-days: 7
+              script: |
+                 const jobs = JSON.parse(process.env.RESULTS);
+                 const optional = { 'release-smoke': jobs.changes.outputs?.release === 'false' };
+                 for (const [name, job] of Object.entries(jobs)) {
+                   core.info(`${name}: ${job.result}`);
+                   if (job.result === 'success' || (job.result === 'skipped' && optional[name])) continue;
+                   throw Error(`${name}: ${job.result}`);
+                 }
    interactive:
       if: inputs.interactive_suite != ''
       needs: controlled-media
@@ -144,6 +153,7 @@ jobs:
          - run: bun scripts/provision-media.ts
          - run: bun run bundle:media
          - run: bun run build:icons
+         - uses: ./.github/actions/native-windows-cache
          - run: bun run build:native
          - run: bun run build:notices
          - run: bun run build

@@ -384,7 +384,8 @@ export class Recorder {
             command.reject(new Error("Capture stopped unexpectedly. Start capturing again."));
          }
          this.commands.clear();
-         this.error("Capture stopped unexpectedly. Start capturing again.");
+         // A write racing a deliberate exit or kill breaks the pipe; that is not a capture failure.
+         if (!this.expectedExit) this.error("Capture stopped unexpectedly. Start capturing again.");
       });
       createInterface({ input: child.stdout }).on("line", (line: string) => {
          try {

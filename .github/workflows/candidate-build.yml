@@ -5,6 +5,10 @@ name: Build Windows candidate
          candidate_sha:
             type: string
             required: true
+         retain:
+            description: Upload the frozen candidate. PR smoke runs only prove that packaging works.
+            type: boolean
+            default: true
 permissions:
    contents: read
 jobs:
@@ -33,6 +37,7 @@ jobs:
          - run: bun scripts/provision-media.ts
          - run: bun run bundle:media
          - run: bun run build:icons
+         - uses: ./.github/actions/native-windows-cache
          - run: bun run build:native
          - run: bun run build:notices
          - run: bun run build
@@ -62,6 +67,7 @@ jobs:
               bun scripts/ci-stage.ts snapshot win-x64 .cache/ci-snapshot
               bun scripts/ci-candidate.ts pack win-x64 .cache/ci-snapshot work/ci/candidate
          - uses: actions/upload-artifact@v7
+           if: inputs.retain
            with:
               name: candidate-win-x64
               path: work/ci/candidate/

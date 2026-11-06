@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, realpathSync } from "node:fs";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -21,7 +21,8 @@ import { defaultPreferences } from "../src/shared/defaults";
 if (process.platform !== "win32") throw new Error("The in-app update restart check covers the Windows installer.");
 const unpacked = resolve(process.env["ACROCLIP_UPDATE_PAYLOAD"] ?? "release/win-unpacked");
 if (!existsSync(join(unpacked, "AcroClip.exe"))) throw new Error(`Package the app first: ${unpacked} has no AcroClip.exe`);
-const root = await mkdtemp(join(tmpdir(), "acroclip-update-restart-"));
+// Windows reports running processes by their long path; tmpdir() can be an 8.3 short path.
+const root = realpathSync.native(await mkdtemp(join(tmpdir(), "acroclip-update-restart-")));
 // CI uploads this folder: timings, installer window log and the app log per scope.
 const evidence = resolve(".cache/update-restart");
 await rm(evidence, { recursive: true, force: true });
@@ -358,12 +359,12 @@ async function verify({ scope }: Variant): Promise<void> {
       assert.deepEqual([kept.collection, kept.shortcut], [collection, "Control+Alt+Shift+F11"], "User settings must survive the update");
       const log = await readFile(join(profile, "logs", "app.log"), "utf8").catch(() => "");
       const lines = log.split("\n").filter((line) => line.includes("update"));
-      await writeFile(join(evidence, `${scope}-app.log`), log);
       assert(closeMs <= maximumCloseMs, `Closing for the update took ${closeMs} ms`);
       results.push({ scope, closeMs, relaunchMs, clips: clips.length });
       console.log(`${scope}: closed ${closeMs} ms after the click, relaunched after ${relaunchMs} ms, no installer windows.`);
       for (const line of lines) console.log(`  ${line}`);
    } finally {
+      await cp(join(base, "profile", "logs", "app.log"), join(evidence, `${scope}-app.log`)).catch(() => undefined);
       if (watcher && watcher.exitCode === null) {
          await writeFile(stopWatcher, "").catch(() => undefined);
          watcher.kill();
