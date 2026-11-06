@@ -103,7 +103,8 @@ test("the viewer rail retains its first clip, version and position when a newer 
          .or(page.getByRole("button", { name: "Notification: This clip is no longer in the collection", exact: true }))
          .first()
          .click();
-      if (await dismiss.isVisible()) await dismiss.click();
+      // A chip click reopens the message as a pinned toast; dismiss it there.
+      if (await page.locator(".toast.error").count()) await dismiss.click();
       await expect(page.locator(".toast.error")).toHaveCount(0);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
       await page.getByRole("button", { name: "Library", exact: true }).first().click();
