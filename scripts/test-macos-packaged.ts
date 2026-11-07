@@ -217,7 +217,9 @@ try {
       },
       { sources: audioSources, sourceId: captureSource!.id }
    );
-   expect(await page.evaluate(() => window.acroClip.audioDevices("output"))).toEqual([{ id: "system", name: "System audio" }]);
+   // The device query gives up after 3 s while the recorder applies the new
+   // audio sources, so a slow runner may need another query.
+   await expect.poll(() => page.evaluate(() => window.acroClip.audioDevices("output")), { timeout: 20000 }).toEqual([{ id: "system", name: "System audio" }]);
    await page.getByRole("button", { name: "Start capturing", exact: true }).click();
    await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
    await expect
