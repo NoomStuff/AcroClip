@@ -293,6 +293,8 @@ json captureCandidates() {
 #endif
 std::mutex stdoutMutex;
 std::atomic<bool> captureTextureFailure{false};
+// A game rendering on another GPU than libOBS cannot share its texture.
+std::atomic<bool> sharedTextureFailure{false};
 std::string muxExecutable = "obs-ffmpeg-mux.exe";
 bool inputTypeAvailable(const char *id) {
   const char *registered = nullptr;
@@ -375,6 +377,8 @@ void emit(json value) {
 void logger(int level, const char *format, va_list args, void *) {
   if (strstr(format, "Cannot create EGLImage"))
     captureTextureFailure = true;
+  if (strstr(format, "init_shtex_capture: failed to open shared handle"))
+    sharedTextureFailure = true;
   if (level <= LOG_INFO) {
     vfprintf(stderr, format, args);
     fputs("\n", stderr);
@@ -461,6 +465,11 @@ private:
   std::atomic<bool> windowCompatibility{false};
   uint64_t gameStarted = 0;
   json gameConfig;
+  // After a hook timeout, a hidden game capture keeps trying to hook while
+  // window capture records. Games that load slowly return to game capture.
+  obs_source_t *hookProbe = nullptr;
+  bool hookProbeMultiAdapter = false;
+  uint64_t hookProbeChecked = 0;
   obs_volmeter_t *captureMeter = nullptr, *microphoneMeter = nullptr;
   struct MeterContext {
     Recorder *owner;
@@ -479,6 +488,12 @@ private:
   uint64_t displayIdentityChecked = 0;
   bool displayIdentityAvailable = true;
   size_t bytes = 0;
+  // Replay history is held in memory. Saves may briefly retain packets the
+  // history has already released while they wait for the writer, up to half
+  // the history limit again.
+  size_t historyByteLimit = 512ULL * 1024 * 1024;
+  size_t savingByteLimit() const { return historyByteLimit / 2; }
+  uint64_t historyLimitedAt = 0;
   int seconds = 60, width = 1920, height = 1080, fps = 60;
   bool avoidOverlap = false;
   std::string encoder, sourceName, selectedSourceId;
@@ -570,6 +585,7 @@ private:
     gameCapture = false;
     gameReady = false;
     windowCompatibility = false;
+    releaseHookProbe();
     obs_volmeter_detach_source(captureMeter);
     obs_volmeter_detach_source(microphoneMeter);
     captureLevel = 0;
@@ -666,6 +682,7 @@ public:
       bufferedSourceName.clear();
       bufferedSourceId.clear();
       bytes = 0;
+      historyLimitedAt = 0;
       streamHeaders.clear();
       encoderFailed = false;
       captureInterrupted = false;
@@ -775,10 +792,12 @@ private:
         return;
       }
       if (now - initialSizeSince < 500000000ULL) return;
+      bool imageReady = true;
 #ifdef _WIN32
-      if (!captureImageReady) return;
+      // An imageless source falls through to the capture-method fallback below.
+      imageReady = captureImageReady;
 #endif
-      try {
+      if (imageReady) try {
 #ifdef __linux__
         if (acroclip::wayland::enabled() && screenCapture) {
           auto portal=std::atomic_load(&portalCapture);
@@ -786,8 +805,29 @@ private:
         }
 #endif
         const auto size=recordingSize(sessionConfiguration,{int(obs_source_get_width(capture)),int(obs_source_get_height(capture))});
+        if (video && size.width == width && size.height == height) {
+          // A source switch that fits the current canvas keeps its encoders.
+          waitingForPresetSize = false;
+          return;
+        }
         active=false;
         if(output && obs_output_active(output))obs_output_force_stop(output);
+        {
+          // Footage from the previous canvas cannot share the new stream headers.
+          std::lock_guard<std::mutex> lock(mutex);
+          for (auto &request : requests) snapshot(request);
+          requests.clear();
+          ring.clear();
+          bytes = 0;
+          historyLimitedAt = 0;
+          streamHeaders.clear();
+          captureInterrupted = false;
+          deliveryInterrupted = false;
+          lastVideoClock = 0;
+          recoveryBoundary = 0;
+          bufferedSourceName.clear();
+          bufferedSourceId.clear();
+        }
         releaseEncoders();
         obs_wait_for_destroy_queue();
         width=size.width;height=size.height;
@@ -801,7 +841,7 @@ private:
       } catch(const std::exception &error) {
         const std::string message=error.what();stop();emit({{"event","fatal"},{"message",message}});
       }
-      return;
+      if (imageReady) return;
     }
 
 #ifdef _WIN32
@@ -822,6 +862,10 @@ private:
       return;
     }
     if (!gameCapture) {
+      if (hookProbe) {
+        checkHookProbe();
+        return;
+      }
       if (!gameConfig.contains("captureMethod") &&
           selectedWindowFullscreen(
               reinterpret_cast<HWND>(targetWindow.load()))) {
@@ -841,9 +885,22 @@ private:
                                     "get_hooked", &data);
     gameReady = called && calldata_bool(&data, "hooked");
     calldata_free(&data);
+    if (!gameConfig.value("multiAdapter", false) && sharedTextureFailure.exchange(false)) {
+      // Retry before giving up on game capture. Window capture can show black
+      // for exclusive fullscreen games.
+      json multiAdapter = gameConfig;
+      multiAdapter["multiAdapter"] = true;
+      multiAdapter["captureMethod"] = "game";
+      source(multiAdapter);
+      emit({{"event", "capture-method"},
+            {"method", "game"},
+            {"reason", "This game renders on another GPU. Using multi-adapter game capture"}});
+      return;
+    }
     if (!gameReady && os_gettime_ns() - gameStarted > 3000000000ULL) {
       json fallback = gameConfig;
       fallback["captureMethod"] = "window";
+      fallback["hookFallback"] = true;
       source(fallback);
       emit({{"event", "capture-method"},
             {"method", "window"},
@@ -851,6 +908,95 @@ private:
                        "Capturing the same application window"}});
     }
 #endif
+  }
+#ifdef _WIN32
+  void startHookProbe(obs_data_t *base, bool multiAdapter) {
+    std::unique_ptr<obs_data_t, decltype(&obs_data_release)> settings(obs_data_create(), &obs_data_release);
+    obs_data_apply(settings.get(), base);
+    releaseHookProbe();
+    obs_data_set_string(settings.get(), "capture_mode", "window");
+    obs_data_set_bool(settings.get(), "capture_cursor", true);
+    obs_data_set_bool(settings.get(), "anti_cheat_hook", true);
+    obs_data_set_bool(settings.get(), "sli_compatibility", multiAdapter);
+    sharedTextureFailure = false;
+    hookProbe = obs_source_create_private("game_capture", "Capture probe", settings.get());
+    if (!hookProbe)
+      return;
+    // Silent until promoted. Game capture only hooks while its source shows.
+    obs_source_set_audio_mixers(hookProbe, 0);
+    obs_source_inc_showing(hookProbe);
+    hookProbeMultiAdapter = multiAdapter;
+    hookProbeChecked = 0;
+  }
+  void checkHookProbe() {
+    if (!hookProbeMultiAdapter && sharedTextureFailure.exchange(false)) {
+      std::unique_ptr<obs_data_t, decltype(&obs_data_release)> settings(obs_source_get_settings(hookProbe), &obs_data_release);
+      startHookProbe(settings.get(), true);
+      return;
+    }
+    const uint64_t now = os_gettime_ns();
+    if (now - hookProbeChecked < 1000000000ULL)
+      return;
+    hookProbeChecked = now;
+    calldata_t data{};
+    calldata_init(&data);
+    const bool hooked = proc_handler_call(obs_source_get_proc_handler(hookProbe), "get_hooked", &data) && calldata_bool(&data, "hooked");
+    calldata_free(&data);
+    if (!hooked || !sourceDrawsImage(hookProbe, obs_source_get_width(hookProbe), obs_source_get_height(hookProbe)))
+      return;
+    promoteHookProbe();
+  }
+  // The probe captures the same application, so the history stays continuous.
+  // A full source switch would end it.
+  void promoteHookProbe() {
+    obs_source_t *next = hookProbe;
+    hookProbe = nullptr;
+    obs_source_set_audio_mixers(next, 3);
+    obs_source_set_volume(next, captureVolume);
+    obs_source_set_muted(next, captureMuted || !captureAudioEnabled);
+    obs_volmeter_detach_source(captureMeter);
+    obs_sceneitem_t *previous = item;
+    item = obs_scene_add(scene, next);
+    placeItem();
+    if (previous)
+      obs_sceneitem_remove(previous);
+    obs_source_dec_showing(next);
+    {
+      std::lock_guard<std::mutex> sourceLock(captureSourceMutex);
+      if (capture)
+        obs_source_release(capture);
+      capture = next;
+    }
+    gameCapture = true;
+    gameReady = true;
+    captureImageSince = os_gettime_ns();
+    captureImageReady = true;
+    gameStarted = os_gettime_ns();
+    gameConfig["captureMethod"] = "game";
+    gameConfig.erase("hookFallback");
+    if (hookProbeMultiAdapter)
+      gameConfig["multiAdapter"] = true;
+    obs_volmeter_attach_source(captureMeter, next);
+    emit({{"event", "capture-method"},
+          {"method", "game"},
+          {"reason", "The game finished loading. Using game capture"}});
+  }
+#endif
+  void releaseHookProbe() {
+    if (!hookProbe)
+      return;
+    obs_source_dec_showing(hookProbe);
+    obs_source_release(hookProbe);
+    hookProbe = nullptr;
+  }
+  void placeItem() {
+    obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+    vec2 bounds{float(width), float(height)};
+    obs_sceneitem_set_bounds(item, &bounds);
+    obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
+    obs_sceneitem_set_alignment(item, OBS_ALIGN_CENTER);
+    vec2 pos{width / 2.f, height / 2.f};
+    obs_sceneitem_set_pos(item, &pos);
   }
 #ifdef _WIN32
   bool sourceDrawsImage(obs_source_t *source, uint32_t sourceWidth, uint32_t sourceHeight) {
@@ -912,6 +1058,36 @@ private:
       captureImageSince = now;
       captureImageReady = true;
     }
+  }
+  // OBS's automatic choice uses WGC on any battery-powered multi-GPU system.
+  // WGC repeated about 15% of frames at 60 fps where DXGI repeated under 1%,
+  // so use DXGI whenever this monitor is attached to libOBS's adapter. A
+  // source without an image still falls back to WGC after three seconds.
+  static int preferredScreenMethod(const std::string &identity) {
+    struct Match {
+      const std::string *wanted;
+      HMONITOR handle = nullptr;
+    } match{&identity};
+    EnumDisplayMonitors(
+        nullptr, nullptr,
+        [](HMONITOR monitor, HDC, LPRECT, LPARAM data) -> BOOL {
+          auto *match = reinterpret_cast<Match *>(data);
+          MONITORINFOEXA info{};
+          info.cbSize = sizeof(info);
+          if (!GetMonitorInfoA(monitor, &info)) return TRUE;
+          DISPLAY_DEVICEA device{};
+          device.cb = sizeof(device);
+          const std::string current = EnumDisplayDevicesA(info.szDevice, 0, &device, EDD_GET_DEVICE_INTERFACE_NAME) ? device.DeviceID : info.szDevice;
+          if (current != *match->wanted) return TRUE;
+          match->handle = monitor;
+          return FALSE;
+        },
+        reinterpret_cast<LPARAM>(&match));
+    if (!match.handle) return 0;
+    obs_enter_graphics();
+    const int index = gs_duplicator_get_monitor_index(match.handle);
+    obs_leave_graphics();
+    return index == -1 ? 2 : 1;
   }
   static bool selectedWindowFullscreen(HWND window) {
     RECT rect{};
@@ -1544,17 +1720,19 @@ public:
     bytes += p->size;
     // Purge only at keyframes, keeping the retained GOP independently
     // decodable.
+    // Packets arrive in delivery order, so only the front can be older than
+    // the cutoff. Stopping at the first newer packet keeps this cheap on long
+    // histories. Slightly interleaved timestamps only keep one more GOP.
     int64_t cutoff = p->sys_dts_usec - int64_t(seconds) * 1000000;
     size_t boundary = 0;
-    for (size_t i = 0; i < ring.size(); i++)
-      if (ring[i].p.type == OBS_ENCODER_VIDEO && ring[i].p.keyframe &&
-          ring[i].p.sys_dts_usec <= cutoff)
+    for (size_t i = 0; i < ring.size() && ring[i].p.sys_dts_usec <= cutoff; i++)
+      if (ring[i].p.type == OBS_ENCODER_VIDEO && ring[i].p.keyframe)
         boundary = i;
     while (boundary--) {
       bytes -= ring.front().p.size;
       ring.pop_front();
     }
-    while (bytes > 512ULL * 1024 * 1024 && ring.size() > 1) {
+    while (bytes > historyByteLimit && ring.size() > 1) {
       size_t next = 1;
       while (next < ring.size() &&
              !(ring[next].p.type == OBS_ENCODER_VIDEO && ring[next].p.keyframe))
@@ -1565,6 +1743,7 @@ public:
         bytes -= ring.front().p.size;
         ring.pop_front();
       }
+      historyLimitedAt = os_gettime_ns();
     }
     while (!requests.empty() && p->type == OBS_ENCODER_VIDEO &&
            p->sys_dts_usec >= requests.front().end) {
@@ -1694,7 +1873,12 @@ public:
     if (clipWriter->pending() >= 3)
       throw std::runtime_error(
           "Three clips are already saving. Wait for a save to finish");
-    if (bytes * size_t(clipWriter->pending() + 2) > 768ULL * 1024 * 1024)
+    // Saved jobs reference the history's packets rather than copying them.
+    // Count only what queued saves still hold after the history moved on.
+    const int64_t oldestShared =
+        ring.empty() ? INT64_MAX : ring.front().p.sys_dts_usec;
+    if (bytes + clipWriter->retainedBytes(oldestShared) >
+        historyByteLimit + savingByteLimit())
       throw std::runtime_error("The clip save queue has reached its memory "
                                "limit. Wait for a save to finish");
     auto wallMs = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1735,7 +1919,8 @@ public:
   void source(const json &c) {
     // The first usable source establishes the encoded canvas. Later sources and
     // window resizes fit that canvas without restarting encoders or cancelling saves.
-    for(auto &[key,value]:c.items())if(key!="audioSources")sessionConfiguration[key]=value;
+    for(auto &[key,value]:c.items())if(key!="audioSources"&&key!="hookFallback")sessionConfiguration[key]=value;
+    releaseHookProbe();
     if (waitingForPresetSize) {
       initialSize = {0, 0};
       initialSizeSince = 0;
@@ -1862,7 +2047,7 @@ public:
       if (monitor.empty())
         throw std::runtime_error("The selected screen is unavailable");
       obs_data_set_string(s, "monitor_id", monitor.c_str());
-      obs_data_set_int(s, "method", c.value("screenCaptureMethod", 0));
+      obs_data_set_int(s, "method", c.contains("screenCaptureMethod") ? c.value("screenCaptureMethod", 0) : preferredScreenMethod(monitor));
       nextDisplayIdentity = monitor;
       obs_data_set_bool(s, "capture_cursor", true);
       obs_data_set_bool(s, "force_sdr", true);
@@ -1939,9 +2124,15 @@ public:
         obs_data_set_string(s, "capture_mode", "window");
         obs_data_set_bool(s, "capture_cursor", true);
         obs_data_set_bool(s, "anti_cheat_hook", true);
+        // Shared memory crosses GPUs, e.g. a dGPU game on a laptop panel.
+        obs_data_set_bool(s, "sli_compatibility", c.value("multiAdapter", false));
+        sharedTextureFailure = false;
         next = createCaptureSource("game_capture", s);
-      } else
+      } else {
         next = createCaptureSource("window_capture", s);
+        if (c.value("hookFallback", false))
+          startHookProbe(s, c.value("multiAdapter", false));
+      }
     } else
       throw std::runtime_error(
           "Automatic game detection is not available in this recording backend "
@@ -2178,18 +2369,19 @@ public:
     std::atomic_store(&portalCapture, std::move(nextPortal));
 #endif
     item = obs_scene_add(scene, capture);
-    obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
-    vec2 bounds{float(width), float(height)};
-    obs_sceneitem_set_bounds(item, &bounds);
-    obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
-    obs_sceneitem_set_alignment(item, OBS_ALIGN_CENTER);
-    vec2 pos{width / 2.f, height / 2.f};
-    obs_sceneitem_set_pos(item, &pos);
+    placeItem();
     {
       std::lock_guard<std::mutex> lock(mutex);
       sourceName = screenCapture ? "Desktop" : c.value("sourceName", "Application");
       selectedSourceId = c.value("sourceId", "");
       if (active) recoveryBoundary = int64_t(os_gettime_ns() / 1000);
+    }
+    // Each new source gets its own canvas, so a later game is not scaled into
+    // the first one's size. A switch already ends the continuous history.
+    if (active && presetRecording) {
+      initialSize = {0, 0};
+      initialSizeSince = 0;
+      waitingForPresetSize = true;
     }
     captureEnabled = true;
     std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
@@ -2277,6 +2469,9 @@ private:
     sessionConfiguration = c;
     configureDesktopExclusions(c);
     seconds = c.value("clipSeconds", 60);
+    // The app resolves Automatic from installed memory. Keep the native bounds
+    // in step with replayMemoryBounds in src/shared/replay-memory.ts.
+    historyByteLimit = size_t(std::clamp(c.value("replayMemoryMB", 512), 256, 16384)) * 1024 * 1024;
     avoidOverlap = c.value("avoidOverlap", false);
     clipWriter->resetOverlap();
     std::string quality = c.value("quality", "standard");
@@ -2285,8 +2480,17 @@ private:
     waitingForPresetSize = presetRecording;
     // This temporary profile never enters history. NVENC rejects dimensions below its hardware minimum.
     width=waitingForPresetSize ? 320 : size.width; height=waitingForPresetSize ? 180 : size.height;
+    // Start at the size the source reports up front. When the captured image
+    // confirms it, refreshCapture keeps these encoders instead of restarting.
+    if (waitingForPresetSize && c.contains("pixelSize") && c["pixelSize"].is_object()) {
+      try {
+        const auto hinted = recordingSize(c, {c["pixelSize"].value("width", 0), c["pixelSize"].value("height", 0)});
+        if (hinted.width >= 64 && hinted.height >= 64) { width = hinted.width; height = hinted.height; }
+      } catch (const std::exception &) {
+      }
+    }
     fps=c.value("recordingPresetVersion",0)==1 || quality=="custom" ? c.value("customFPS",60) : quality=="low"?30:60;
-    int cq=c.value("recordingPresetVersion",0)==1 || quality=="custom" ? c.value("customCQ",23) : quality=="high"?18:23;
+    int cq=c.value("recordingPresetVersion",0)==1 || quality=="custom" ? c.value("customCQ",23) : quality=="high"?20:23;
     sessionCQ = cq;
     if (width < 64 || width > 7680 || height < 64 || height > 4320 || width % 2 || height % 2 || fps < 1 || fps > 120 || cq < 12 || cq > 35)
       throw std::runtime_error("The recording profile is invalid");
@@ -2331,6 +2535,16 @@ private:
               {"muted", microphoneMuted}});
     startEncoding(c, cq);
   }
+  // Quality-targeted encoders still need a ceiling: an incompressible scene
+  // must not push the configured clip length out of the memory history.
+  int bitrateCeilingKbps() const {
+    const double audioKbps = 160. * double(std::max<size_t>(1, audioNames.size()));
+    const double historyKbps =
+        0.85 * double(historyByteLimit) * 8. / double(std::max(1, seconds)) / 1000. - audioKbps;
+    // About 50 Mbps at 1080p60. Typical gameplay stays well below it.
+    const double pixelKbps = 0.4 * double(width) * double(height) * double(fps) / 1000.;
+    return int(std::clamp(std::min(historyKbps, pixelKbps), 15000., 100000.));
+  }
   void startEncoding(const json &c, int cq) {
     std::unique_ptr<obs_data_t, decltype(&obs_data_release)> d(obs_data_create(), &obs_data_release);
     obs_data_set_string(d.get(), "rate_control", "CQP");
@@ -2338,6 +2552,7 @@ private:
     obs_data_set_string(d.get(), "preset", "p4");
     obs_data_set_int(d.get(), "keyint_sec", 1);
     obs_data_set_int(d.get(), "bf", 0);
+    const int ceiling = bitrateCeilingKbps();
     const char *id = nullptr;
     encoder.clear();
 #ifdef __APPLE__
@@ -2346,6 +2561,19 @@ private:
     auto hardware = hardwareEncoders();
     if (!hardware.empty())
       encoder = hardware.front();
+    if (encoder.find("nvenc") != std::string::npos) {
+      // Constant quality with a ceiling. At the same CQ it uses fewer bits
+      // than CQP on ordinary footage at equal or better VMAF. Keep OBS's
+      // lookahead and multipass defaults: disabling them measured higher CPU
+      // and GPU load on the cross-adapter upload path.
+      obs_data_set_string(d.get(), "rate_control", "CQVBR");
+      obs_data_set_int(d.get(), "target_quality", cq);
+      obs_data_set_int(d.get(), "bitrate", ceiling);
+      obs_data_set_int(d.get(), "max_bitrate", ceiling);
+      // Rate-controlled modes apply AQ, unlike CQP. Temporal AQ runs CUDA
+      // kernels on the game's GPU and measured no quality gain.
+      obs_data_set_string(d.get(), "opts", "enableTemporalAQ=0");
+    }
     if (encoder.find("amf") != std::string::npos)
       obs_data_set_string(d.get(), "preset", "balanced");
     if (encoder == "ffmpeg_vaapi")
@@ -2365,8 +2593,10 @@ private:
         if (std::string(id) == "obs_x264")
           encoder = id;
       if (!encoder.empty()) {
-        obs_data_set_string(d.get(), "rate_control", "CRF");
+        // OBS x264 "VBR" is CRF with a VBV ceiling.
+        obs_data_set_string(d.get(), "rate_control", "VBR");
         obs_data_set_int(d.get(), "crf", cq);
+        obs_data_set_int(d.get(), "bitrate", ceiling);
         obs_data_set_string(d.get(), "preset", "veryfast");
         obs_data_set_string(d.get(), "x264opts", "bframes=0");
       }
@@ -2437,6 +2667,13 @@ public:
       lastVideo = packet.p.sys_dts_usec;
     }
     double available = hasVideo ? (lastVideo - firstVideo) / 1000000. : 0;
+    // The memory limit, rather than the configured length, bounds history.
+    std::string historyWarning;
+    if (active && historyLimitedAt &&
+        os_gettime_ns() - historyLimitedAt < 5000000000ULL &&
+        available + 1 < seconds)
+      historyWarning = "Memory holds less than " + std::to_string(seconds) +
+                       " s at this quality. Raise replay memory in Advanced, or lower the quality or clip length";
     bool fullscreen = false;
     std::string captureError;
 #ifdef _WIN32
@@ -2523,6 +2760,7 @@ public:
           {"source", sourceName},
           {"message", captureError},
           {"audioWarning", active ? visibleAudioWarning : ""},
+          {"historyWarning", historyWarning},
           {"bufferedSource", bufferedSourceName},
           {"bufferedSourceId", bufferedSourceId},
           {"bufferedSourceKind", bufferedScreen ? "screen" : "app"},

@@ -106,7 +106,8 @@ try {
    assert(software ? recording.encoder === "obs_x264" : recording.encoder?.startsWith("obs_nvenc"), recording.encoder ?? "The actual encoder must be reported");
    await wait((event) => event.event === "status" && (event.availableSeconds ?? 0) > 1.5);
    const first = path.join(folder, "first.mkv");
-   const second = path.join(folder, "second.mkv");
+   // Exercise both containers the clip writer supports.
+   const second = path.join(folder, "second.mp4");
    send({ action: "save", requestId: "first", path: first });
    send({ action: "save", requestId: "second", path: second });
    // Source switches and immediate Stop must not relabel or discard accepted saves.
@@ -119,19 +120,19 @@ try {
    for (const file of [first, second]) {
       const probe = spawnSync(
          path.resolve("resources/media/ffprobe.exe"),
-         ["-v", "error", "-show_entries", "format=duration:stream=codec_name,width,height:stream_tags=title", "-of", "json", file],
+         ["-v", "error", "-show_entries", "format=duration:stream=codec_name,width,height:stream_tags=title,name", "-of", "json", file],
          { encoding: "utf8", windowsHide: true }
       );
       assert.equal(probe.status, 0, probe.stderr);
       const media = JSON.parse(probe.stdout) as {
          format: { duration: string };
-         streams: Array<{ codec_name: string; width?: number; height?: number; tags?: { title?: string } }>;
+         streams: Array<{ codec_name: string; width?: number; height?: number; tags?: { title?: string; name?: string } }>;
       };
       assert.equal(media.streams[0]?.codec_name, "h264");
       assert.equal(media.streams[0]?.width, expectedSize.width);
       assert.equal(media.streams[0]?.height, expectedSize.height);
       assert.deepEqual(
-         media.streams.slice(1).map((stream) => stream.tags?.title),
+         media.streams.slice(1).map((stream) => stream.tags?.title ?? stream.tags?.name),
          ["Master", "Desktop"]
       );
       assert(Number(media.format.duration) > 1.5 && Number(media.format.duration) < 3.2, `Unexpected duration: ${media.format.duration}`);

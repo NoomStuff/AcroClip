@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { spawn, execFile } from "node:child_process";
 import { copyFile, mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { createServer } from "node:net";
 import sharp from "sharp";
@@ -154,7 +154,7 @@ try {
       const evidence = process.env["ACROCLIP_TEST_EVIDENCE"];
       if (evidence) {
          await writeFile(join(evidence, "capture-frame.png"), frame.stdout);
-         await copyFile(clip.path, join(evidence, "packaged-capture.mkv"));
+         await copyFile(clip.path, join(evidence, `packaged-capture${extname(clip.path)}`));
          await writeFile(join(evidence, "report.json"), JSON.stringify({ source, recorder: state.recorder, mean, clip }, null, 2));
       }
       assert(mean > 10, "The packaged X11 fixture must appear in the captured frame");

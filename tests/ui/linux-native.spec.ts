@@ -166,7 +166,7 @@ test("Linux recording saves the requested footage during a first library scan", 
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds, { timeout: 20000 }).toBeGreaterThan(1);
       await page.getByRole("button", { name: "Save clip", exact: true }).click();
       await expect
-         .poll(async () => (await readdir(collection, { recursive: true })).some((file) => file.endsWith(".mkv") && !file.endsWith(".saving.mkv")), {
+         .poll(async () => (await readdir(collection, { recursive: true })).some((file) => file.endsWith(".mp4") && !file.endsWith(".saving.mp4")), {
             timeout: 15000,
          })
          .toBe(true);
@@ -175,14 +175,14 @@ test("Linux recording saves the requested footage during a first library scan", 
          env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile },
       });
       await expect
-         .poll(async () => (await readdir(collection, { recursive: true })).filter((file) => file.endsWith(".mkv") && !file.endsWith(".saving.mkv")).length, {
+         .poll(async () => (await readdir(collection, { recursive: true })).filter((file) => file.endsWith(".mp4") && !file.endsWith(".saving.mp4")).length, {
             timeout: 15000,
          })
          .toBe(2);
       expect(["loading", "refreshing"]).toContain((await page.evaluate(() => window.acroClip.state())).collectionStatus.phase);
       await page.getByRole("button", { name: "Stop capturing", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length, { timeout: 120000 }).toBe(602);
-      const file = (await readdir(collection, { recursive: true })).find((file) => file.endsWith(".mkv") && !file.endsWith(".saving.mkv"))!;
+      const file = (await readdir(collection, { recursive: true })).find((file) => file.endsWith(".mp4") && !file.endsWith(".saving.mp4"))!;
       await promisify(execFile)(mediaTool("ffmpeg"), ["-v", "error", "-i", join(collection, file), "-f", "null", "-"]);
    } finally {
       await app

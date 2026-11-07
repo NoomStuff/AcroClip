@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
    AlertCircle,
-   TriangleAlert,
-   CircleAlert,
    Info,
    Bell,
    Check,
@@ -44,6 +42,8 @@ import { TimeInput } from "./TimeInput";
 import { initialLocation, reportLocation } from "./navigation-history";
 import type { NavigationLocation } from "./navigation-history";
 import { updateAction, updateDownloading, updateDownloadLabel } from "./update-action";
+import { clipLengthWarning, useInstalledMemory } from "./replay-estimate";
+import { WarningIcon } from "./WarningIcon";
 
 const sections = [
    { id: "recording", label: "Capture", icon: Video },
@@ -61,30 +61,6 @@ function LastChecked({ timestamp }: { timestamp: number }) {
       return () => window.clearInterval(timer);
    }, []);
    return <>Last checked {timeAgo(timestamp, now)}</>;
-}
-function FilenameWarning({ message, error }: { message: string; error: boolean }) {
-   const [hasAppeared, setHasAppeared] = useState(!!message);
-   useEffect(() => {
-      if (message) setHasAppeared(true);
-   }, [message]);
-   return (
-      <span
-         className="filename-warning-icon"
-         data-state={message ? "visible" : hasAppeared ? "leaving" : "hidden"}
-         data-tone={error ? "danger" : "warning"}
-         role="img"
-         aria-label={message || undefined}
-         aria-hidden={!message}
-         tabIndex={message ? 0 : -1}
-      >
-         {error ? <TriangleAlert size={16} /> : <CircleAlert size={16} />}
-         {message && (
-            <span className="filename-warning-tooltip" role="tooltip" id="filename-pattern-message">
-               {message}
-            </span>
-         )}
-      </span>
-   );
 }
 function FilenameEditor({
    value,
@@ -142,7 +118,7 @@ function FilenameEditor({
                maxLength={160}
                spellCheck={false}
             />
-            <FilenameWarning message={message} error={!!error} />
+            <WarningIcon message={message} error={!!error} id="filename-pattern-message" />
          </div>
          <div className="filename-tokens">
             {[
@@ -247,6 +223,8 @@ export function Settings({
    }, [target, section]);
    useEffect(() => () => clearTimeout(highlightTimer.current), []);
    const qualityError = customQualityError(draft);
+   const memoryBytes = useInstalledMemory();
+   const lengthWarning = clipLengthWarning(draft, memoryBytes);
    const filenamePattern = draft.filenamePreset === "custom" ? draft.filenameTemplate : filenamePatterns[draft.filenamePreset];
    const filenameError = filenameTemplateError(filenamePattern);
    const change = <K extends keyof Preferences>(key: K, value: Preferences[K]) => write({ ...draft, [key]: value });
@@ -325,13 +303,16 @@ export function Settings({
                         <section className="settings-group">
                            <h2>Clip</h2>
                            <Field icon={Clock3} label="Clip length" detail="Save this much recent footage when you clip.">
-                              <TimeInput
-                                 min={5}
-                                 max={1800}
-                                 value={draft.clipSeconds}
-                                 label="Clip length"
-                                 onValueChange={(value) => change("clipSeconds", value)}
-                              />
+                              <div className="clip-length-control">
+                                 <WarningIcon message={lengthWarning?.message ?? ""} error={!!lengthWarning?.error} id="clip-length-message" />
+                                 <TimeInput
+                                    min={5}
+                                    max={1800}
+                                    value={draft.clipSeconds}
+                                    label="Clip length"
+                                    onValueChange={(value) => change("clipSeconds", value)}
+                                 />
+                              </div>
                            </Field>
                            <Toggle
                               icon={Scissors}

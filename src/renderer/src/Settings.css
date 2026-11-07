@@ -435,6 +435,12 @@
    opacity: 0;
    pointer-events: none;
 }
+.clip-length-control {
+   position: relative;
+}
+.clip-length-control > .filename-warning-icon {
+   right: calc(100% + 10px);
+}
 .filename-warning-icon[data-tone="danger"] {
    color: var(--red);
 }

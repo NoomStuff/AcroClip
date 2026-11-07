@@ -8,6 +8,8 @@ import { ShortcutInput } from "./ShortcutInput";
 import { applyRecordingPreset } from "../../shared/recording-presets";
 import { portalScreenId, sourceChoices } from "../../shared/capture-policy";
 import { FolderPicker } from "./FolderPicker";
+import { WarningIcon } from "./WarningIcon";
+import { clipLengthWarning, useInstalledMemory } from "./replay-estimate";
 
 const steps = [
    { label: "Capture", icon: Monitor },
@@ -162,6 +164,8 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
            !sourceChoices(sources, capabilities).find((item) => item.value === "auto")?.disabled
          : !!source;
    const lengthValid = Number.isInteger(draft.clipSeconds) && draft.clipSeconds >= 5 && draft.clipSeconds <= 1800;
+   const memoryBytes = useInstalledMemory();
+   const lengthWarning = lengthValid ? clipLengthWarning(draft, memoryBytes) : null;
    const finish = async (skip = false) => {
       const record = !skip && draft.autoRecord;
       if (busy || navigationPending.current || micPending || !lengthValid || !draft.collection || (record && (!sourceReady || !capabilities?.supported)))
@@ -330,16 +334,19 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                         </div>
                         <div className="setup-row">
                            <label htmlFor="setup-length">Save the last</label>
-                           <NumberInput
-                              id="setup-length"
+                           <div className="clip-length-control">
+                              <WarningIcon message={lengthWarning?.message ?? ""} error={!!lengthWarning?.error} id="setup-length-message" />
+                              <NumberInput
+                                 id="setup-length"
 
-                              aria-label="Setup clip length in seconds"
-                              min={5}
-                              max={1800}
-                              value={draft.clipSeconds}
-                              onValueChange={(value) => change("clipSeconds", value)}
-                              unit="seconds"
-                           />
+                                 aria-label="Setup clip length in seconds"
+                                 min={5}
+                                 max={1800}
+                                 value={draft.clipSeconds}
+                                 onValueChange={(value) => change("clipSeconds", value)}
+                                 unit="seconds"
+                              />
+                           </div>
                         </div>
                         {!lengthValid && (
                            <p className="setup-validation" role="alert">

@@ -75,6 +75,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
            : null
    );
    useCondition("audio", audioWarning ? { message: audioWarning, tone: "warning" } : null);
+   useCondition("history", active && recorder?.historyWarning ? { message: recorder.historyWarning, tone: "warning" } : null);
    useCondition("storage", state?.storageWarning ? { message: state.storageWarning, tone: "warning" } : null);
    const pendingSaves = recorder?.pendingSaves ?? 0;
    const hasShareableJob = !!state?.jobs.some((job) => job.kind === "shareable" && ["running", "queued"].includes(job.state));

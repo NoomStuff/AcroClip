@@ -14,6 +14,7 @@ export const defaultPreferences: Preferences = {
    customFPS: 60,
    customCQ: 23,
    allowSoftwareEncoder: false,
+   replayMemoryMB: 0,
    sourceKind: "screen",
    sourceId: "",
    microphone: false,

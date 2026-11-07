@@ -11,7 +11,7 @@ describe("recording destination safety", () => {
    it("keeps application names from escaping the chosen recording folder", () => {
       const prefs = { ...defaultPreferences, collection: "/clips", folderLayout: "application" as const };
       const destination = recordingDestination(prefs, "../../App: title", new Date("2026-10-08T12:00:00Z"));
-      expect(destination).toBe(join("/clips", ".._.._App_ title", ".._.._App_ title 2026-10-08 12-00-00.mkv"));
+      expect(destination).toBe(join("/clips", ".._.._App_ title", ".._.._App_ title 2026-10-08 12-00-00.mp4"));
       expect(safeFileStem("CON")).toBe("Clip");
       expect(safeFileStem("\u0000")).toBe("Clip");
    });
@@ -20,17 +20,17 @@ describe("recording destination safety", () => {
       try {
          const prefs = { ...defaultPreferences, collection: root, filenamePreset: "custom" as const, filenameTemplate: "Moment" };
          const first = recordingDestination(prefs, "Game");
-         expect(first).toBe(join(root, "Moment.mkv"));
+         expect(first).toBe(join(root, "Moment.mp4"));
          const second = recordingDestination(prefs, "Game", new Date(), [first]);
-         expect(second).toBe(join(root, "Moment (2).mkv"));
+         expect(second).toBe(join(root, "Moment (2).mp4"));
          if (process.platform !== "linux") expect(recordingDestination(prefs, "Game", new Date(), [first.toUpperCase()])).toBe(second);
          await writeFile(first, "existing recording");
-         await writeFile(`${second}.saving.mkv`, "unfinished recording");
+         await writeFile(`${second}.saving.mp4`, "unfinished recording");
          const third = recordingDestination(prefs, "Game");
-         expect(third).toBe(join(root, "Moment (3).mkv"));
-         expect(recordingDestination(prefs, "Game", new Date(), [third])).toBe(join(root, "Moment (4).mkv"));
+         expect(third).toBe(join(root, "Moment (3).mp4"));
+         expect(recordingDestination(prefs, "Game", new Date(), [third])).toBe(join(root, "Moment (4).mp4"));
          expect(await readFile(first, "utf8")).toBe("existing recording");
-         expect(await readFile(`${second}.saving.mkv`, "utf8")).toBe("unfinished recording");
+         expect(await readFile(`${second}.saving.mp4`, "utf8")).toBe("unfinished recording");
       } finally {
          await rm(root, { recursive: true, force: true });
       }

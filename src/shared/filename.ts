@@ -54,5 +54,6 @@ export function previewFilename(preferences: Pick<Preferences, "filenamePreset" 
          /\{(source|date|time)\}/g,
          (_token: string, key: string) => values[key as keyof typeof values]
       );
-   return `${name}.mkv`;
+   // MP4 plays inline in chat apps, phones and browsers. MKV clips stay supported.
+   return `${name}.mp4`;
 }

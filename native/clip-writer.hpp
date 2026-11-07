@@ -62,6 +62,9 @@ public:
   void reject(const ClipRequest &request, const std::string &error);
   void submit(ClipJob job);
   int pending() const;
+  // Jobs share refcounted packets with the replay history. Only packets older
+  // than the history's oldest retained packet occupy additional memory.
+  size_t retainedBytes(int64_t oldestSharedUsec);
   void resetOverlap();
   void finish();
 
@@ -71,6 +74,7 @@ private:
   std::mutex mutex;
   std::condition_variable wake;
   std::deque<ClipJob> jobs;
+  const ClipJob *writing = nullptr;
   std::thread thread;
   bool closing = false;
   std::atomic<int> pendingRequests{0};

@@ -3,6 +3,7 @@ import { selectedCaptureSource } from "../shared/capture-policy";
 import { promisify } from "node:util";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
+import { totalmem } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
@@ -21,6 +22,7 @@ import type {
 import { GameCatalog, selectGame } from "./games";
 import { nativeAudioPreferences } from "../shared/audio-model";
 import { resolveAudioSources } from "./audio-sources";
+import { resolveReplayMemoryMB } from "../shared/replay-memory";
 
 interface RecorderOptions {
    nativePath?: string;
@@ -69,6 +71,7 @@ interface NativeMessage {
    monitorMessage?: string;
    listeningMessage?: string;
    audioWarning?: string;
+   historyWarning?: string;
    bufferedSource?: string;
    bufferedSourceId?: string;
    bufferedSourceKind?: "screen" | "app";
@@ -123,6 +126,7 @@ export class Recorder {
    private sourceAudioId: string | null = null;
    private monitorGeneration = 0;
    private monitorLevels: AudioLevels = { capture: 0, microphone: 0 };
+   private fastStatusUntil = 0;
    constructor(options: RecorderOptions) {
       this.options = options;
       this.catalog = new GameCatalog(options.gameCatalogPath ?? path.join(process.cwd(), ".cache", "game-catalog.json"));
@@ -186,6 +190,7 @@ export class Recorder {
             message: hardwareEncoders.length ? "" : "No supported hardware encoder was found. Software encoding uses your CPU.",
             sourceKinds: [...this.sourceKinds],
             portalPicker: this.portalPicker,
+            memoryBytes: totalmem(),
             ...(this.captureBackend ? { captureBackend: this.captureBackend } : {}),
             ...(this.applicationBackend ? { applicationBackend: this.applicationBackend } : {}),
          };
@@ -322,6 +327,7 @@ export class Recorder {
          if (generation !== this.autoGeneration) return;
          const key = this.configurationKey(configuration);
          if (key !== this.autoKey) {
+            this.fastStatusUntil = Date.now() + 8000;
             await this.command({ action: "source", ...configuration });
             if (generation === this.autoGeneration) this.autoKey = key;
          }
@@ -470,10 +476,14 @@ export class Recorder {
          clearTimeout(timeout);
       }
       await this.refreshWindows();
+      // Status polls also advance the native canvas fit. Poll quickly while a
+      // source is starting so footage begins sooner, then settle to once a second.
+      let tick = 0;
       this.timer = setInterval(() => {
-         if (this.process) this.send({ action: "status" });
-         void this.followGame();
-      }, 1000);
+         const steady = tick++ % 4 === 0;
+         if (this.process && (steady || Date.now() < this.fastStatusUntil)) this.send({ action: "status" });
+         if (steady) void this.followGame();
+      }, 250);
    }
    private message(value: NativeMessage): void {
       if (value.id && (value.event === "response" || value.event === "error")) {
@@ -568,11 +578,21 @@ export class Recorder {
             message: "",
             supported: true,
             audioWarning: "",
+            historyWarning: "",
             bufferedSourceName: "",
             bufferedSourceId: "",
          });
       if (value.event === "stopped")
-         this.update({ state: "stopped", startedAt: null, availableSeconds: 0, message: "", audioWarning: "", bufferedSourceName: "", bufferedSourceId: "" });
+         this.update({
+            state: "stopped",
+            startedAt: null,
+            availableSeconds: 0,
+            message: "",
+            audioWarning: "",
+            historyWarning: "",
+            bufferedSourceName: "",
+            bufferedSourceId: "",
+         });
       if (value.event === "audio-monitor") this.options.onAudioMonitorError?.(value.monitorMessage ?? "", value.listeningMessage ?? "");
       if (value.event === "status") {
          if (typeof value.monitorMessage === "string") this.options.onAudioMonitorError?.(value.monitorMessage, value.listeningMessage ?? "");
@@ -596,6 +616,7 @@ export class Recorder {
             ...(value.source !== undefined ? { sourceName: value.source } : {}),
             ...(value.sourceKind !== undefined ? { sourceKind: value.sourceKind } : {}),
             ...(value.audioWarning !== undefined ? { audioWarning: value.audioWarning } : {}),
+            ...(value.historyWarning !== undefined ? { historyWarning: value.historyWarning } : {}),
             ...(value.bufferedSource !== undefined ? { bufferedSourceName: value.bufferedSource } : {}),
             ...(value.bufferedSourceId !== undefined ? { bufferedSourceId: value.bufferedSourceId } : {}),
             ...(value.bufferedSourceKind !== undefined ? { bufferedSourceKind: value.bufferedSourceKind } : {}),
@@ -777,7 +798,13 @@ export class Recorder {
             nativeAudioPreferences(preferences).audioSources,
             preferences.audioSources.some((source) => source.enabled && source.kind === "application") ? await this.capturableApplications() : []
          );
-         await this.command({ action: "start", ...configuration, applicationPid: process.pid });
+         this.fastStatusUntil = Date.now() + 8000;
+         await this.command({
+            action: "start",
+            ...configuration,
+            replayMemoryMB: resolveReplayMemoryMB(preferences.replayMemoryMB, totalmem()),
+            applicationPid: process.pid,
+         });
          this.autoGeneration++;
          this.autoPreferences = preferences.sourceKind === "auto" ? preferences : null;
          this.autoSources = sources;
@@ -805,6 +832,7 @@ export class Recorder {
          this.autoGeneration++;
          await this.refreshWindows();
          const configuration = await this.configuration(preferences, sources);
+         this.fastStatusUntil = Date.now() + 8000;
          await this.command({ action: "source", ...configuration });
          this.autoPreferences = preferences.sourceKind === "auto" ? preferences : null;
          this.autoSources = sources;

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import type { Preferences } from "../shared/types";
 import { previewFilename, safeFileStem } from "../shared/filename";
 
@@ -9,9 +9,10 @@ export function recordingDestination(preferences: Preferences, source: string, n
    const filename = previewFilename(preferences, source, now);
    const pathKey = (path: string) => (process.platform === "linux" ? path : path.normalize("NFC").toLowerCase());
    const pendingNames = new Set(pendingPaths.map(pathKey));
+   const extension = extname(filename);
    for (let number = 1; number <= 10000; number++) {
-      const candidate = join(folder, number === 1 ? filename : `${filename.slice(0, -4)} (${number}).mkv`);
-      if (!existsSync(candidate) && !existsSync(`${candidate}.saving.mkv`) && !pendingNames.has(pathKey(candidate))) return candidate;
+      const candidate = join(folder, number === 1 ? filename : `${filename.slice(0, -extension.length)} (${number})${extension}`);
+      if (!existsSync(candidate) && !existsSync(`${candidate}.saving${extension}`) && !pendingNames.has(pathKey(candidate))) return candidate;
    }
    throw new Error("Too many clips have this file name. Add date and time to your naming pattern.");
 }

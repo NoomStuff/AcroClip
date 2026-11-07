@@ -49,6 +49,8 @@ export async function readPreferences(path: string, collection: string): Promise
                       ? 1440
                       : 1080;
          }
+         // High once used CQ 18. Presets own their values, so only Custom keeps an edited CQ.
+         if (migrated.quality === "high" && migrated.customCQ === 18) migrated.customCQ = 20;
          return migrated;
       } catch {
          /* Keep trying the last good backup. */
@@ -90,6 +92,7 @@ export function requiresCaptureRestart(a: Preferences, b: Preferences): boolean 
       a.customFPS !== b.customFPS ||
       a.customCQ !== b.customCQ ||
       a.allowSoftwareEncoder !== b.allowSoftwareEncoder ||
+      a.replayMemoryMB !== b.replayMemoryMB ||
       a.microphoneDevice !== b.microphoneDevice ||
       a.captureAudio !== b.captureAudio ||
       a.avoidOverlap !== b.avoidOverlap ||

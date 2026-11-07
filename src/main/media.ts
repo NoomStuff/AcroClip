@@ -107,14 +107,15 @@ interface ProbeStream {
    width?: number;
    height?: number;
    avg_frame_rate?: string;
-   tags?: { title?: string; handler_name?: string };
+   tags?: { title?: string; name?: string; handler_name?: string };
 }
 interface ProbeResult {
    format?: { duration?: string };
    streams?: ProbeStream[];
 }
 export function audioTrackTitle(tags: ProbeStream["tags"], ordinal: number): string {
-   const title = tags?.title?.trim();
+   // MP4 stores a track's title as its user-data "name".
+   const title = tags?.title?.trim() || tags?.name?.trim();
    if (title) return title;
    const handler = tags?.handler_name?.trim();
    if (handler && !/^(soundhandler|sound media handler|audiohandler|audio media handler)$/i.test(handler)) return handler;

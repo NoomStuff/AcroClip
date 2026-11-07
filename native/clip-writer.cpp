@@ -2,6 +2,7 @@
 // Mux protocol follows OBS Studio's ffmpeg-mux/ffmpeg-mux.h, Copyright Lain Bailey.
 #include "clip-writer.hpp"
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -69,6 +70,20 @@ void ClipWriter::submit(ClipJob job) {
   }
   wake.notify_one();
 }
+size_t ClipWriter::retainedBytes(int64_t oldestSharedUsec) {
+  std::lock_guard<std::mutex> lock(mutex);
+  size_t total = 0;
+  auto add = [&](const ClipJob &job) {
+    for (const auto &packet : job.packets)
+      if (packet.p.sys_dts_usec < oldestSharedUsec)
+        total += packet.p.size;
+  };
+  for (const auto &job : jobs)
+    add(job);
+  if (writing)
+    add(*writing);
+  return total;
+}
 void ClipWriter::resetOverlap() {
   if (pending())
     throw std::runtime_error("Wait for clip saves to finish before restarting");
@@ -93,6 +108,7 @@ void ClipWriter::run() {
         return;
       job = std::move(jobs.front());
       jobs.pop_front();
+      writing = &job;
     }
     ClipResult result;
     try {
@@ -100,6 +116,10 @@ void ClipWriter::run() {
     } catch (const std::exception &error) {
       result.request = job.request;
       result.error = error.what();
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      writing = nullptr;
     }
     completion(result);
     pendingRequests--;
@@ -129,7 +149,30 @@ ClipResult ClipWriter::write(ClipJob &job) {
                                      job.packets[start].p.sys_dts_usec) /
                                    1000000.)
                  : 0.;
-  std::string temporary = job.request.path + ".saving.mkv";
+  // The muxer picks its container from the temporary file's extension.
+  auto extension = std::filesystem::path(job.request.path).extension().string();
+  std::transform(extension.begin(), extension.end(), extension.begin(),
+                 [](unsigned char c) { return char(std::tolower(c)); });
+  if (extension != ".mkv" && extension != ".mp4")
+    throw std::runtime_error("Clips can be saved as MKV or MP4 only");
+  std::string temporary = job.request.path + ".saving" + extension;
+  const auto destinationTaken = [&] {
+    return std::filesystem::exists(job.request.path);
+  };
+  if (destinationTaken())
+    throw std::runtime_error(
+        "A file already exists at the clip destination. The existing file was "
+        "preserved");
+  // A failed save never leaves its partial file in the collection.
+  struct Cleanup {
+    const std::string &path;
+    bool keep = false;
+    ~Cleanup() {
+      std::error_code ignored;
+      if (!keep)
+        std::filesystem::remove(path, ignored);
+    }
+  } cleanup{temporary};
   using Arguments =
       std::unique_ptr<os_process_args_t, decltype(&os_process_args_destroy)>;
   Arguments arguments(os_process_args_create(executable.c_str()),
@@ -190,15 +233,19 @@ ClipResult ClipWriter::write(ClipJob &job) {
     int code = os_process_pipe_destroy(pipe.release());
     okay = okay && code == 0;
   }
-  if (!okay || std::filesystem::file_size(temporary) <= 1000) {
+  std::error_code sizeError;
+  const auto written = std::filesystem::file_size(temporary, sizeError);
+  if (!okay || sizeError || written <= 1000) {
     result.error = "The clip could not be finalized. Check free storage and "
                    "folder permissions";
     return result;
   }
-  if (std::filesystem::exists(job.request.path))
+  if (destinationTaken())
     throw std::runtime_error(
         "A file already exists at the clip destination. The existing file was "
         "preserved");
+  // A finished file that fails to publish stays on disk rather than being lost.
+  cleanup.keep = true;
 #ifdef _WIN32
   std::filesystem::rename(temporary, job.request.path);
 #else

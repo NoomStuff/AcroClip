@@ -475,15 +475,15 @@ describe("collection scan cost and fresh action checks", () => {
             )
          );
          await writeFile(completed, "complete recording");
-         await writeFile(`${completed}.saving.mkv`, "in-progress bytes");
+         await writeFile(`${completed}.saving.mp4`, "in-progress bytes");
          const collection = new CollectionService();
          await collection.open(root);
          expect(collection.clips.map((clip) => clip.path)).toEqual([await realpath(completed)]);
          const id = collection.clips[0]!.id;
-         await collection.rename(id, "Completed.mkv.saving");
+         await collection.rename(id, "Completed.mp4.saving");
          expect(collection.clips).toHaveLength(1);
          expect(collection.clips[0]?.id).toBe(id);
-         expect(collection.clips[0]?.path).toBe(await realpath(join(root, "Completed.mkv.saving.mkv")));
+         expect(collection.clips[0]?.path).toBe(await realpath(join(root, "Completed.mp4.saving.mp4")));
          const reopened = new CollectionService();
          await reopened.open(root);
          expect(reopened.clips).toHaveLength(1);

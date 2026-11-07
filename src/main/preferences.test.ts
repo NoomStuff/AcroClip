@@ -75,10 +75,14 @@ describe("preference persistence recovery", () => {
          quality: "high",
          customWidth: 2560,
          customHeight: 1440,
-         customCQ: 18,
+         customCQ: 20,
          microphone: false,
          recordingPresetVersion: 1,
       });
+      await writeFile(file, JSON.stringify({ ...defaultPreferences, collection: root, quality: "high", resolutionLimit: 1440, customCQ: 18 }));
+      expect(await readPreferences(file, root)).toMatchObject({ quality: "high", resolutionLimit: 1440, customCQ: 20 });
+      await writeFile(file, JSON.stringify({ ...defaultPreferences, collection: root, quality: "custom", customCQ: 18 }));
+      expect(await readPreferences(file, root)).toMatchObject({ quality: "custom", customCQ: 18 });
       await writeFile(file, JSON.stringify({ ...legacy, collection: root, quality: "custom", customWidth: 1280, customCQ: 31 }));
       expect(await readPreferences(file, root)).toMatchObject({ quality: "custom", customWidth: 1280, customCQ: 31 });
       await rm(root, { recursive: true, force: true });

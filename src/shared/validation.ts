@@ -2,6 +2,7 @@ import { z } from "zod";
 import { shortcutRegistry } from "./shortcuts";
 import { validFilenameTemplate } from "./filename";
 import { normalizeMicrophone } from "./audio-model";
+import { replayMemoryBounds } from "./replay-memory";
 export const preferencesSchema = z
    .object({
       collection: z.string().trim().min(1).max(4096),
@@ -43,6 +44,11 @@ export const preferencesSchema = z
       customFPS: z.number().int().min(1).max(120),
       customCQ: z.number().int().min(12).max(35),
       allowSoftwareEncoder: z.boolean(),
+      replayMemoryMB: z
+         .number()
+         .int()
+         .refine((value) => value === 0 || (value >= replayMemoryBounds.min && value <= replayMemoryBounds.max), "Choose a replay memory size")
+         .default(0),
       sourceKind: z.enum(["screen", "app", "auto"]),
       sourceId: z.string().max(1000),
       microphone: z.boolean(),

@@ -570,7 +570,7 @@ export class CollectionService {
          const records = await mapConcurrent(entries, 4, async (entry) => {
             if (!entry.isFile() || !supported.has(extname(entry.name).toLowerCase()) || entry.name.startsWith(".acroclip-")) return;
             const path = join(directory, entry.name);
-            if (/\.mkv\.saving\.mkv$/i.test(entry.name) && !registeredPaths.has(normal(path))) return;
+            if (/\.(mkv|mp4)\.saving\.(mkv|mp4)$/i.test(entry.name) && !registeredPaths.has(normal(path))) return;
             return fileRecord(path);
          });
          for (const [index, entry] of entries.entries()) {
@@ -670,7 +670,7 @@ export class CollectionService {
                if (directory === this.root && entry.name === "shareables" && ownedShares) continue;
                directories.push(path);
             } else if (entry.isFile() && supported.has(extname(entry.name).toLowerCase()) && !entry.name.startsWith(".acroclip-")) {
-               if (/\.mkv\.saving\.mkv$/i.test(entry.name)) {
+               if (/\.(mkv|mp4)\.saving\.(mkv|mp4)$/i.test(entry.name)) {
                   const stored = this.metadata.clips.find(
                      (clip) => safeRelative(clip.relativePath) && normal(resolve(this.root, clip.relativePath)) === normal(path)
                   );

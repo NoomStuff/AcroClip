@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
-import { Check, Cpu, Monitor, Gauge, SlidersHorizontal } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { Check, ChevronDown, Cpu, Monitor, Gauge, MemoryStick, SlidersHorizontal } from "lucide-react";
 import type { Preferences, RecordingCapabilities } from "../../shared/types";
 import { applyRecordingPreset } from "../../shared/recording-presets";
+import { automaticReplayMemoryMB, memoryLabel, replayMemoryChoicesFor } from "../../shared/replay-memory";
+import { replayEstimate } from "./replay-estimate";
+import { durationText } from "./TimeInput";
 import { api } from "./desktop";
 import { Field, Select, Toggle, NumberInput } from "./ui";
 import { Field as SettingsField, Toggle as SettingsToggle } from "./SettingsControls";
@@ -50,17 +53,73 @@ export function customQualityError(value: Preferences): string {
    if (!Number.isInteger(value.customFPS) || value.customFPS < 1 || value.customFPS > 120) return "Frame rate must be between 1 and 120 fps.";
    return "";
 }
+function replayMemoryDetail(value: Preferences, memoryBytes: number | undefined): string {
+   const base = "Holds recent footage for clips.";
+   if (!memoryBytes) return base;
+   const estimate = replayEstimate(value, memoryBytes);
+   return `${base} Keeps full quality up to about ${durationText(estimate.fullQualitySeconds)} at this quality.`;
+}
+function AdvancedQualityControls({
+   value,
+   onChange,
+   compact,
+   memoryBytes,
+}: {
+   value: Preferences;
+   onChange: (patch: Partial<Preferences>) => void;
+   compact: boolean;
+   memoryBytes: number | undefined;
+}) {
+   const [open, setOpen] = useState(false);
+   const id = useId();
+   const ControlField = compact ? SettingsField : Field;
+   const ControlToggle = compact ? SettingsToggle : Toggle;
+   const choices = memoryBytes ? replayMemoryChoicesFor(memoryBytes) : [];
+   // A saved size this PC no longer offers stays selectable.
+   if (value.replayMemoryMB !== 0 && !choices.includes(value.replayMemoryMB)) choices.push(value.replayMemoryMB);
+   choices.sort((a, b) => a - b);
+   return (
+      <div className="quality-advanced" data-open={open || undefined}>
+         <button type="button" className="quality-advanced-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+            Advanced
+            <ChevronDown size={14} aria-hidden="true" />
+         </button>
+         <div className="quality-advanced-fold" id={id} inert={!open} aria-hidden={!open}>
+            <div className="quality-advanced-body">
+               <ControlField {...(compact ? { icon: MemoryStick } : {})} label="Replay memory" detail={replayMemoryDetail(value, memoryBytes)}>
+                  <Select label="Replay memory" value={String(value.replayMemoryMB)} onChange={(next) => onChange({ replayMemoryMB: Number(next) })}>
+                     <option value="0">{memoryBytes ? `Automatic (${memoryLabel(automaticReplayMemoryMB(memoryBytes))})` : "Automatic"}</option>
+                     {choices.map((megabytes) => (
+                        <option key={megabytes} value={megabytes}>
+                           {memoryLabel(megabytes)}
+                        </option>
+                     ))}
+                  </Select>
+               </ControlField>
+               <ControlToggle
+                  {...(compact ? { icon: Cpu } : {})}
+                  label="Allow software encoding"
+                  detail="Uses your CPU if no supported hardware encoder is available."
+                  checked={value.allowSoftwareEncoder}
+                  onChange={(enabled) => onChange({ allowSoftwareEncoder: enabled })}
+               />
+            </div>
+         </div>
+      </div>
+   );
+}
 function CustomQualityControls({
    value,
    onChange,
    compact = false,
+   memoryBytes,
 }: {
    value: Preferences;
    onChange: (patch: Partial<Preferences>) => void;
    compact?: boolean;
+   memoryBytes: number | undefined;
 }) {
    const ControlField = compact ? SettingsField : Field;
-   const ControlToggle = compact ? SettingsToggle : Toggle;
    return (
       <div className="custom-quality">
          <ControlField
@@ -105,18 +164,12 @@ function CustomQualityControls({
                   value={value.customCQ}
                   numeric
                   defaultValue={23}
-                  snapPoints={[12, 18, 20, 23, 35]}
+                  snapPoints={[12, 20, 23, 35]}
                   onValueChange={(next) => onChange({ customCQ: next })}
                />
             </div>
          </ControlField>
-         <ControlToggle
-            {...(compact ? { icon: Cpu } : {})}
-            label="Allow software encoding"
-            detail="Uses your CPU if no supported hardware encoder is available."
-            checked={value.allowSoftwareEncoder}
-            onChange={(enabled) => onChange({ allowSoftwareEncoder: enabled })}
-         />
+         <AdvancedQualityControls compact={compact} value={value} onChange={onChange} memoryBytes={memoryBytes} />
       </div>
    );
 }
@@ -138,10 +191,19 @@ export function RecordingPresets({ value, onChange, compact = false }: { value: 
          />
          {!compact && (
             <p className="preset-source-note">
-               Screens use the resolution limit. Apps start at their original size. The capture size stays fixed until you stop.
+               Screens use the resolution limit. Apps use their original size. The capture size is set when a source starts and stays fixed while it is
+               captured.
             </p>
          )}
-         <CustomQualityControls compact={compact} value={value} onChange={(patch) => onChange({ ...value, ...patch, quality: "custom" })} />
+         <CustomQualityControls
+            compact={compact}
+            value={value}
+            memoryBytes={capabilities?.memoryBytes}
+            onChange={(patch) =>
+               // Advanced settings apply to every preset rather than making it custom.
+               onChange({ ...value, ...patch, quality: "replayMemoryMB" in patch || "allowSoftwareEncoder" in patch ? value.quality : "custom" })
+            }
+         />
       </>
    );
 }

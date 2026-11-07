@@ -48,6 +48,7 @@ export interface RecordingCapabilities {
    applicationBackend?: "xwayland";
    sourceKinds?: SourceKind[];
    portalPicker?: boolean;
+   memoryBytes?: number;
 }
 export interface AdditionalAudioSource {
    id: string;
@@ -80,6 +81,8 @@ export interface Preferences {
    customFPS: number;
    customCQ: number;
    allowSoftwareEncoder: boolean;
+   // Megabytes of encoded footage held in memory. 0 sizes it from installed memory.
+   replayMemoryMB: number;
    sourceKind: SourceKind;
    sourceId: string;
    microphone: boolean;
@@ -165,6 +168,7 @@ export interface RecorderState {
    sourceName?: string;
    sourceKind?: "screen" | "app" | "waiting";
    audioWarning?: string;
+   historyWarning?: string;
    bufferedSourceName?: string;
    bufferedSourceId?: string;
    bufferedSourceKind?: "screen" | "app";
