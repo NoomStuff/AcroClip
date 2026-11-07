@@ -1,9 +1,34 @@
-import type { NoticeOptions } from "../../shared/types";
+import type { AppEvent, DesktopAPI, NoticeOptions } from "../../shared/types";
 import type { DragEvent } from "react";
 import { clipDragType } from "./clip-drag";
 import type { ClipDrag } from "./clip-drag";
 
-export const api = window.acroClip;
+// The context bridge copies every event once per preload listener, so a state
+// event carrying the whole library was cloned for each meter and page. One
+// bridge subscription fans out here instead.
+const listeners = new Set<(event: AppEvent) => void>();
+let bridged = false;
+function onEvent(listener: (event: AppEvent) => void): () => void {
+   listeners.add(listener);
+   if (!bridged) {
+      bridged = true;
+      window.acroClip.onEvent((event) => {
+         for (const receive of [...listeners])
+            try {
+               receive(event);
+            } catch (error) {
+               // One failing view must not starve the others of updates.
+               queueMicrotask(() => {
+                  throw error;
+               });
+            }
+      });
+   }
+   return () => {
+      listeners.delete(listener);
+   };
+}
+export const api: DesktopAPI = { ...window.acroClip, onEvent };
 export type Run = (action: () => Promise<unknown>) => Promise<boolean>;
 export function describeError(error: unknown): string {
    const message =

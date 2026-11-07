@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { AppEvent, AppState, NoticeOptions, Preferences, RecorderState } from "../shared/types";
+import type { AppEvent, AppState, ApplicationArtwork, CaptureSource, NoticeOptions, Preferences, RecorderState } from "../shared/types";
 import { recordingArtwork, type RecordingArtwork } from "./recording-artwork";
 import { categoryRequest, idSchema } from "../shared/validation";
 import { assertDistinctAudioSources } from "./audio-sources";
@@ -33,6 +33,7 @@ import { needsMicrophonePermission } from "../shared/audio-policy";
 import { StorageMonitor } from "./storage";
 import { StateChanges } from "./state-changes";
 import { updateTray as renderTray } from "./tray";
+import { CollectionRefresh } from "./collection-refresh";
 
 protocol.registerSchemesAsPrivileged([{ scheme: "acroclip-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -47,7 +48,6 @@ let quitting = false;
 let exiting: Promise<boolean> | null = null;
 let preferences: Preferences;
 let preferencePath = "";
-let refreshBusy = false;
 let closingRequested = false;
 let preferenceWrites: Promise<unknown> = Promise.resolve();
 let collectionReady: Promise<void> = Promise.resolve();
@@ -58,34 +58,44 @@ let playbackRequest: { id: string; controller: AbortController } | undefined;
 const mediaFiles = new Map<string, string>();
 const mediaKeys = new Map<string, string>();
 const stateChanges = new StateChanges();
+const executableName = (name: string) => (process.platform === "win32" ? `${name}.exe` : name);
+const helperPath = (name: string) =>
+   isPackagedApp() ? join(process.resourcesPath, "recorder", executableName(name)) : resolve(here, "../../resources/recorder", executableName(name));
+const iconFile = (file: string) => (isPackagedApp() ? join(process.resourcesPath, "icons", file) : resolve(here, "../../build", file));
+const iconPath = () => iconFile(process.platform === "win32" ? "icon.ico" : "icon.png");
+const capturing = () => recorder.status.state === "recording" || recorder.status.state === "waiting";
+const captureActive = () => capturing() || recorder.status.state === "starting" || !!startingCapture;
+const windowShown = () => !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized();
+const applicationArtwork = (sources: CaptureSource[]): ApplicationArtwork[] =>
+   sources.flatMap((source) =>
+      source.applicationId
+         ? [{ id: source.applicationId, icon: source.appIcon ?? "", ...(source.applicationName ? { name: source.applicationName } : {}) }]
+         : []
+   );
+function assertFolderChangesAllowed(): void {
+   if (recorder.status.pendingSaves) throw new Error("Wait for clips to finish saving before changing folders.");
+}
 const collections = new CollectionService({
-   applications: () =>
-      captureSources.cached
-         .filter((source) => source.applicationId)
-         .map((source) => ({ id: source.applicationId!, icon: source.appIcon ?? "", ...(source.applicationName ? { name: source.applicationName } : {}) })),
-   beforeFolderChange: () => {
-      if (recorder.status.pendingSaves) throw new Error("Wait for clips to finish saving before changing folders.");
-   },
-   scanConcurrency: () => (["recording", "waiting", "starting"].includes(recorder.status.state) || startingCapture ? 1 : 3),
+   applications: () => applicationArtwork(captureSources.cached),
+   beforeFolderChange: assertFolderChangesAllowed,
+   scanConcurrency: () => (captureActive() ? 1 : 3),
    onChange: () => emitState(),
    onJob: (job) => {
-      emitState();
       if (job.state === "failed") notice(job.message, true);
    },
    onWarning: (message, level) => (level === "log" ? void log(message) : notice(message, level === "error", "info", "app", { tone: level })),
    mediaUrl,
 });
+const libraryRefresh = new CollectionRefresh({
+   refresh: () => collections.refresh(),
+   busy: () => collections.pendingJobs.length > 0,
+   log: (message) => void log(message),
+});
 const updates = new Updates(
    () => emitState(),
    (message) => void log(message)
 );
-const feedback = new Feedback(
-   isPackagedApp()
-      ? join(process.resourcesPath, "recorder", process.platform === "win32" ? "acroclip-notifier.exe" : "acroclip-notifier")
-      : resolve(here, "../../resources/recorder", process.platform === "win32" ? "acroclip-notifier.exe" : "acroclip-notifier"),
-   (message) => void log(message),
-   iconPath()
-);
+const feedback = new Feedback(helperPath("acroclip-notifier"), (message) => void log(message), iconPath());
 // The status bar shows low storage as a condition, so the app side stays quiet here.
 const storage = new StorageMonitor({ onChange: () => emitState(), onWarning: (message) => notice(message, false, "info", "native", { tone: "warning" }) });
 const recorder = new Recorder({
@@ -93,7 +103,7 @@ const recorder = new Recorder({
    onAudioMonitorError: (monitorError, listeningError) =>
       send({ type: "audio-monitor", monitorError, ...(listeningError !== undefined ? { listeningError } : {}) }),
    onAudioLevels: (levels) => {
-      if (mainWindow?.isVisible() && !mainWindow.isMinimized())
+      if (windowShown())
          send({
             type: "audio-levels",
             levels: {
@@ -103,9 +113,7 @@ const recorder = new Recorder({
             },
          });
    },
-   nativePath: isPackagedApp()
-      ? join(process.resourcesPath, "recorder", process.platform === "win32" ? "acroclip-recorder.exe" : "acroclip-recorder")
-      : resolve(here, "../../resources/recorder", process.platform === "win32" ? "acroclip-recorder.exe" : "acroclip-recorder"),
+   nativePath: helperPath("acroclip-recorder"),
    onState: (current) => {
       const footage = bufferedCaptureSource(current);
       if (current.state === "recording") lastRecordingArtwork = recordingArtwork(footage, captureSources.cached, lastRecordingArtwork);
@@ -128,17 +136,7 @@ const captureSources = new CaptureSources(
    () => mainWindow?.getMediaSourceId().split(":")[1] ?? "",
    (sources) => {
       send({ type: "capture-sources", sources });
-      void collections
-         .enrichApplications(
-            sources
-               .filter((source) => source.applicationId)
-               .map((source) => ({
-                  id: source.applicationId!,
-                  icon: source.appIcon ?? "",
-                  ...(source.applicationName ? { name: source.applicationName } : {}),
-               }))
-         )
-         .catch(() => undefined);
+      void collections.enrichApplications(applicationArtwork(sources)).catch(() => undefined);
    }
 );
 function errorMessage(error: unknown): string {
@@ -154,7 +152,7 @@ function recorderState(): RecorderState {
 }
 function state(): AppState {
    return {
-      windowVisible: !!mainWindow?.isVisible() && !mainWindow.isMinimized(),
+      windowVisible: windowShown(),
       storageWarning: storage.warning,
       preferences,
       clips: collections.clips,
@@ -176,23 +174,20 @@ function state(): AppState {
 }
 function send(event: AppEvent) {
    if (!mainWindow || mainWindow.isDestroyed()) return;
-   if (event.type !== "visibility" && (!mainWindow.isVisible() || mainWindow.isMinimized())) return;
+   if (event.type !== "visibility" && !windowShown()) return;
    mainWindow.webContents.send("app-event", event);
 }
 function emitState() {
-   if (preferences) {
-      updateStorageActivity();
-      // Do not advance the baseline while the renderer cannot receive updates.
-      if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible() || mainWindow.isMinimized()) return;
-      const event = stateChanges.event(state());
-      if (event) send(event);
-   }
+   if (!preferences) return;
+   updateStorageActivity();
+   libraryRefresh.update(collections.root, windowShown());
+   // Do not advance the baseline while the renderer cannot receive updates.
+   if (!windowShown()) return;
+   const event = stateChanges.event(state());
+   if (event) send(event);
 }
 function updateStorageActivity() {
-   storage.setActivity(
-      collections.root,
-      ["starting", "recording", "waiting"].includes(recorder.status.state) || recorder.status.pendingSaves > 0 || pendingJobs().length > 0
-   );
+   storage.setActivity(collections.root, captureActive() || recorder.status.pendingSaves > 0 || collections.pendingJobs.length > 0);
 }
 function mediaUrl(path: string): string {
    const full = resolve(path);
@@ -237,7 +232,7 @@ function notice(
 ) {
    const banner = (surface === "background" || surface === "native") && preferences?.notifications !== "off";
    const serious = error || options.tone === "warning";
-   const focused = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && mainWindow.isFocused();
+   const focused = windowShown() && !!mainWindow?.isFocused();
    if (surface === "action") send({ type: "notice", message, error, chip: error, ...options });
    else if (surface === "app" || (surface === "background" && serious))
       send({ type: "notice", message, error, chip: serious, ...options, toast: surface === "app" ? focused : !banner });
@@ -285,7 +280,8 @@ function createWindow() {
    mainWindow.once("ready-to-show", () => mainWindow?.show());
    mainWindow.webContents.on("did-start-loading", () => stateChanges.reset());
    const visibilityChanged = () => {
-      const visible = !!mainWindow?.isVisible() && !mainWindow.isMinimized();
+      const visible = windowShown();
+      libraryRefresh.update(collections.root, visible);
       if (!visible) {
          suspendShortcuts(false);
          previewSourceId = null;
@@ -327,19 +323,14 @@ function createWindow() {
    if (dev) void mainWindow.loadURL(dev);
    else void mainWindow.loadFile(join(here, "../renderer/index.html"));
 }
-function iconPath() {
-   const file = process.platform === "win32" ? "icon.ico" : "icon.png";
-   return isPackagedApp() ? join(process.resourcesPath, "icons", file) : resolve(here, "../../build", file);
-}
 function trayIcon() {
-   const path = isPackagedApp() ? join(process.resourcesPath, "icons/icon.png") : resolve(here, "../../build/icon.png");
-   const image = nativeImage.createFromPath(path);
+   const image = nativeImage.createFromPath(iconFile("icon.png"));
    if (image.isEmpty()) throw new Error("AcroClip's app icon is missing. Rebuild the app icons.");
    return image.resize({ width: 20, height: 20 });
 }
 function updateTray() {
    if (!tray) return;
-   const active = recorder.status.state === "recording" || recorder.status.state === "waiting";
+   const active = capturing();
    renderTray(tray, recorder.status, !!startingCapture, {
       open: () => {
          mainWindow?.show();
@@ -360,7 +351,7 @@ async function startRecording() {
    lastRecordingArtwork = undefined;
    if (!preferences.setupComplete) throw new Error("Finish setup before capturing.");
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to record.");
-   if (startingCapture || ["starting", "recording", "waiting"].includes(recorder.status.state)) throw new Error("Capture is already running.");
+   if (captureActive()) throw new Error("Capture is already running.");
    startingCapture = (async () => {
       await preferenceWrites.catch(() => undefined);
       await ensureMicrophoneAccess(preferences);
@@ -381,7 +372,7 @@ async function startRecording() {
 async function saveClip() {
    const requestedAt = Date.now();
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to save another clip.");
-   if (recorder.status.state !== "recording" && recorder.status.state !== "waiting") throw new Error("Start capturing before saving a clip.");
+   if (!capturing()) throw new Error("Start capturing before saving a clip.");
    if (!collections.root) throw new Error("The collection folder is still opening. Try saving again when it is available.");
    send({ type: "clip-action" });
    const footage = bufferedCaptureSource(recorder.status);
@@ -403,9 +394,6 @@ async function saveClip() {
    await recorder.save(destination, requestedAt, lastRecordingArtwork?.application);
    // The status bar shows saves in progress, so this only reaches the desktop banner.
    notice("Saving clip…", false, "saving", "native");
-}
-function pendingJobs() {
-   return collections.pendingJobs;
 }
 async function applyStartup(enabled: boolean) {
    if (process.env["ACROCLIP_TEST"] === "1") return;
@@ -434,22 +422,22 @@ async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
       await collections.finishFileChanges();
       phase("settled files");
       const saves = recorder.status.pendingSaves;
-      if (update && !pendingJobs().length) {
+      if (update && !collections.pendingJobs.length) {
          // Restarting into an update is already the user's answer to "exit?". Clip
          // saves finish first, so no requested moment is lost to the installer.
          if (saves) options.progress?.(`Finishing ${saves === 1 ? "clip save" : `${saves} clip saves`}`);
          await recorder.close();
          phase("closed the recorder");
-      } else if (saves || pendingJobs().length) {
+      } else if (saves || collections.pendingJobs.length) {
          const decision = await pendingExitDecision(
-            () => !!recorder.status.pendingSaves || pendingJobs().length > 0,
+            () => !!recorder.status.pendingSaves || collections.pendingJobs.length > 0,
             async (signal) =>
                (
                   await dialog.showMessageBox({
                      type: "question",
                      title: "Work is still running",
                      message: "Finish before exiting?",
-                     detail: `${saves ? `${saves} clip save${saves === 1 ? "" : "s"}` : ""}${saves && pendingJobs().length ? " and " : ""}${pendingJobs().length ? `${pendingJobs().length} shareable${pendingJobs().length === 1 ? "" : "s"}` : ""} still in progress.`,
+                     detail: `${saves ? `${saves} clip save${saves === 1 ? "" : "s"}` : ""}${saves && collections.pendingJobs.length ? " and " : ""}${collections.pendingJobs.length ? `${collections.pendingJobs.length} shareable${collections.pendingJobs.length === 1 ? "" : "s"}` : ""} still in progress.`,
                      buttons: ["Finish and exit", "Cancel work", "Keep open"],
                      defaultId: 0,
                      cancelId: 2,
@@ -470,18 +458,18 @@ async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
                });
                if (confirm.response !== 1) return false;
             }
-            await Promise.all(pendingJobs().map((j) => collections.cancelJob(j.id)));
+            for (const job of collections.pendingJobs) collections.cancelJob(job.id);
             await recorder.close({ cancel: true });
-            while (pendingJobs().length) await new Promise((r) => setTimeout(r, 100));
+            await collections.jobsSettled();
          } else {
             options.progress?.("Finishing work");
             await recorder.stop();
             await recorder.close();
-            while (pendingJobs().length) await new Promise((r) => setTimeout(r, 150));
+            await collections.jobsSettled();
          }
          phase("finished work");
       } else {
-         if (["recording", "waiting"].includes(recorder.status.state)) {
+         if (capturing()) {
             const result = await dialog.showMessageBox({
                type: "question",
                message: "Stop capturing and exit?",
@@ -506,7 +494,7 @@ async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
 async function prepareUpdateExit(progress: (message: string) => void): Promise<boolean> {
    // The window goes away at once so the click feels immediate. Shareables still
    // ask first, because finishing or cancelling them is the user's decision.
-   if (!pendingJobs().length) mainWindow?.hide();
+   if (!collections.pendingJobs.length) mainWindow?.hide();
    if (!(await prepareExit({ update: true, progress }))) {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
       return false;
@@ -524,13 +512,17 @@ function recoverUpdateExit() {
    if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
       void startRecording().catch((e) => notice(errorMessage(e), true));
 }
+function releaseServices() {
+   libraryRefresh.close();
+   storage.close();
+   feedback.close();
+   globalShortcut.unregisterAll();
+}
 async function requestExit() {
    try {
       if (await prepareExit()) {
          quitting = true;
-         storage.close();
-         feedback.close();
-         globalShortcut.unregisterAll();
+         releaseServices();
          app.quit();
       }
    } catch (error) {
@@ -546,62 +538,59 @@ function trustedPath(path: unknown): string {
    if (!withinRoot(collections.root, actual)) throw new Error("This file moved outside the collection.");
    return actual;
 }
+/** Channels that work before the collection finishes opening. */
+const collectionIndependent = new Set([
+   "state",
+   "sources",
+   "choose-folder",
+   "update-check",
+   "update-download",
+   "update-release",
+   "update-reveal",
+   "exit",
+   "preferences",
+   "playback",
+   "cancel-playback",
+   "record-start",
+   "record-stop",
+   "record-save",
+   "recording-capabilities",
+   "capture-shortcut",
+   "preview-source",
+   "monitor-audio",
+   "listen-audio",
+   "audio-devices",
+   "games",
+   "game-catalog",
+]);
+/** Changes refused once exiting has begun. */
+const changesWhileExiting = new Set([
+   "preferences",
+   "share",
+   "rename",
+   "delete",
+   "category",
+   "record-start",
+   "record-save",
+   "folder-create",
+   "folder-rename",
+   "folder-move",
+   "folder-delete",
+   "clip-move",
+]);
+// Playback and preview report errors locally and discard obsolete requests.
+// A global notice would outlive a source or file switch.
+const locallyReported = new Set(["playback", "cancel-playback", "preview-source", "monitor-audio", "listen-audio", "preferences"]);
 function handle(channel: string, fn: (...args: unknown[]) => unknown) {
    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
       if (event.sender !== mainWindow?.webContents) throw new Error("Unknown window");
       try {
-         if (
-            ![
-               "state",
-               "sources",
-               "choose-folder",
-               "update-check",
-               "update-download",
-               "update-release",
-               "update-reveal",
-               "exit",
-               "preferences",
-               "playback",
-               "cancel-playback",
-               "record-start",
-               "record-stop",
-               "record-save",
-               "recording-capabilities",
-               "capture-shortcut",
-               "preview-source",
-               "monitor-audio",
-               "listen-audio",
-               "audio-devices",
-               "games",
-               "game-catalog",
-            ].includes(channel)
-         )
-            await collectionReady;
-         if (
-            closingRequested &&
-            [
-               "preferences",
-               "share",
-               "rename",
-               "delete",
-               "category",
-               "record-start",
-               "record-save",
-               "folder-create",
-               "folder-rename",
-               "folder-move",
-               "folder-delete",
-               "clip-move",
-            ].includes(channel)
-         )
-            throw new Error("AcroClip is preparing to exit. Keep the app open to make changes.");
+         if (!collectionIndependent.has(channel)) await collectionReady;
+         if (closingRequested && changesWhileExiting.has(channel)) throw new Error("AcroClip is preparing to exit. Keep the app open to make changes.");
          return await fn(...args);
       } catch (e) {
-         // Playback and preview report errors locally and discard obsolete requests.
-         // A global notice would outlive a source or file switch.
-         if (!["playback", "cancel-playback", "preview-source", "monitor-audio", "listen-audio", "preferences"].includes(channel))
-            notice(errorMessage(e), true, "info", "action");
-         else void log(`${channel}: ${errorMessage(e)}`);
+         if (locallyReported.has(channel)) void log(`${channel}: ${errorMessage(e)}`);
+         else notice(errorMessage(e), true, "info", "action");
          throw e;
       }
    });
@@ -609,7 +598,7 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown) {
 let hotkeysSuspended = false;
 const installedShortcuts = new Map<ShortcutAction, string>();
 function globalAction(id: ShortcutAction): void {
-   const active = ["recording", "waiting"].includes(recorder.status.state);
+   const active = capturing();
    const operation =
       id === "saveClip"
          ? saveClip()
@@ -620,13 +609,14 @@ function globalAction(id: ShortcutAction): void {
              : startRecording();
    void operation.catch((error: unknown) => notice(errorMessage(error), true));
 }
+const shortcutLabel = (id: ShortcutAction) => shortcutRegistry.find((item) => item.id === id)!.label;
 function suspendShortcuts(enabled: boolean): void {
    if (hotkeysSuspended === enabled) return;
    hotkeysSuspended = enabled;
    for (const [id, key] of installedShortcuts) {
       if (enabled) globalShortcut.unregister(key);
       else if (!globalShortcut.register(key, () => globalAction(id)))
-         notice(`${shortcutRegistry.find((item) => item.id === id)!.label} shortcut is unavailable. Choose another in Settings.`, true, "info", "action");
+         notice(`${shortcutLabel(id)} shortcut is unavailable. Choose another in Settings.`, true, "info", "action");
    }
 }
 function installShortcuts(next: Preferences, startup = false): () => void {
@@ -649,16 +639,16 @@ function installShortcuts(next: Preferences, startup = false): () => void {
    clear();
    for (const [id, key] of desired) {
       if (globalShortcut.register(key, () => globalAction(id))) installedShortcuts.set(id, key);
-      else if (startup) notice(`${shortcutRegistry.find((item) => item.id === id)!.label} shortcut is unavailable. Choose another in Settings.`, true);
+      else if (startup) notice(`${shortcutLabel(id)} shortcut is unavailable. Choose another in Settings.`, true);
       else {
          restore();
-         throw new Error(`${shortcutRegistry.find((item) => item.id === id)!.label} shortcut isn't available. Choose another key combination.`);
+         throw new Error(`${shortcutLabel(id)} shortcut isn't available. Choose another key combination.`);
       }
    }
    return restore;
 }
 function registerIPC() {
-   handle("capture-shortcut", (enabled) => suspendShortcuts(z.boolean().parse(enabled) && !!mainWindow?.isVisible() && !mainWindow.isMinimized()));
+   handle("capture-shortcut", (enabled) => suspendShortcuts(z.boolean().parse(enabled) && windowShown()));
    handle("recording-capabilities", () => recorder.capabilities());
    handle("state", () => state());
    handle("sources", (options) =>
@@ -678,7 +668,7 @@ function registerIPC() {
       if (requested === portalScreenId) throw new Error("System-selected capture does not provide a separate live preview.");
       if (process.platform === "linux" && (await recorder.capabilities()).captureBackend === "wayland-portal")
          throw new Error("Live preview is unavailable in this Wayland session. Capture uses the selected application directly.");
-      if (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete) throw new Error("Open Capture to preview the capture source.");
+      if (!windowShown() || !preferences.setupComplete) throw new Error("Open Capture to preview the capture source.");
       const selected = previewCaptureSource(captureSources.cached, preferences, recorder.status);
       if (!selected || selected.id !== requested) throw new Error("The selected preview source is unavailable.");
       previewSourceId = requested;
@@ -686,13 +676,13 @@ function registerIPC() {
    });
    handle("listen-audio", async (source) => {
       const id = z.string().max(200).nullable().parse(source);
-      if (id && (!mainWindow?.isVisible() || mainWindow.isMinimized() || !preferences.setupComplete)) throw new Error("Open Capture to listen.");
-      if (id && !["starting", "recording", "waiting"].includes(recorder.status.state)) await recorder.monitorAudio(preferences);
+      if (id && (!windowShown() || !preferences.setupComplete)) throw new Error("Open Capture to listen.");
+      if (id && !capturing() && recorder.status.state !== "starting") await recorder.monitorAudio(preferences);
       return recorder.listenAudio(id);
    });
    handle("monitor-audio", (enabled) =>
       recorder.monitorAudio(
-         z.boolean().parse(enabled) && preferences.setupComplete && mainWindow?.isVisible() && !mainWindow.isMinimized()
+         z.boolean().parse(enabled) && preferences.setupComplete && windowShown()
             ? monitoringPreferences(preferences, preferences.sourceKind === "auto" || !!selectedCaptureSource(captureSources.cached, preferences))
             : null
       )
@@ -714,7 +704,10 @@ function registerIPC() {
             if (!isValidShortcut(next.shortcut)) throw new Error("That key combination is not supported. Try a letter, number, or function key.");
             if (recorder.status.state !== "stopped" && recorder.status.state !== "error" && requiresCaptureRestart(preferences, next))
                throw new Error("Stop capturing to apply these changes. Footage you haven't saved will be discarded.");
-            if (next.collection !== preferences.collection && (recorder.status.state !== "stopped" || recorder.status.pendingSaves || pendingJobs().length))
+            if (
+               next.collection !== preferences.collection &&
+               (recorder.status.state !== "stopped" || recorder.status.pendingSaves || collections.pendingJobs.length)
+            )
                throw new Error("Stop capturing and finish shareables before changing the collection folder.");
             const conflict = shortcutConflict(next, process.platform === "darwin");
             if (conflict) throw new Error(conflict);
@@ -723,43 +716,30 @@ function registerIPC() {
                if (key && !isValidShortcut(key)) throw new Error(`Choose a valid shortcut for ${item.label}.`);
             }
             const rollbackShortcuts = installShortcuts(next);
+            const sourceChanged =
+               next.sourceId !== preferences.sourceId ||
+               next.sourceKind !== preferences.sourceKind ||
+               next.desktopFallback !== preferences.desktopFallback ||
+               JSON.stringify(next.customGames) !== JSON.stringify(preferences.customGames);
+            const reportRollback = (error: unknown) => notice(errorMessage(error), true, "info", "action");
             try {
                if (needsMicrophonePermission(next) && !needsMicrophonePermission(preferences)) await ensureMicrophoneAccess(next);
                if (next.collection !== preferences.collection) await collections.open(next.collection);
-               if (
-                  ["recording", "waiting"].includes(recorder.status.state) &&
-                  (next.sourceId !== preferences.sourceId ||
-                     next.sourceKind !== preferences.sourceKind ||
-                     next.desktopFallback !== preferences.desktopFallback ||
-                     JSON.stringify(next.customGames) !== JSON.stringify(preferences.customGames))
-               )
-                  await recorder.switchSource(next, await captureSources.list());
+               if (capturing() && sourceChanged) await recorder.switchSource(next, await captureSources.list());
                if (next.startWithOS !== preferences.startWithOS) await applyStartup(next.startWithOS);
-               if (["recording", "waiting"].includes(recorder.status.state)) {
+               if (capturing())
                   for (const source of next.audioSources.filter((source) => source.enabled))
                      await recorder.setAudio({ source: source.id, volume: source.volume, muted: source.muted });
-               }
                await writePreferences(preferencePath, next);
             } catch (e) {
                rollbackShortcuts();
                if (next.collection !== preferences.collection && collections.root !== resolve(preferences.collection))
-                  await collections.open(preferences.collection).catch((error: unknown) => notice(errorMessage(error), true, "info", "action"));
-               if (
-                  ["recording", "waiting"].includes(recorder.status.state) &&
-                  (next.sourceId !== preferences.sourceId ||
-                     next.sourceKind !== preferences.sourceKind ||
-                     next.desktopFallback !== preferences.desktopFallback ||
-                     JSON.stringify(next.customGames) !== JSON.stringify(preferences.customGames))
-               )
-                  await recorder
-                     .switchSource(preferences, captureSources.cached)
-                     .catch((error: unknown) => notice(errorMessage(error), true, "info", "action"));
-               if (next.startWithOS !== preferences.startWithOS)
-                  await applyStartup(preferences.startWithOS).catch((error: unknown) => notice(errorMessage(error), true, "info", "action"));
-               if (["recording", "waiting"].includes(recorder.status.state)) {
+                  await collections.open(preferences.collection).catch(reportRollback);
+               if (capturing() && sourceChanged) await recorder.switchSource(preferences, captureSources.cached).catch(reportRollback);
+               if (next.startWithOS !== preferences.startWithOS) await applyStartup(preferences.startWithOS).catch(reportRollback);
+               if (capturing())
                   for (const source of preferences.audioSources.filter((source) => source.enabled))
                      await recorder.setAudio({ source: source.id, volume: source.volume, muted: source.muted }).catch(() => undefined);
-               }
                throw e;
             }
             if (next.sourceId !== preferences.sourceId || next.sourceKind !== preferences.sourceKind) previewSourceId = null;
@@ -788,16 +768,11 @@ function registerIPC() {
    handle("cancel-job", (id) => collections.cancelJob(idSchema.parse(id)));
    handle("rename", (id, name) => collections.rename(idSchema.parse(id), z.string().trim().min(1).max(150).parse(name)));
    const folderPathSchema = z.string().max(4096);
-   const folderChangesAvailable = () => {
-      if (recorder.status.pendingSaves) throw new Error("Wait for clips to finish saving before changing folders.");
-   };
    handle("folder-create", (parent, name) => collections.createFolder(folderPathSchema.parse(parent), z.string().max(150).parse(name)));
-   handle("folder-rename", (path, name) => {
-      folderChangesAvailable();
-      return collections.renameFolder(folderPathSchema.parse(path), z.string().max(150).parse(name));
-   });
+   handle("folder-rename", (path, name) => collections.renameFolder(folderPathSchema.parse(path), z.string().max(150).parse(name)));
+   // Refuse before asking, so a pending save never leads to a confirmation that cannot apply.
    handle("folder-move", async (path, destination) => {
-      folderChangesAvailable();
+      assertFolderChangesAllowed();
       const selected = folderPathSchema.parse(path);
       const target = folderPathSchema.parse(destination);
       const contents = await collections.inspectFolder(selected);
@@ -810,12 +785,11 @@ function registerIPC() {
          cancelId: 0,
       });
       if (result.response !== 1) return null;
-      folderChangesAvailable();
       return collections.moveFolder(selected, target, contents.fingerprint);
    });
    handle("clip-move", (id, destination) => collections.moveClip(idSchema.parse(id), folderPathSchema.parse(destination)));
    handle("folder-delete", async (path) => {
-      folderChangesAvailable();
+      assertFolderChangesAllowed();
       const selected = folderPathSchema.parse(path);
       const contents = await collections.inspectFolder(selected);
       const result = await dialog.showMessageBox({
@@ -827,7 +801,6 @@ function registerIPC() {
          cancelId: 0,
       });
       if (result.response !== 1) return false;
-      folderChangesAvailable();
       await collections.trashFolder(selected, contents.fingerprint, (directory) => shell.trashItem(directory));
       return true;
    });
@@ -835,7 +808,7 @@ function registerIPC() {
       const clipId = idSchema.parse(id);
       const shareableId = shareId === undefined ? undefined : idSchema.parse(shareId);
       const selection = scope === undefined ? undefined : z.literal("shareables").parse(scope);
-      if (pendingJobs().some((j) => j.clipId === clipId)) throw new Error("Cancel the shareable export before removing this clip.");
+      if (collections.pendingJobs.some((j) => j.clipId === clipId)) throw new Error("Cancel the shareable export before removing this clip.");
       const result = await dialog.showMessageBox({
          type: "warning",
          message: shareableId
@@ -968,11 +941,7 @@ else {
       if (!quitting) {
          event.preventDefault();
          void requestExit();
-      } else {
-         storage.close();
-         feedback.close();
-         globalShortcut.unregisterAll();
-      }
+      } else releaseServices();
    });
    app.on("window-all-closed", () => {
       /* The recorder and tray own the app lifecycle. */
@@ -989,7 +958,7 @@ else {
          preferencePath = join(app.getPath("userData"), "preferences.json");
          preferences = await readPreferences(preferencePath, process.env["ACROCLIP_COLLECTION"] ?? join(app.getPath("videos"), "AcroClip"));
          collectionReady = collections.open(preferences.collection);
-         const previewAllowed = () => !!previewSourceId && !!mainWindow?.isVisible() && !mainWindow.isMinimized() && !closingRequested && !isWaylandSession();
+         const previewAllowed = () => !!previewSourceId && windowShown() && !closingRequested && !isWaylandSession();
          session.defaultSession.setDisplayMediaRequestHandler(
             (request, callback) => {
                if (request.frame !== mainWindow?.webContents.mainFrame || !request.videoRequested || request.audioRequested || !previewAllowed()) {
@@ -1010,7 +979,7 @@ else {
                         preferences.sourceKind !== sourceKind ||
                         preferences.sourceId !== sourceId ||
                         (sourceKind === "auto" &&
-                           (!["recording", "waiting"].includes(recorder.status.state) ||
+                           (!capturing() ||
                               (recorder.status.sourceKind === "screen" && !preferences.desktopFallback) ||
                               (recorder.status.sourceId !== requested &&
                                  !(requested?.startsWith("window:") && requested.split(":")[1] === recorder.status.sourceId?.split(":")[1]))))
@@ -1072,18 +1041,6 @@ else {
          }
          installShortcuts(preferences, true);
          if (process.argv.includes("--clip")) void saveClip().catch((error: unknown) => notice(errorMessage(error), true));
-         setInterval(() => {
-            emitState();
-            if (!refreshBusy && !pendingJobs().length) {
-               refreshBusy = true;
-               void collections
-                  .refresh()
-                  .catch((e) => void log(errorMessage(e)))
-                  .finally(() => {
-                     refreshBusy = false;
-                  });
-            }
-         }, 5000).unref();
          if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
             void startRecording().catch((e) => notice(errorMessage(e), true));
          await collectionReady;

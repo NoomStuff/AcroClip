@@ -2,6 +2,8 @@ import { useCallback, useLayoutEffect, useRef } from "react";
 import type { RefObject } from "react";
 import { createGridMotion, paintGridCard, paintGridThumbnail } from "./grid-motion";
 
+const offscreen = (rect: DOMRect) => rect.bottom < 0 || rect.top > innerHeight;
+
 // Bound measurements and animations so filtering a large collection stays cheap.
 export function useGridMotion<T extends HTMLElement>(
    root: RefObject<T | null>,
@@ -32,7 +34,8 @@ export function useGridMotion<T extends HTMLElement>(
          .map((child) => {
             const node = child as HTMLElement;
             const rect = node.getBoundingClientRect();
-            const thumbnail = node.querySelector<HTMLElement>(".clip-thumbnail");
+            // Offscreen card bodies skip layout. Reading inside them would force it.
+            const thumbnail = offscreen(rect) ? null : node.querySelector<HTMLElement>(".clip-thumbnail");
             const image = thumbnail?.getBoundingClientRect();
             return { node, rect, thumbnail, image };
          });
@@ -104,15 +107,12 @@ export function useGridMotion<T extends HTMLElement>(
          measured.current.add(node);
          next.add(key);
          const rect = node.getBoundingClientRect();
-         const thumbnail = node.querySelector<HTMLElement>(".clip-thumbnail");
+         const hidden = offscreen(rect);
+         // Offscreen thumbnails never animate, and their card bodies skip layout until shown.
+         const thumbnail = hidden ? null : node.querySelector<HTMLElement>(".clip-thumbnail");
          if (thumbnail) {
             const image = thumbnail.getBoundingClientRect();
-            imageTargets.push({
-               node: thumbnail,
-               width: image.width,
-               height: image.height,
-               immediate: directFlow || rect.bottom < 0 || rect.top > innerHeight,
-            });
+            imageTargets.push({ node: thumbnail, width: image.width, height: image.height, immediate: directFlow });
          }
          targets.push({
             node,
@@ -121,7 +121,7 @@ export function useGridMotion<T extends HTMLElement>(
             width: rect.width,
             height: rect.height,
             enter: !known.current.has(key) && (navigated || known.current.size > 0),
-            immediate: directFlow || rect.bottom < 0 || rect.top > innerHeight,
+            immediate: directFlow || hidden,
          });
       }
       controller.retain(active);

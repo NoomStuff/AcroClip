@@ -198,6 +198,31 @@ describe("collection folder operations", () => {
          await rm(root, { recursive: true, force: true });
       }
    });
+   it("publishes tag changes without rescanning files, including tags no clip carries", async () => {
+      const root = await temporaryDirectory("acroclip-tags-");
+      try {
+         await writeFile(join(root, "Moment.mp4"), "video");
+         const onChange = vi.fn();
+         const collection = new CollectionService({ onChange });
+         await collection.open(root);
+         await collection.createCategory("Unused");
+         await collection.createCategory("Used");
+         const [unused, used] = collection.categories.map((category) => category.id);
+         const clip = collection.clips[0]!.id;
+         io.identities = 0;
+         onChange.mockClear();
+         await collection.toggleCategory(clip, used!);
+         expect(collection.clips[0]!.categories).toEqual([used]);
+         await collection.deleteCategory(unused!);
+         expect(onChange).toHaveBeenCalledTimes(2);
+         expect(collection.categories.map((category) => category.name)).toEqual(["Used"]);
+         await collection.deleteCategory(used!);
+         expect(collection.clips[0]!.categories).toEqual([]);
+         expect(io.identities).toBe(0);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
    it("persists category ordering and IDs, and rejects stale targets", async () => {
       const root = await temporaryDirectory("acroclip-category-order-");
       try {
@@ -527,8 +552,16 @@ describe("collection scan cost and fresh action checks", () => {
          const warmMs = performance.now() - warmStart;
          expect(io.identities).toBe(0);
          expect(io.writes).toBe(0);
+         // A restart trusts identities whose recorded file stamps still match.
+         const restartStart = performance.now();
+         const restarted = new CollectionService();
+         await restarted.open(root);
+         const restartMs = performance.now() - restartStart;
+         expect(restarted.clips.map((clip) => clip.id).sort()).toEqual(collection.clips.map((clip) => clip.id).sort());
+         expect(io.identities).toBe(0);
+         expect(io.writes).toBe(0);
          console.log(
-            `Collection filesystem profile, 200 synthetic files with media probe mocked: initial ${initialMs.toFixed(0)}ms, warm ${warmMs.toFixed(0)}ms.`
+            `Collection filesystem profile, 200 synthetic files with media probe mocked: initial ${initialMs.toFixed(0)}ms, warm ${warmMs.toFixed(0)}ms, restart ${restartMs.toFixed(0)}ms.`
          );
       } finally {
          await rm(root, { recursive: true, force: true });

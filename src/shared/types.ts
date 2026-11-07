@@ -228,10 +228,16 @@ export interface NoticeOptions {
    chipFor?: number;
 }
 
+/** Library changes since the previous event: changed clips in full, and every clip ID in library order when membership or order changed. */
+export interface ClipChanges {
+   upsert: Clip[];
+   order?: string[];
+}
 export type AppEvent =
    | { type: "capture-sources"; sources: CaptureSource[] }
    | { type: "state"; state: AppState }
-   | { type: "state-patch"; patch: Partial<AppState> }
+   /** `patch.clips` replaces the library. Main sends `clips` changes instead. */
+   | { type: "state-patch"; patch: Partial<AppState>; clips?: ClipChanges }
    | { type: "recorder"; recorder: RecorderState }
    | ({ type: "notice"; message: string; error: boolean } & NoticeOptions)
    | { type: "notice-clear"; key: string }

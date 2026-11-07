@@ -58,6 +58,18 @@ try {
    await measure("warm collection scan ms", async () => {
       await collection.scan();
    });
+   // An app restart: metadata and thumbnails exist, nothing is cached in memory.
+   await measure("collection reopen ms", async () => {
+      const reopened = new CollectionService({ scanConcurrency: () => 3 });
+      await reopened.open(collectionRoot);
+      assert.equal(reopened.clips.length, 200);
+   });
+   await collection.createCategory("Benchmark");
+   const tag = collection.categories[0]!.id;
+   const tagged = collection.clips[0]!.id;
+   await measure("tag toggle ms", async () => {
+      await collection.toggleCategory(tagged, tag);
+   });
    await measure(
       "cold playback preparation ms",
       async () => {
