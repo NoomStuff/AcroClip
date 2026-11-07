@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { Preferences } from "../../shared/types";
-import { preferencesSchema } from "../../shared/validation";
 import { api, describeError } from "./desktop";
 type Status = "idle" | "saving" | "saved" | "error";
 export function useSettingsAutosave(preferences: Preferences) {
@@ -34,9 +33,8 @@ export function useSettingsAutosave(preferences: Preferences) {
       try {
          while (edits.current.size) {
             const snapshot = new Map(edits.current);
-            const valid = preferencesSchema.safeParse(current.current);
-            if (!valid.success) throw new Error(valid.error.issues[0]?.message ?? "Check your settings.");
-            const result = await api.savePreferences(valid.data, [...snapshot.keys()]);
+            // Main validates and normalizes every save and reports the first problem.
+            const result = await api.savePreferences(current.current, [...snapshot.keys()]);
             for (const [key, version] of snapshot) if (edits.current.get(key) === version) edits.current.delete(key);
             const merged = { ...result.preferences };
             for (const key of edits.current.keys()) Object.assign(merged, { [key]: current.current[key] });

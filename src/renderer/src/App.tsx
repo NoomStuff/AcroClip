@@ -1,7 +1,8 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clapperboard, LibraryBig, Play, Minus, Settings2, Square, Video, X } from "lucide-react";
 import { AppLogo } from "./AppLogo";
-import type { AppState, Clip, NoticeOptions, RecorderState } from "../../shared/types";
+import type { AppEvent, AppState, Clip, NoticeOptions } from "../../shared/types";
+import { applyStatePatch } from "../../shared/state-patch";
 import { SelectionIndicator, TabMarker } from "./SelectionIndicator";
 import { api, describeError } from "./desktop";
 import { Dialog } from "./Dialog";
@@ -11,23 +12,27 @@ import type { DialogRequest } from "./Dialog";
 import type { RendererFeedback, Run } from "./desktop";
 import { shortcutRegistry, bindingFor, eventBinding, normalizeBinding } from "../../shared/shortcuts";
 import { Recording } from "./Recording";
-import { Library } from "./Library";
-import { Viewer } from "./Viewer";
-import { Settings } from "./Settings";
 import type { SettingsTarget } from "./Settings";
 import { UpdateChip } from "./UpdateChip";
 import { clearNotification, notify, type NotificationInput } from "./notifications";
 import { NotificationToast } from "./NotificationToast";
-import { Onboarding } from "./Onboarding";
 import { useNavigationHistory } from "./navigation-history";
+import type { Ask } from "./Dialog";
+import { preloadedPage } from "./preloaded-page";
 
 type Page = "recording" | "library" | "viewer" | "settings";
-const LibraryPage = memo(Library);
+// Capture is the first screen. Other pages load after it paints and preload
+// while the window is idle, so switching to them never waits.
+const library = preloadedPage(() => import("./Library").then((module) => module.Library));
+const viewer = preloadedPage(() => import("./Viewer").then((module) => module.Viewer));
+const settings = preloadedPage(() => import("./Settings").then((module) => module.Settings));
+const onboarding = preloadedPage(() => import("./Onboarding").then((module) => module.Onboarding));
+const LibraryPage = library.Page;
+const ViewerPage = viewer.Page;
+const SettingsPage = settings.Page;
+const Onboarding = onboarding.Page;
 const RecordingPage = memo(Recording);
-const ViewerPage = memo(Viewer);
-const SettingsPage = memo(Settings);
 const pageOrder: readonly Page[] = ["recording", "library", "viewer", "settings"];
-import type { Ask } from "./Dialog";
 function noticeInput({ message, error, tone, ...options }: { message: string; error: boolean } & NoticeOptions): NotificationInput {
    return { ...options, message, tone: tone ?? (error ? "error" : "success") };
 }
@@ -67,6 +72,12 @@ export function App() {
       document.addEventListener("visibilitychange", update);
       return () => document.removeEventListener("visibilitychange", update);
    }, []);
+   const loaded = !!state;
+   useEffect(() => {
+      if (!loaded) return;
+      const idle = requestIdleCallback(() => [library, viewer, settings].forEach((page) => void page.preload()), { timeout: 1500 });
+      return () => cancelIdleCallback(idle);
+   }, [loaded]);
    const [selected, setSelected] = useState<string | null>(null);
    const pendingLibraryAction = useRef<string | null>(null);
    useEffect(() => {
@@ -93,31 +104,42 @@ export function App() {
    }, []);
    const ask: Ask = useCallback((request) => new Promise((resolve) => setDialog({ ...request, resolve })), []);
    useEffect(() => {
+      // Events can arrive before the first snapshot. They are replayed onto it.
+      let current: AppState | null = null;
       let receivedState = false;
-      let recorder: RecorderState | undefined;
-      let pendingPatch: Partial<AppState> = {};
+      let disposed = false;
+      let early: Array<Extract<AppEvent, { type: "state-patch" | "recorder" }>> = [];
+      const publish = (next: AppState, visible: boolean | undefined = next.windowVisible) => {
+         if (disposed) return;
+         current = next;
+         setState(next);
+         if (visible !== undefined) setWindowVisible(visible);
+      };
+      const apply = (base: AppState, event: (typeof early)[number]) =>
+         event.type === "recorder" ? { ...base, recorder: event.recorder } : applyStatePatch(base, event);
       void run(async () => {
          const loaded = await api.state();
          if (receivedState) return;
-         const current = { ...loaded, ...pendingPatch, ...(recorder ? { recorder } : {}) };
-         setState(current);
-         setWindowVisible(current.windowVisible);
+         let next = loaded;
+         for (const event of early) next = apply(next, event) ?? next;
+         early = [];
+         publish(next);
       });
       const unsubscribe = api.onEvent((event) => {
          if (event.type === "state") {
             receivedState = true;
-            setState(event.state);
-            setWindowVisible(event.state.windowVisible);
+            publish(event.state);
          }
          if (event.type === "visibility") setWindowVisible(event.visible);
-         if (event.type === "state-patch") {
-            pendingPatch = { ...pendingPatch, ...event.patch };
-            setState((current) => (current ? { ...current, ...event.patch } : current));
-            if (event.patch.windowVisible !== undefined) setWindowVisible(event.patch.windowVisible);
-         }
-         if (event.type === "recorder") {
-            recorder = event.recorder;
-            setState((current) => (current ? { ...current, recorder: event.recorder } : current));
+         if (event.type === "state-patch" || event.type === "recorder") {
+            if (!current) {
+               early.push(event);
+               return;
+            }
+            const next = apply(current, event);
+            // A library change for a clip this window never received needs a fresh snapshot.
+            if (next) publish(next, event.type === "state-patch" ? event.patch.windowVisible : undefined);
+            else void api.state().then(publish, () => undefined);
          }
          if (event.type === "clip-action") setClipPulse((value) => value + 1);
          if (event.type === "notice" && event.message) notify(noticeInput(event));
@@ -130,24 +152,27 @@ export function App() {
       };
       window.addEventListener("acroclip-feedback", feedback);
       return () => {
+         disposed = true;
          unsubscribe();
          window.removeEventListener("acroclip-feedback", feedback);
       };
    }, [run]);
+   // Local shortcuts depend on bindings and the page, not on status updates.
+   const shortcutPreferences = state?.preferences;
+   const mac = state?.platform === "darwin";
    useEffect(() => {
-      if (!state) return;
+      if (!shortcutPreferences) return;
       const key = (event: KeyboardEvent) => {
          const target = event.target instanceof HTMLElement ? event.target : null;
          const editing = target?.closest("input,textarea,select,[contenteditable=true],[role=textbox],[role=slider],[role=combobox],.shortcut-input.editing");
          if (event.defaultPrevented || event.repeat || document.querySelector('[role="dialog"]')) return;
-         const mac = state.platform === "darwin",
-            pressed = normalizeBinding(eventBinding(event), mac);
+         const pressed = normalizeBinding(eventBinding(event), mac);
          const action = shortcutRegistry.find(
             (item) =>
                item.scope === "local" &&
                (item.page === "all" || item.page === page) &&
-               bindingFor(state.preferences, item.id) &&
-               normalizeBinding(bindingFor(state.preferences, item.id), mac) === pressed
+               bindingFor(shortcutPreferences, item.id) &&
+               normalizeBinding(bindingFor(shortcutPreferences, item.id), mac) === pressed
          );
          if (
             !action ||
@@ -167,7 +192,7 @@ export function App() {
       };
       window.addEventListener("keydown", key);
       return () => window.removeEventListener("keydown", key);
-   }, [state, page, setPage]);
+   }, [shortcutPreferences, mac, page, setPage]);
    const clip = useMemo(() => (selected === null ? state?.clips[0] : state?.clips.find((item) => item.id === selected)), [state?.clips, selected]);
    useEffect(() => {
       // An empty viewer may receive its first clip after opening. Retain that
@@ -284,31 +309,39 @@ export function App() {
                   </section>
                   <section className="page" hidden={page !== "library"}>
                      {visited.includes("library") && (
-                        <LibraryPage
-                           state={libraryState}
-                           visible={page === "library" && windowVisible}
-                           run={run}
-                           ask={ask}
-                           openClip={openClip}
-                           openSettings={openCollectionSettings}
-                           openGames={openGames}
-                        />
+                        <Suspense fallback={null}>
+                           <LibraryPage
+                              state={libraryState}
+                              visible={page === "library" && windowVisible}
+                              run={run}
+                              ask={ask}
+                              openClip={openClip}
+                              openSettings={openCollectionSettings}
+                              openGames={openGames}
+                           />
+                        </Suspense>
                      )}
                   </section>
                   <section className="page" hidden={page !== "viewer"}>
                      {visited.includes("viewer") && (
-                        <ViewerPage
-                           ask={ask}
-                           state={viewerState}
-                           clip={clip}
-                           visible={page === "viewer" && windowVisible}
-                           run={run}
-                           openLibrary={openLibrary}
-                        />
+                        <Suspense fallback={null}>
+                           <ViewerPage
+                              ask={ask}
+                              state={viewerState}
+                              clip={clip}
+                              visible={page === "viewer" && windowVisible}
+                              run={run}
+                              openLibrary={openLibrary}
+                           />
+                        </Suspense>
                      )}
                   </section>
                   <section className="page" hidden={page !== "settings"}>
-                     {visited.includes("settings") && <SettingsPage state={settingsState} run={run} target={settingsTarget} />}
+                     {visited.includes("settings") && (
+                        <Suspense fallback={null}>
+                           <SettingsPage state={settingsState} run={run} target={settingsTarget} />
+                        </Suspense>
+                     )}
                   </section>
                </>
             ) : (
@@ -323,7 +356,11 @@ export function App() {
          <RecordingStatus state={state} visible={windowVisible} audioMessage={page === "recording" ? audioStatus : ""} />
          <NotificationToast />
          {dialog && <Dialog key={dialog.title} request={dialog} close={() => setDialog(null)} />}
-         {state && !state.preferences.setupComplete && <Onboarding state={state} run={run} />}
+         {state && !state.preferences.setupComplete && (
+            <Suspense fallback={null}>
+               <Onboarding state={state} run={run} />
+            </Suspense>
+         )}
       </div>
    );
 }

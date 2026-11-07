@@ -18,7 +18,14 @@ import { mapConcurrent } from "./concurrent";
 const categorySchema = z.object({ id: z.string(), name: z.string(), color: z.string(), icon: z.string().max(80).optional() });
 const thumbnailName = (identity: string) => `${identity}.last-keyframe-v1.jpg`;
 const fileSchema = z.object({ relativePath: z.string(), absolutePath: z.string(), identity: z.string() });
-const shareSchema = fileSchema.extend({ id: z.string(), size: z.number().nonnegative(), targetMB: z.number().positive(), createdAt: z.number() });
+const shareSchema = fileSchema.extend({
+   id: z.string(),
+   size: z.number().nonnegative(),
+   targetMB: z.number().positive(),
+   createdAt: z.number(),
+   // The file stamp its identity was last sampled at, so a restart can reuse it.
+   stamp: z.string().optional(),
+});
 const previewSchema = z.object({
    stamp: z.string(),
    size: z.number().nonnegative(),
@@ -65,6 +72,8 @@ const metadataSchema = z
 type Metadata = z.infer<typeof metadataSchema>;
 type StoredClip = Metadata["clips"][number];
 type StoredFile = z.infer<typeof fileSchema>;
+/** One listing of the thumbnail folder per scan. Undefined when the folder is unusable. */
+type ThumbnailIndex = { directory: string; files: Set<string> } | undefined;
 const supported = new Set([".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".ts", ".flv"]);
 const normal = (path: string) => (process.platform === "win32" ? path.toLowerCase() : path);
 export function withinRoot(root: string, path: string): boolean {
@@ -73,6 +82,26 @@ export function withinRoot(root: string, path: string): boolean {
 }
 const safeRelative = (path: string) => !isAbsolute(path) && !path.split(/[\\/]/).includes("..");
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** The library record for a stored clip. Callers supply what they verified about its files. */
+function clipRecord(
+   stored: StoredClip,
+   files: Pick<Clip, "path" | "relativePath" | "size" | "thumbnail" | "playbackUrl" | "shareables"> & Partial<Pick<Clip, "availability" | "originalMissing">>,
+   info: Pick<MediaInfo, "duration" | "width" | "height" | "tracks"> | undefined
+): Clip {
+   return {
+      id: stored.id,
+      name: stored.name,
+      source: normalizeApplicationLabel(stored.application?.name ?? stored.source),
+      createdAt: stored.createdAt,
+      ...(stored.application ? { applicationId: stored.application.id } : {}),
+      duration: info?.duration ?? 0,
+      width: info?.width ?? 0,
+      height: info?.height ?? 0,
+      tracks: info?.tracks ?? [],
+      categories: [...stored.categories],
+      ...files,
+   };
+}
 const fileStamp = (value: BigIntStats) => `${value.dev}:${value.ino}:${value.size}:${value.mtimeNs}:${value.ctimeNs}:${value.birthtimeNs}`;
 
 async function publishWithoutOverwrite(source: string, destination: string): Promise<void> {
@@ -183,6 +212,10 @@ export class CollectionService {
    finishFileChanges(): Promise<void> {
       return this.fileChanges;
    }
+   /** Settles once every export finishes, including exports queued meanwhile. */
+   async jobsSettled(): Promise<void> {
+      while (this.pendingJobs.length) await this.queue.catch(() => undefined);
+   }
    private notify() {
       this.options.onChange?.();
    }
@@ -262,25 +295,38 @@ export class CollectionService {
          this.metadataWritable = false;
          this.warn("Collection info is damaged. Your videos still play, but tags and shareables are locked so the backup stays intact.", "error");
       }
+      this.seedIdentities();
       // Render the collection's own indexed previews before touching the video files.
-      let previewsSafe = true;
-      let thumbnailFiles = new Set<string>();
-      try {
-         await this.safeDirectory(join(this.root, ".acroclip", "thumbnails"));
-         thumbnailFiles = new Set(
-            (await readdir(join(this.root, ".acroclip", "thumbnails"), { withFileTypes: true })).filter((entry) => entry.isFile()).map((entry) => entry.name)
-         );
-      } catch {
-         previewsSafe = false;
-      }
-      this.clips = previewsSafe
+      const thumbnails = await this.thumbnailIndex();
+      this.clips = thumbnails
          ? this.metadata.clips.flatMap((stored) => {
-              const clip = this.previewClip(stored, thumbnailFiles);
+              const clip = this.previewClip(stored, thumbnails.files);
               return clip ? [clip] : [];
            })
          : [];
       this.notify();
       await this.scan();
+   }
+
+   // A file whose stamp still matches the one recorded at its last scan keeps that
+   // sampled identity, exactly as the in-session cache does. Restarts then verify
+   // the library with one stat per video instead of reading every file.
+   private seedIdentities(): void {
+      for (const clip of this.metadata.clips)
+         for (const [file, stamp] of [[clip, clip.preview?.stamp], ...clip.shareables.map((share) => [share, share.stamp] as const)] as const)
+            if (stamp && safeRelative(file.relativePath)) this.identities.set(resolve(this.root, file.relativePath), { stamp, identity: file.identity });
+   }
+
+   private async thumbnailIndex(): Promise<ThumbnailIndex> {
+      const directory = join(this.root, ".acroclip", "thumbnails");
+      try {
+         await this.safeDirectory(directory);
+         const entries = await readdir(directory, { withFileTypes: true });
+         return { directory, files: new Set(entries.filter((entry) => entry.isFile()).map((entry) => entry.name)) };
+      } catch (error) {
+         this.warn(`Preview thumbnails are unavailable: ${message(error)}`, "log");
+         return undefined;
+      }
    }
 
    private previewClip(stored: StoredClip, thumbnailFiles: ReadonlySet<string>): Clip | undefined {
@@ -297,29 +343,40 @@ export class CollectionService {
             targetMB: share.targetMB,
             createdAt: share.createdAt,
          }));
-      return {
-         id: stored.id,
-         path,
-         relativePath: stored.relativePath,
-         name: stored.name,
-         source: normalizeApplicationLabel(stored.application?.name ?? stored.source),
-         createdAt: stored.createdAt,
-         ...(stored.application ? { applicationId: stored.application.id } : {}),
-         size: stored.preview?.size ?? 0,
-         duration: stored.preview?.info.duration ?? 0,
-         width: stored.preview?.info.width ?? 0,
-         height: stored.preview?.info.height ?? 0,
-         tracks: stored.preview?.info.tracks ?? [],
-         thumbnail: thumbnailFiles.has(thumbnailName(stored.identity))
-            ? this.url(join(this.root, ".acroclip", "thumbnails", thumbnailName(stored.identity)))
-            : thumbnailFiles.has(`${stored.identity}.jpg`)
-              ? this.url(join(this.root, ".acroclip", "thumbnails", `${stored.identity}.jpg`))
-              : "",
-         playbackUrl: this.url(path),
-         categories: [...stored.categories],
-         shareables: shares,
-         availability: "unverified",
-      };
+      const thumbnail = [thumbnailName(stored.identity), `${stored.identity}.jpg`].find((name) => thumbnailFiles.has(name));
+      return clipRecord(
+         stored,
+         {
+            path,
+            relativePath: stored.relativePath,
+            size: stored.preview?.size ?? 0,
+            thumbnail: thumbnail ? this.url(join(this.root, ".acroclip", "thumbnails", thumbnail)) : "",
+            playbackUrl: this.url(path),
+            shareables: shares,
+            availability: "unverified",
+         },
+         stored.preview?.info
+      );
+   }
+
+   /** Verified shareables of a stored clip. Their sampled stamps persist for the next launch. */
+   private async verifiedShareables(stored: StoredClip, retained: Set<string>): Promise<Shareable[]> {
+      const shares: Shareable[] = [];
+      for (const share of stored.shareables) {
+         const located = await this.resolveFile(share, true);
+         if (!located) continue;
+         retained.add(located);
+         share.stamp = this.identities.get(located)?.stamp;
+         shares.push({
+            id: share.id,
+            path: located,
+            relativePath: share.relativePath,
+            size: (await stat(located)).size,
+            targetMB: share.targetMB,
+            createdAt: share.createdAt,
+         });
+      }
+      return shares;
    }
 
    private async safeDirectory(path: string): Promise<void> {
@@ -348,13 +405,10 @@ export class CollectionService {
       const write = this.writes
          .catch(() => undefined)
          .then(async () => {
-            if (this.writtenMetadata?.snapshot === snapshot) {
-               try {
-                  if (this.writtenMetadata.stamp === fileStamp(await stat(path, { bigint: true }))) return;
-               } catch {
-                  /* Recreate a missing metadata file safely. */
-               }
-            }
+            const existing = await stat(path, { bigint: true }).catch(() => undefined);
+            // The primary is still exactly what this service last wrote, so it is known to be valid.
+            const ours = !!existing && this.writtenMetadata?.stamp === fileStamp(existing);
+            if (ours && this.writtenMetadata?.snapshot === snapshot) return;
             await this.safeDirectory(dirname(path));
             const temporary = `${path}.${randomUUID()}.tmp`;
             try {
@@ -367,7 +421,7 @@ export class CollectionService {
                }
                // Never rotate a damaged primary over the known-good recovery copy.
                try {
-                  metadataSchema.parse(JSON.parse(await readFile(path, "utf8")));
+                  if (!ours) metadataSchema.parse(JSON.parse(await readFile(path, "utf8")));
                   await copyFile(path, `${path}.bak`);
                } catch (error) {
                   if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !(error instanceof SyntaxError) && !(error instanceof z.ZodError)) throw error;
@@ -393,37 +447,35 @@ export class CollectionService {
       return identity;
    }
 
-   private async cachedMedia(actual: string, identity: string, fileStat: BigIntStats, preview?: z.infer<typeof previewSchema>) {
+   private async cachedMedia(actual: string, identity: string, fileStat: BigIntStats, thumbnails: ThumbnailIndex, preview?: z.infer<typeof previewSchema>) {
       const stamp = fileStamp(fileStat);
       let cached = this.cache.get(actual);
       if (!cached || cached.stamp !== stamp) {
          const info = preview?.stamp === stamp ? preview.info : await probe(actual);
-         let thumb = join(this.root, ".acroclip", "thumbnails", thumbnailName(identity));
-         try {
-            await this.safeDirectory(dirname(thumb));
-            try {
-               const image = await lstat(thumb);
-               if (!image.isFile() || image.size === 0) throw new Error("Thumbnail cache is incomplete.");
-            } catch {
-               const temporary = `${thumb}.${randomUUID()}.jpg`;
-               try {
-                  await createThumbnail(actual, temporary, info.duration);
-                  await rename(temporary, thumb);
-                  await rm(join(this.root, ".acroclip", "thumbnails", `${identity}.jpg`), { force: true }).catch(() => undefined);
-               } finally {
-                  await rm(temporary, { force: true });
-               }
-            }
-         } catch (error) {
-            this.warn(`Preview thumbnail unavailable for ${basename(actual)}: ${message(error)}`, "log");
-            const legacy = join(this.root, ".acroclip", "thumbnails", `${identity}.jpg`);
-            const image = await lstat(legacy).catch(() => undefined);
-            thumb = image?.isFile() && image.size > 0 ? legacy : "";
-         }
-         cached = { stamp, info, thumbnail: thumb };
+         cached = { stamp, info, thumbnail: await this.thumbnail(actual, identity, info.duration, thumbnails) };
          this.cache.set(actual, cached);
       }
       return cached;
+   }
+   private async thumbnail(actual: string, identity: string, duration: number, thumbnails: ThumbnailIndex): Promise<string> {
+      if (!thumbnails) return "";
+      const name = thumbnailName(identity);
+      const legacy = `${identity}.jpg`;
+      const path = join(thumbnails.directory, name);
+      if (thumbnails.files.has(name)) return path;
+      const temporary = `${path}.${randomUUID()}.jpg`;
+      try {
+         await createThumbnail(actual, temporary, duration);
+         await rename(temporary, path);
+         thumbnails.files.add(name);
+         if (thumbnails.files.delete(legacy)) await rm(join(thumbnails.directory, legacy), { force: true }).catch(() => undefined);
+         return path;
+      } catch (error) {
+         this.warn(`Preview thumbnail unavailable for ${basename(actual)}: ${message(error)}`, "log");
+         return thumbnails.files.has(legacy) ? join(thumbnails.directory, legacy) : "";
+      } finally {
+         await rm(temporary, { force: true });
+      }
    }
 
    private async resolveFile(file: StoredFile, scanning = false): Promise<string | undefined> {
@@ -650,6 +702,7 @@ export class CollectionService {
          byIdentity.set(clip.identity, identities);
       }
       const prior = this.clips;
+      const thumbnails = await this.thumbnailIndex();
       let publishedAt = 0;
       const publishProgress = () => {
          if (this.scanned || !result.length || Date.now() - publishedAt < 150) return;
@@ -693,44 +746,25 @@ export class CollectionService {
                used.add(stored.id);
                stored.relativePath = rel;
                stored.absolutePath = actual;
-               const cached = await this.cachedMedia(actual, identity, fileStat, stored.preview);
+               const cached = await this.cachedMedia(actual, identity, fileStat, thumbnails, stored.preview);
                stored.previewUnavailable = undefined;
                stored.preview = { stamp: fileStamp(fileStat), size: Number(fileStat.size), info: cached.info };
                const recordingSource = this.registeringSources.get(normal(actual));
                if (recordingSource !== undefined) stored.source = recordingSource;
-               const shares: Shareable[] = [];
-               for (const share of stored.shareables) {
-                  const located = await this.resolveFile(share, true);
-                  if (located) {
-                     retainedPaths.add(located);
-                     shares.push({
-                        id: share.id,
-                        path: located,
-                        relativePath: share.relativePath,
-                        size: (await stat(located)).size,
-                        targetMB: share.targetMB,
-                        createdAt: share.createdAt,
-                     });
-                  }
-               }
-               result.push({
-                  id: stored.id,
-                  path: actual,
-                  relativePath: rel,
-                  name: stored.name,
-                  source: normalizeApplicationLabel(stored.application?.name ?? stored.source),
-                  ...(stored.application ? { applicationId: stored.application.id } : {}),
-                  size: Number(fileStat.size),
-                  duration: cached.info.duration,
-                  width: cached.info.width,
-                  height: cached.info.height,
-                  createdAt: stored.createdAt,
-                  thumbnail: cached.thumbnail ? this.url(cached.thumbnail) : "",
-                  playbackUrl: this.url(actual),
-                  tracks: cached.info.tracks,
-                  categories: [...stored.categories],
-                  shareables: shares,
-               });
+               result.push(
+                  clipRecord(
+                     stored,
+                     {
+                        path: actual,
+                        relativePath: rel,
+                        size: Number(fileStat.size),
+                        thumbnail: cached.thumbnail ? this.url(cached.thumbnail) : "",
+                        playbackUrl: this.url(actual),
+                        shareables: await this.verifiedShareables(stored, retainedPaths),
+                     },
+                     cached.info
+                  )
+               );
             } catch (error) {
                this.scanRetryNeeded = true;
                const previous = this.clips.find((clip) => normal(clip.path) === normal(path));
@@ -752,20 +786,7 @@ export class CollectionService {
             const original = await this.resolveFile(stored, true);
             const originalPath = original ?? resolve(this.root, stored.relativePath);
             if (!safeRelative(stored.relativePath) || !withinRoot(this.root, originalPath)) continue;
-            const shares: Shareable[] = [];
-            for (const share of stored.shareables) {
-               const located = await this.resolveFile(share, true);
-               if (!located) continue;
-               retainedPaths.add(located);
-               shares.push({
-                  id: share.id,
-                  path: located,
-                  relativePath: share.relativePath,
-                  size: (await stat(located)).size,
-                  targetMB: share.targetMB,
-                  createdAt: share.createdAt,
-               });
-            }
+            const shares = await this.verifiedShareables(stored, retainedPaths);
             const available = original ?? shares[0]?.path;
             if (!available) {
                stored.preview = undefined;
@@ -774,28 +795,24 @@ export class CollectionService {
             }
             const actualStat = await stat(available, { bigint: true });
             const identity = await this.scanIdentity(available, actualStat);
-            const cached = await this.cachedMedia(available, identity, actualStat);
+            const cached = await this.cachedMedia(available, identity, actualStat, thumbnails);
             retainedPaths.add(available);
             used.add(stored.id);
-            result.push({
-               id: stored.id,
-               path: originalPath,
-               relativePath: stored.relativePath,
-               name: stored.name,
-               source: normalizeApplicationLabel(stored.application?.name ?? stored.source),
-               ...(stored.application ? { applicationId: stored.application.id } : {}),
-               size: original ? Number(actualStat.size) : 0,
-               duration: cached.info.duration,
-               width: cached.info.width,
-               height: cached.info.height,
-               createdAt: stored.createdAt,
-               thumbnail: cached.thumbnail ? this.url(cached.thumbnail) : "",
-               playbackUrl: original ? this.url(original) : "",
-               tracks: cached.info.tracks,
-               categories: [...stored.categories],
-               shareables: shares,
-               ...(!original ? { originalMissing: true } : {}),
-            });
+            result.push(
+               clipRecord(
+                  stored,
+                  {
+                     path: originalPath,
+                     relativePath: stored.relativePath,
+                     size: original ? Number(actualStat.size) : 0,
+                     thumbnail: cached.thumbnail ? this.url(cached.thumbnail) : "",
+                     playbackUrl: original ? this.url(original) : "",
+                     shareables: shares,
+                     ...(!original ? { originalMissing: true } : {}),
+                  },
+                  cached.info
+               )
+            );
          } catch (error) {
             this.scanRetryNeeded = true;
             const previous = this.clips.find((clip) => clip.id === stored.id);
@@ -829,6 +846,9 @@ export class CollectionService {
          }
       this.applicationIcons = Object.fromEntries(artwork);
       this.folders = folders.sort((a, b) => a.localeCompare(b));
+      // Tags can change while files are read. Publish the memberships as they are now.
+      const tags = new Map(this.metadata.clips.map((stored) => [stored.id, stored.categories]));
+      for (const clip of result) clip.categories = [...(tags.get(clip.id) ?? clip.categories)];
       this.clips = result.sort((a, b) => b.createdAt - a.createdAt || a.relativePath.localeCompare(b.relativePath));
       for (const path of this.identities.keys()) if (!retainedPaths.has(path)) this.identities.delete(path);
       for (const path of this.cache.keys()) if (!retainedPaths.has(path)) this.cache.delete(path);
@@ -1106,14 +1126,27 @@ export class CollectionService {
       this.metadata.categories = this.categories.filter((category) => category.id !== id);
       for (const clip of this.metadata.clips) clip.categories = clip.categories.filter((category) => category !== id);
       await this.writeMetadata();
-      await this.scan();
+      this.retag(
+         (clip) => clip.categories.includes(id),
+         (clip) => clip.categories.filter((category) => category !== id)
+      );
    }
    async assignCategories(id: string, ids: string[]): Promise<void> {
       if (!this.metadataWritable) throw new Error("Changing tags is locked while collection info is damaged.");
       if (ids.some((category) => !this.categories.some((entry) => entry.id === category))) throw new Error("That tag no longer exists.");
-      this.stored(id).categories = [...new Set(ids)];
+      const stored = this.stored(id);
+      stored.categories = [...new Set(ids)];
       await this.writeMetadata();
-      await this.scan();
+      this.retag(
+         (clip) => clip.id === id,
+         () => [...stored.categories]
+      );
+   }
+   /** Tags live only in metadata, so a tag change updates the library without rescanning files. */
+   private retag(affected: (clip: Clip) => boolean, categories: (clip: Clip) => string[]): void {
+      if (this.clips.some(affected)) this.clips = this.clips.map((clip) => (affected(clip) ? { ...clip, categories: categories(clip) } : clip));
+      // Publish even when no visible clip changed: the tag list itself may have.
+      this.notify();
    }
    toggleCategory(clipId: string, categoryId: string): Promise<void> {
       const current = this.stored(clipId).categories;

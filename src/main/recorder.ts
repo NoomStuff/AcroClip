@@ -74,6 +74,8 @@ interface NativeMessage {
    bufferedSourceKind?: "screen" | "app";
 }
 
+/** How long one application discovery answers repeated questions. */
+const APPLICATION_REUSE_MS = 500;
 /** How long the helper may take to exit after every save has finished. */
 export const RECORDER_EXIT_TIMEOUT_MS = 5000;
 
@@ -100,6 +102,7 @@ export class Recorder {
    private readonly catalog: GameCatalog;
    private candidatesPending: Promise<GameCandidate[]> | null = null;
    private applicationsPending: Promise<GameCandidate[]> | null = null;
+   private recentApplications: { at: number; items: GameCandidate[] } | null = null;
    private candidatesResolve: ((items: GameCandidate[]) => void) | null = null;
    private autoPreferences: Preferences | null = null;
    private autoSources: CaptureSource[] = [];
@@ -210,11 +213,16 @@ export class Recorder {
       });
    }
    async capturableApplications(): Promise<GameCandidate[]> {
+      // Auto capture and the open Capture page both ask every second. Discovery
+      // spawns a helper on Windows, so they share one result for a moment.
+      if (this.recentApplications && Date.now() - this.recentApplications.at < APPLICATION_REUSE_MS) return this.recentApplications.items;
       if (this.applicationsPending) return this.applicationsPending;
       this.applicationsPending = (async () => {
          for (let attempt = 0; ; attempt++) {
             try {
-               return await this.queryApplications();
+               const items = await this.queryApplications();
+               this.recentApplications = { at: Date.now(), items };
+               return items;
             } catch (error) {
                if (attempt === 2) throw error;
                await new Promise<void>((resolve) => setTimeout(resolve, attempt === 0 ? 150 : 450));

@@ -12,7 +12,9 @@ export function useThumbnailVisibility() {
    const ref = useRef<HTMLDivElement>(null);
    const [visible, setVisible] = useState(false);
    useEffect(() => {
-      const node = ref.current;
+      // Watch the card itself: its body skips layout offscreen, and the
+      // thumbnail inside reports no geometry while skipped.
+      const node = ref.current?.closest<HTMLElement>(".clip-card") ?? ref.current;
       const root = node?.closest(".library-scroll");
       if (!node || !root) return;
       let viewport = viewports.get(root);

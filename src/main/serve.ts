@@ -21,10 +21,13 @@ export async function serveMedia(path: string, request: Request): Promise<Respon
       ".mkv": "video/x-matroska",
       ".ts": "video/mp2t",
    };
+   const type = mime[extname(path).toLowerCase()] ?? "application/octet-stream";
    const headers = new Headers({
-      "Content-Type": mime[extname(path).toLowerCase()] ?? "application/octet-stream",
+      "Content-Type": type,
       "Accept-Ranges": "bytes",
-      "Cache-Control": "no-store",
+      // Images are content-addressed thumbnails, so the renderer may keep them while
+      // cards scroll in and out of view. Videos can change in place and are never cached.
+      "Cache-Control": type.startsWith("image/") ? "private, max-age=31536000, immutable" : "no-store",
    });
    const range = request.headers.get("range");
    let start = 0;

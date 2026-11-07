@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { StateChanges } from "./state-changes";
 import { defaultPreferences, stoppedRecorder } from "../shared/defaults";
-import type { AppState } from "../shared/types";
+import { applyStatePatch } from "../shared/state-patch";
+import type { AppEvent, AppState, Clip } from "../shared/types";
 
 function snapshot(): AppState {
    return {
@@ -29,7 +30,7 @@ describe("incremental app state", () => {
       state.recorder.availableSeconds = 12;
       const event = changes.event(state);
       expect(event).toEqual({ type: "state-patch", patch: { recorder: state.recorder } });
-      expect(event?.type === "state-patch" && { ...state, ...event.patch }.clips).toBe(state.clips);
+      expect(event?.type === "state-patch" && applyStatePatch(state, event)?.clips).toBe(state.clips);
    });
    it("detects mutable categories, job progress and replaced library arrays, including clearing values", () => {
       const changes = new StateChanges();
@@ -51,5 +52,50 @@ describe("incremental app state", () => {
       changes.event(state);
       changes.reset();
       expect(changes.event(state)).toEqual({ type: "state", state });
+   });
+});
+
+describe("library changes", () => {
+   const clip = (id: string, name = id): Clip => ({
+      id,
+      name,
+      path: `/clips/${id}.mp4`,
+      relativePath: `${id}.mp4`,
+      source: "Game",
+      size: 1,
+      duration: 1,
+      width: 1,
+      height: 1,
+      createdAt: 1,
+      thumbnail: "",
+      playbackUrl: "",
+      tracks: [],
+      categories: [],
+      shareables: [],
+   });
+   it("sends only changed clips after a rescan and keeps unchanged renderer objects", () => {
+      const changes = new StateChanges();
+      const state = { ...snapshot(), clips: [clip("a"), clip("b"), clip("c")] };
+      changes.event(state);
+      let renderer: AppState = structuredClone(state);
+      // A rescan builds new objects with the same content.
+      expect(changes.event({ ...state, clips: state.clips.map((item) => ({ ...item })) })).toBeUndefined();
+      const renamed = { ...state, clips: [clip("a"), clip("b", "Renamed"), clip("c")] };
+      const event = changes.event(renamed);
+      expect(event).toEqual({ type: "state-patch", patch: {}, clips: { upsert: [renamed.clips[1]] } });
+      const before = renderer.clips;
+      renderer = applyStatePatch(renderer, event as Extract<AppEvent, { type: "state-patch" }>)!;
+      expect(renderer.clips[0]).toBe(before[0]);
+      expect(renderer.clips[1]!.name).toBe("Renamed");
+      const removed = changes.event({ ...renamed, clips: [renamed.clips[2]!, renamed.clips[0]!] });
+      expect(removed).toEqual({ type: "state-patch", patch: {}, clips: { upsert: [], order: ["c", "a"] } });
+      renderer = applyStatePatch(renderer, removed as Extract<AppEvent, { type: "state-patch" }>)!;
+      expect(renderer.clips.map((item) => item.id)).toEqual(["c", "a"]);
+   });
+   it("asks for a reload when the renderer is missing a listed clip, and accepts full replacements", () => {
+      const state = { ...snapshot(), clips: [clip("a")] };
+      expect(applyStatePatch(state, { type: "state-patch", patch: {}, clips: { upsert: [], order: ["a", "b"] } })).toBeUndefined();
+      expect(applyStatePatch(state, { type: "state-patch", patch: {}, clips: { upsert: [clip("b")] } })).toBeUndefined();
+      expect(applyStatePatch(state, { type: "state-patch", patch: { clips: [clip("z")] } })?.clips.map((item) => item.id)).toEqual(["z"]);
    });
 });

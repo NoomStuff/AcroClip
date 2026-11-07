@@ -160,7 +160,10 @@ export function Library({
          const gap = gridElement ? Number.parseFloat(getComputedStyle(gridElement).columnGap) || 0 : 18;
          setGridMetrics((current) => (current.width === width && current.gap === gap ? current : { width, gap }));
          const columns = Math.max(1, Math.floor((width + gap) / (thumbnailSizes.grid + gap)));
-         const cardHeight = Math.max(205, (((width - (columns - 1) * gap) / columns) * 9) / 16 + 68);
+         const thumbnailHeight = (((width - (columns - 1) * gap) / columns) * 9) / 16;
+         // Offscreen cards skip layout and take this height: the thumbnail plus one info row.
+         node.style.setProperty("--clip-open-height", `${thumbnailHeight + 57}px`);
+         const cardHeight = Math.max(205, thumbnailHeight + 68);
          setPlaceholderCount(Math.min(24, columns * Math.max(1, Math.ceil(height / (cardHeight + gap)))));
       });
       observer.observe(node);
@@ -172,18 +175,9 @@ export function Library({
    const initial = state.collectionStatus.phase === "loading" && !state.clips.length;
    const collectionRoot = state.collectionStatus.root || state.preferences.collection;
    const attaCutAvailable = useAttaCutAvailable(visible);
+   // Main follows file changes while the window is shown. Opening the library checks once more.
    useEffect(() => {
-      if (!visible) return;
-      const refresh = () => {
-         if (document.visibilityState === "visible") void api.refresh().catch(() => undefined);
-      };
-      refresh();
-      window.addEventListener("focus", refresh);
-      document.addEventListener("visibilitychange", refresh);
-      return () => {
-         window.removeEventListener("focus", refresh);
-         document.removeEventListener("visibilitychange", refresh);
-      };
+      if (visible) void api.refresh().catch(() => undefined);
    }, [visible, collectionRoot]);
    const [query, setQuery] = useState("");
    const [, refreshAges] = useState(0);
