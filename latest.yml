@@ -1,12 +1,12 @@
-version: 0.12.0
+version: 0.13.0
 path: >-
-  https://github.com/NoomStuff/AcroClip/releases/download/v0.12.0/AcroClip-0.12.0-win-x64-Installer.exe
+  https://github.com/NoomStuff/AcroClip/releases/download/v0.13.0/AcroClip-0.13.0-win-x64-Installer.exe
 sha512: >-
-  v8P3o3wVm1UKHddF8qXigG2zU+tGmApNcKNdLwUBw+4ZM/LZ5GyM9jwFfBjMsSomt0QP+38+DWkTVG6v2f9vag==
+  JDEhl2rCqAhc9YyQihSPxVxJ7BqS3s6S2NM33Oh2fhJNlyh0dhkZZmQBBRLAjDILLQtctpatOcLc/lazkq/SpA==
 files:
   - url: >-
-      https://github.com/NoomStuff/AcroClip/releases/download/v0.12.0/AcroClip-0.12.0-win-x64-Installer.exe
+      https://github.com/NoomStuff/AcroClip/releases/download/v0.13.0/AcroClip-0.13.0-win-x64-Installer.exe
     sha512: >-
-      v8P3o3wVm1UKHddF8qXigG2zU+tGmApNcKNdLwUBw+4ZM/LZ5GyM9jwFfBjMsSomt0QP+38+DWkTVG6v2f9vag==
-    size: 151862765
-releaseDate: '2026-11-06T21:52:16.292Z'
+      JDEhl2rCqAhc9YyQihSPxVxJ7BqS3s6S2NM33Oh2fhJNlyh0dhkZZmQBBRLAjDILLQtctpatOcLc/lazkq/SpA==
+    size: 151845927
+releaseDate: '2026-11-07T02:16:44.134Z'
