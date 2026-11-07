@@ -3,7 +3,7 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { copyFile, mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { mediaTool } from "./media-tool";
 import { defaultPreferences } from "../../src/shared/defaults";
 
@@ -129,6 +129,8 @@ test("Linux recording saves the requested footage during a first library scan", 
       seed,
    ]);
    for (let index = 0; index < 600; index++) await copyFile(seed, join(collection, `Imported ${index}.mp4`));
+   // Recordings are MP4 too, so tell them apart from the imported fixtures.
+   const recorded = (file: string) => file.endsWith(".mp4") && !file.endsWith(".saving.mp4") && !basename(file).startsWith("Imported ");
    await writeFile(
       join(profile, "preferences.json"),
       JSON.stringify({
@@ -166,7 +168,7 @@ test("Linux recording saves the requested footage during a first library scan", 
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds, { timeout: 20000 }).toBeGreaterThan(1);
       await page.getByRole("button", { name: "Save clip", exact: true }).click();
       await expect
-         .poll(async () => (await readdir(collection, { recursive: true })).some((file) => file.endsWith(".mp4") && !file.endsWith(".saving.mp4")), {
+         .poll(async () => (await readdir(collection, { recursive: true })).some(recorded), {
             timeout: 15000,
          })
          .toBe(true);
@@ -175,14 +177,14 @@ test("Linux recording saves the requested footage during a first library scan", 
          env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile },
       });
       await expect
-         .poll(async () => (await readdir(collection, { recursive: true })).filter((file) => file.endsWith(".mp4") && !file.endsWith(".saving.mp4")).length, {
+         .poll(async () => (await readdir(collection, { recursive: true })).filter(recorded).length, {
             timeout: 15000,
          })
          .toBe(2);
       expect(["loading", "refreshing"]).toContain((await page.evaluate(() => window.acroClip.state())).collectionStatus.phase);
       await page.getByRole("button", { name: "Stop capturing", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length, { timeout: 120000 }).toBe(602);
-      const file = (await readdir(collection, { recursive: true })).find((file) => file.endsWith(".mp4") && !file.endsWith(".saving.mp4"))!;
+      const file = (await readdir(collection, { recursive: true })).find(recorded)!;
       await promisify(execFile)(mediaTool("ffmpeg"), ["-v", "error", "-i", join(collection, file), "-f", "null", "-"]);
    } finally {
       await app
