@@ -173,7 +173,17 @@ try {
       .poll(() => page.evaluate(async (id) => (await window.acroClip.state()).clips.find((item) => item.id === id)?.shareables.length, shareSource.id), {
          timeout: 120000,
       })
-      .toBe(1);
+      .toBe(1)
+      .catch(async (error: unknown) => {
+         const current = await page.evaluate(() => window.acroClip.state());
+         const clips = current.clips.map((item) => ({ id: item.id, path: item.path, size: item.size, shareables: item.shareables.length }));
+         throw new Error(
+            `${error instanceof Error ? error.message : String(error)}
+Share source: ${JSON.stringify({ id: shareSource.id, path: shareSource.path })}
+Clips: ${JSON.stringify(clips)}
+Jobs: ${JSON.stringify(current.jobs)}`
+         );
+      });
    const updated = await page.evaluate(() => window.acroClip.state());
    const shareable = updated.clips.find((item) => item.id === shareSource.id)!.shareables[0]!;
    assert((await stat(shareable.path)).size <= 1_000_000);

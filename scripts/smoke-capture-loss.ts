@@ -311,12 +311,28 @@ try {
       });
       await delay(3000);
       await waitForHistory();
-      const switched = await verify("auto-resumed", 1.5, false, 640, 360, 24, "black");
+      // Each new source gets its own canvas, so the portrait window now records
+      // at its own size rather than inside the earlier landscape canvas.
+      const switched = await verify("auto-resumed", 1.5, false, 360, 640, 24, "black");
       assert.equal(switched.previousFootage, false);
       assert.equal(switched.source, `${title} replacement`);
+      // A resize keeps the source's canvas. Selecting the source again refits it.
       await writeFile(actionPath, "original");
       await delay(3000);
       await waitForHistory();
+      await command({
+         action: "source",
+         sourceKind: "auto",
+         resolvedKind: "app",
+         sourceId: `window:${handle}:0`,
+         sourceName: title,
+         recordingSizeVersion: 2,
+         resolutionLimit: 1080,
+         captureAudio: appAudio,
+      });
+      await delay(3000);
+      await waitForHistory();
+      await verify("refitted", 1.5);
    }
    await command({ action: "save", requestId: "failed-destination", requestedAt: Date.now(), path: path.join(folder, "missing-parent", "failed.mkv") });
    const failed = await wait((event) => event.event === "error" && event.requestId === "failed-destination");
