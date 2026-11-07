@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { expect, type Page } from "@playwright/test";
@@ -17,6 +18,9 @@ export async function packagedShareSource(page: Page, ffmpeg: string, recording:
    }, recording.id);
    expect(rejected).toBe(true);
    const source = join(dirname(recording.path), "Packaged sharing fixture.mp4");
+   // The library ignores .acroclip- files. Publishing the finished file by
+   // rename keeps a scan from registering it half-written under another identity.
+   const partial = join(dirname(recording.path), ".acroclip-sharing-fixture.mp4");
    await promisify(execFile)(
       ffmpeg,
       [
@@ -42,10 +46,11 @@ export async function packagedShareSource(page: Page, ffmpeg: string, recording:
          "18",
          "-c:a",
          "aac",
-         source,
+         partial,
       ],
       { windowsHide: true }
    );
+   await rename(partial, source);
    await page.evaluate(() => window.acroClip.refresh());
    await expect
       .poll(() => page.evaluate(async (file) => (await window.acroClip.state()).clips.find((clip) => clip.path === file)?.size ?? 0, source))
