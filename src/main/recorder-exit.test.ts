@@ -10,7 +10,8 @@ const roots: string[] = [];
 const children: Array<Pick<Recorder, "close">> = [];
 afterEach(async () => {
    for (const child of children.splice(0)) await child.close({ cancel: true });
-   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
+   // Windows can hold the copied helper executable briefly after it exits.
+   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 async function fixture(
    mode:

@@ -243,6 +243,8 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       // Real metadata updates while the retained page has no layout must not
       // turn zero offsets into the next visible animation's starting positions.
       await page.evaluate(({ id, before }) => window.acroClip.reorderCategory(id, before), { id: secondId, before: thirdId });
+      // The hidden page must hold the update before it is shown, or the move is a visible change.
+      await expect(labels).toHaveText(["Second", "Third", "Matches"]);
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await page.evaluate(({ id, before }) => window.acroClip.reorderCategory(id, before), { id: thirdId, before: secondId });
       await expect(labels).toHaveText(["Third", "Second", "Matches"]);

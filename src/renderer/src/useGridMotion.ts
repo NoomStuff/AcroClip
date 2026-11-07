@@ -34,7 +34,7 @@ export function useGridMotion<T extends HTMLElement>(
          .map((child) => {
             const node = child as HTMLElement;
             const rect = node.getBoundingClientRect();
-            // Offscreen card bodies skip layout. Reading inside them would force it.
+            // Offscreen thumbnails never animate, so skip measuring them.
             const thumbnail = offscreen(rect) ? null : node.querySelector<HTMLElement>(".clip-thumbnail");
             const image = thumbnail?.getBoundingClientRect();
             return { node, rect, thumbnail, image };
@@ -108,7 +108,7 @@ export function useGridMotion<T extends HTMLElement>(
          next.add(key);
          const rect = node.getBoundingClientRect();
          const hidden = offscreen(rect);
-         // Offscreen thumbnails never animate, and their card bodies skip layout until shown.
+         // Offscreen thumbnails never animate, so skip measuring them.
          const thumbnail = hidden ? null : node.querySelector<HTMLElement>(".clip-thumbnail");
          if (thumbnail) {
             const image = thumbnail.getBoundingClientRect();

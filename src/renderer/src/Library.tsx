@@ -160,10 +160,7 @@ export function Library({
          const gap = gridElement ? Number.parseFloat(getComputedStyle(gridElement).columnGap) || 0 : 18;
          setGridMetrics((current) => (current.width === width && current.gap === gap ? current : { width, gap }));
          const columns = Math.max(1, Math.floor((width + gap) / (thumbnailSizes.grid + gap)));
-         const thumbnailHeight = (((width - (columns - 1) * gap) / columns) * 9) / 16;
-         // Offscreen cards skip layout and take this height: the thumbnail plus one info row.
-         node.style.setProperty("--clip-open-height", `${thumbnailHeight + 57}px`);
-         const cardHeight = Math.max(205, thumbnailHeight + 68);
+         const cardHeight = Math.max(205, (((width - (columns - 1) * gap) / columns) * 9) / 16 + 68);
          setPlaceholderCount(Math.min(24, columns * Math.max(1, Math.ceil(height / (cardHeight + gap)))));
       });
       observer.observe(node);

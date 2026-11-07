@@ -388,10 +388,6 @@
    text-align: left;
    display: block;
    border-radius: 10px;
-   /* Offscreen cards skip layout and paint, so resizing a large library only lays
-      out what is in view. The library measures the estimate from its columns. */
-   content-visibility: auto;
-   contain-intrinsic-size: auto none auto var(--clip-open-height, 225px);
 }
 .clip-drag-surface {
    position: absolute;
@@ -463,7 +459,6 @@
    gap: 16px;
    padding: 10px 44px 10px 10px;
    border-radius: var(--radius-control);
-   contain-intrinsic-size: auto none auto calc(var(--list-thumbnail-size, 128px) * 9 / 16 + 20px);
 }
 .clip-grid[data-view="list"] .clip-thumbnail {
    width: var(--list-thumbnail-size, 128px);
