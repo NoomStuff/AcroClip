@@ -38,6 +38,10 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       const positions = new Map(preview.map((id, index) => [id, index]));
       return [...items].sort((a, b) => (positions.get(a.id) ?? items.length) - (positions.get(b.id) ?? items.length));
    }, [items, preview]);
+   // Keyboard moves start from what is on screen. A drag that is still saving
+   // shows its order before the saved items catch up.
+   const displayed = useRef(order);
+   displayed.current = order;
 
    const stop = useRef<(save: boolean) => void>(() => undefined);
    stop.current = (save) => {
@@ -249,7 +253,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
             return;
          event.preventDefault();
          event.stopPropagation();
-         const ids = keyboardOrder.current ?? latest.current.items.map((item) => item.id);
+         const ids = keyboardOrder.current ?? displayed.current.map((item) => item.id);
          const index = ids.indexOf(id);
          const nextIndex = index + (event.key === "ArrowUp" ? -1 : 1);
          if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return;
@@ -276,6 +280,10 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
             }, restore)
             .finally(() => {
                pendingKeyboard.current--;
+               // A change from elsewhere can arrive while this save is pending.
+               // Once the last move has settled, show the saved order.
+               if (pendingKeyboard.current === 0 && keyboardOrder.current === next && latest.current.items.map((item) => item.id).join(" ") !== next.join(" "))
+                  restore();
             });
       },
    };
