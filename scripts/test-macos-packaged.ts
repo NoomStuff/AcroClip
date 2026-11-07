@@ -267,11 +267,12 @@ try {
    const audioEvidence: Array<{ clip: string; tones: number[][] }> = [];
    for (const clip of state.clips) {
       await run(ffmpeg, ["-v", "error", "-i", clip.path, "-map", "0", "-f", "null", "-"]);
+      // MKV stores track titles as title tags, MP4 as udta name tags.
       const { stdout: metadata } = await run(ffprobe, ["-v", "error", "-show_streams", "-of", "json", clip.path]);
       const audio = z
-         .object({ streams: z.array(z.object({ codec_type: z.string(), tags: z.object({ title: z.string().optional() }).optional() })) })
+         .object({ streams: z.array(z.object({ codec_type: z.string(), tags: z.object({ title: z.string().optional(), name: z.string().optional() }).optional() })) })
          .parse(JSON.parse(metadata)).streams;
-      expect(audio.filter((stream) => stream.codec_type === "audio").map((stream) => stream.tags?.title)).toEqual(["Master", "Application", "Other app"]);
+      expect(audio.filter((stream) => stream.codec_type === "audio").map((stream) => stream.tags?.title ?? stream.tags?.name)).toEqual(["Master", "Application", "Other app"]);
       for (const track of [0, 1, 2]) {
          const { stderr } = await run(ffmpeg, ["-hide_banner", "-i", clip.path, "-map", `0:a:${track}`, "-af", "volumedetect", "-f", "null", "-"]);
          const mean = stderr.match(/mean_volume: (-?[\d.]+) dB/);
@@ -331,9 +332,9 @@ try {
    await run(ffmpeg, ["-v", "error", "-i", systemClip.path, "-map", "0", "-f", "null", "-"]);
    const { stdout: systemMetadata } = await run(ffprobe, ["-v", "error", "-show_streams", "-of", "json", systemClip.path]);
    const systemStreams = z
-      .object({ streams: z.array(z.object({ codec_type: z.string(), tags: z.object({ title: z.string().optional() }).optional() })) })
+      .object({ streams: z.array(z.object({ codec_type: z.string(), tags: z.object({ title: z.string().optional(), name: z.string().optional() }).optional() })) })
       .parse(JSON.parse(systemMetadata)).streams;
-   expect(systemStreams.filter((stream) => stream.codec_type === "audio").map((stream) => stream.tags?.title)).toEqual(["Master", "System audio"]);
+   expect(systemStreams.filter((stream) => stream.codec_type === "audio").map((stream) => stream.tags?.title ?? stream.tags?.name)).toEqual(["Master", "System audio"]);
    const systemTones = await Promise.all([0, 1].map((track) => tones(systemClip.path, track)));
    for (const tone of systemTones) expect(Math.min(...tone)).toBeGreaterThan(0.03);
    for (const tone of [0, 1]) {
