@@ -23,6 +23,7 @@ const commands = {
    "audio-filters": [["scripts/smoke-audio-filters.ts"]],
    "game-capture": [["scripts/smoke-game-capture.ts"]],
    overlap: [["scripts/smoke-overlap.ts"]],
+   merge: [["scripts/smoke-merge.ts"]],
    "resolution-limits": [["scripts/smoke-resolution-limits.ts"]],
 } satisfies Record<string, string[][]>;
 const requested = process.argv[2];

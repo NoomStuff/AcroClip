@@ -9,7 +9,19 @@ describe("custom recording filenames", () => {
       expect(validFilenameTemplate("{source} on {date} at {time}")).toBe(true);
    });
    it("previews the default pattern without an unexplained sample ID", () => {
-      expect(previewFilename(defaultPreferences, "Game", new Date("2026-10-08T12:00:00Z"))).toBe("Game 2026-10-08 12-00-00.mp4");
+      expect(previewFilename(defaultPreferences, "Game", new Date(2026, 9, 8, 12, 0, 0))).toBe("Game 2026-10-08 12-00-00.mp4");
+   });
+   it("names clips on the local clock, across daylight saving changes", () => {
+      const previous = process.env["TZ"];
+      process.env["TZ"] = "Europe/Amsterdam";
+      try {
+         expect(previewFilename(defaultPreferences, "Game", new Date("2026-11-08T20:28:42Z"))).toBe("Game 2026-11-08 21-28-42.mp4");
+         expect(previewFilename(defaultPreferences, "Game", new Date("2026-07-08T19:28:42Z"))).toBe("Game 2026-07-08 21-28-42.mp4");
+         expect(previewFilename(defaultPreferences, "Game", new Date("2026-11-08T23:30:00Z"))).toBe("Game 2026-11-09 00-30-00.mp4");
+      } finally {
+         if (previous === undefined) delete process.env["TZ"];
+         else process.env["TZ"] = previous;
+      }
    });
    it("explains invalid syntax and names that require sanitizing", () => {
       expect(filenameTemplateError("Bad:name")).toContain("cannot contain");
@@ -28,7 +40,7 @@ describe("custom recording filenames", () => {
    });
    it("sanitizes captured window titles without adding IDs", () => {
       const preferences = { ...defaultPreferences, filenamePreset: "custom" as const, filenameTemplate: "{date} - {source}" };
-      const filename = previewFilename(preferences, "../../Game: title", new Date("2026-10-08T12:00:00Z"));
+      const filename = previewFilename(preferences, "../../Game: title", new Date(2026, 9, 8, 12, 0, 0));
       expect(filename).not.toContain("/");
       expect(filename).not.toContain(":");
       expect(filename).toBe("2026-10-08 - .._.._Game_ title.mp4");
@@ -39,7 +51,7 @@ describe("custom recording filenames", () => {
          previewFilename(
             { ...defaultPreferences, filenamePreset: "custom", filenameTemplate: "  {source} {date} {time}  " },
             "Game",
-            new Date("2026-10-08T12:00:00Z")
+            new Date(2026, 9, 8, 12, 0, 0)
          )
       ).toBe("Game 2026-10-08 12-00-00.mp4");
    });

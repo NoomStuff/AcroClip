@@ -209,7 +209,7 @@ export function closeOpen(): void {
    if (state.open !== null) commit({ ...state, open: null });
 }
 
-/** Chips grouped by tone, most severe first, each group newest first. */
+/** Chips grouped by tone, most severe first, each group newest. */
 export function chipGroups(entries: NotificationEntry[]): { tone: NotificationTone; entries: NotificationEntry[] }[] {
    return notificationTones
       .map((tone) => ({ tone, entries: entries.filter((entry) => entry.chip && entry.phase === "chip" && entry.tone === tone) }))

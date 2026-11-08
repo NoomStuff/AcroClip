@@ -5,7 +5,19 @@ import { Check, ChevronRight } from "lucide-react";
 import { submenuPosition } from "./menu-position";
 
 export const MenuFamilyContext = createContext({ id: "", closing: false, dismiss: () => {} });
-export function MenuSubmenu({ label, icon, disabled = false, children }: { label: string; icon?: ReactNode; disabled?: boolean; children: ReactNode }) {
+export function MenuSubmenu({
+   label,
+   icon,
+   disabled = false,
+   danger = false,
+   children,
+}: {
+   label: string;
+   icon?: ReactNode;
+   disabled?: boolean;
+   danger?: boolean;
+   children: ReactNode;
+}) {
    const family = useContext(MenuFamilyContext);
    const id = useId();
    const trigger = useRef<HTMLButtonElement>(null);
@@ -73,7 +85,7 @@ export function MenuSubmenu({ label, icon, disabled = false, children }: { label
             ref={trigger}
             id={id}
             role="menuitem"
-            className="menu-submenu-trigger"
+            className={danger ? "menu-submenu-trigger danger" : "menu-submenu-trigger"}
             tabIndex={-1}
             disabled={disabled}
             aria-haspopup="menu"

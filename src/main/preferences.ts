@@ -22,11 +22,20 @@ export function mergePreferenceChanges(current: Preferences, value: unknown, cha
    for (const key of keys) Object.assign(merged, { [key]: incoming[key] });
    return parsePreferences(merged);
 }
+/**
+ * "Reduce clip overlap" became one of three overlap choices. Existing settings
+ * keep their behavior.
+ */
+export function migrateOverlapPreference(stored: Record<string, unknown>): Partial<Preferences> {
+   const { avoidOverlap, ...rest } = stored;
+   if (rest["overlapClips"] !== undefined) return rest as Partial<Preferences>;
+   return { ...rest, overlapClips: avoidOverlap === true ? "trim" : "keep" } as Partial<Preferences>;
+}
 export async function readPreferences(path: string, collection: string): Promise<Preferences> {
    for (const candidate of [path, `${path}.bak`]) {
       try {
          const stored: unknown = JSON.parse(await readFile(candidate, "utf8"));
-         const legacy = typeof stored === "object" && stored ? (stored as Partial<Preferences>) : {};
+         const legacy = typeof stored === "object" && stored ? migrateOverlapPreference(stored as Record<string, unknown>) : {};
          const candidatePreferences = { ...defaultPreferences, collection, ...legacy };
          if (legacy.audioSourcesVersion !== 2) {
             candidatePreferences.audioSources = migrateAudioSources(candidatePreferences, (legacy.audioSources as AdditionalAudioSource[]) ?? []);
@@ -95,7 +104,7 @@ export function requiresCaptureRestart(a: Preferences, b: Preferences): boolean 
       a.replayMemoryMB !== b.replayMemoryMB ||
       a.microphoneDevice !== b.microphoneDevice ||
       a.captureAudio !== b.captureAudio ||
-      a.avoidOverlap !== b.avoidOverlap ||
+      (a.overlapClips === "trim") !== (b.overlapClips === "trim") ||
       audioTopology(a) !== audioTopology(b)
    );
 }

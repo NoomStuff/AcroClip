@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
-import { FolderInput, FolderOpen, Pencil, Plus, Scissors, Share2, Tag, Trash2 } from "lucide-react";
-import type { Category, Clip, Shareable } from "../../shared/types";
+import { Copy, FolderInput, FolderOpen, Pencil, Plus, Scissors, Share2, Tag, Trash2 } from "lucide-react";
+import type { Category, Clip } from "../../shared/types";
 import type { Ask } from "./Dialog";
 import type { Run } from "./desktop";
-import { api } from "./desktop";
+import { api, reportFeedback } from "./desktop";
 import { CategoryMark } from "./CategoryEditor";
 import { MenuCheckboxItem, MenuItem, MenuSubmenu } from "./ui";
+import { clipFileLabel, clipFiles, copiedMessage } from "./clip-files";
+import type { ClipFile } from "./clip-files";
 
 export function ClipActions({
    clip,
@@ -19,7 +21,6 @@ export function ClipActions({
    createTag,
    move,
    remove,
-   shareable = clip.shareables.at(-1),
    children,
 }: {
    clip: Clip;
@@ -32,10 +33,12 @@ export function ClipActions({
    create: () => void;
    createTag: () => void;
    move?: (() => void) | undefined;
-   remove?: (() => void) | undefined;
-   shareable?: Shareable | undefined;
+   // Deletes the clip, one shareable, or all of its shareables. Each asks first.
+   remove?: ((shareableId?: string, scope?: "shareables") => void) | undefined;
    children?: ReactNode;
 }) {
+   const removeFiles = (shareableId?: string, scope?: "shareables") =>
+      remove ? remove(shareableId, scope) : void run(() => api.deleteClip(clip.id, shareableId, scope));
    const rename = async () => {
       const name = await ask({
          title: "Rename clip",
@@ -51,6 +54,17 @@ export function ClipActions({
             <Share2 size={15} />
             {busy ? "Creating shareable…" : "Create shareable"}
          </MenuItem>
+         <FileChoice
+            clip={clip}
+            label="Copy file"
+            icon={<Copy size={15} />}
+            choose={(file) =>
+               void run(async () => {
+                  await api.copyFile(file.path);
+                  reportFeedback({ kind: "notice", message: copiedMessage(file), error: false });
+               })
+            }
+         />
          <div className="menu-separator" role="separator" />
          <MenuItem disabled={busy || !!clip.originalMissing} onClick={() => void rename()}>
             <Pencil size={15} />
@@ -80,16 +94,7 @@ export function ClipActions({
             </MenuItem>
          </MenuSubmenu>
          <div className="menu-separator" role="separator" />
-         <MenuItem disabled={!!clip.originalMissing} onClick={() => void run(() => api.reveal(clip.path))}>
-            <FolderOpen size={15} />
-            Show clip in folder
-         </MenuItem>
-         {shareable && (
-            <MenuItem onClick={() => void run(() => api.reveal(shareable.path))}>
-               <FolderOpen size={15} />
-               Show shareable in folder
-            </MenuItem>
-         )}
+         <FileChoice clip={clip} label="Show in folder" icon={<FolderOpen size={15} />} choose={(file) => void run(() => api.reveal(file.path))} />
          {attaCutAvailable && !clip.originalMissing && (
             <MenuItem onClick={() => void run(() => api.openInAttaCut(clip.id))}>
                <Scissors size={15} />
@@ -97,10 +102,64 @@ export function ClipActions({
             </MenuItem>
          )}
          {children}
-         <MenuItem danger disabled={busy} onClick={remove ?? (() => void run(() => api.deleteClip(clip.id)))}>
+         <div className="menu-separator" role="separator" />
+         <ShareableDeletion clip={clip} busy={busy} remove={removeFiles} />
+         <MenuItem danger separated={false} disabled={busy} onClick={() => removeFiles()}>
             <Trash2 size={15} />
             Delete clip
          </MenuItem>
       </>
+   );
+}
+
+/** One shareable deletes directly. Several ask which, with all of them last. */
+function ShareableDeletion({ clip, busy, remove }: { clip: Clip; busy: boolean; remove: (shareableId?: string, scope?: "shareables") => void }) {
+   const { shareables } = clipFiles(clip);
+   const only = clip.shareables[0];
+   if (!only) return null;
+   if (clip.shareables.length === 1)
+      return (
+         <MenuItem danger separated={false} disabled={busy} onClick={() => remove(only.id)}>
+            <Trash2 size={15} />
+            Delete shareable
+         </MenuItem>
+      );
+   return (
+      <MenuSubmenu label="Delete shareable" icon={<Trash2 size={15} />} danger disabled={busy}>
+         {clip.shareables.map((shareable, index) => (
+            <MenuItem key={shareable.id} danger separated={false} onClick={() => remove(shareable.id)}>
+               {clipFileLabel(shareables[index]!)}
+            </MenuItem>
+         ))}
+         <div className="menu-separator" role="separator" />
+         <MenuItem danger separated={false} onClick={() => remove(undefined, "shareables")}>
+            Delete all shareables
+         </MenuItem>
+      </MenuSubmenu>
+   );
+}
+
+/** One action for a clip with no shareables. With shareables, it asks which file. */
+function FileChoice({ clip, label, icon, choose }: { clip: Clip; label: string; icon: ReactNode; choose: (file: ClipFile) => void }) {
+   const { original, shareables } = clipFiles(clip);
+   if (!shareables.length)
+      return (
+         <MenuItem disabled={!original.available} onClick={() => choose(original)}>
+            {icon}
+            {label}
+         </MenuItem>
+      );
+   return (
+      <MenuSubmenu label={label} icon={icon}>
+         <MenuItem disabled={!original.available} onClick={() => choose(original)}>
+            {clipFileLabel(original)}
+         </MenuItem>
+         <div className="menu-separator" role="separator" />
+         {shareables.map((file) => (
+            <MenuItem key={file.path} onClick={() => choose(file)}>
+               {clipFileLabel(file)}
+            </MenuItem>
+         ))}
+      </MenuSubmenu>
    );
 }

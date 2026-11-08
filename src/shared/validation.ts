@@ -99,7 +99,7 @@ export const preferencesSchema = z
       autoRecord: z.boolean(),
       notifications: z.enum(["everywhere", "outside-fullscreen", "off"]),
       sound: z.boolean(),
-      avoidOverlap: z.boolean(),
+      overlapClips: z.enum(["keep", "trim", "merge"]),
       folderLayout: z.enum(["flat", "application"]),
       filenamePreset: z.enum(["source-date", "date-source", "custom"]),
       filenameTemplate: z.string().refine(validFilenameTemplate, "Use supported filename tokens without folder separators"),

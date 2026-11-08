@@ -405,15 +405,18 @@ export function MenuItem({
    onClick,
    danger = false,
    disabled = false,
+   separated = danger,
 }: {
    children: ReactNode;
    onClick: () => void;
    danger?: boolean;
    disabled?: boolean;
+   // Destructive items start their own group unless they share one.
+   separated?: boolean;
 }) {
    return (
       <>
-         {danger && <div className="menu-separator" role="separator" />}
+         {separated && <div className="menu-separator" role="separator" />}
          <button role="menuitem" tabIndex={-1} className={danger ? "danger" : ""} onClick={onClick} disabled={disabled}>
             {children}
          </button>

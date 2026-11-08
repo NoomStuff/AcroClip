@@ -536,8 +536,152 @@ try {
    assert.ok(damaged.clips.length > 0, "damaged metadata never makes ordinary videos inaccessible");
    await assert.rejects(damaged.createCategory("Do not overwrite recovery data"), /locked while collection info is damaged/);
    assert.equal(await readFile(movedMetadataPath, "utf8"), "broken", "unrecoverable metadata remains untouched");
+
+   // Overlapping saves from one capture session merge losslessly.
+   const mergeRoot = join(workspace, "merge-collection");
+   const mergeTrash = join(workspace, "merge-trash");
+   await mkdir(mergeRoot);
+   await mkdir(mergeTrash);
+   const encodeSession = async (output: string, frequency: number) =>
+      runMedia("ffmpeg", [
+         ...ffmpegBase,
+         "-y",
+         "-f",
+         "lavfi",
+         "-i",
+         "testsrc2=size=320x180:rate=30",
+         "-f",
+         "lavfi",
+         "-i",
+         `sine=frequency=${frequency}:sample_rate=48000`,
+         "-f",
+         "lavfi",
+         "-i",
+         `sine=frequency=${frequency * 1.5}:sample_rate=48000`,
+         "-t",
+         "14",
+         "-map",
+         "0",
+         "-map",
+         "1",
+         "-map",
+         "2",
+         "-c:v",
+         "libx264",
+         "-preset",
+         "ultrafast",
+         "-bf",
+         "0",
+         "-g",
+         "30",
+         "-keyint_min",
+         "30",
+         "-sc_threshold",
+         "0",
+         "-c:a",
+         "aac",
+         "-metadata:s:a:0",
+         "title=Master",
+         "-metadata:s:a:1",
+         "title=Microphone",
+         output,
+      ]);
+   // The recorder starts each clip at a keyframe of the same encoder output: a stream copy from it.
+   const saveFromSession = (source: string, from: number, length: number, output: string) =>
+      runMedia("ffmpeg", [
+         ...ffmpegBase,
+         "-y",
+         "-ss",
+         String(from),
+         "-i",
+         source,
+         "-t",
+         String(length),
+         "-map",
+         "0",
+         "-c",
+         "copy",
+         // The recorder names every track. MP4 stores it where a plain stream copy drops it.
+         "-metadata:s:a:0",
+         "title=Master",
+         "-metadata:s:a:1",
+         "title=Microphone",
+         output,
+      ]);
+   const sessionVideo = join(workspace, "merge-session.mp4");
+   const otherSession = join(workspace, "merge-other-session.mp4");
+   await encodeSession(sessionVideo, 440);
+   await encodeSession(otherSession, 550);
+   const pairs = {
+      merged: [join(mergeRoot, "Game older.mp4"), join(mergeRoot, "Game newer.mp4")],
+      viewed: [join(mergeRoot, "Viewed older.mp4"), join(mergeRoot, "Viewed newer.mp4")],
+      unrelated: [join(mergeRoot, "Unrelated older.mp4"), join(mergeRoot, "Unrelated newer.mp4")],
+      stuck: [join(mergeRoot, "Stuck older.mp4"), join(mergeRoot, "Stuck newer.mp4")],
+   } as const;
+   for (const [name, [older, newer]] of Object.entries(pairs)) {
+      await saveFromSession(sessionVideo, 0, 6, older);
+      await saveFromSession(name === "unrelated" ? otherSession : sessionVideo, 3, 7, newer);
+   }
+   const leftover = join(mergeRoot, ".acroclip-merge-00000000-0000-4000-8000-000000000000.mp4");
+   await writeFile(leftover, "interrupted merge");
+   const merging = new CollectionService();
+   await merging.open(mergeRoot);
+   await assert.rejects(stat(leftover), { code: "ENOENT" }, "an interrupted merge's copy is cleaned up");
+   const idFor = (path: string) => {
+      const found = merging.clips.find((entry) => entry.path === path);
+      assert.ok(found, `${path} is in the collection`);
+      return found.id;
+   };
+   const trashInto = async (path: string) => rename(path, join(mergeTrash, `${Date.now()}-${path.split(/[\\/]/).at(-1)}`));
+   const [olderPath, newerPath] = pairs.merged;
+   const olderId = idFor(olderPath),
+      newerId = idFor(newerPath);
+   const olderBytes = await readFile(olderPath);
+   const mergedOutcome = await merging.mergeRecordings(olderId, newerId, trashInto);
+   assert.ok(mergedOutcome.merged, `overlapping clips merge: ${mergedOutcome.merged ? "" : mergedOutcome.reason}`);
+   assert.equal(mergedOutcome.previousKept, false);
+   assert.ok(Math.abs(mergedOutcome.duration - 10) < 0.1, `merged clip covers both saves, got ${mergedOutcome.duration}`);
+   await assert.rejects(stat(olderPath), { code: "ENOENT" }, "the older clip went to the trash");
+   const trashed = await readdir(mergeTrash);
+   assert.equal(trashed.length, 1);
+   assert.deepEqual(await readFile(join(mergeTrash, trashed[0]!)), olderBytes, "the trash holds the older clip unchanged");
+   const mergedInfo = await probe(newerPath);
+   assert.deepEqual(
+      mergedInfo.tracks.map((track) => track.title),
+      ["Master", "Microphone"],
+      "the merged clip keeps its audio track names"
+   );
+   await runMedia("ffmpeg", ["-v", "error", "-i", newerPath, "-f", "null", "-"]);
+   const mergedClip = merging.clips.find((entry) => entry.id === newerId);
+   assert.equal(mergedClip?.path, newerPath, "the merged clip keeps the newer clip's name and identity");
+   assert.equal(mergedClip?.mergedFrom, 2);
+   assert.ok(!merging.clips.some((entry) => entry.id === olderId), "the older clip leaves the library");
+
+   const [viewedOlder, viewedNewer] = pairs.viewed;
+   await merging.markViewed(idFor(viewedOlder));
+   const viewedOutcome = await merging.mergeRecordings(idFor(viewedOlder), idFor(viewedNewer), trashInto);
+   assert.equal(viewedOutcome.merged, false, "a clip someone opened is never merged away");
+   assert.ok((await stat(viewedOlder)).size > 0 && (await stat(viewedNewer)).size > 0);
+
+   const [unrelatedOlder, unrelatedNewer] = pairs.unrelated;
+   const unrelatedBefore = await fileIdentity(unrelatedNewer);
+   const unrelatedOutcome = await merging.mergeRecordings(idFor(unrelatedOlder), idFor(unrelatedNewer), trashInto);
+   assert.equal(unrelatedOutcome.merged, false, "clips from different sessions keep both");
+   assert.equal(await fileIdentity(unrelatedNewer), unrelatedBefore, "a refused merge leaves the newer clip untouched");
+   assert.ok((await stat(unrelatedOlder)).size > 0);
+
+   const [stuckOlder, stuckNewer] = pairs.stuck;
+   const stuckOutcome = await merging.mergeRecordings(idFor(stuckOlder), idFor(stuckNewer), () => Promise.reject(new Error("No trash on this drive")));
+   assert.ok(stuckOutcome.merged && stuckOutcome.previousKept, "an older clip that can't go to the trash stays, never deleted");
+   assert.ok((await stat(stuckOlder)).size > 0);
+   assert.ok(merging.clips.some((entry) => entry.path === stuckOlder));
+   assert.equal((await readdir(mergeRoot)).filter((name) => name.startsWith(".acroclip-merge-")).length, 0, "no merge copies remain");
+
+   const mergeReopened = new CollectionService();
+   await mergeReopened.open(mergeRoot);
+   assert.equal(mergeReopened.clips.find((entry) => entry.id === newerId)?.mergedFrom, 2, "merge details survive reopening");
    console.log(
-      "Media verification passed: last-keyframe thumbnails and cache migration, real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, and deletion boundaries."
+      "Media verification passed: last-keyframe thumbnails and cache migration, real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, deletion boundaries, and lossless merging of overlapping saves."
    );
 } finally {
    assert.ok(withinRoot(await realpath(tmpdir()), workspace), "test cleanup stays within isolated temporary workspace");

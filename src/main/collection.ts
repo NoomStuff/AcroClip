@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import type { BigIntStats } from "node:fs";
-import { copyFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -14,6 +14,8 @@ import { createThumbnail, encodeShareable, probe } from "./media";
 import type { MediaInfo } from "./media";
 import { PlaybackCache } from "./playback";
 import { mapConcurrent } from "./concurrent";
+import { mergeClips } from "./clip-merge";
+import type { MergeResult } from "./clip-merge";
 
 const categorySchema = z.object({ id: z.string(), name: z.string(), color: z.string(), icon: z.string().max(80).optional() });
 const thumbnailName = (identity: string) => `${identity}.last-keyframe-v1.jpg`;
@@ -25,6 +27,8 @@ const shareSchema = fileSchema.extend({
    createdAt: z.number(),
    // The file stamp its identity was last sampled at, so a restart can reuse it.
    stamp: z.string().optional(),
+   // Made by "Create shareables automatically" rather than on request.
+   automatic: z.boolean().optional(),
 });
 const previewSchema = z.object({
    stamp: z.string(),
@@ -48,6 +52,13 @@ const clipSchema = fileSchema.extend({
    createdAt: z.number(),
    categories: z.array(z.string()),
    shareables: z.array(shareSchema),
+   // When someone first opened, changed or shared the clip. A merge only
+   // replaces clips nobody has used yet.
+   viewedAt: z.number().optional(),
+   editedAt: z.number().optional(),
+   sharedAt: z.number().optional(),
+   // How many saved clips this file combines.
+   mergedFrom: z.number().int().min(2).optional(),
 });
 const metadataSchema = z
    .object({ version: z.literal(1), collectionId: z.string(), categories: z.array(categorySchema), clips: z.array(clipSchema) })
@@ -100,9 +111,13 @@ function clipRecord(
       height: info?.height ?? 0,
       tracks: info?.tracks ?? [],
       categories: [...stored.categories],
+      ...(stored.mergedFrom ? { mergedFrom: stored.mergedFrom } : {}),
       ...files,
    };
 }
+
+export type MergeOutcome = { merged: true; clip: Clip; duration: number; previousKept: boolean } | { merged: false; reason: string };
+const mergeTemporary = /^\.acroclip-merge-[\da-f-]{36}\.(mp4|mkv)$/i;
 const fileStamp = (value: BigIntStats) => `${value.dev}:${value.ino}:${value.size}:${value.mtimeNs}:${value.ctimeNs}:${value.birthtimeNs}`;
 
 async function publishWithoutOverwrite(source: string, destination: string): Promise<void> {
@@ -176,6 +191,8 @@ export class CollectionService {
    // read a fresh identity through resolveFile instead of trusting this cache.
    private identities = new Map<string, { stamp: string; identity: string }>();
    private writtenMetadata: { snapshot: string; stamp: string } | undefined;
+   private automaticJobs = new Set<string>();
+   private activeMerges = new Set<string>();
    constructor(options: CollectionOptions = {}) {
       this.options = options;
    }
@@ -669,6 +686,11 @@ export class CollectionService {
          for (const entry of entries) {
             if (entry.isSymbolicLink() || entry.name === ".acroclip") continue;
             const path = join(directory, entry.name);
+            // A merge interrupted by a crash or shutdown leaves its unpublished copy behind.
+            if (entry.isFile() && mergeTemporary.test(entry.name)) {
+               if (!this.activeMerges.has(normal(path))) await rm(path, { force: true }).catch(() => undefined);
+               continue;
+            }
             if (entry.isDirectory()) {
                if (directory === this.root && entry.name === "shareables" && ownedShares) continue;
                directories.push(path);
@@ -993,6 +1015,7 @@ export class CollectionService {
          }
          stored.relativePath = relative(this.root, moved);
          stored.absolutePath = moved;
+         stored.editedAt ??= Date.now();
          return true;
       });
    }
@@ -1050,6 +1073,7 @@ export class CollectionService {
          throw error;
       }
       stored.name = cleaned;
+      stored.editedAt ??= Date.now();
       await this.writeMetadata();
       await this.scan();
    }
@@ -1139,6 +1163,7 @@ export class CollectionService {
       if (ids.some((category) => !this.categories.some((entry) => entry.id === category))) throw new Error("That tag no longer exists.");
       const stored = this.stored(id);
       stored.categories = [...new Set(ids)];
+      stored.editedAt ??= Date.now();
       await this.writeMetadata();
       this.retag(
          (clip) => clip.id === id,
@@ -1188,12 +1213,17 @@ export class CollectionService {
       this.options.onJob?.({ ...job });
       this.notify();
    }
-   async createShareable(id: string, targetMB: number): Promise<void> {
+   async createShareable(id: string, targetMB: number, automatic = false): Promise<void> {
       if (!Number.isFinite(targetMB) || targetMB < 0.1 || targetMB > 10000) throw new Error("Choose a size limit between 0.1 and 10,000 MB.");
       if (!this.metadataWritable) throw new Error("Creating shareables is locked while collection info is damaged.");
       const clip = this.visible(id);
       if (clip.originalMissing) throw new Error("The original is missing. Existing shareables are still available.");
       const job: Job = { id: randomUUID(), clipId: id, kind: "shareable", state: "queued", progress: 0, message: "Waiting to create shareable" };
+      if (automatic) this.automaticJobs.add(job.id);
+      else {
+         this.stored(id).editedAt ??= Date.now();
+         await this.writeMetadata();
+      }
       const controller = new AbortController();
       this.controllers.set(job.id, controller);
       this.jobs.push(job);
@@ -1262,6 +1292,7 @@ export class CollectionService {
                   size,
                   targetMB,
                   createdAt: Date.now(),
+                  ...(automatic ? { automatic: true } : {}),
                });
                await this.writeMetadata();
                await this.scan();
@@ -1274,6 +1305,7 @@ export class CollectionService {
             } finally {
                await Promise.all(temporaryFiles.map((path) => rm(path, { force: true }).catch(() => undefined)));
                this.controllers.delete(job.id);
+               this.automaticJobs.delete(job.id);
             }
          });
       this.queue = operation;
@@ -1281,6 +1313,129 @@ export class CollectionService {
    }
    cancelJob(id: string): void {
       this.controllers.get(id)?.abort();
+   }
+   /** Stop automatic shareables of a clip about to be merged away, and wait until they settle. */
+   async cancelAutomaticShareables(clipId: string): Promise<void> {
+      const pending = () => this.pendingJobs.filter((job) => job.clipId === clipId && this.automaticJobs.has(job.id));
+      for (const job of pending()) this.cancelJob(job.id);
+      while (pending().length) await this.queue.catch(() => undefined);
+   }
+
+   private async mark(id: string, field: "viewedAt" | "editedAt" | "sharedAt"): Promise<void> {
+      if (!this.metadataWritable) return;
+      const stored = this.metadata.clips.find((clip) => clip.id === id);
+      if (!stored || stored[field] !== undefined) return;
+      stored[field] = Date.now();
+      await this.writeMetadata();
+   }
+   markViewed(id: string): Promise<void> {
+      return this.mark(id, "viewedAt");
+   }
+   /** Copying or dragging out a clip or one of its shareables. */
+   async markShared(path: string): Promise<void> {
+      const target = normal(resolve(path));
+      const clip = this.clips.find((entry) => normal(entry.path) === target || entry.shareables.some((share) => normal(share.path) === target));
+      if (clip) await this.mark(clip.id, "sharedAt");
+   }
+   /** Nobody has opened, changed or shared this clip, and only automatic work has touched it. */
+   untouched(id: string): boolean {
+      const stored = this.metadata.clips.find((clip) => clip.id === id);
+      return (
+         !!stored &&
+         stored.viewedAt === undefined &&
+         stored.editedAt === undefined &&
+         stored.sharedAt === undefined &&
+         stored.shareables.every((share) => share.automatic === true) &&
+         !this.pendingJobs.some((job) => job.clipId === id && !this.automaticJobs.has(job.id))
+      );
+   }
+
+   /**
+    * Replace `newerId`'s file with a lossless merge of both clips, then move
+    * the older clip and its automatic shareables to the trash. The merge is
+    * written and verified beside the newer clip before anything changes, and
+    * either clip changing meanwhile keeps both.
+    */
+   async mergeRecordings(olderId: string, newerId: string, trash: (path: string) => Promise<void>): Promise<MergeOutcome> {
+      const refuse = (reason: string): MergeOutcome => ({ merged: false, reason });
+      if (!this.metadataWritable) return refuse("Collection info is damaged.");
+      const usable = () => this.untouched(olderId) && this.untouched(newerId) && !this.pendingJobs.some((job) => [olderId, newerId].includes(job.clipId));
+      if (!usable()) return refuse("A clip was opened, changed or is still exporting.");
+      const older = this.metadata.clips.find((clip) => clip.id === olderId),
+         newer = this.metadata.clips.find((clip) => clip.id === newerId);
+      if (!older || !newer) return refuse("A clip is no longer in the collection.");
+      const [olderPath, newerPath] = [await this.resolveFile(older), await this.resolveFile(newer)];
+      if (!olderPath || !newerPath) return refuse("A clip moved or changed.");
+      if (extname(olderPath).toLowerCase() !== extname(newerPath).toLowerCase()) return refuse("The clips use different file types.");
+      const needed = BigInt((await stat(olderPath)).size + (await stat(newerPath)).size) + 256n * 1024n * 1024n;
+      const space = await statfs(dirname(newerPath), { bigint: true })
+         .then((value) => value.bavail * value.bsize)
+         .catch(() => undefined);
+      if (space !== undefined && space < needed) return refuse("Not enough free storage to merge.");
+      const id = randomUUID();
+      const temporary = join(dirname(newerPath), `.acroclip-merge-${id}${extname(newerPath)}`);
+      this.activeMerges.add(normal(temporary));
+      try {
+         let result: MergeResult;
+         try {
+            await this.safeDirectory(join(this.root, ".acroclip"));
+            result = await mergeClips(olderPath, newerPath, temporary, join(this.root, ".acroclip", `merge-${id}.ffconcat`));
+         } catch (error) {
+            return refuse(message(error));
+         }
+         const outcome = await this.changeFiles(async (): Promise<MergeOutcome | { previousKept: boolean }> => {
+            // Either clip may have been opened, changed or moved while the merge was written.
+            const [olderNow, newerNow] = [await this.resolveFile(this.stored(olderId)), await this.resolveFile(this.stored(newerId))];
+            if (!usable() || !olderNow || !newerNow || normal(olderNow) !== normal(olderPath) || normal(newerNow) !== normal(newerPath))
+               return refuse("A clip was opened or changed during the merge.");
+            const stored = this.stored(newerId);
+            if (result.kind === "merged") {
+               // One atomic replace: the newer clip's path holds either its own footage or the verified merge.
+               // A just-written file is often held for a moment by antivirus or indexing on Windows.
+               let replaced = false;
+               for (let attempt = 0; !replaced; attempt++) {
+                  try {
+                     await rename(temporary, newerPath);
+                     replaced = true;
+                  } catch (error) {
+                     const code = (error as NodeJS.ErrnoException).code ?? "";
+                     if (attempt >= 4 || !["EPERM", "EBUSY", "EACCES"].includes(code)) return refuse(`The newer clip is in use: ${message(error)}`);
+                     await new Promise((resolve) => setTimeout(resolve, 250));
+                  }
+               }
+               stored.identity = await fileIdentity(newerPath);
+               stored.preview = undefined;
+               stored.previewUnavailable = undefined;
+            }
+            const previous = this.stored(olderId);
+            stored.mergedFrom = (previous.mergedFrom ?? 1) + (stored.mergedFrom ?? 1);
+            // Never fall back to deleting: a clip that can't go to the trash stays where it is.
+            const files = [olderPath];
+            for (const share of previous.shareables) {
+               const path = await this.resolveFile(share);
+               if (path && withinRoot(this.root, path)) files.push(path);
+            }
+            const trashed = new Set<string>();
+            for (const file of files) {
+               try {
+                  await trash(file);
+                  trashed.add(normal(resolve(file)));
+               } catch {
+                  if (file === olderPath) break;
+               }
+            }
+            previous.shareables = previous.shareables.filter((share) => !trashed.has(normal(resolve(this.root, share.relativePath))));
+            const previousKept = !trashed.has(normal(resolve(olderPath)));
+            if (!previousKept && !previous.shareables.length) this.metadata.clips = this.metadata.clips.filter((clip) => clip.id !== olderId);
+            return { previousKept };
+         });
+         if ("merged" in outcome) return outcome;
+         const clip = this.visible(newerId);
+         return { merged: true, clip, duration: clip.duration || result.duration, previousKept: outcome.previousKept };
+      } finally {
+         this.activeMerges.delete(normal(temporary));
+         await rm(temporary, { force: true }).catch(() => undefined);
+      }
    }
 
    async playback(path: string, track?: number | number[], signal?: AbortSignal, options: { compatible?: boolean | undefined } = {}): Promise<string> {

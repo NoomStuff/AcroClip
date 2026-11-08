@@ -190,7 +190,9 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await expect(page.getByRole("menuitem", { name: "Delete clip", exact: true })).toBeVisible();
       const fileMenu = page.getByRole("menu", { name: "File actions", exact: true });
       const fileActions = await fileMenu.getByRole("menuitem").allTextContents();
-      await expect(fileMenu.getByRole("menuitem", { name: "Show clip in folder", exact: true })).toBeVisible();
+      await expect(fileMenu.getByRole("menuitem", { name: "Show in folder", exact: true })).toBeVisible();
+      await expect(fileMenu.getByRole("menuitem", { name: "Copy file", exact: true })).toBeVisible();
+      await expect(fileMenu.getByRole("menuitem", { name: "Copy file", exact: true })).not.toHaveAttribute("aria-haspopup");
       await expect(fileMenu.getByRole("menuitem", { name: "Create shareable", exact: true })).toBeVisible();
       await expect(fileMenu.getByRole("menuitem", { name: "Tags", exact: true })).toBeVisible();
       await expect(fileMenu.getByRole("menuitem", { name: "Open clip", exact: true })).toHaveCount(0);
@@ -398,8 +400,15 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await selectOption(page, "Choose shareable", firstShare.id);
       await expect(page.getByRole("combobox", { name: "Choose shareable", exact: true })).not.toContainText("target");
       await page.getByRole("button", { name: "File actions", exact: true }).click();
-      await expect(fileMenu.getByRole("menuitem", { name: "Show clip in folder", exact: true })).toBeVisible();
-      await expect(fileMenu.getByRole("menuitem", { name: "Show shareable in folder", exact: true })).toBeVisible();
+      // With shareables, each file action asks which file: the clip, then every shareable.
+      for (const action of ["Copy file", "Show in folder"]) {
+         const trigger = fileMenu.getByRole("menuitem", { name: action, exact: true });
+         await expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+         await trigger.hover();
+         const choices = page.getByRole("menu", { name: action, exact: true });
+         await expect(choices.getByRole("menuitem")).toHaveText([/^Clip · /, /^Shareable 1 · /, /^Shareable 2 · /]);
+         await expect(choices.getByRole("separator")).toHaveCount(1);
+      }
       const dangerColor = await page.evaluate(() => {
          const probe = document.createElement("span");
          probe.style.color = "var(--red)";
@@ -408,16 +417,25 @@ test("real media plays, creates a verified shareable, and supports overlapping t
          probe.remove();
          return color;
       });
-      const deletes = await fileMenu
-         .getByRole("menuitem")
-         .filter({ hasText: /^Delete/ })
-         .all();
-      expect(deletes.length).toBeGreaterThan(1);
-      for (const item of deletes) {
-         await expect(item).toHaveCSS("color", dangerColor);
-         expect(await item.evaluate((node) => node.previousElementSibling?.getAttribute("role"))).toBe("separator");
-      }
+      // Deleting is one group at the end: shareables first, then the clip.
+      const deletes = fileMenu.getByRole("menuitem").filter({ hasText: /^Delete/ });
+      await expect(deletes).toHaveText(["Delete shareable", "Delete clip"]);
+      for (const item of await deletes.all()) await expect(item).toHaveCSS("color", dangerColor);
+      const deleteShareable = fileMenu.getByRole("menuitem", { name: "Delete shareable", exact: true });
+      await expect(deleteShareable).toHaveAttribute("aria-haspopup", "menu");
+      expect(await deleteShareable.evaluate((node) => node.parentElement?.previousElementSibling?.getAttribute("role"))).toBe("separator");
+      expect(await fileMenu.getByRole("menuitem", { name: "Delete clip", exact: true }).evaluate((node) => node.previousElementSibling?.className)).toBe(
+         "menu-submenu"
+      );
+      await deleteShareable.hover();
+      const shareableDeletes = page.getByRole("menu", { name: "Delete shareable", exact: true });
+      await expect(shareableDeletes.getByRole("menuitem")).toHaveText([/^Shareable 1 · /, /^Shareable 2 · /, "Delete all shareables"]);
+      await expect(shareableDeletes.getByRole("separator")).toHaveCount(1);
+      for (const item of await shareableDeletes.getByRole("menuitem").all()) await expect(item).toHaveCSS("color", dangerColor);
       await page.keyboard.press("Escape");
+      // A hovered submenu may take the first Escape.
+      if (await fileMenu.isVisible()) await page.keyboard.press("Escape");
+      await expect(fileMenu).toBeHidden();
 
       await desktop.evaluate(({ dialog }) => {
          dialog.showMessageBox = async (windowOrOptions: Electron.BaseWindow | Electron.MessageBoxOptions, options?: Electron.MessageBoxOptions) => {
@@ -430,12 +448,17 @@ test("real media plays, creates a verified shareable, and supports overlapping t
          };
       });
       await page.getByRole("button", { name: "File actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: /^Delete shareable [0-9]+$/, exact: false }).click();
+      await page.getByRole("menuitem", { name: "Delete shareable", exact: true }).hover();
+      await page
+         .getByRole("menu", { name: "Delete shareable", exact: true })
+         .getByRole("menuitem", { name: /^Shareable 1 · / })
+         .click();
       await expect
          .poll(() => desktop.evaluate(() => (globalThis as typeof globalThis & { testDeletePrompt?: string }).testDeletePrompt))
          .toBe("Move this shareable to the trash?");
       expect((await page.evaluate(() => window.acroClip.state())).clips[0]!.shareables).toHaveLength(2);
       await page.getByRole("button", { name: "File actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete shareable", exact: true }).hover();
       await page.getByRole("menuitem", { name: "Delete all shareables", exact: true }).click();
       await expect
          .poll(() => desktop.evaluate(() => (globalThis as typeof globalThis & { testDeletePrompt?: string }).testDeletePrompt))

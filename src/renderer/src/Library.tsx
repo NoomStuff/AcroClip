@@ -29,6 +29,7 @@ import { SelectionIndicator } from "./SelectionIndicator";
 import { MotionList } from "./MotionList";
 import { ContextHeader, Button, Empty, IconButton, Menu, MenuItem, Select } from "./ui";
 import { api, reportFeedback } from "./desktop";
+import { copiedMessage, defaultClipFile } from "./clip-files";
 import { MoveDialog } from "./MoveDialog";
 import { initialLocation, reportLocation } from "./navigation-history";
 import type { NavigationLocation } from "./navigation-history";
@@ -430,10 +431,22 @@ export function Library({
          else if (id === "newFolder") void createFolder(folderPath ?? "");
          else if (id === "newFolderRoot") void createFolder("");
          else if (id === "openClip" && clips[0]) openClip(clips[0]);
+         else if (id === "copyClipFile") {
+            // Selected text keeps its usual copy.
+            if (window.getSelection()?.toString()) return;
+            const focused = document.activeElement?.closest<HTMLElement>(".clip-card[data-layout-key]")?.dataset["layoutKey"];
+            const clip = clips.find((item) => item.id === focused);
+            const file = clip && defaultClipFile(clip);
+            if (file)
+               void run(async () => {
+                  await api.copyFile(file.path);
+                  reportFeedback({ kind: "notice", message: copiedMessage(file), error: false });
+               });
+         }
       };
       window.addEventListener("acroclip-shortcut", command);
       return () => window.removeEventListener("acroclip-shortcut", command);
-   }, [clips, openClip, createFolder, folderPath]);
+   }, [clips, openClip, createFolder, folderPath, run]);
    const renameFolder = async (path: string) => {
       const name = await ask({ title: "Rename folder", initial: path.split("/").at(-1)!, confirm: "Rename" });
       if (typeof name !== "string" || !name) return;
@@ -700,8 +713,8 @@ export function Library({
                   </div>
                   <div className="sort-control">
                      <Select value={order} onChange={(value) => setOrder(value === "name" || value === "oldest" ? value : "newest")} label="Sort clips">
-                        <option value="newest">Newest first</option>
-                        <option value="oldest">Oldest first</option>
+                        <option value="newest">Newest</option>
+                        <option value="oldest">Oldest</option>
                         <option value="name">Name</option>
                      </Select>
                   </div>
