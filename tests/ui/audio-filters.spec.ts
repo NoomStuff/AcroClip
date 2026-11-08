@@ -42,13 +42,14 @@ test("Audio filters add, adjust, reorder, disable, persist and remove per source
       await dialog.getByRole("button", { name: "Noise suppression", exact: true }).click({ button: "right" });
       await page.getByRole("menuitem", { name: "Turn off", exact: true }).click();
       await expect.poll(async () => (await filters()).map((item) => item.enabled)).toEqual([true, false]);
-      await dialog.getByRole("button", { name: "Noise suppression", exact: true }).click();
-      await dialog.getByRole("button", { name: "Actions for Noise suppression", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Turn on", exact: true }).click();
-      await expect.poll(async () => (await filters()).map((item) => item.enabled)).toEqual([true, true]);
-      await dialog.getByRole("button", { name: "Actions for Noise suppression", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Turn off", exact: true }).click();
-      await expect.poll(async () => (await filters()).map((item) => item.enabled)).toEqual([true, false]);
+      // Row actions accept pointer input while the row is hovered, as in the Library.
+      const noise = dialog.getByRole("button", { name: "Noise suppression", exact: true });
+      for (const action of ["Turn on", "Turn off"]) {
+         await noise.hover();
+         await dialog.getByRole("button", { name: "Actions for Noise suppression", exact: true }).click();
+         await page.getByRole("menuitem", { name: action, exact: true }).click();
+         await expect.poll(async () => (await filters()).map((item) => item.enabled)).toEqual([true, action === "Turn on"]);
+      }
       await dialog.getByRole("button", { name: "Close microphone filters", exact: true }).click();
       await expect(dialog).toHaveCount(0);
       // Only enabled filters are named in the row's summary.
