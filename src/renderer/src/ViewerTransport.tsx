@@ -1,7 +1,3 @@
-// Copyright (c) 2026 NoomStuff
-// SPDX-License-Identifier: MIT
-// Adapted from AttaCut Player, Transport, AudioPicker and VolumeSlider.
-// See THIRD_PARTY_NOTICES.md. No editor or trimming behavior is included.
 import { Gauge, Headphones, Maximize, Minimize, Pause, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CSSProperties, RefObject } from "react";

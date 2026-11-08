@@ -1,5 +1,3 @@
-// Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut VolumeControl and VolumeSlider.
-// See THIRD_PARTY_NOTICES.md.
 import { useEffect, useRef, useState } from "react";
 import { Slider } from "./Slider";
 import { Volume, Volume1, Volume2, VolumeX } from "lucide-react";

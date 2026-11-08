@@ -1,6 +1,4 @@
 import { isPackagedApp } from "./identity";
-// Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut update manager.
-// See THIRD_PARTY_NOTICES.md.
 import { z } from "zod";
 import type { AvailableUpdate } from "../shared/types";
 import { app, net } from "electron";

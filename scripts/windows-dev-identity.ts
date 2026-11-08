@@ -1,4 +1,3 @@
-// Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut; THIRD_PARTY_NOTICES.md.
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, rename, writeFile } from "node:fs/promises";

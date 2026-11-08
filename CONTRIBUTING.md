@@ -1,6 +1,8 @@
+# Contributing
+
 ## Setup
 
-Install [Bun](https://bun.sh/) 1.4.2 or later. Building the native recorder on Windows needs CMake and Visual Studio Build Tools with the Desktop development with C++ workload.
+You need [Bun](https://bun.sh/) 1.4.2 or later.
 
 ```sh
 git clone https://github.com/NoomStuff/AcroClip.git
@@ -9,60 +11,57 @@ bun install
 bun run dev
 ```
 
-Development runs work without the native helper, but recording stays unavailable until it is built. The UI does not pretend otherwise.
+The app runs without the native recorder, but recording stays unavailable until you build it (see below).
 
-## Media builds
+## Before you open a PR
 
-`bun scripts/provision-media.ts` downloads checksum-pinned FFmpeg and ffprobe builds for Linux and macOS development and records their paths. `bun run bundle:media` stages those binaries for the app build. For a plain local shell, set `FFMPEG_PATH` and `FFPROBE_PATH` to the printed locations. You can also point those variables at compatible binaries, but a development override does not establish release source correspondence.
+Run `bun run verify`. It checks formatting, lint, unit tests, types, and the build. `bun run format` fixes formatting.
 
-Windows media is a controlled FFmpeg build rather than a provider download. In Ubuntu 24.04, including WSL, install `gcc-mingw-w64-x86-64`, `g++-mingw-w64-x86-64`, `binutils-mingw-w64-x86-64`, `make`, `nasm`, `meson`, `ninja-build`, and `pkg-config`. Run `bun scripts/release-sources.ts --controlled-inputs --collect-only`, then `bash scripts/build-media-windows.sh` in Ubuntu. Back in Windows, run `bun scripts/controlled-media.ts` to execute the binaries and record their provenance, then stage with `bun run bundle:media`.
+If you touch capture, audio, export, or playback, also run `bun run verify:release`. It adds the media, UI, and native capture tests. These tests use real video files and real capture, so a passing build alone doesn't prove recording works.
 
-macOS media follows the same controlled recipe: `brew install ffmpeg-full meson ninja pkg-config nasm`, then `bun scripts/release-sources.ts --controlled-inputs --collect-only`, `bash scripts/build-media-macos.sh`, and `bun scripts/controlled-media-macos.ts`.
+Tests run in an isolated profile automatically. For manual runs, set `ACROCLIP_PROFILE`, `ACROCLIP_COLLECTION`, and `ACROCLIP_TEST=1` to keep your real settings and clips out of it. Never point destructive tests at a real collection.
 
-## Recorder builds
+## Commands
 
-| Host    | Command                               | Needs                                                                                                                                                                                                                                     |
-| ------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows | `bun run build:native`                | CMake, VS Build Tools; downloads the pinned OBS runtime                                                                                                                                                                                   |
-| Linux   | `bun scripts/build-native-linux.ts`   | The OBS PPA package `obs-studio=32.2.0-0obsproject1~noble` on x64, plus `cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev` |
-| macOS   | `bun scripts/build-recorder-macos.ts` | Xcode command line tools; verifies pinned OBS frameworks before staging                                                                                                                                                                   |
+| Command                     | What it does                                            |
+| --------------------------- | ------------------------------------------------------- |
+| `bun run dev`               | Start the app                                           |
+| `bun run verify`            | Formatting, lint, unit tests, types, and build          |
+| `bun run verify:release`    | `verify` plus media, UI, native UI, and capture-loss    |
+| `bun run test`              | Unit tests                                              |
+| `bun run test:media`        | Exports, playback, and metadata against real videos     |
+| `bun run test:ui`           | UI tests in the built app                               |
+| `bun run test:ui:native`    | UI tests with real capture                              |
+| `bun run test:native`       | Recorder smoke test                                     |
+| `bun run test:packaged`     | Recording and media checks against a packaged build     |
+| `bun run test:capture-loss` | Lose a capture source mid-recording and check recovery  |
+| `bun run build:notices`     | Regenerate JavaScript dependency notices after upgrades |
 
-## Common commands
+## Building the recorder
 
-| Command                         | Purpose                                                                      |
-| ------------------------------- | ---------------------------------------------------------------------------- |
-| `bun run dev`                   | Start the app                                                                |
-| `bun run verify`                | Check formatting, lint, unit tests, and build                                |
-| `bun run test`                  | Run unit tests                                                               |
-| `bun run test:media`            | Run media tests against isolated real videos                                 |
-| `bun run test:ui`               | Build the app and run UI tests                                               |
-| `bun run test:ui:native`        | Run UI tests that exercise real capture against the native recorder          |
-| `bun run test:native`           | Run the recorder smoke test on the current host                              |
-| `bun run test:packaged`         | Run recording and media checks against a packaged build                      |
-| `bun run test:native:lifecycle` | Run the recorder start/stop lifecycle smoke test                             |
-| `bun run test:capture-loss`     | Record a source longer than the configured history, lose it, verify recovery |
-| `bun run format`                | Format the repository                                                        |
+| Platform | Command                               | Requirements                                                                                                                                                                                                                                |
+| -------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows  | `bun run build:native`                | CMake and Visual Studio Build Tools (Desktop development with C++). Downloads the pinned OBS runtime.                                                                                                                                       |
+| Linux    | `bun scripts/build-native-linux.ts`   | x64 with the OBS PPA package `obs-studio=32.2.0-0obsproject1~noble`, plus `cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev` |
+| macOS    | `bun scripts/build-recorder-macos.ts` | Xcode command line tools                                                                                                                                                                                                                    |
 
-`verify` covers formatting, lint, unit tests, strict types, and the application build. Run it after edits. Capture, audio, and sharing invariants are checked against actual media, not simulated: media tests create isolated videos and check full-duration size-limited exports, original preservation, cancellation, playback tracks, moved collections, and metadata recovery. Recording and export changes need this actual-media treatment plus the failure cases; a build that compiles does not establish working capture.
+## FFmpeg
 
-`ACROCLIP_PROFILE`, `ACROCLIP_COLLECTION`, and `ACROCLIP_TEST=1` isolate manual or automated runs from your real preferences, collection, and OS startup state. The tests set them automatically. Never point destructive tests at a real collection.
+On Linux and macOS, `bun scripts/provision-media.ts` downloads checksum-pinned FFmpeg and ffprobe builds and prints their paths. `bun run bundle:media` stages them for the app build. To use your own binaries during development, set `FFMPEG_PATH` and `FFPROBE_PATH`.
 
-## Release process
+Release builds use FFmpeg compiled from source:
 
-Bump the version in `package.json` for the changes being made (not every change needs a release), and push a `v*` tag when it is ready. CI runs the checks on main, so verify locally first.
+- **Windows:** in Ubuntu 24.04 (WSL works), install `gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64 make nasm meson ninja-build pkg-config`. Run `bun scripts/release-sources.ts --controlled-inputs --collect-only` and `bash scripts/build-media-windows.sh` there. Then, on Windows, run `bun scripts/controlled-media.ts` and `bun run bundle:media`.
+- **macOS:** run `brew install ffmpeg-full meson ninja pkg-config nasm`, then `bun scripts/release-sources.ts --controlled-inputs --collect-only`, `bash scripts/build-media-macos.sh`, and `bun scripts/controlled-media-macos.ts`.
 
-The Desktop builds workflow runs on the tag and produces private release candidates for Windows x64, Linux x64 and arm64, and macOS x64 and Apple Silicon. It never publishes anything.
+## Releases
 
-A release becomes public only once its corresponding-source kit passes:
+Releases are cut from `main` by bumping the version in `package.json`. Not every change needs a new version.
 
-1. The controlled media and recorder recipes record provenance for the exact binaries bundled into the app, and the release kits stage the matching sources, licenses, and build evidence for them.
-2. `bun scripts/release-sources.ts --collect-only` collects core and dependency sources; `bun scripts/assemble-source-evidence.ts` archives the clean commit, verifies Electron's playback `ffmpeg.dll` against the official Electron archive with its full dependency closure, and populates native notices. Package again after assembly.
-3. Each platform assembles and checks its kit: `bun scripts/package-source-kit.ts` (shared), `bun scripts/package-linux-source-kit.ts`, and `bun scripts/package-macos-source-kit.ts`, with `bun scripts/verify-release.ts`, `bun scripts/verify-linux-release.ts`, and `bun scripts/verify-macos-release.ts` recompiling the clean source and comparing installer payloads, packaged resources, and updater files against the kit.
+When a new version lands on `main`, the Release workflow builds and tests Windows x64, Linux x64 and arm64, and macOS x64 and Apple Silicon. It also assembles and verifies the corresponding-source kits for the bundled GPL components. If every check passes, it publishes the release, tags it, and publishes the sources separately from the app downloads.
 
-The checkers report technical completeness, not a legal conclusion. Review the recorded inputs against the binaries before publishing. Upload all assets into a GitHub draft, verify their sizes and digests, then publish. Public releases carry app downloads only; corresponding sources are published separately from the app downloads. When re-verifying an existing release, check out its version tag first: the kit covers that immutable commit, not later changes.
-
-Installers stay unpublished until the kit checks pass and the correspondence has been reviewed.
+If a release fails before it's published, fix the problem and push again with the same version. Published releases and tags can't be changed, so any later fix needs a new version.
 
 ## License
 
-AcroClip is released under the [GPL-3.0-or-later license](LICENSE). Contributions are released under the same license. Code reused from AttaCut keeps its [MIT notice](THIRD_PARTY_NOTICES.md). Run `bun run build:notices` to regenerate bundled JavaScript dependency notices after dependency changes.
+AcroClip is [GPL-3.0-or-later](LICENSE), and contributions are accepted under the same license. Bundled third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

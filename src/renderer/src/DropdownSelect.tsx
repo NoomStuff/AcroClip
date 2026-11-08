@@ -1,6 +1,3 @@
-// Copyright (c) 2026 NoomStuff
-// SPDX-License-Identifier: MIT
-// Adapted from AttaCut's DropdownSelect. See THIRD_PARTY_NOTICES.md.
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";

@@ -1,5 +1,3 @@
-// Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut UpdateChip.
-// See THIRD_PARTY_NOTICES.md.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Download, FolderOpen, TriangleAlert } from "lucide-react";
 import type { CSSProperties } from "react";

@@ -1,4 +1,3 @@
-// Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut update manager tests.
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

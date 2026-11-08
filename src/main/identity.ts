@@ -1,4 +1,3 @@
-// Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut; THIRD_PARTY_NOTICES.md.
 import { app } from "electron";
 import { spawn } from "node:child_process";
 

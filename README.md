@@ -3,7 +3,7 @@
         title="AcroClip" alt="AcroClip logo" width="120" />
     <h1>AcroClip</h1>
     <p>
-        Clip it. Watch it. Share It.
+        Clip it. Watch it. Share it.
         <br>
         Managing your clips has never been easier.
     </p>
@@ -14,22 +14,20 @@
 
 ---
 
-AcroClip is a simple, lightweight clipping tool. Made because my friend wanted a Medal alternative that doesn't train AI on your clips or shove ads in your face.
+AcroClip is a simple, lightweight clipping tool. I made it because a friend wanted a Medal alternative that doesn't train AI on your clips or shove ads in your face.
 
-Pick a screen, an application, or a game. Press a shortcut to clip. Manage your clips in the library, and watch them in the built-in video player.
+Pick a screen, an application, or a game, and press a shortcut to clip the last few moments. Your clips land in the library, where you can rewatch them in the built-in player.
 
-You can create Sharables: smaller versions of the original clips that are easier to share with friends.
+You can also create Shareables: smaller copies of your clips that are easier to send to friends.
 
 ## Downloads
 
-If you just want to use the app you can grab the latest version from the [releases page](https://github.com/noomstuff/acroclip/releases).
-
-Portable and installer versions are available.
+Grab the latest version from the [releases page](https://github.com/noomstuff/acroclip/releases). Installer and portable versions are available.
 
 ---
 
 ## For developers
 
-You can get started with the [CONTRIBUTING.md](CONTRIBUTING.md) guide to set up a development environment and build AcroClip from source.
+See [CONTRIBUTING.md](CONTRIBUTING.md) to set up a development environment and build AcroClip from source.
 
-PRs welcome. [GPL-3.0 licensed](LICENSE). Recorded videos never inherit the software license, and code reused from AttaCut keeps its MIT notice.
+PRs welcome. AcroClip is [GPL-3.0 licensed](LICENSE); bundled third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

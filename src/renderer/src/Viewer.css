@@ -257,8 +257,6 @@
    font-size: 12px;
 }
 
-/* Copyright (c) 2026 NoomStuff. MIT. Adapted from AttaCut Transport,
-   Player and AudioPicker. See THIRD_PARTY_NOTICES.md. */
 .player-controls {
    flex-shrink: 0;
    padding-top: 8px;
@@ -454,7 +452,6 @@
    flex-shrink: 0;
 }
 
-/* Adapted from AttaCut's transport controls. See THIRD_PARTY_NOTICES.md. */
 .player-volume-control {
    position: relative;
    display: inline-flex;
