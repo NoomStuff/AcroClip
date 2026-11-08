@@ -121,8 +121,6 @@ function clipRecord(
       categories: [...stored.categories],
       ...(stored.mergedFrom ? { mergedFrom: stored.mergedFrom } : {}),
       watched: stored.viewedAt !== undefined || (viewsTrackedSince !== undefined && stored.createdAt < viewsTrackedSince),
-      // A shareable is made to be sent, so it counts as shared along with copies and drags.
-      shared: stored.sharedAt !== undefined || stored.shareables.length > 0,
       ...files,
    };
 }
@@ -1342,10 +1340,9 @@ export class CollectionService {
       if (!stored || stored[field] !== undefined) return;
       stored[field] = Date.now();
       await this.writeMetadata();
-      // Grouping by watched or shared follows without rescanning files.
-      if (field === "viewedAt" || field === "sharedAt") {
-         const change = field === "viewedAt" ? { watched: true } : { shared: true };
-         this.clips = this.clips.map((clip) => (clip.id === id ? { ...clip, ...change } : clip));
+      // Grouping by watched follows without rescanning files.
+      if (field === "viewedAt") {
+         this.clips = this.clips.map((clip) => (clip.id === id ? { ...clip, watched: true } : clip));
          this.notify();
       }
    }

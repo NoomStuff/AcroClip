@@ -69,33 +69,34 @@ test("sorting and grouping share one compact control and remember the choice", a
 
       await control.click();
       const menu = page.getByRole("menu", { name: "Sort and group", exact: true });
-      await expect(menu.getByRole("group", { name: "Sort by" }).getByRole("menuitemradio")).toHaveText(["Date", "Name", "Size", "Length"]);
+      await expect(menu.getByRole("group", { name: "Sort by" }).getByRole("menuitemradio")).toHaveText(["Time", "Name", "Size", "Duration"]);
       await expect(menu.getByRole("group", { name: "Group by" }).getByRole("menuitemradio")).toHaveText([
          "None",
          "Date",
          "Application",
          "Watched",
-         "Shared",
-         "Size",
-         "Length",
+         "Has shareable",
       ]);
       for (const item of await menu.getByRole("menuitemradio").all()) await expect(item.locator("svg").first()).toBeVisible();
-      await menu.getByRole("menuitemradio", { name: "Length", exact: true }).first().click();
+      await menu.getByRole("menuitemradio", { name: "Duration", exact: true }).click();
       // Choices keep the menu open, so sort and group can be set together.
       await expect(menu).toBeVisible();
       await expect(menu.getByRole("group", { name: "Order" }).getByRole("menuitemradio")).toHaveText(["Longest first", "Shortest first"]);
       await expect.poll(names).toEqual(["Bravo", "Charlie", "Alpha"]);
       await menu.getByRole("menuitemradio", { name: "Shortest first", exact: true }).click();
       await expect.poll(names).toEqual(["Alpha", "Charlie", "Bravo"]);
-      await menu.getByRole("group", { name: "Group by" }).getByRole("menuitemradio", { name: "Length", exact: true }).click();
+      await menu.getByRole("group", { name: "Group by" }).getByRole("menuitemradio", { name: "Date", exact: true }).click();
       await page.keyboard.press("Escape");
-      await expect(page.locator(".clip-group-header")).toHaveText(["Under 30 seconds2", "30 seconds to 1 minute1"]);
-      await expect(control).toHaveAttribute("title", "Sort: Shortest first. Group: Length");
+      await expect(page.locator(".clip-group-header")).toHaveText(["Today3"]);
+      // Cards keep their nodes when grouping changes, so they slide rather than reload.
+      const card = await page.locator(".clip-card", { hasText: "Alpha" }).elementHandle();
+      await expect(control).toHaveAttribute("title", "Sort: Shortest first. Group: Date");
 
       await control.click();
       await menu.getByRole("menuitemradio", { name: "Watched", exact: true }).click();
       await page.keyboard.press("Escape");
       await expect(page.locator(".clip-group-header")).toHaveText(["New3"]);
+      expect(await page.locator(".clip-card", { hasText: "Alpha" }).evaluate((node, previous) => node === previous, card)).toBe(true);
       await page.locator(".clip-card", { hasText: "Charlie" }).getByRole("button", { name: "Open Charlie", exact: true }).click();
       await expect(page.locator(".viewer-title")).toContainText("Charlie");
       await page.getByRole("button", { name: "Library", exact: true }).click();

@@ -1,5 +1,5 @@
 import { normalizeApplicationLabel } from "../../shared/application-label";
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent } from "react";
 import {
    AlertCircle,
@@ -741,6 +741,7 @@ export function Library({
                         </IconButton>
                      )}
                   </span>
+                  <LibraryViewMenu sort={sort} grouping={grouping} onSort={setSort} onGroup={setGrouping} />
                   <div className="search-input">
                      <Search size={16} />
                      <input
@@ -757,7 +758,6 @@ export function Library({
                         </IconButton>
                      )}
                   </div>
-                  <LibraryViewMenu sort={sort} grouping={grouping} onSort={setSort} onGroup={setGrouping} />
                </div>
             </header>
             <div className="library-scroll" ref={scrollArea} aria-busy={pending}>
@@ -801,16 +801,15 @@ export function Library({
                            requestMenu={(path, element, left, top) => requestFolderMenu(path, "tile", element, left, top)}
                         />
                      ))}
+                     {/* Headers and cards stay siblings, so regrouping moves each card instead of remounting it. */}
                      {groups.length
-                        ? groups.map((group) => (
-                             <Fragment key={group.key}>
-                                <h2 className="clip-group-header" data-layout-key={`group:${group.key}`}>
-                                   {group.label}
-                                   <span className="clip-group-count">{group.clips.length}</span>
-                                </h2>
-                                {group.clips.map(renderClip)}
-                             </Fragment>
-                          ))
+                        ? groups.flatMap((group) => [
+                             <h2 key={`group:${group.key}`} className="clip-group-header" data-layout-key={`group:${group.key}`}>
+                                {group.label}
+                                <span className="clip-group-count">{group.clips.length}</span>
+                             </h2>,
+                             ...group.clips.map(renderClip),
+                          ])
                         : clips.map(renderClip)}
                      {Array.from({ length: remainingSlots }, (_, index) => (
                         <div className="clip-placeholder" key={`pending:${index}`} aria-hidden="true">

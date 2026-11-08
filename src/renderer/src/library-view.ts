@@ -1,25 +1,23 @@
-import { CalendarDays, CaseSensitive, Eye, Gamepad2, HardDrive, Rows3, Share2, Timer } from "lucide-react";
+import { CalendarDays, CaseSensitive, Clock3, Eye, Gamepad2, HardDrive, Rows3, Share2, Timer } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { defaultLibrarySort } from "./library-index";
 import type { LibrarySort, LibrarySortField } from "./library-index";
 import { libraryGroupings } from "./library-groups";
 import type { LibraryGrouping } from "./library-groups";
 
-// One icon per concept: sorting and grouping by the same field share it.
 export const sortFields: readonly { value: LibrarySortField; label: string; icon: LucideIcon; directions: readonly [string, string] }[] = [
-   { value: "date", label: "Date", icon: CalendarDays, directions: ["Newest first", "Oldest first"] },
+   { value: "date", label: "Time", icon: Clock3, directions: ["Newest first", "Oldest first"] },
    { value: "name", label: "Name", icon: CaseSensitive, directions: ["A to Z", "Z to A"] },
    { value: "size", label: "Size", icon: HardDrive, directions: ["Largest first", "Smallest first"] },
-   { value: "length", label: "Length", icon: Timer, directions: ["Longest first", "Shortest first"] },
+   { value: "length", label: "Duration", icon: Timer, directions: ["Longest first", "Shortest first"] },
 ];
 export const groupingOptions: readonly { value: LibraryGrouping; label: string; icon: LucideIcon }[] = [
    { value: "none", label: "None", icon: Rows3 },
    { value: "date", label: "Date", icon: CalendarDays },
    { value: "application", label: "Application", icon: Gamepad2 },
    { value: "watched", label: "Watched", icon: Eye },
-   { value: "shared", label: "Shared", icon: Share2 },
-   { value: "size", label: "Size", icon: HardDrive },
-   { value: "length", label: "Length", icon: Timer },
+   // The same icon as Create shareable.
+   { value: "shareable", label: "Has shareable", icon: Share2 },
 ];
 
 export const directionLabel = (sort: LibrarySort): string => sortFields.find((field) => field.value === sort.field)!.directions[sort.reversed ? 1 : 0];

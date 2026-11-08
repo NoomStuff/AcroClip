@@ -1,28 +1,13 @@
 import type { Clip } from "../../shared/types";
 import type { LibrarySort } from "./library-index";
 
-export type LibraryGrouping = "none" | "date" | "application" | "watched" | "shared" | "size" | "length";
-export const libraryGroupings: readonly LibraryGrouping[] = ["none", "date", "application", "watched", "shared", "size", "length"];
+export type LibraryGrouping = "none" | "date" | "application" | "watched" | "shareable";
+export const libraryGroupings: readonly LibraryGrouping[] = ["none", "date", "application", "watched", "shareable"];
 export interface ClipGroup {
    key: string;
    label: string;
    clips: Clip[];
 }
-
-const sizeSteps = [
-   { below: 10e6, label: "Under 10 MB" },
-   { below: 100e6, label: "10 to 100 MB" },
-   { below: 500e6, label: "100 to 500 MB" },
-   { below: 1e9, label: "500 MB to 1 GB" },
-   { below: Infinity, label: "Over 1 GB" },
-];
-const lengthSteps = [
-   { below: 30, label: "Under 30 seconds" },
-   { below: 60, label: "30 seconds to 1 minute" },
-   { below: 120, label: "1 to 2 minutes" },
-   { below: 300, label: "2 to 5 minutes" },
-   { below: Infinity, label: "Over 5 minutes" },
-];
 
 interface Bucket {
    key: string;
@@ -77,16 +62,11 @@ export function groupClips(
             const { key, label, start } = dateBucket(clip.createdAt, options.now, options.locale);
             return { key, label, rank: reversed("date") ? start : -start };
          }
-         case "size":
-         case "length": {
-            const steps = grouping === "size" ? sizeSteps : lengthSteps;
-            const index = steps.findIndex((step) => (grouping === "size" ? clip.size : clip.duration) < step.below);
-            return { key: `${grouping}:${index}`, label: steps[index]!.label, rank: reversed(grouping) ? index : -index };
-         }
          case "watched":
             return clip.watched ? { key: "watched", label: "Watched", rank: 1 } : { key: "new", label: "New", rank: 0 };
-         case "shared":
-            return clip.shared ? { key: "shared", label: "Shared", rank: 1 } : { key: "unshared", label: "Not shared yet", rank: 0 };
+         case "shareable":
+            // Clips ready to send come first.
+            return clip.shareables.length ? { key: "shareable", label: "Has shareable", rank: 0 } : { key: "no-shareable", label: "No shareable", rank: 1 };
          case "application": {
             const { key, label } = options.application(clip);
             return { key: `application:${key}`, label, rank: 0 };

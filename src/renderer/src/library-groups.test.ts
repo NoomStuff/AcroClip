@@ -52,21 +52,16 @@ describe("library grouping", () => {
       // Another sort keeps newest groups first and sorts inside each group.
       expect(labels([clip("b"), clip("a")], "date", { field: "name", reversed: false })).toEqual([["Today", ["a", "b"]]]);
    });
-   it("groups by size and length from largest and longest", () => {
-      const clips = [clip("small", { size: 8e6, duration: 12 }), clip("large", { size: 2e9, duration: 400 }), clip("medium", { size: 300e6, duration: 90 })];
-      expect(labels(clips, "size").map(([label]) => label)).toEqual(["Over 1 GB", "100 to 500 MB", "Under 10 MB"]);
-      expect(labels(clips, "size", { field: "size", reversed: true }).map(([label]) => label)).toEqual(["Under 10 MB", "100 to 500 MB", "Over 1 GB"]);
-      expect(labels(clips, "length").map(([label]) => label)).toEqual(["Over 5 minutes", "1 to 2 minutes", "Under 30 seconds"]);
-   });
-   it("puts what still needs attention first for watched and shared", () => {
-      const clips = [clip("seen", { watched: true, shared: true }), clip("fresh")];
+   it("puts new clips first and clips with a shareable first", () => {
+      const ready = { id: "s", path: "/clips/s.mp4", relativePath: "s.mp4", size: 1, targetMB: 10, createdAt: 0 };
+      const clips = [clip("seen", { watched: true, shareables: [ready] }), clip("fresh")];
       expect(labels(clips, "watched")).toEqual([
          ["New", ["fresh"]],
          ["Watched", ["seen"]],
       ]);
-      expect(labels(clips, "shared")).toEqual([
-         ["Not shared yet", ["fresh"]],
-         ["Shared", ["seen"]],
+      expect(labels(clips, "shareable")).toEqual([
+         ["Has shareable", ["seen"]],
+         ["No shareable", ["fresh"]],
       ]);
    });
    it("groups applications alphabetically", () => {
