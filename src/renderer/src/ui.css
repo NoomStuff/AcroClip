@@ -508,6 +508,12 @@
 .menu-submenu-trigger > svg:last-child {
    margin-left: auto;
 }
+.menu-label {
+   padding: 8px 9px 4px;
+   color: var(--subtle);
+   font-size: 11px;
+   font-weight: 600;
+}
 .menu-item-check {
    margin-left: auto;
    flex-shrink: 0;

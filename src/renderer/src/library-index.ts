@@ -73,10 +73,31 @@ export function visibleFolderRows(children: ReadonlyMap<string, readonly string[
    return rows;
 }
 
-export type LibraryOrder = "newest" | "oldest" | "name";
+export type LibrarySortField = "date" | "name" | "size" | "length";
+/** Each field sorts in its natural direction first: newest, A to Z, largest, longest. */
+export interface LibrarySort {
+   field: LibrarySortField;
+   reversed: boolean;
+}
+export const defaultLibrarySort: LibrarySort = { field: "date", reversed: false };
+export function compareClips(sort: LibrarySort): (a: Clip, b: Clip) => number {
+   return (a, b) => {
+      const natural =
+         sort.field === "name"
+            ? a.name.localeCompare(b.name)
+            : sort.field === "size"
+              ? b.size - a.size
+              : sort.field === "length"
+                ? b.duration - a.duration
+                : b.createdAt - a.createdAt;
+      return (sort.reversed ? -natural : natural) || b.createdAt - a.createdAt || a.relativePath.localeCompare(b.relativePath);
+   };
+}
 export interface FolderSummary {
    newest: number;
    oldest: number;
+   size: number;
+   duration: number;
    matches: boolean;
    count: number;
    matchingCount: number;
@@ -95,6 +116,8 @@ export function summarizeFolders(clips: readonly Clip[], search: string): Map<st
          result.set(path, {
             newest: Math.max(previous?.newest ?? 0, clip.createdAt),
             oldest: Math.min(previous?.oldest ?? Infinity, clip.createdAt),
+            size: (previous?.size ?? 0) + clip.size,
+            duration: (previous?.duration ?? 0) + clip.duration,
             matches: (previous?.matches ?? false) || matches,
             count: (previous?.count ?? 0) + 1,
             matchingCount: (previous?.matchingCount ?? 0) + (matches ? 1 : 0),
@@ -109,16 +132,26 @@ export function selectChildFolders(
    parent: string | null,
    search: string,
    summaries: ReadonlyMap<string, FolderSummary>,
-   order: LibraryOrder
+   sort: LibrarySort
 ): string[] {
    if (parent === null) return [];
    return paths
       .filter((path) => parentFolder(path) === parent && (!search || path.split("/").at(-1)!.toLowerCase().includes(search) || summaries.get(path)?.matches))
       .sort((a, b) => {
-         if (order === "name") return a.localeCompare(b);
          const first = summaries.get(a),
             second = summaries.get(b);
-         return (order === "oldest" ? (first?.oldest ?? 0) - (second?.oldest ?? 0) : (second?.newest ?? 0) - (first?.newest ?? 0)) || a.localeCompare(b);
+         // Folders follow the clips inside them: their newest or oldest clip, or their totals.
+         const natural =
+            sort.field === "name"
+               ? a.localeCompare(b)
+               : sort.field === "size"
+                 ? (second?.size ?? 0) - (first?.size ?? 0)
+                 : sort.field === "length"
+                   ? (second?.duration ?? 0) - (first?.duration ?? 0)
+                   : sort.reversed
+                     ? (second?.oldest ?? 0) - (first?.oldest ?? 0)
+                     : (second?.newest ?? 0) - (first?.newest ?? 0);
+         return (sort.reversed ? -natural : natural) || a.localeCompare(b);
       });
 }
 
@@ -128,13 +161,13 @@ export function selectLibraryClips(
       search,
       filter,
       folderPath,
-      order,
+      sort,
       applications,
    }: {
       search: string;
       filter: string;
       folderPath: string | null;
-      order: LibraryOrder;
+      sort: LibrarySort;
       applications: ReadonlyMap<string, string>;
    }
 ): Clip[] {
@@ -147,5 +180,5 @@ export function selectLibraryClips(
                (filter.startsWith("source:") && applications.get(clip.id) === filter.slice(7)) ||
                (folderPath !== null && parentFolder(clip.relativePath) === folderPath))
       )
-      .sort((a, b) => (order === "name" ? a.name.localeCompare(b.name) : order === "oldest" ? a.createdAt - b.createdAt : b.createdAt - a.createdAt));
+      .sort(compareClips(sort));
 }

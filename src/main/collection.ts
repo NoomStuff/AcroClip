@@ -61,7 +61,14 @@ const clipSchema = fileSchema.extend({
    mergedFrom: z.number().int().min(2).optional(),
 });
 const metadataSchema = z
-   .object({ version: z.literal(1), collectionId: z.string(), categories: z.array(categorySchema), clips: z.array(clipSchema) })
+   .object({
+      version: z.literal(1),
+      collectionId: z.string(),
+      categories: z.array(categorySchema),
+      clips: z.array(clipSchema),
+      // When this collection started recording views. Older clips count as watched.
+      viewsTrackedSince: z.number().optional(),
+   })
    .superRefine((metadata, context) => {
       const unique = (ids: string[], path: (string | number)[]) => {
          if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", path, message: "Collection action identities must be unique." });
@@ -98,7 +105,8 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 function clipRecord(
    stored: StoredClip,
    files: Pick<Clip, "path" | "relativePath" | "size" | "thumbnail" | "playbackUrl" | "shareables"> & Partial<Pick<Clip, "availability" | "originalMissing">>,
-   info: Pick<MediaInfo, "duration" | "width" | "height" | "tracks"> | undefined
+   info: Pick<MediaInfo, "duration" | "width" | "height" | "tracks"> | undefined,
+   viewsTrackedSince: number | undefined
 ): Clip {
    return {
       id: stored.id,
@@ -112,6 +120,9 @@ function clipRecord(
       tracks: info?.tracks ?? [],
       categories: [...stored.categories],
       ...(stored.mergedFrom ? { mergedFrom: stored.mergedFrom } : {}),
+      watched: stored.viewedAt !== undefined || (viewsTrackedSince !== undefined && stored.createdAt < viewsTrackedSince),
+      // A shareable is made to be sent, so it counts as shared along with copies and drags.
+      shared: stored.sharedAt !== undefined || stored.shareables.length > 0,
       ...files,
    };
 }
@@ -313,6 +324,7 @@ export class CollectionService {
          this.metadataWritable = false;
          this.warn("Collection info is damaged. Your videos still play, but tags and shareables are locked so the backup stays intact.", "error");
       }
+      if (this.metadataWritable && this.metadata.viewsTrackedSince === undefined) this.metadata.viewsTrackedSince = Date.now();
       this.seedIdentities();
       // Render the collection's own indexed previews before touching the video files.
       const thumbnails = await this.thumbnailIndex();
@@ -375,7 +387,8 @@ export class CollectionService {
             shareables: shares,
             availability: "unverified",
          },
-         stored.preview?.info
+         stored.preview?.info,
+         this.metadata.viewsTrackedSince
       );
    }
 
@@ -787,7 +800,8 @@ export class CollectionService {
                         playbackUrl: this.url(actual),
                         shareables: await this.verifiedShareables(stored, retainedPaths),
                      },
-                     cached.info
+                     cached.info,
+                     this.metadata.viewsTrackedSince
                   )
                );
             } catch (error) {
@@ -835,7 +849,8 @@ export class CollectionService {
                      shareables: shares,
                      ...(!original ? { originalMissing: true } : {}),
                   },
-                  cached.info
+                  cached.info,
+                  this.metadata.viewsTrackedSince
                )
             );
          } catch (error) {
@@ -1327,6 +1342,12 @@ export class CollectionService {
       if (!stored || stored[field] !== undefined) return;
       stored[field] = Date.now();
       await this.writeMetadata();
+      // Grouping by watched or shared follows without rescanning files.
+      if (field === "viewedAt" || field === "sharedAt") {
+         const change = field === "viewedAt" ? { watched: true } : { shared: true };
+         this.clips = this.clips.map((clip) => (clip.id === id ? { ...clip, ...change } : clip));
+         this.notify();
+      }
    }
    markViewed(id: string): Promise<void> {
       return this.mark(id, "viewedAt");

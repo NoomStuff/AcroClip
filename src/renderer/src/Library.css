@@ -303,9 +303,28 @@
    height: 28px;
 }
 
-.sort-control {
-   width: 148px;
+.library-view-menu {
    flex-shrink: 0;
+}
+/* Group headers span the grid and read like the sidebar's section titles. */
+.clip-group-header {
+   grid-column: 1 / -1;
+   display: flex;
+   align-items: baseline;
+   gap: 8px;
+   margin: 14px 2px -8px;
+   color: var(--subtle);
+   font-size: 11px;
+   font-weight: 600;
+}
+.clip-grid > .clip-group-header:first-child {
+   margin-top: 0;
+}
+.clip-group-count {
+   font-weight: 400;
+}
+.clip-grid[data-view="list"] .clip-group-header {
+   margin: 14px 10px 4px;
 }
 
 .library-scroll {

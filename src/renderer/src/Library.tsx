@@ -1,5 +1,5 @@
 import { normalizeApplicationLabel } from "../../shared/application-label";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent } from "react";
 import {
    AlertCircle,
@@ -27,7 +27,7 @@ import { gridZoomRange, gridZoomTarget } from "./thumbnail-scale";
 import { Slider } from "./Slider";
 import { SelectionIndicator } from "./SelectionIndicator";
 import { MotionList } from "./MotionList";
-import { ContextHeader, Button, Empty, IconButton, Menu, MenuItem, Select } from "./ui";
+import { ContextHeader, Button, Empty, IconButton, Menu, MenuItem } from "./ui";
 import { api, reportFeedback } from "./desktop";
 import { copiedMessage, defaultClipFile } from "./clip-files";
 import { MoveDialog } from "./MoveDialog";
@@ -58,7 +58,11 @@ import { useApplicationColors } from "./useApplicationColors";
 import type { ContextMenuRequest } from "./ui";
 import { useAttaCutAvailable } from "./useAttaCutAvailable";
 import { applicationKeys, summarizeClips, orderLibrarySections, summarizeFolders, selectChildFolders, selectLibraryClips } from "./library-index";
-import type { LibrarySectionId, LibraryOrder } from "./library-index";
+import type { LibrarySectionId, LibrarySort } from "./library-index";
+import { groupClips } from "./library-groups";
+import type { LibraryGrouping } from "./library-groups";
+import { readLibraryView, storeLibraryView } from "./library-view";
+import { LibraryViewMenu } from "./LibraryViewMenu";
 import { LibrarySection } from "./LibrarySection";
 
 export function Library({
@@ -205,7 +209,10 @@ export function Library({
    const [moveRequest, setMoveRequest] = useState<{ kind: "clip"; id: string } | { kind: "folder"; path: string } | null>(null);
    const [folderContext, setFolderContext] = useState<(ContextMenuRequest & { path: string; origin: "tree" | "tile" }) | null>(null);
    const moveClip = useCallback((id: string) => setMoveRequest({ kind: "clip", id }), []);
-   const [order, setOrder] = useState<LibraryOrder>("newest");
+   const [libraryView] = useState(readLibraryView);
+   const [sort, setSort] = useState<LibrarySort>(libraryView.sort);
+   const [grouping, setGrouping] = useState<LibraryGrouping>(libraryView.grouping);
+   useEffect(() => storeLibraryView(sort, grouping), [sort, grouping]);
    const applicationColors = useApplicationColors(state.applicationIcons, visible);
    const selectedApplicationColor = filter.startsWith("source:") ? applicationColors[filter.slice(7)] : undefined;
    const [contextMenu, setContextMenu] = useState<(ContextMenuRequest & { clipId: string }) | null>(null);
@@ -351,11 +358,27 @@ export function Library({
       },
    });
    const folderStats = useMemo(() => summarizeFolders(state.clips, search), [state.clips, search]);
-   const childFolders = useMemo(() => selectChildFolders(folders, folderPath, search, folderStats, order), [folders, folderPath, search, folderStats, order]);
+   const childFolders = useMemo(() => selectChildFolders(folders, folderPath, search, folderStats, sort), [folders, folderPath, search, folderStats, sort]);
    const clips = useMemo(
-      () => selectLibraryClips(state.clips, { search, filter, folderPath, order, applications: appKeys }),
-      [state.clips, search, filter, folderPath, order, appKeys]
+      () => selectLibraryClips(state.clips, { search, filter, folderPath, sort, applications: appKeys }),
+      [state.clips, search, filter, folderPath, sort, appKeys]
    );
+   // Grouping one application's clips by application would only repeat the filter.
+   const activeGrouping = grouping === "application" && filter.startsWith("source:") ? "none" : grouping;
+   const groups = useMemo(
+      () =>
+         groupClips(clips, activeGrouping, sort, {
+            now: new Date(),
+            application: (clip) => {
+               const label = normalizeApplicationLabel(clip.source);
+               const known = label.trim() && label.trim().toLowerCase() !== "unknown";
+               return { key: appKeys.get(clip.id) ?? `label:${label.toLowerCase()}`, label: known ? label : "Other videos" };
+            },
+         }),
+      [clips, activeGrouping, sort, appKeys]
+   );
+   // The order clips appear in, which groups can change.
+   const shownClips = useMemo(() => (groups.length ? groups.flatMap((group) => group.clips) : clips), [groups, clips]);
    useEffect(() => {
       if (contextMenu && !clips.some((clip) => clip.id === contextMenu.clipId)) setContextMenu(null);
    }, [clips, contextMenu]);
@@ -363,8 +386,8 @@ export function Library({
    const headingClipCount = folderPath !== null ? (folderStats.get(folderPath)?.matchingCount ?? 0) : clips.length;
    // Narrowed scopes (search, tag/source filters) can show the match against the unsearched scope with the matched size.
    const scopeClips = useMemo(
-      () => (query || filter !== "all" ? selectLibraryClips(state.clips, { search: "", filter, folderPath, order, applications: appKeys }) : null),
-      [query, filter, state.clips, folderPath, order, appKeys]
+      () => (query || filter !== "all" ? selectLibraryClips(state.clips, { search: "", filter, folderPath, sort, applications: appKeys }) : null),
+      [query, filter, state.clips, folderPath, sort, appKeys]
    );
    const matchSize = useMemo(
       () => clips.reduce((total, clip) => total + (clip.originalMissing ? (clip.shareables.at(-1)?.size ?? clip.size) : clip.size), 0),
@@ -383,10 +406,33 @@ export function Library({
    const showPlaceholders = discovering && !clips.length && !childFolders.length && !query;
    const grid = useRef<HTMLDivElement>(null);
    const layoutSignature = useMemo(
-      () => JSON.stringify([view, gridMetrics.width, thumbnailSizes[view], childFolders, clips.map((clip) => clip.id)]),
-      [view, gridMetrics.width, thumbnailSizes, childFolders, clips]
+      () => JSON.stringify([view, gridMetrics.width, thumbnailSizes[view], childFolders, groups.map((group) => group.key), shownClips.map((clip) => clip.id)]),
+      [view, gridMetrics.width, thumbnailSizes, childFolders, groups, shownClips]
    );
    const captureLayout = useGridMotion(grid, layoutSignature, visible, JSON.stringify([collectionRoot, filter]), view, view === "list" && listSizing);
+   const renderClip = (clip: Clip) => (
+      <ClipCard
+         createTag={createCategory}
+         key={clip.id}
+         clip={clip}
+         collectionRoot={collectionRoot}
+         ageText={age(clip.createdAt)}
+         job={activeJobs.get(clip.id)}
+         applicationColor={applicationColors[appKeys.get(clip.id) ?? ""]}
+         appIcon={state.applicationIcons[appKeys.get(clip.id) ?? ""]}
+         showSource={!filter.startsWith("source:")}
+         shareSizeMB={state.preferences.shareSizeMB}
+         attaCutAvailable={attaCutAvailable}
+         contextRequest={contextMenu?.clipId === clip.id ? contextMenu : undefined}
+         requestMenu={requestMenu}
+         closeMenu={closeMenu}
+         openClip={openClip}
+         categories={state.categories}
+         moveClip={moveClip}
+         run={run}
+         ask={ask}
+      />
+   );
    const heading =
       filter === "all"
          ? "All clips"
@@ -430,7 +476,7 @@ export function Library({
          else if (id === "newCategory") setEditingCategory("new");
          else if (id === "newFolder") void createFolder(folderPath ?? "");
          else if (id === "newFolderRoot") void createFolder("");
-         else if (id === "openClip" && clips[0]) openClip(clips[0]);
+         else if (id === "openClip" && shownClips[0]) openClip(shownClips[0]);
          else if (id === "copyClipFile") {
             // Selected text keeps its usual copy.
             if (window.getSelection()?.toString()) return;
@@ -446,7 +492,7 @@ export function Library({
       };
       window.addEventListener("acroclip-shortcut", command);
       return () => window.removeEventListener("acroclip-shortcut", command);
-   }, [clips, openClip, createFolder, folderPath, run]);
+   }, [clips, shownClips, openClip, createFolder, folderPath, run]);
    const renameFolder = async (path: string) => {
       const name = await ask({ title: "Rename folder", initial: path.split("/").at(-1)!, confirm: "Rename" });
       if (typeof name !== "string" || !name) return;
@@ -711,13 +757,7 @@ export function Library({
                         </IconButton>
                      )}
                   </div>
-                  <div className="sort-control">
-                     <Select value={order} onChange={(value) => setOrder(value === "name" || value === "oldest" ? value : "newest")} label="Sort clips">
-                        <option value="newest">Newest</option>
-                        <option value="oldest">Oldest</option>
-                        <option value="name">Name</option>
-                     </Select>
-                  </div>
+                  <LibraryViewMenu sort={sort} grouping={grouping} onSort={setSort} onGroup={setGrouping} />
                </div>
             </header>
             <div className="library-scroll" ref={scrollArea} aria-busy={pending}>
@@ -761,29 +801,17 @@ export function Library({
                            requestMenu={(path, element, left, top) => requestFolderMenu(path, "tile", element, left, top)}
                         />
                      ))}
-                     {clips.map((clip) => (
-                        <ClipCard
-                           createTag={createCategory}
-                           key={clip.id}
-                           clip={clip}
-                           collectionRoot={collectionRoot}
-                           ageText={age(clip.createdAt)}
-                           job={activeJobs.get(clip.id)}
-                           applicationColor={applicationColors[appKeys.get(clip.id) ?? ""]}
-                           appIcon={state.applicationIcons[appKeys.get(clip.id) ?? ""]}
-                           showSource={!filter.startsWith("source:")}
-                           shareSizeMB={state.preferences.shareSizeMB}
-                           attaCutAvailable={attaCutAvailable}
-                           contextRequest={contextMenu?.clipId === clip.id ? contextMenu : undefined}
-                           requestMenu={requestMenu}
-                           closeMenu={closeMenu}
-                           openClip={openClip}
-                           categories={state.categories}
-                           moveClip={moveClip}
-                           run={run}
-                           ask={ask}
-                        />
-                     ))}
+                     {groups.length
+                        ? groups.map((group) => (
+                             <Fragment key={group.key}>
+                                <h2 className="clip-group-header" data-layout-key={`group:${group.key}`}>
+                                   {group.label}
+                                   <span className="clip-group-count">{group.clips.length}</span>
+                                </h2>
+                                {group.clips.map(renderClip)}
+                             </Fragment>
+                          ))
+                        : clips.map(renderClip)}
                      {Array.from({ length: remainingSlots }, (_, index) => (
                         <div className="clip-placeholder" key={`pending:${index}`} aria-hidden="true">
                            <div />

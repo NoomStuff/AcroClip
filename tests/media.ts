@@ -632,6 +632,12 @@ try {
       assert.ok(found, `${path} is in the collection`);
       return found.id;
    };
+   assert.ok(
+      merging.clips.every((entry) => entry.watched && !entry.shared),
+      "videos already in a collection before view tracking count as watched, and none are shared yet"
+   );
+   await merging.markShared(pairs.viewed[1]);
+   assert.equal(merging.clips.find((entry) => entry.path === pairs.viewed[1])?.shared, true, "copying a clip marks it shared");
    const trashInto = async (path: string) => rename(path, join(mergeTrash, `${Date.now()}-${path.split(/[\\/]/).at(-1)}`));
    const [olderPath, newerPath] = pairs.merged;
    const olderId = idFor(olderPath),

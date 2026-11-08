@@ -182,3 +182,31 @@ export function MenuCheckboxItem({ checked, onClick, children }: { checked: bool
       </button>
    );
 }
+
+/** A labelled set of choices that stays open, so related choices can be made in one visit. */
+export function MenuRadioGroup({ label, children }: { label: string; children: ReactNode }) {
+   return (
+      <div role="group" aria-label={label}>
+         <div className="menu-label" aria-hidden="true">
+            {label}
+         </div>
+         {children}
+      </div>
+   );
+}
+export function MenuRadioItem({ checked, onClick, children }: { checked: boolean; onClick: () => void; children: ReactNode }) {
+   return (
+      <button
+         role="menuitemradio"
+         aria-checked={checked}
+         tabIndex={-1}
+         onClick={(event) => {
+            event.stopPropagation();
+            onClick();
+         }}
+      >
+         {children}
+         {checked && <Check size={14} className="menu-item-check" aria-hidden="true" />}
+      </button>
+   );
+}

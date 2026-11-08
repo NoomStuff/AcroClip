@@ -148,6 +148,10 @@ export interface Clip {
    shareables: Shareable[];
    // How many saved clips this file combines.
    mergedFrom?: number;
+   // Opened in the player, or older than view tracking.
+   watched?: boolean;
+   // Copied, dragged out, or given a shareable.
+   shared?: boolean;
 }
 export interface Category {
    icon?: string | undefined;
