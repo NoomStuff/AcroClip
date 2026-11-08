@@ -160,28 +160,6 @@
    line-height: 1.6;
 }
 
-.preview-caption {
-   z-index: 4;
-   position: absolute;
-   display: flex;
-   align-items: center;
-   gap: 8px;
-   bottom: 0;
-   left: 0;
-   right: 0;
-   padding: 30px 16px 14px;
-   background: linear-gradient(transparent, #000b);
-   font-size: 11px;
-}
-
-.preview-note {
-   display: flex;
-   align-items: center;
-   margin-left: auto;
-   color: var(--muted);
-   font-size: 11px;
-}
-
 .mixer {
    container-type: inline-size;
    grid-column: 1;
@@ -559,14 +537,24 @@
 .audio-db-track {
    position: relative;
 }
+/* The held peak takes the colour of the meter zone it sits in. */
 .audio-db-peak {
    position: absolute;
    left: clamp(0px, var(--meter-peak, 0%), calc(100% - 2px));
    top: 0;
    height: 100%;
    width: 2px;
-   background: #d9ebdc;
+   background: #48b26c;
    opacity: 0;
+}
+.audio-db-meter[data-peak-zone="warm"] .audio-db-peak {
+   background: #d5bc51;
+}
+.audio-db-meter[data-peak-zone="hot"] .audio-db-peak {
+   background: #d75b57;
+}
+.audio-db-meter[data-muted] .audio-db-peak {
+   background: #777;
 }
 .audio-db-meter[data-peak-visible="true"] .audio-db-peak {
    opacity: 1;

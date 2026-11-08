@@ -1,0 +1,174 @@
+.dialog.audio-filters-panel {
+   width: min(720px, calc(100vw - 48px));
+}
+
+/* A fixed size keeps the dialog still while switching between filters. */
+.audio-filters {
+   display: grid;
+   grid-template-columns: 240px minmax(0, 1fr);
+   gap: 24px;
+   height: min(420px, calc(100dvh - 120px));
+}
+
+.audio-filters-list,
+.audio-filter-settings {
+   min-width: 0;
+   min-height: 0;
+   overflow-y: auto;
+}
+
+.audio-filters-list {
+   display: flex;
+   flex-direction: column;
+   gap: 2px;
+}
+
+.audio-filters-heading {
+   margin: 0 12px 14px;
+}
+
+.audio-filters-heading .context-header-title {
+   font-size: 15px;
+   font-weight: 600;
+}
+
+.audio-filters-list .motion-list {
+   display: grid;
+   gap: 2px;
+}
+
+/* Matches the Library tag rows: the row selects and drags, actions appear on hover. */
+.audio-filter {
+   position: relative;
+}
+
+.audio-filter > .sidebar-item {
+   padding-right: 34px;
+}
+
+.audio-filter[data-disabled] > .sidebar-item > :is(svg, .sidebar-label) {
+   opacity: 0.45;
+}
+
+.audio-filter-state {
+   flex-shrink: 0;
+   padding: 1px 6px;
+   border-radius: 4px;
+   background: #ffffff0d;
+   font-size: 10px;
+   font-weight: 600;
+   letter-spacing: 0.04em;
+   text-transform: uppercase;
+   color: var(--subtle);
+}
+
+.audio-filter > .menu-wrap {
+   position: absolute;
+   top: 50%;
+   right: 0;
+   width: 30px;
+   height: 30px;
+   transform: translateY(-50%);
+}
+
+@media (hover: hover) and (pointer: fine) {
+   .audio-filter > .menu-wrap {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms var(--ease);
+   }
+   .audio-filter:hover > .menu-wrap,
+   :root[data-keyboard] .audio-filter:focus-within > .menu-wrap,
+   .audio-filter > .menu-wrap:has([aria-expanded="true"]) {
+      opacity: 1;
+      pointer-events: auto;
+   }
+}
+
+.audio-filter-actions-popup {
+   width: 170px;
+}
+
+.audio-filter-add-popup {
+   width: 210px;
+}
+
+.audio-filter-add > .icon-button {
+   width: 100%;
+   height: 39px;
+   justify-content: flex-start;
+   gap: 10px;
+   padding: 0 12px;
+   border-radius: 10px;
+   font-size: 13px;
+}
+
+.audio-filter-settings {
+   display: flex;
+   flex-direction: column;
+   gap: 12px;
+   min-width: 0;
+}
+
+/* Sits on the sidebar heading's title line, clear of the close button. */
+.audio-filter-settings-header {
+   display: flex;
+   align-items: center;
+   gap: 12px;
+   min-height: 28px;
+   margin: 18px 40px 2px 0;
+}
+
+.audio-filter-settings-header h3 {
+   flex: 1;
+   min-width: 0;
+   margin: 0;
+   font-size: 15px;
+   font-weight: 600;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+
+.audio-filter-controls {
+   display: flex;
+   flex-direction: column;
+   gap: 12px;
+   flex: 1;
+   transition: opacity 160ms var(--ease);
+}
+
+.audio-filter-controls[data-disabled] {
+   opacity: 0.45;
+}
+
+.audio-filter-parameter {
+   display: grid;
+   grid-template-columns: 96px minmax(0, 1fr);
+   align-items: center;
+   gap: 12px;
+   font-size: 12px;
+   color: var(--muted);
+}
+
+.audio-filter-parameter > .segmented {
+   justify-self: start;
+}
+
+.audio-filter-none {
+   margin: auto 0;
+   align-self: center;
+   color: var(--subtle);
+   font-size: 12px;
+}
+
+.icon-button.mixer-channel-filters {
+   flex-shrink: 0;
+   color: var(--accent);
+}
+
+@media (max-width: 640px) {
+   .audio-filters {
+      grid-template-columns: minmax(0, 1fr);
+   }
+}

@@ -72,6 +72,8 @@ export async function assembleMacSourceKit(project: string, directory = path.joi
       "native/recorder.cpp",
       "native/clip-writer.cpp",
       "native/clip-writer.hpp",
+      "native/audio-filters.cpp",
+      "native/audio-filters.hpp",
       "native/CMakeLists.txt",
       "native/macos/platform.hpp",
       "native/macos/platform.mm",

@@ -1,5 +1,5 @@
 import type { AdditionalAudioSource, Preferences } from "./types";
-const sourceBase = { deviceId: "", sourceId: "", executable: "", volume: 1, muted: false, includeInMaster: false };
+const sourceBase = { deviceId: "", sourceId: "", executable: "", volume: 1, muted: false, includeInMaster: false, filters: [] };
 export function isDefaultMicrophone(source: Pick<AdditionalAudioSource, "id" | "kind">): boolean {
    return /^microphone-default(?:-\d+)?$/.test(source.id) && source.kind === "input";
 }
@@ -39,6 +39,7 @@ export function nativeAudioPreferences(value: Preferences) {
       captureAudio: source?.enabled ?? false,
       captureVolume: source?.volume ?? 1,
       captureMuted: source?.muted ?? false,
+      captureFilters: source?.filters ?? [],
       microphone: false,
       audioSources: value.audioSources
          .filter((source) => source.kind !== "source")
@@ -96,6 +97,7 @@ export function monitoringPreferences(preferences: Preferences, captureAvailable
    };
 }
 
+// Volume, mute and filters apply live, so they never require a capture restart.
 export function audioTopology(preferences: Preferences): string {
-   return JSON.stringify(preferences.audioSources.map((source) => ({ ...source, volume: 1, muted: false })));
+   return JSON.stringify(preferences.audioSources.map((source) => ({ ...source, volume: 1, muted: false, filters: [] })));
 }

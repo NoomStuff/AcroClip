@@ -2,6 +2,7 @@ import { z } from "zod";
 import { shortcutRegistry } from "./shortcuts";
 import { validFilenameTemplate } from "./filename";
 import { normalizeMicrophone } from "./audio-model";
+import { audioFilterChainSchema } from "./audio-filters";
 import { replayMemoryBounds } from "./replay-memory";
 export const preferencesSchema = z
    .object({
@@ -82,6 +83,7 @@ export const preferencesSchema = z
                   volume: z.number().min(0).max(4),
                   muted: z.boolean(),
                   includeInMaster: z.boolean(),
+                  filters: audioFilterChainSchema.default([]),
                })
                .strict()
                .transform(normalizeMicrophone)

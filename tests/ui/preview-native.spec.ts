@@ -67,7 +67,7 @@ test("native capture survives preview teardown and saves the selected applicatio
          const state = await window.acroClip.state();
          await window.acroClip.savePreferences({ ...state.preferences, sourceKind: "app", sourceId: id });
       }, source!.id);
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       await page.getByRole("button", { name: "Start capturing", exact: true }).click();
       await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).recorder.state), { timeout: 30000 }).toBe("recording");
       await expect
@@ -100,7 +100,7 @@ test("native capture survives preview teardown and saves the selected applicatio
       const hiddenMetrics = await sample();
       expect((await page.evaluate(() => window.acroClip.state())).recorder.state).toBe("recording");
       await page.getByRole("button", { name: "Capture", exact: true }).click();
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       await retain();
       await page.evaluate(() => window.acroClip.window("minimize"));
       await expect.poll(ended).toBe(true);
@@ -110,7 +110,7 @@ test("native capture survives preview teardown and saves the selected applicatio
          main?.restore();
          main?.show();
       });
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       await retain();
       await page.evaluate(() => window.acroClip.window("close"));
       await expect.poll(ended).toBe(true);

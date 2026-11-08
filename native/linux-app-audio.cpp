@@ -2,6 +2,7 @@
 // PulseAudio supports monitoring a single sink input without moving or muting
 // playback. Private OBS child sources mix verified process streams together.
 #include "linux-app-audio.hpp"
+#include "audio-filters.hpp"
 #include "audio-submix.hpp"
 #include "linux-device-audio.hpp"
 #include <cstring>
@@ -328,11 +329,32 @@ struct ApplicationAudio {
   std::atomic<int> initialized{0};
   std::mutex errorMutex;
   std::string error;
+  // Scenes do not run filters, so every verified stream carries the chain.
+  std::mutex filterMutex;
+  acroclip::filters::Chain filters;
+  uint64_t filterGeneration = 0;
   struct Child {
     Input input;
     obs_source_t *source;
     obs_sceneitem_t *item;
+    uint64_t filterGeneration = 0;
   };
+  uint64_t filterSource(obs_source_t *source, uint64_t applied) {
+    acroclip::filters::Chain chain;
+    uint64_t generation = 0;
+    {
+      std::lock_guard<std::mutex> lock(filterMutex);
+      if (filterGeneration == applied) return applied;
+      chain = filters;
+      generation = filterGeneration;
+    }
+    try {
+      acroclip::filters::applyChain(source, chain);
+    } catch (const std::exception &failure) {
+      blog(LOG_WARNING, "Application audio filters were not applied: %s", failure.what());
+    }
+    return generation;
+  }
   std::map<uint32_t, Child> children;
   std::thread thread;
   ApplicationAudio(uint32_t selected, uint32_t mask, std::string output = {})
@@ -488,9 +510,13 @@ struct ApplicationAudio {
                 "Application audio input could not be opened");
           }
           obs_source_set_audio_mixers(source, mixers);
+          // Filter before the stream joins the mix.
+          const auto filtered = filterSource(source, 0);
           auto *item = obs_scene_add(scene, source);
-          children.emplace(input.index, Child{input, source, item});
+          children.emplace(input.index, Child{input, source, item, filtered});
         }
+        for (auto &entry : children)
+          entry.second.filterGeneration = filterSource(entry.second.source, entry.second.filterGeneration);
         for (auto it = children.begin(); it != children.end();) {
           if (!retained.count(it->first)) {
             obs_sceneitem_remove(it->second.item);
@@ -628,6 +654,13 @@ std::string applicationAudioError(ApplicationAudio *audio) {
   return audio->error;
 }
 void destroyApplicationAudio(ApplicationAudio *audio) { delete audio; }
+void setApplicationAudioFilters(ApplicationAudio *audio, const acroclip::filters::Chain &chain) {
+  if (!audio)
+    return;
+  std::lock_guard<std::mutex> lock(audio->filterMutex);
+  audio->filters = chain;
+  audio->filterGeneration++;
+}
 void setApplicationAudioLevelCallback(ApplicationAudio *audio,
                                       std::function<void(float)> callback) {
   if (!audio)

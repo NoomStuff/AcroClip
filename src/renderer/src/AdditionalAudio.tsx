@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { WandSparkles, Pencil, Plus, Trash2 } from "lucide-react";
 import type { AdditionalAudioSource, GameCandidate, Preferences } from "../../shared/types";
 import { api, describeError, reportFeedback } from "./desktop";
 import { Button, MenuItem, Select } from "./ui";
 import { DialogPanel } from "./Dialog";
 import { MotionList } from "./MotionList";
 import { AudioMixerRow } from "./AudioMixerRow";
+import { AudioFilters, filterSummary } from "./AudioFilters";
 export function AdditionalAudio({
    preferences,
    captureKind = preferences.sourceKind,
@@ -28,8 +29,10 @@ export function AdditionalAudio({
       [devices, setDevices] = useState<Array<{ id: string; name: string }>>([]),
       [selected, setSelected] = useState(""),
       [loading, setLoading] = useState(false),
-      [saving, setSaving] = useState(false);
+      [saving, setSaving] = useState(false),
+      [filtering, setFiltering] = useState<string | null>(null);
    const existing = preferences.audioSources.find((source) => source.id === editing);
+   const filtered = preferences.audioSources.find((source) => source.id === filtering);
    const captureName = captureKind === "screen" ? "Desktop" : captureKind === "app" ? "Application" : "Source audio";
    useEffect(() => {
       if (!open || !visible || active) return;
@@ -89,6 +92,7 @@ export function AdditionalAudio({
          volume: existing?.volume ?? 1,
          muted: existing?.muted ?? false,
          includeInMaster: existing?.includeInMaster ?? false,
+         filters: existing?.filters ?? [],
       };
       try {
          await api.savePreferences({
@@ -143,13 +147,19 @@ export function AdditionalAudio({
                      update(source.id, (current) => ({ muted: !current.muted && current.volume > 0, volume: current.volume > 0 ? current.volume : 1 }))
                   }
                   onVolume={(volume, restore) => update(source.id, { volume: volume === 0 ? (restore > 0 ? restore : 1) : volume, muted: volume === 0 })}
+                  filters={source.filters.length ? { summary: filterSummary(source.filters), onOpen: () => setFiltering(source.id) } : undefined}
                   options={
                      <>
+                        <MenuItem onClick={() => setFiltering(source.id)}>
+                           <WandSparkles size={15} />
+                           Audio filters
+                        </MenuItem>
                         <MenuItem disabled={active} onClick={() => show(source)}>
                            <Pencil size={15} />
                            Edit source
                         </MenuItem>
                         <MenuItem
+                           danger
                            disabled={active}
                            onClick={() => save((current) => ({ audioSources: current.audioSources.filter((item) => item.id !== source.id) }))}
                         >
@@ -166,6 +176,15 @@ export function AdditionalAudio({
                <Plus size={14} />
                Add audio source
             </Button>
+         )}
+         {filtered && (
+            <AudioFilters
+               key={filtered.id}
+               name={filtered.kind === "source" ? captureName : filtered.name}
+               filters={filtered.filters}
+               onChange={(filters) => update(filtered.id, { filters })}
+               close={() => setFiltering(null)}
+            />
          )}
          {open && !active && (
             <DialogPanel title={editing ? "Edit audio source" : "Add audio source"} close={() => setOpen(false)}>

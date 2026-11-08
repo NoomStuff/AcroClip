@@ -1,13 +1,27 @@
 cmake_minimum_required(VERSION 3.24)
-project(acroclip_recorder LANGUAGES CXX)
+project(acroclip_recorder LANGUAGES C CXX)
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OBJCXX_STANDARD 17)
 set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 set(OBS_SOURCE_DIR "" CACHE PATH "Matching OBS Studio source tree")
 set(OBS_IMPORT_LIBRARY "" CACHE FILEPATH "OBS import library")
-add_executable(acroclip-recorder recorder.cpp clip-writer.cpp)
-target_include_directories(acroclip-recorder PRIVATE vendor)
+set(OBS_PTHREADS_LIBRARY "" CACHE FILEPATH "OBS w32-pthreads import library")
+# OBS Studio's audio filters and RNNoise, compiled into the recorder rather than
+# loaded as the obs-filters module. See native/vendor/obs-filters/README.md.
+set(ACROCLIP_RNNOISE_SOURCES
+  vendor/rnnoise/src/celt_lpc.c vendor/rnnoise/src/denoise.c vendor/rnnoise/src/kiss_fft.c vendor/rnnoise/src/pitch.c
+  vendor/rnnoise/src/rnn.c vendor/rnnoise/src/rnn_data.c vendor/rnnoise/src/rnn_reader.c)
+set(ACROCLIP_FILTER_SOURCES
+  vendor/obs-filters/compressor-filter.c vendor/obs-filters/eq-filter.c vendor/obs-filters/expander-filter.c
+  vendor/obs-filters/gain-filter.c vendor/obs-filters/invert-audio-polarity.c vendor/obs-filters/limiter-filter.c
+  vendor/obs-filters/noise-gate-filter.c vendor/obs-filters/noise-suppress-filter.c)
+set_source_files_properties(${ACROCLIP_RNNOISE_SOURCES} PROPERTIES COMPILE_DEFINITIONS COMPILE_OPUS)
+set_source_files_properties(vendor/obs-filters/noise-suppress-filter.c PROPERTIES COMPILE_DEFINITIONS "LIBRNNOISE_ENABLED;HAS_NOISEREDUCTION")
+add_executable(acroclip-recorder recorder.cpp clip-writer.cpp audio-filters.cpp ${ACROCLIP_FILTER_SOURCES} ${ACROCLIP_RNNOISE_SOURCES})
+target_include_directories(acroclip-recorder PRIVATE vendor vendor/rnnoise/include)
 if(APPLE)
   enable_language(OBJCXX)
   set(OBS_APP "" CACHE PATH "Hash-verified official OBS.app")
@@ -37,12 +51,14 @@ elseif(WIN32)
   acroclip_brand_windows_target(acroclip-recorder "AcroClip recorder")
   add_subdirectory(notifications)
   add_executable(acroclip-audio-health-test windows/audio-health-test.cpp)
-  if(NOT OBS_SOURCE_DIR)
-    message(FATAL_ERROR "Provide OBS_SOURCE_DIR and OBS_IMPORT_LIBRARY matching the runtime")
+  if(NOT OBS_SOURCE_DIR OR NOT OBS_PTHREADS_LIBRARY)
+    message(FATAL_ERROR "Provide OBS_SOURCE_DIR, OBS_IMPORT_LIBRARY and OBS_PTHREADS_LIBRARY matching the runtime")
   endif()
   target_include_directories(acroclip-recorder PRIVATE "${OBS_SOURCE_DIR}/libobs" generated)
+  # libOBS threading headers resolve pthread.h to its bundled w32-pthreads.
+  set_source_files_properties(${ACROCLIP_FILTER_SOURCES} PROPERTIES INCLUDE_DIRECTORIES "${OBS_SOURCE_DIR}/deps/w32-pthreads")
   target_compile_definitions(acroclip-recorder PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-  target_link_libraries(acroclip-recorder PRIVATE "${OBS_IMPORT_LIBRARY}" user32 psapi ole32 dwmapi)
+  target_link_libraries(acroclip-recorder PRIVATE "${OBS_IMPORT_LIBRARY}" "${OBS_PTHREADS_LIBRARY}" user32 psapi ole32 dwmapi)
 else()
   find_package(libobs REQUIRED)
   find_package(X11 REQUIRED)

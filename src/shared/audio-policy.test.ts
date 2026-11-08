@@ -34,6 +34,7 @@ describe("microphone permission for recording", () => {
          muted: true,
          volume: 0,
          includeInMaster: false,
+         filters: [],
       };
       expect(needsMicrophonePermission({ microphone: false, audioSources: [input] })).toBe(false);
       expect(needsMicrophonePermission({ microphone: false, audioSources: [{ ...input, muted: false }] })).toBe(true);

@@ -49,6 +49,8 @@ export function AudioMeter({
             node.style.setProperty("--meter-peak", `${reading.peak}%`);
             node.dataset["clipping"] = live && reading.clipUntil > now ? "true" : "false";
             node.dataset["peakVisible"] = reading.peak > 0 ? "true" : "false";
+            // Zone edges match the meter fill: 70% (-18 dB) and 90% (-6 dB).
+            node.dataset["peakZone"] = reading.peak >= 90 ? "hot" : reading.peak >= 70 ? "warm" : "safe";
             node.setAttribute("aria-valuenow", String(Math.round(reading.level * 0.6 - 60)));
             node.setAttribute(
                "aria-valuetext",

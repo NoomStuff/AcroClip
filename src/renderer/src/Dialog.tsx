@@ -72,6 +72,7 @@ export function DialogPanel({
    label,
    closeLabel,
    initialFocus,
+   titleHidden = false,
 }: {
    title: string;
    close: () => void;
@@ -80,6 +81,8 @@ export function DialogPanel({
    label?: string;
    closeLabel?: string;
    initialFocus?: string;
+   // The panel shows its own heading; the title still names the dialog.
+   titleHidden?: boolean;
 }) {
    const card = useRef<HTMLDivElement>(null),
       titleId = useId();
@@ -173,7 +176,9 @@ export function DialogPanel({
                }
             }}
          >
-            <h2 id={titleId}>{title}</h2>
+            <h2 id={titleId} className={titleHidden ? "visually-hidden" : undefined}>
+               {title}
+            </h2>
             {children}
             <IconButton label={closeLabel ?? `Close ${title.toLowerCase()}`} className="dialog-close" onClick={close}>
                <X size={17} />

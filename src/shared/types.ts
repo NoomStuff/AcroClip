@@ -1,3 +1,4 @@
+import type { AudioFilter } from "./audio-filters";
 import type { ShortcutBindings } from "./shortcuts";
 export type SourceKind = "screen" | "app" | "auto";
 export interface ApplicationArtwork {
@@ -61,6 +62,8 @@ export interface AdditionalAudioSource {
    volume: number;
    muted: boolean;
    includeInMaster: boolean;
+   // Applied in order, before the fader. Changes apply without restarting capture.
+   filters: AudioFilter[];
 }
 export interface AudioLevels {
    capture: number;
