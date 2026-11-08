@@ -104,7 +104,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       }, sourceA!.id);
       const preview = page.locator(".preview-stream");
       await expect(page.getByRole("status", { name: "Loading preview" })).toBeVisible();
-      await expect(page.locator(".preview-note")).toHaveText("Loading");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "connecting");
       await expect(page.locator(".preview-loading-spinner")).toHaveCount(0);
       const icon = page.locator(".preview-placeholder");
       const initialOpacity = await icon.evaluate((node) => {
@@ -135,7 +135,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       });
       await releasePreview();
       const initialRequestedAt = performance.now();
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       expect(await page.evaluate(() => window.firstPreviewReveal)).toEqual({ from: 0, to: 1, duration: 140 });
       console.log("Preview initial first frame ms", Math.round(performance.now() - initialRequestedAt));
       const first = await preview.evaluate((video: HTMLVideoElement) => video.getVideoPlaybackQuality().totalVideoFrames);
@@ -186,7 +186,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await expect(page.locator(".preview-message")).toHaveCount(0);
       await releasePreview();
       const returnRequestedAt = performance.now();
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       await expect(page.locator(".preview-still")).not.toHaveClass(/cached/);
       console.log("Preview tab return first frame ms", Math.round(performance.now() - returnRequestedAt));
       expect(await page.evaluate(() => (window as unknown as { cacheShown: boolean }).cacheShown)).toBe(true);
@@ -224,7 +224,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await expect(outgoing).toHaveCSS("opacity", "0");
       await releasePreview();
       const switchRequestedAt = performance.now();
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       console.log("Preview source switch first frame ms", Math.round(performance.now() - switchRequestedAt));
       await expect
          .poll(() => page.evaluate(() => (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview.map((track) => track.readyState)))
@@ -233,7 +233,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await expect(page.locator(".preview-still")).toHaveClass(/cached/);
       const cachedB = await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
       await page.getByRole("button", { name: "Capture", exact: true }).click();
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       // Returning to A must restore A's frame, rather than B's frame or a blank canvas.
       await holdPreview();
       await page.locator(".source-row").filter({ hasText: "Preview fixture A" }).click();
@@ -241,7 +241,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await expect(page.locator(".preview-still")).toHaveClass(/cached/);
       expect(await page.locator(".preview-still").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).not.toBe(cachedB);
       await releasePreview();
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();
       });
@@ -259,7 +259,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await expect(page.locator(".preview-still")).toHaveClass(/cached/);
       await expect(page.locator(".preview-message")).toHaveCount(0);
       await releasePreview();
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       // Rapid requests must not let an older completion revoke the final source.
       await page.evaluate(
          async ({ a, b }) => {
@@ -272,7 +272,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
          { a: sourceA!.id, b: sourceB!.id }
       );
       await expect(preview).toHaveAttribute("aria-label", "Live preview of Preview fixture B");
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       // A failed reconnect must expose the error and retry action, even after a cached frame.
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.locator(".preview-still")).toHaveClass(/cached/);
@@ -287,7 +287,7 @@ test("live preview captures the chosen window and releases tracks on navigation,
       await expect(page.getByRole("heading", { name: "Preview unavailable", exact: true })).toBeVisible();
       await expect(page.locator(".preview-still")).not.toHaveClass(/cached/);
       await page.getByRole("button", { name: "Retry preview", exact: true }).click();
-      await expect(page.locator(".preview-note")).toHaveText("Live preview");
+      await expect(page.locator(".preview-surface")).toHaveAttribute("data-preview", "live");
       await page.waitForTimeout(300);
       await preview.evaluate((video: HTMLVideoElement) => {
          (window as unknown as { previousPreview: MediaStreamTrack[] }).previousPreview = (video.srcObject as MediaStream).getTracks();

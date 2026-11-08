@@ -266,7 +266,7 @@ export function Recording({
             style={{ gridTemplateColumns: `minmax(0, 1fr) 12px ${controls.size}px`, gridTemplateRows: `minmax(0, 1fr) 12px ${lower.size}px` }}
          >
             <div className="recording-main">
-               <div className="preview-surface">
+               <div className="preview-surface" data-preview={source ? preview.status : undefined}>
                   <canvas ref={preview.outgoing} className="preview-outgoing" aria-hidden="true" />
                   {source && previewUnavailable ? (
                      <Empty
@@ -337,15 +337,6 @@ export function Recording({
                               : "Select a screen or application from the list."
                         }
                      />
-                  )}
-                  {source && (
-                     <div className="preview-caption">
-                        <span className={preview.status === "live" ? "preview-dot live" : "preview-dot"} />
-                        {source.name}
-                        <span className="preview-note">
-                           {preview.status === "live" ? "Live preview" : preview.status === "connecting" ? "Loading" : "Preview"}
-                        </span>
-                     </div>
                   )}
                </div>
                <div className="recording-bottom">

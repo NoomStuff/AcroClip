@@ -183,11 +183,6 @@
    margin-top: 6px;
 }
 
-.preview-dot.live {
-   background: var(--green);
-}
-
-.preview-dot,
 .status-dot {
    width: 6px;
    height: 6px;
@@ -196,7 +191,6 @@
    display: inline-block;
 }
 
-.preview-dot.active,
 .status-dot.recording {
    background: var(--red);
 }
