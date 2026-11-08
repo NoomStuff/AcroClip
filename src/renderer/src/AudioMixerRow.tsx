@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { GripVertical, MoreHorizontal, Volume, Volume1, Volume2, VolumeX } from "lucide-react";
+import { WandSparkles, GripVertical, MoreHorizontal, Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import { IconButton, Menu } from "./ui";
 import { MixerFader } from "./MixerFader";
 import { ListenButton, useIsListening } from "./AudioListening";
@@ -17,6 +17,7 @@ export function AudioMixerRow({
    onEnable,
    onMute,
    onVolume,
+   filters,
    options,
 }: {
    name: string;
@@ -31,6 +32,7 @@ export function AudioMixerRow({
    onEnable: (enabled: boolean) => void;
    onMute: () => void;
    onVolume: (volume: number, restore: number) => void | Promise<void>;
+   filters?: { summary: string; onOpen: () => void } | undefined;
    options: ReactNode;
 }) {
    const listening = useIsListening(sourceId);
@@ -44,6 +46,11 @@ export function AudioMixerRow({
             </button>
             <span className="mixer-channel-name">{name}</span>
             {!enabled && <span className="mixer-channel-status">Not recorded</span>}
+            {filters && (
+               <IconButton className="mixer-channel-filters" label={`${name} filters: ${filters.summary}`} onClick={filters.onOpen}>
+                  <WandSparkles size={15} />
+               </IconButton>
+            )}
             <Menu label={`${name} options`} trigger={<MoreHorizontal size={16} />}>
                {options}
             </Menu>

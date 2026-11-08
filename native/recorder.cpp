@@ -3,6 +3,7 @@
 // Mux protocol follows OBS Studio's ffmpeg-mux/ffmpeg-mux.h, Copyright Lain
 // Bailey.
 #include "clip-writer.hpp"
+#include "audio-filters.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -12,8 +13,10 @@
 #include <fstream>
 #include <iostream>
 #include <json.hpp>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <obs.h>
 #include <set>
 #include <thread>
@@ -430,6 +433,9 @@ private:
   };
   std::vector<AdditionalAudio> additionalAudio;
   std::mutex audioSourcesMutex;
+  // Filter chains by audio source id ("capture" for source audio). Sources are
+  // reopened and replaced during capture, so each new source gets its chain.
+  std::map<std::string, acroclip::filters::Chain> filterChains;
 #ifdef _WIN32
   acroclip::windows::AudioHealth audioHealth;
 #endif
@@ -619,6 +625,7 @@ private:
       }
       additionalAudio.clear();
       audioNames.clear();
+      filterChains.clear();
 #ifdef __linux__
       destroyApplicationAudio(applicationAudio);
       applicationAudio = nullptr;
@@ -954,6 +961,10 @@ private:
     obs_source_set_audio_mixers(next, 3);
     obs_source_set_volume(next, captureVolume);
     obs_source_set_muted(next, captureMuted || !captureAudioEnabled);
+    {
+      std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+      applyFilters("capture", next);
+    }
     obs_volmeter_detach_source(captureMeter);
     obs_sceneitem_t *previous = item;
     item = obs_scene_add(scene, next);
@@ -1179,6 +1190,8 @@ public:
     if (!std::isfinite(volume) || volume < 0 || volume > 4)
       throw std::runtime_error(
           "Audio volume must be between 0 and 400 percent");
+    std::optional<acroclip::filters::Chain> filters;
+    if (c.contains("filters")) filters = acroclip::filters::parseChain(c.at("filters"));
     std::unique_lock<std::mutex> audioLock(audioSourcesMutex);
     bool releasedInput = false;
     if (source == "capture") {
@@ -1242,12 +1255,47 @@ public:
         obs_source_set_muted(found->source, muted);
       }
     }
+    if (filters) filterChains[source] = std::move(*filters);
+    applySourceFilters(source);
     audioLock.unlock();
     // Device destruction can join an audio thread. Do not hold the source lock
     // while waiting, and acknowledge mute only once OBS has released the input.
     if (releasedInput) obs_wait_for_destroy_queue();
   }
 private:
+  // Callers hold audioSourcesMutex.
+  void applyFilters(const std::string &id, obs_source_t *source) {
+    const auto found = filterChains.find(id);
+    if (found != filterChains.end()) acroclip::filters::applyChain(source, found->second);
+  }
+  void applySourceFilters(const std::string &id) {
+    const auto found = filterChains.find(id);
+    if (found == filterChains.end()) return;
+    if (id == "capture") {
+#ifdef __linux__
+      // PulseAudio application audio mixes verified streams in a scene, and
+      // scenes do not run filters, so each stream carries the chain.
+      if (!screenCapture) {
+        setApplicationAudioFilters(applicationAudio, found->second);
+        return;
+      }
+#endif
+      acroclip::filters::applyChain(screenCapture ? desktop : capture, found->second);
+    } else if (id == "microphone") {
+      acroclip::filters::applyChain(mic, found->second);
+    } else {
+      for (auto &extra : additionalAudio) {
+        if (extra.id != id) continue;
+#ifdef __linux__
+        if (extra.application) {
+          setApplicationAudioFilters(extra.application, found->second);
+          continue;
+        }
+#endif
+        acroclip::filters::applyChain(extra.source, found->second);
+      }
+    }
+  }
   std::string deviceAudioError(obs_source_t *source, uint64_t openedAt = 0) {
     if (!source || obs_source_muted(source)) return {};
     std::string error;
@@ -1572,7 +1620,8 @@ private:
                             additionalAudio.back().source);
       setAudio({{"source", additionalAudio.back().id},
                 {"volume", settings.value("volume", 1.f)},
-                {"muted", settings.value("muted", false)}});
+                {"muted", settings.value("muted", false)},
+                {"filters", settings.value("filters", json::array())}});
     }
   }
 public:
@@ -2419,6 +2468,13 @@ public:
       obs_source_set_muted(audioSource, captureMuted || !captureAudioEnabled);
       obs_volmeter_attach_source(captureMeter, audioSource);
     }
+    // A filter failure must not abandon a source switch that already replaced
+    // the capture. The next settings change retries and reports it.
+    try {
+      applySourceFilters("capture");
+    } catch (const std::exception &failure) {
+      blog(LOG_WARNING, "Source audio filters were not applied: %s", failure.what());
+    }
 #ifdef __linux__
     if (applicationAudio)
       setApplicationAudioLevelCallback(applicationAudio, [this](float value) {
@@ -2521,6 +2577,11 @@ private:
 #else
     d.reset();
 #endif
+    {
+      auto chain = acroclip::filters::parseChain(c.value("captureFilters", json::array()));
+      std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+      filterChains["capture"] = std::move(chain);
+    }
     source(c);
     setupAdditionalAudio(c);
     captureVolume = c.value("captureVolume", 1.f);
@@ -2987,6 +3048,7 @@ int main(int argc, char **argv) {
     }
 #endif
     obs_post_load_modules();
+    acroclip::filters::registerAudioFilters();
 #ifdef _WIN32
     acroclip::windows::registerDesktopAudio();
 #elif defined(__APPLE__)

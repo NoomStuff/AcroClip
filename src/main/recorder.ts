@@ -21,6 +21,7 @@ import type {
 } from "../shared/types";
 import { GameCatalog, selectGame } from "./games";
 import { nativeAudioPreferences } from "../shared/audio-model";
+import type { AudioFilter } from "../shared/audio-filters";
 import { resolveAudioSources } from "./audio-sources";
 import { resolveReplayMemoryMB } from "../shared/replay-memory";
 
@@ -754,6 +755,7 @@ export class Recorder {
                   pid: target.pid,
                   volume: audio.captureVolume,
                   muted: audio.captureMuted,
+                  filters: audio.captureFilters,
                });
             else if (preferences.sourceKind === "screen" || (preferences.sourceKind === "auto" && preferences.desktopFallback))
                sources.push({
@@ -763,9 +765,11 @@ export class Recorder {
                   deviceId: process.platform === "darwin" ? "system" : "default",
                   volume: audio.captureVolume,
                   muted: audio.captureMuted,
+                  filters: audio.captureFilters,
                });
          }
-         const key = JSON.stringify(sources.map((source) => Object.fromEntries(Object.entries(source).filter(([key]) => key !== "volume" && key !== "muted"))));
+         const live = new Set(["volume", "muted", "filters"]);
+         const key = JSON.stringify(sources.map((source) => Object.fromEntries(Object.entries(source).filter(([key]) => !live.has(key)))));
          if (["starting", "recording", "waiting"].includes(this.current.state)) return [];
          if (generation !== this.monitorGeneration) return [];
          if (key !== this.monitorKey) {
@@ -774,7 +778,15 @@ export class Recorder {
             await this.command({ action: "monitor-audio", enabled: true, audioSources: sources, applicationPid: process.pid });
             if (generation !== this.monitorGeneration) return [];
             this.monitorKey = key;
-         } else for (const source of sources) await this.command({ action: "audio", source: source["id"], volume: source["volume"], muted: source["muted"] });
+         } else
+            for (const source of sources)
+               await this.command({
+                  action: "audio",
+                  source: source["id"],
+                  volume: source["volume"],
+                  muted: source["muted"],
+                  filters: source["filters"] ?? [],
+               });
          return sources.map((source) => String(source["id"]).replace("monitor-", ""));
       } catch (error) {
          if (generation === this.monitorGeneration && !["starting", "recording", "waiting"].includes(this.current.state)) {
@@ -820,7 +832,7 @@ export class Recorder {
       this.autoGeneration++;
       if (this.process) await this.command({ action: "stop" });
    }
-   async setAudio(value: { source: string; volume: number; muted: boolean }): Promise<void> {
+   async setAudio(value: { source: string; volume: number; muted: boolean; filters: AudioFilter[] }): Promise<void> {
       if (value.source === this.sourceAudioId) value = { ...value, source: "capture" };
       if (!Number.isFinite(value.volume) || value.volume < 0 || value.volume > 4) throw new Error("Audio volume must be between 0 and 400 percent");
       if (this.process) await this.command({ action: "audio", ...value });

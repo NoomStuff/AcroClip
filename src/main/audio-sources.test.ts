@@ -16,6 +16,7 @@ const source: AdditionalAudioSource = {
    volume: 1,
    muted: false,
    includeInMaster: false,
+   filters: [],
 };
 const candidate: GameCandidate = { id: "window:new", name: "Game", executable: "Game.exe", pid: 42, foreground: true, fullscreen: false };
 describe("additional audio bindings", () => {

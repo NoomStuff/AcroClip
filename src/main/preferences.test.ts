@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { synchronizeLegacyAudio } from "../shared/audio-model";
+import { createAudioFilter } from "../shared/audio-filters";
 describe("recording settings boundaries", () => {
    it("merges an autosave at write time without overwriting another queued edit", () => {
       const before = { ...defaultPreferences, collection: "clips", sound: true };
@@ -26,6 +27,13 @@ describe("recording settings boundaries", () => {
       expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, captureVolume: 0.5, microphoneMuted: true })).toBe(false);
       expect(preferencesSchema.safeParse({ ...defaultPreferences, captureVolume: 4.1 }).success).toBe(false);
       expect(preferencesSchema.safeParse({ ...defaultPreferences, microphoneVolume: -1 }).success).toBe(false);
+   });
+   it("applies audio filter changes without clearing recorded history", () => {
+      const filtered = {
+         ...defaultPreferences,
+         audioSources: defaultPreferences.audioSources.map((source) => ({ ...source, filters: [createAudioFilter("noise-suppression", "ns")] })),
+      };
+      expect(requiresCaptureRestart(defaultPreferences, filtered)).toBe(false);
    });
    it("unmutes the default microphone during capture without rebuilding its track", () => {
       const before = preferencesSchema.parse({ ...defaultPreferences, collection: "clips" });

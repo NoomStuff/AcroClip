@@ -91,15 +91,20 @@ const installation = run(vswhere, [
 if (!installation) throw new Error("Install Visual Studio Build Tools with Desktop development with C++");
 const versions = (await readdir(path.join(installation, "VC", "Tools", "MSVC"))).sort().reverse();
 const tools = path.join(installation, "VC", "Tools", "MSVC", versions[0]!, "bin", "Hostx64", "x64");
-const exports = run(path.join(tools, "dumpbin.exe"), ["/exports", path.join(bin, "obs.dll")])
-   .split(/\r?\n/)
-   .flatMap((line) => {
-      const match = /^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)/.exec(line);
-      return match?.[1] ? [match[1]] : [];
-   });
 const generated = path.join(root, "native", "generated");
-await writeFile(path.join(generated, "obs.def"), `LIBRARY obs\nEXPORTS\n${exports.join("\n")}\n`);
-run(path.join(tools, "lib.exe"), [`/def:${path.join(generated, "obs.def")}`, `/out:${path.join(generated, "obs.lib")}`, "/machine:x64"]);
+// Import libraries for the official runtime DLLs the recorder links against.
+// The vendored OBS compressor filter uses libOBS's w32-pthreads.
+for (const name of ["obs", "w32-pthreads"]) {
+   const exports = run(path.join(tools, "dumpbin.exe"), ["/exports", path.join(bin, `${name}.dll`)])
+      .split(/\r?\n/)
+      .flatMap((line) => {
+         const match = /^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)/.exec(line);
+         return match?.[1] ? [match[1]] : [];
+      });
+   if (!exports.length) throw new Error(`${name}.dll exports nothing to link against`);
+   await writeFile(path.join(generated, `${name}.def`), `LIBRARY ${name}\nEXPORTS\n${exports.join("\n")}\n`);
+   run(path.join(tools, "lib.exe"), [`/def:${path.join(generated, `${name}.def`)}`, `/out:${path.join(generated, `${name}.lib`)}`, "/machine:x64"]);
+}
 await writeFile(path.join(generated, "obsconfig.h"), "#pragma once\n#define OBS_RELEASE_CANDIDATE 0\n#define OBS_BETA 0\n");
 const visualStudioVersion = Number(
    run(vswhere, ["-latest", "-products", "*", "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "-property", "installationVersion"])
@@ -128,6 +133,7 @@ run("cmake", [
    `-DACROCLIP_VERSION=${(JSON.parse(await readFile(path.join(root, "package.json"), "utf8")) as { version: string }).version}`,
    `-DOBS_SOURCE_DIR=${source}`,
    `-DOBS_IMPORT_LIBRARY=${path.join(generated, "obs.lib")}`,
+   `-DOBS_PTHREADS_LIBRARY=${path.join(generated, "w32-pthreads.lib")}`,
 ]);
 run("cmake", ["--build", output, "--config", "Release"]);
 console.log(run(path.join(output, "Release", "acroclip-audio-health-test.exe"), []));
@@ -198,6 +204,8 @@ await writeFile(
                   "native/recording-preset.hpp",
                   "native/clip-writer.cpp",
                   "native/clip-writer.hpp",
+                  "native/audio-filters.cpp",
+                  "native/audio-filters.hpp",
                   "native/CMakeLists.txt",
                   "native/windows/product.rc.in",
                   "native/notifications/windows.cpp",

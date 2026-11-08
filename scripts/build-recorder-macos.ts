@@ -142,6 +142,8 @@ try {
       "native/recorder.cpp",
       "native/clip-writer.cpp",
       "native/clip-writer.hpp",
+      "native/audio-filters.cpp",
+      "native/audio-filters.hpp",
       "native/vendor/json.hpp",
       "native/CMakeLists.txt",
       "native/macos/platform.hpp",

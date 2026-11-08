@@ -729,7 +729,7 @@ function registerIPC() {
                if (next.startWithOS !== preferences.startWithOS) await applyStartup(next.startWithOS);
                if (capturing())
                   for (const source of next.audioSources.filter((source) => source.enabled))
-                     await recorder.setAudio({ source: source.id, volume: source.volume, muted: source.muted });
+                     await recorder.setAudio({ source: source.id, volume: source.volume, muted: source.muted, filters: source.filters });
                await writePreferences(preferencePath, next);
             } catch (e) {
                rollbackShortcuts();
@@ -739,7 +739,7 @@ function registerIPC() {
                if (next.startWithOS !== preferences.startWithOS) await applyStartup(preferences.startWithOS).catch(reportRollback);
                if (capturing())
                   for (const source of preferences.audioSources.filter((source) => source.enabled))
-                     await recorder.setAudio({ source: source.id, volume: source.volume, muted: source.muted }).catch(() => undefined);
+                     await recorder.setAudio({ source: source.id, volume: source.volume, muted: source.muted, filters: source.filters }).catch(() => undefined);
                throw e;
             }
             if (next.sourceId !== preferences.sourceId || next.sourceKind !== preferences.sourceKind) previewSourceId = null;

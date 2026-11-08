@@ -61,6 +61,9 @@ jobs:
          - name: Verify real input monitoring before any recording
            if: matrix.suite == 'capture'
            run: bun scripts/run-interactive-tests.ts audio-monitor
+         - name: Verify audio filters on real application audio
+           if: matrix.suite == 'capture'
+           run: bun scripts/run-interactive-tests.ts audio-filters
          - run: bun run test:capture-loss
            if: matrix.suite == 'capture'
          - uses: actions/upload-artifact@v7
@@ -72,6 +75,8 @@ jobs:
                  test-results/
                  .cache/native-loss/**/events.json
                  .cache/native-loss/**/native.log
+                 .cache/native-audio-filters/**/measurements.json
+                 .cache/native-audio-filters/**/native.log
               include-hidden-files: true
               if-no-files-found: ignore
               retention-days: 7

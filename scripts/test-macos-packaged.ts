@@ -196,6 +196,7 @@ try {
          volume: 1,
          muted: false,
          includeInMaster: false,
+         filters: [],
       },
       {
          id: "other",
@@ -208,6 +209,7 @@ try {
          volume: 1,
          muted: false,
          includeInMaster: false,
+         filters: [],
       },
    ];
    await page.evaluate(
@@ -309,6 +311,7 @@ try {
       volume: 1,
       muted: false,
       includeInMaster: false,
+      filters: [],
    };
    await page.evaluate(async (source) => {
       const current = await window.acroClip.state();

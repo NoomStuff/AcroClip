@@ -20,6 +20,7 @@ const commands = {
    audio: [["scripts/smoke-audio.ts"]],
    "audio-monitor": [["scripts/smoke-audio-monitor.ts"]],
    "additional-audio": [["scripts/smoke-additional-audio.ts"]],
+   "audio-filters": [["scripts/smoke-audio-filters.ts"]],
    "game-capture": [["scripts/smoke-game-capture.ts"]],
    overlap: [["scripts/smoke-overlap.ts"]],
    "resolution-limits": [["scripts/smoke-resolution-limits.ts"]],
