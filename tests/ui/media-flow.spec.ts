@@ -324,11 +324,19 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
       await page.getByRole("button", { name: "Play", exact: true }).click();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
-      const isolatedTrackUrl = await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentSrc);
+      // Track changes switch the playing element's own tracks instead of loading a copy.
+      const enabledTracks = () =>
+         page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => {
+            const tracks = (node as HTMLVideoElement & { audioTracks?: { length: number; [index: number]: { enabled: boolean } } }).audioTracks;
+            return tracks ? Array.from({ length: tracks.length }, (_, index) => tracks[index]!.enabled) : [];
+         });
+      await expect.poll(enabledTracks).toEqual([false, true]);
+      const originalUrl = await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentSrc);
       await selectOption(page, "Audio tracks", "1");
       await page.getByRole("option", { name: "Microphone", exact: true }).click();
       await page.keyboard.press("Escape");
-      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentSrc)).not.toBe(isolatedTrackUrl);
+      await expect.poll(enabledTracks).toEqual([true, false]);
+      expect(await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentSrc)).toBe(originalUrl);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
       await page.getByRole("button", { name: "Pause", exact: true }).click();
       await page.getByRole("slider", { name: "Playback position", exact: true }).fill("2");

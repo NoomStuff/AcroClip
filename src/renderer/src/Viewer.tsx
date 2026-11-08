@@ -18,6 +18,7 @@ import { ClipActions } from "./ClipActions";
 import { CategoryEditor, CategoryMark } from "./CategoryEditor";
 import { categoryStyle } from "./category-color";
 import { usePlaybackFade } from "./usePlaybackFade";
+import { mediaAudioTracks, nativeAudioTracks, selectAudioTracks } from "./audio-tracks";
 
 export function Viewer({
    state,
@@ -74,7 +75,27 @@ export function Viewer({
    const previousClip = useRef<string | undefined>(undefined);
    const shareable = clip?.shareables.find((item) => item.id === shareId) ?? clip?.shareables.at(-1);
    const path = version === "shareable" ? shareable?.path : clip?.path;
-   const playbackIdentity = JSON.stringify([clip?.id, path, version, track]);
+   // Files the player failed to decode, and files whose audio tracks it can't toggle. Both
+   // fall back to copies the main process prepares, once per file for this session.
+   const [compatiblePaths, setCompatiblePaths] = useState<ReadonlySet<string>>(() => new Set());
+   const [trackCopyPaths, setTrackCopyPaths] = useState<ReadonlySet<string>>(() => new Set());
+   const compatible = !!path && compatiblePaths.has(path);
+   const nativeTrackSelection = nativeAudioTracks && !!path && !trackCopyPaths.has(path);
+   // Chromium plays one audio track at a time and switches it in place. A mix of several
+   // tracks plays from a prepared copy, requested once the selection settles, so clicking
+   // through the picker doesn't start conversions that are immediately replaced.
+   const mixTracks = version === "original" && track && (track.length > 1 || !nativeTrackSelection) ? track : undefined;
+   const [settledMix, setSettledMix] = useState<number[] | undefined>(undefined);
+   useEffect(() => {
+      if (!mixTracks) return;
+      const timer = setTimeout(() => setSettledMix(mixTracks), 350);
+      return () => clearTimeout(timer);
+   }, [mixTracks]);
+   const requestedTrack = mixTracks && settledMix === mixTracks ? mixTracks : undefined;
+   const singleTrack = !mixTracks;
+   const selectedTracks = track ?? clip?.tracks.slice(0, 1).map((item) => item.index) ?? [];
+   const masterSelected = !track || (track.length === 1 && track[0] === clip?.tracks[0]?.index);
+   const playbackIdentity = JSON.stringify([clip?.id, path, version, requestedTrack, compatible]);
    const currentPlayback = useRef({ identity: playbackIdentity, generation: urlGeneration });
    useLayoutEffect(() => {
       currentPlayback.current = { identity: playbackIdentity, generation: urlGeneration };
@@ -125,7 +146,7 @@ export function Viewer({
       setMediaError("");
       void (async () => {
          try {
-            const result = await api.playback(path, version === "original" ? track : undefined, requestId);
+            const result = await api.playback(path, requestedTrack, requestId, compatible ? { compatible: true } : undefined);
             if (!disposed) {
                setMediaError("");
                if (currentUrl.current === result) {
@@ -151,7 +172,26 @@ export function Viewer({
          disposed = true;
          void api.cancelPlayback(requestId).catch(() => undefined);
       };
-   }, [path, track, version, visible, playbackIdentity]);
+   }, [path, requestedTrack, compatible, visible, playbackIdentity]);
+   // Track changes apply to the playing element without reloading it.
+   useEffect(() => {
+      const media = video.current;
+      // The previous clip stays loaded until this one's metadata arrives, which applies the tracks.
+      if (
+         !media ||
+         !clip ||
+         version !== "original" ||
+         !nativeTrackSelection ||
+         !singleTrack ||
+         requestedTrack ||
+         media.readyState < HTMLMediaElement.HAVE_METADATA ||
+         !ownsMedia(media)
+      )
+         return;
+      if (!selectAudioTracks(mediaAudioTracks(media), clip.tracks, selectedTracks) && path) setTrackCopyPaths((paths) => new Set(paths).add(path));
+      // selectedTracks follows track and clip.tracks, and ownsMedia follows the url state.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [track, clip?.tracks, url, urlOwner, urlGeneration, version, nativeTrackSelection, singleTrack, requestedTrack, path]);
 
    const rememberPlayback = () => {
       if (!switching.current) {
@@ -472,6 +512,19 @@ export function Viewer({
                      onLoadedMetadata={(event) => {
                         const media = event.currentTarget;
                         if (!ownsMedia(media)) return;
+                        // Chromium drops a video stream it can't decode, such as HEVC without
+                        // a platform decoder, and keeps playing the audio. Convert it instead.
+                        if (!media.videoWidth && path && !compatible) {
+                           setCompatiblePaths((paths) => new Set(paths).add(path));
+                           return;
+                        }
+                        // A prepared mix carries one track. Otherwise the element holds all of them.
+                        const tracks = version === "original" && nativeTrackSelection && !requestedTrack ? mediaAudioTracks(media) : undefined;
+                        if (tracks && !selectAudioTracks(tracks, clip.tracks, singleTrack ? selectedTracks : selectedTracks.slice(0, 1)) && path) {
+                           setTrackCopyPaths((paths) => new Set(paths).add(path));
+                           // Only the first track plays until a prepared copy carries the selection.
+                           if (!masterSelected) return;
+                        }
                         setDuration(media.duration);
                         media.currentTime = Math.min(seek.current, media.duration || 0);
                         setTime(media.currentTime);
@@ -499,7 +552,9 @@ export function Viewer({
                         setPlaying(false);
                      }}
                      onError={(event) => {
-                        if (ownsMedia(event.currentTarget)) setMediaError("This video could not be played. Try opening it in AttaCut or another player.");
+                        if (!ownsMedia(event.currentTarget)) return;
+                        if (event.currentTarget.error && path && !compatible) setCompatiblePaths((paths) => new Set(paths).add(path));
+                        else setMediaError("This video could not be played. Try opening it in AttaCut or another player.");
                      }}
                      onClick={(event) => {
                         const media = event.currentTarget;

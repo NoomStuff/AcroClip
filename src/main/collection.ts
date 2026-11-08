@@ -74,7 +74,8 @@ type StoredClip = Metadata["clips"][number];
 type StoredFile = z.infer<typeof fileSchema>;
 /** One listing of the thumbnail folder per scan. Undefined when the folder is unusable. */
 type ThumbnailIndex = { directory: string; files: Set<string> } | undefined;
-const supported = new Set([".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".ts", ".flv"]);
+// Anything ffmpeg reads. Formats the player can't open directly play from a converted copy.
+const supported = new Set([".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".ts", ".flv", ".m2ts", ".mts", ".3gp", ".mpg", ".mpeg", ".wmv", ".ogv"]);
 const normal = (path: string) => (process.platform === "win32" ? path.toLowerCase() : path);
 export function withinRoot(root: string, path: string): boolean {
    const rel = relative(normal(resolve(root)), normal(resolve(path)));
@@ -306,6 +307,8 @@ export class CollectionService {
          : [];
       this.notify();
       await this.scan();
+      // Copies from earlier sessions only cost disk space until they are played again.
+      void this.playbackCache.prune(join(this.root, ".acroclip", "playback"));
    }
 
    // A file whose stamp still matches the one recorded at its last scan keeps that
@@ -1280,17 +1283,32 @@ export class CollectionService {
       this.controllers.get(id)?.abort();
    }
 
-   async playback(path: string, track?: number | number[], signal?: AbortSignal): Promise<string> {
+   async playback(path: string, track?: number | number[], signal?: AbortSignal, options: { compatible?: boolean | undefined } = {}): Promise<string> {
       const lifetime = this.playbackLifetime.signal;
       const operation = signal ? AbortSignal.any([signal, lifetime]) : lifetime;
       const root = this.root;
       const actual = await realpath(path);
       if (root !== this.root || !withinRoot(root, actual)) throw new Error("The video is outside the current collection.");
-      const allowed = this.clips.some((clip) => normal(clip.path) === normal(actual) || clip.shareables.some((share) => normal(share.path) === normal(actual)));
+      const key = normal(actual);
+      const allowed = this.clips.some((clip) => normal(clip.path) === key || clip.shareables.some((share) => normal(share.path) === key));
       if (!allowed) throw new Error("That video is not part of this collection.");
-      const directory = join(root, ".acroclip", "playback");
-      await this.safeDirectory(directory);
-      const result = await this.playbackCache.prepare(actual, directory, track, operation);
+      // The scan already read this file's metadata. Reuse it while the file is unchanged.
+      const scanned = this.cache.get(actual);
+      const info = scanned && scanned.stamp === fileStamp(await stat(actual, { bigint: true })) ? scanned.info : undefined;
+      const directory = async () => {
+         const folder = join(root, ".acroclip", "playback");
+         await this.safeDirectory(folder);
+         return folder;
+      };
+      const result = await this.playbackCache
+         .prepare(actual, directory, track, { signal: operation, compatible: options.compatible === true, ...(info ? { info } : {}) })
+         .catch((error: unknown) => {
+            const text = message(error);
+            // AcroClip's own messages pass through. Media tool output belongs in the log.
+            if (operation.aborted || /^(The |That |Choose |Cancelled$|ff(mpeg|probe) is missing)/.test(text)) throw error;
+            this.warn(`Playback preparation failed for ${basename(actual)}: ${text}`, "log");
+            throw new Error("This video couldn't be prepared for playback. It may be damaged or use a format AcroClip can't convert.", { cause: error });
+         });
       if (root !== this.root) throw new Error("The collection changed while preparing playback.");
       return this.url(result);
    }

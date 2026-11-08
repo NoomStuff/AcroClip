@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CollectionService } from "../src/main/collection";
@@ -13,6 +13,9 @@ import { groupFolders, summarizeClips } from "../src/renderer/src/library-index"
 // Real files and media, always in a disposable collection. Run before and after
 // a change on the same machine. Medians avoid a single noisy filesystem sample.
 const root = await mkdtemp(join(tmpdir(), "acroclip-performance-"));
+// The player switches single audio tracks itself. Measure the earlier prepared copy with
+// ACROCLIP_BENCHMARK_TRACK_COPIES=1 when comparing against a build without that.
+const nativeTrackSwitching = process.env["ACROCLIP_BENCHMARK_TRACK_COPIES"] !== "1";
 const results: Record<string, number> = {};
 async function measure(name: string, action: () => Promise<void>, count = 7) {
    const times: number[] = [];
@@ -82,6 +85,73 @@ try {
       },
       5
    );
+   // Opening clips: every iteration opens a clip this session hasn't played yet.
+   const multiTrack = join(root, "multi-track.mkv");
+   await runMedia("ffmpeg", [
+      ...ffmpegBase,
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=1280x720:rate=60",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:sample_rate=48000",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=880:sample_rate=48000",
+      "-t",
+      "30",
+      "-map",
+      "0:v",
+      "-map",
+      "1:a",
+      "-map",
+      "2:a",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-c:a",
+      "aac",
+      multiTrack,
+   ]);
+   const openRoot = join(root, "opening");
+   await mkdir(openRoot);
+   for (let index = 0; index < 8; index++) {
+      await copyFile(multiTrack, join(openRoot, `matroska-${index}.mkv`));
+      await runMedia("ffmpeg", [...ffmpegBase, "-y", "-i", multiTrack, "-map", "0", "-c", "copy", join(openRoot, `mp4-${index}.mp4`)]);
+      await copyFile(multiTrack, join(openRoot, `tracks-${index}.mkv`));
+   }
+   const opening = new CollectionService({ scanConcurrency: () => 3 });
+   await opening.open(openRoot);
+   const unopened = (prefix: string) => {
+      const clips = opening.clips.filter((clip) => clip.name.startsWith(prefix));
+      return () => clips.pop()!;
+   };
+   for (const [name, prefix] of [
+      ["first Matroska clip open ms", "matroska-"],
+      ["first MP4 clip open ms", "mp4-"],
+   ] as const) {
+      const next = unopened(prefix);
+      await measure(name, async () => {
+         const clip = next();
+         assert.ok(await opening.playback(clip.path));
+      });
+   }
+   // The work a second audio track costs the main process before it plays.
+   const nextTracks = unopened("tracks-");
+   await measure("first audio track change ms", async () => {
+      const clip = nextTracks();
+      await opening.playback(clip.path);
+      if (!nativeTrackSwitching) await opening.playback(clip.path, clip.tracks[1]!.index);
+   });
+   const playbackBytes = await readdir(join(openRoot, ".acroclip", "playback"))
+      .then((names) => Promise.all(names.map(async (name) => (await stat(join(openRoot, ".acroclip", "playback", name))).size)))
+      .catch(() => []);
+   results["playback copy MB after opening clips"] = playbackBytes.reduce((sum, size) => sum + size, 0) / 1e6;
    const state: AppState = {
       windowVisible: true,
       preferences: defaultPreferences,

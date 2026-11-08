@@ -19,6 +19,7 @@ export async function serveMedia(path: string, request: Request): Promise<Respon
       ".mov": "video/quicktime",
       ".webm": "video/webm",
       ".mkv": "video/x-matroska",
+      ".3gp": "video/3gpp",
       ".ts": "video/mp2t",
    };
    const type = mime[extname(path).toLowerCase()] ?? "application/octet-stream";
