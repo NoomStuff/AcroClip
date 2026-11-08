@@ -64,10 +64,44 @@ describe("library grouping", () => {
          ["No shareable", ["fresh"]],
       ]);
    });
-   it("groups applications alphabetically", () => {
-      expect(labels([clip("z", { source: "Zelda" }), clip("a", { source: "Apex" }), clip("a2", { source: "Apex", createdAt: at(1) })], "application")).toEqual([
-         ["Apex", ["a", "a2"]],
+   it("puts the most recently played application first", () => {
+      const clips = [
+         clip("z", { source: "Zelda", createdAt: at(0) }),
+         clip("a", { source: "Apex", createdAt: at(1) }),
+         clip("a2", { source: "Apex", createdAt: at(3) }),
+      ];
+      expect(labels(clips, "application")).toEqual([
          ["Zelda", ["z"]],
+         ["Apex", ["a", "a2"]],
+      ]);
+   });
+   it("groups folders in tree order with the collection's own clips first", () => {
+      const clips = [
+         clip("deep", { relativePath: "Games/Finals/deep.mp4" }),
+         clip("root", { relativePath: "root.mp4" }),
+         clip("game", { relativePath: "Games/game.mp4" }),
+      ];
+      expect(labels(clips, "folder")).toEqual([
+         ["Collection", ["root"]],
+         ["Games", ["game"]],
+         ["Games / Finals", ["deep"]],
+      ]);
+   });
+   it("files a clip under its highest sidebar tag, with untagged clips last", () => {
+      const tags = [
+         { id: "best", name: "Best" },
+         { id: "funny", name: "Funny" },
+      ];
+      const clips = [clip("both", { categories: ["funny", "best"] }), clip("plain"), clip("funny", { categories: ["funny"] })];
+      expect(
+         groupClips([...clips].sort(compareClips(newest)), "tag", newest, { ...options, tags }).map((group) => [
+            group.label,
+            group.clips.map((item) => item.id),
+         ])
+      ).toEqual([
+         ["Best", ["both"]],
+         ["Funny", ["funny"]],
+         ["Untagged", ["plain"]],
       ]);
    });
    it("leaves the library flat without grouping", () => {

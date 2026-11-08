@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties, DragEvent } from "react";
 import {
    AlertCircle,
+   ChevronRight,
    Folder,
    FolderInput,
    FolderOpen,
@@ -61,7 +62,7 @@ import { applicationKeys, summarizeClips, orderLibrarySections, summarizeFolders
 import type { LibrarySectionId, LibrarySort } from "./library-index";
 import { groupClips } from "./library-groups";
 import type { LibraryGrouping } from "./library-groups";
-import { readLibraryView, storeLibraryView } from "./library-view";
+import { readFoldedGroups, readLibraryView, storeFoldedGroups, storeLibraryView } from "./library-view";
 import { LibraryViewMenu } from "./LibraryViewMenu";
 import { LibrarySection } from "./LibrarySection";
 
@@ -213,6 +214,8 @@ export function Library({
    const [sort, setSort] = useState<LibrarySort>(libraryView.sort);
    const [grouping, setGrouping] = useState<LibraryGrouping>(libraryView.grouping);
    useEffect(() => storeLibraryView(sort, grouping), [sort, grouping]);
+   const [folded, setFolded] = useState(readFoldedGroups);
+   useEffect(() => storeFoldedGroups(folded), [folded]);
    const applicationColors = useApplicationColors(state.applicationIcons, visible);
    const selectedApplicationColor = filter.startsWith("source:") ? applicationColors[filter.slice(7)] : undefined;
    const [contextMenu, setContextMenu] = useState<(ContextMenuRequest & { clipId: string }) | null>(null);
@@ -363,8 +366,13 @@ export function Library({
       () => selectLibraryClips(state.clips, { search, filter, folderPath, sort, applications: appKeys }),
       [state.clips, search, filter, folderPath, sort, appKeys]
    );
-   // Grouping one application's clips by application would only repeat the filter.
-   const activeGrouping = grouping === "application" && filter.startsWith("source:") ? "none" : grouping;
+   // Grouping by what the current view already narrows to would only repeat it.
+   const activeGrouping =
+      (grouping === "application" && filter.startsWith("source:")) ||
+      (grouping === "folder" && folderPath !== null) ||
+      (grouping === "tag" && filter.startsWith("category:"))
+         ? "none"
+         : grouping;
    const groups = useMemo(
       () =>
          groupClips(clips, activeGrouping, sort, {
@@ -374,11 +382,23 @@ export function Library({
                const known = label.trim() && label.trim().toLowerCase() !== "unknown";
                return { key: appKeys.get(clip.id) ?? `label:${label.toLowerCase()}`, label: known ? label : "Other videos" };
             },
+            tags: state.categories,
          }),
-      [clips, activeGrouping, sort, appKeys]
+      [clips, activeGrouping, sort, appKeys, state.categories]
    );
-   // The order clips appear in, which groups can change.
-   const shownClips = useMemo(() => (groups.length ? groups.flatMap((group) => group.clips) : clips), [groups, clips]);
+   const foldedKeys = useMemo(() => new Set(folded[activeGrouping] ?? []), [folded, activeGrouping]);
+   const toggleGroup = (key: string) =>
+      setFolded((current) => {
+         const keys = new Set(current[activeGrouping] ?? []);
+         if (keys.has(key)) keys.delete(key);
+         else keys.add(key);
+         return { ...current, [activeGrouping]: [...keys] };
+      });
+   // The clips on screen, in the order they appear. Groups can change both.
+   const shownClips = useMemo(
+      () => (groups.length ? groups.flatMap((group) => (foldedKeys.has(group.key) ? [] : group.clips)) : clips),
+      [groups, clips, foldedKeys]
+   );
    useEffect(() => {
       if (contextMenu && !clips.some((clip) => clip.id === contextMenu.clipId)) setContextMenu(null);
    }, [clips, contextMenu]);
@@ -803,13 +823,24 @@ export function Library({
                      ))}
                      {/* Headers and cards stay siblings, so regrouping moves each card instead of remounting it. */}
                      {groups.length
-                        ? groups.flatMap((group) => [
-                             <h2 key={`group:${group.key}`} className="clip-group-header" data-layout-key={`group:${group.key}`}>
-                                {group.label}
-                                <span className="clip-group-count">{group.clips.length}</span>
-                             </h2>,
-                             ...group.clips.map(renderClip),
-                          ])
+                        ? groups.flatMap((group) => {
+                             const open = !foldedKeys.has(group.key);
+                             return [
+                                <h2 key={`group:${group.key}`} className="clip-group-header" data-layout-key={`group:${group.key}`}>
+                                   <button
+                                      className="clip-group-control"
+                                      aria-expanded={open}
+                                      title={open ? "Click to fold" : "Click to unfold"}
+                                      onClick={() => toggleGroup(group.key)}
+                                   >
+                                      <ChevronRight size={12} aria-hidden="true" />
+                                      {group.label}
+                                      <span className="clip-group-count">{group.clips.length}</span>
+                                   </button>
+                                </h2>,
+                                ...(open ? group.clips.map(renderClip) : []),
+                             ];
+                          })
                         : clips.map(renderClip)}
                      {Array.from({ length: remainingSlots }, (_, index) => (
                         <div className="clip-placeholder" key={`pending:${index}`} aria-hidden="true">

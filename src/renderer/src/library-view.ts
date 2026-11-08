@@ -1,4 +1,4 @@
-import { CalendarDays, CaseSensitive, Clock3, Eye, Gamepad2, HardDrive, Rows3, Share2, Timer } from "lucide-react";
+import { CalendarDays, CaseSensitive, Clock3, Eye, Folder, Gamepad2, HardDrive, Rows3, Share2, Tag, Timer } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { defaultLibrarySort } from "./library-index";
 import type { LibrarySort, LibrarySortField } from "./library-index";
@@ -15,6 +15,8 @@ export const groupingOptions: readonly { value: LibraryGrouping; label: string; 
    { value: "none", label: "None", icon: Rows3 },
    { value: "date", label: "Date", icon: CalendarDays },
    { value: "application", label: "Application", icon: Gamepad2 },
+   { value: "folder", label: "Folder", icon: Folder },
+   { value: "tag", label: "Tag", icon: Tag },
    { value: "watched", label: "Watched", icon: Eye },
    // The same icon as Create shareable.
    { value: "shareable", label: "Has shareable", icon: Share2 },
@@ -28,7 +30,28 @@ export function viewSummary(sort: LibrarySort, grouping: LibraryGrouping): strin
    return grouping === "none" ? `Sort: ${directionLabel(sort)}` : `Sort: ${directionLabel(sort)}. Group: ${group.label}`;
 }
 
-const storage = { sort: "acroclip.library.sort", grouping: "acroclip.library.grouping" } as const;
+const storage = { sort: "acroclip.library.sort", grouping: "acroclip.library.grouping", folded: "acroclip.library.folded" } as const;
+/** Folded groups, remembered per grouping like the sidebar's folded sections. */
+export function readFoldedGroups(): Partial<Record<LibraryGrouping, string[]>> {
+   try {
+      const value: unknown = JSON.parse(localStorage.getItem(storage.folded) ?? "{}");
+      if (!value || typeof value !== "object") return {};
+      return Object.fromEntries(
+         Object.entries(value).filter(
+            ([grouping, keys]) => libraryGroupings.includes(grouping as LibraryGrouping) && Array.isArray(keys) && keys.every((key) => typeof key === "string")
+         )
+      ) as Partial<Record<LibraryGrouping, string[]>>;
+   } catch {
+      return {};
+   }
+}
+export function storeFoldedGroups(folded: Partial<Record<LibraryGrouping, string[]>>): void {
+   try {
+      localStorage.setItem(storage.folded, JSON.stringify(folded));
+   } catch {
+      /* Folding still works without storage. */
+   }
+}
 export function readLibraryView(): { sort: LibrarySort; grouping: LibraryGrouping } {
    const read = (key: string): unknown => {
       try {

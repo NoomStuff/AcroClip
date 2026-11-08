@@ -1,8 +1,8 @@
 import type { Clip } from "../../shared/types";
 import type { LibrarySort } from "./library-index";
 
-export type LibraryGrouping = "none" | "date" | "application" | "watched" | "shareable";
-export const libraryGroupings: readonly LibraryGrouping[] = ["none", "date", "application", "watched", "shareable"];
+export type LibraryGrouping = "none" | "date" | "application" | "folder" | "tag" | "watched" | "shareable";
+export const libraryGroupings: readonly LibraryGrouping[] = ["none", "date", "application", "folder", "tag", "watched", "shareable"];
 export interface ClipGroup {
    key: string;
    label: string;
@@ -52,7 +52,13 @@ export function groupClips(
    clips: readonly Clip[],
    grouping: LibraryGrouping,
    sort: LibrarySort,
-   options: { now: Date; application: (clip: Clip) => { key: string; label: string }; locale?: string }
+   options: {
+      now: Date;
+      application: (clip: Clip) => { key: string; label: string };
+      // Tags in the sidebar's order, which decides where a clip with several tags goes.
+      tags?: readonly { id: string; name: string }[];
+      locale?: string;
+   }
 ): ClipGroup[] {
    if (grouping === "none") return [];
    const reversed = (field: LibrarySort["field"]) => sort.field === field && sort.reversed;
@@ -68,8 +74,19 @@ export function groupClips(
             // Clips ready to send come first.
             return clip.shareables.length ? { key: "shareable", label: "Has shareable", rank: 0 } : { key: "no-shareable", label: "No shareable", rank: 1 };
          case "application": {
+            // Ranked by the group's newest clip below, so the last game played comes first.
             const { key, label } = options.application(clip);
             return { key: `application:${key}`, label, rank: 0 };
+         }
+         case "folder": {
+            const folder = clip.relativePath.replaceAll("\\", "/").split("/").slice(0, -1).join("/");
+            // The collection's own clips first, then folders in tree order.
+            return { key: `folder:${folder}`, label: folder ? folder.split("/").join(" / ") : "Collection", rank: folder ? 1 : 0 };
+         }
+         case "tag": {
+            const tags = options.tags ?? [];
+            const index = tags.findIndex((tag) => clip.categories.includes(tag.id));
+            return index < 0 ? { key: "tag:", label: "Untagged", rank: tags.length } : { key: `tag:${tags[index]!.id}`, label: tags[index]!.name, rank: index };
          }
       }
    };
@@ -80,7 +97,12 @@ export function groupClips(
       if (group) group.clips.push(clip);
       else groups.set(key, { key, label, rank, clips: [clip] });
    }
+   const newest = (group: ClipGroup) => Math.max(...group.clips.map((clip) => clip.createdAt));
    return [...groups.values()]
-      .sort((a, b) => a.rank - b.rank || (grouping === "application" ? a.label.localeCompare(b.label) : 0))
+      .sort(
+         (a, b) =>
+            a.rank - b.rank ||
+            (grouping === "application" ? newest(b) - newest(a) || a.label.localeCompare(b.label) : grouping === "folder" ? a.key.localeCompare(b.key) : 0)
+      )
       .map(({ key, label, clips: members }) => ({ key, label, clips: members }));
 }

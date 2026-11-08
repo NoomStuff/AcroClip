@@ -74,6 +74,8 @@ test("sorting and grouping share one compact control and remember the choice", a
          "None",
          "Date",
          "Application",
+         "Folder",
+         "Tag",
          "Watched",
          "Has shareable",
       ]);
@@ -101,6 +103,13 @@ test("sorting and grouping share one compact control and remember the choice", a
       await expect(page.locator(".viewer-title")).toContainText("Charlie");
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.locator(".clip-group-header")).toHaveText(["New2", "Watched1"]);
+      // Groups fold like the sidebar's sections, and stay folded.
+      const watchedGroup = page.getByRole("button", { name: /^Watched/ });
+      await expect(watchedGroup).toHaveAttribute("aria-expanded", "true");
+      await watchedGroup.click();
+      await expect(watchedGroup).toHaveAttribute("aria-expanded", "false");
+      await expect(page.locator(".clip-card")).toHaveCount(2);
+      await expect(page.locator(".clip-card", { hasText: "Charlie" })).toHaveCount(0);
 
       await app.close();
       app = await launch();
@@ -108,6 +117,9 @@ test("sorting and grouping share one compact control and remember the choice", a
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.locator(".clip-group-header")).toHaveText(["New2", "Watched1"]);
       await expect(page.getByRole("button", { name: "Sort and group", exact: true })).toHaveAttribute("title", "Sort: Shortest first. Group: Watched");
+      await expect(page.locator(".clip-card")).toHaveCount(2);
+      await page.getByRole("button", { name: /^Watched/ }).click();
+      await expect(page.locator(".clip-card")).toHaveCount(3);
    } finally {
       await app.close();
    }
