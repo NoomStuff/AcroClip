@@ -210,7 +210,7 @@ try {
    const playbackQueue = new PlaybackCache();
    const controller = new AbortController();
    let preparationFinished = false;
-   const preparing = playbackQueue.prepare(cancellationSource, cancellationCache, undefined, controller.signal);
+   const preparing = playbackQueue.prepare(cancellationSource, cancellationCache, undefined, { signal: controller.signal });
    void preparing.then(
       () => {
          preparationFinished = true;
@@ -230,10 +230,58 @@ try {
    assert.equal(
       await playbackQueue.prepare(original, cancellationCache),
       original,
-      "The next request waits for cancelled process cleanup and remains playable"
+      "A directly playable clip opens without waiting for cancelled conversion cleanup"
    );
-   assert.deepEqual(await readdir(cancellationCache), [], "Cancelled playback leaves no published or partial copies");
+   const cleanupDeadline = Date.now() + 15000;
+   while ((await readdir(cancellationCache)).length) {
+      assert.ok(Date.now() < cleanupDeadline, "Cancelled playback leaves no published or partial copies");
+      await delay(10);
+   }
    assert.deepEqual(await fileIdentity(cancellationSource), cancellationIdentity, "Cancellation leaves the user's source unchanged");
+   // Format coverage: what the player opens directly, what is remuxed, and what is converted.
+   const formats = join(workspace, "formats");
+   const formatCache = join(workspace, "format-playback");
+   await mkdir(formats);
+   await mkdir(formatCache);
+   const formatPlayback = new PlaybackCache();
+   const remuxed = async (name: string, args: string[]) => {
+      const file = join(formats, name);
+      await runMedia("ffmpeg", [...ffmpegBase, "-y", "-i", original, ...args, file]);
+      return file;
+   };
+   for (const name of ["direct.mkv", "direct.mov", "direct.3gp"]) {
+      const file = await remuxed(name, name.endsWith(".3gp") ? ["-map", "0:v:0", "-map", "0:a:0", "-c", "copy"] : ["-map", "0", "-c", "copy"]);
+      assert.equal(await formatPlayback.prepare(file, formatCache), file, `${name} plays without a prepared copy`);
+   }
+   const compatibleCopy = await formatPlayback.prepare(original, formatCache, undefined, { compatible: true });
+   assert.notEqual(compatibleCopy, original, "An original the player failed to decode gets a prepared copy");
+   assert.equal((await probe(compatibleCopy)).videoCodec, "h264");
+   for (const [name, args] of [
+      ["pcm.mov", ["-map", "0", "-c:v", "copy", "-c:a", "pcm_s16le"]],
+      ["stream.ts", ["-map", "0", "-c", "copy"]],
+      ["broadcast.m2ts", ["-map", "0", "-c", "copy"]],
+      ["legacy.flv", ["-map", "0:v:0", "-map", "0:a:0", "-c", "copy"]],
+      ["capture.avi", ["-map", "0", "-c:v", "mjpeg", "-q:v", "5", "-c:a", "pcm_s16le"]],
+   ] as const) {
+      const file = await remuxed(name, [...args]);
+      const source = await probe(file);
+      const prepared = await formatPlayback.prepare(file, formatCache);
+      assert.notEqual(prepared, file, `${name} plays from a prepared copy`);
+      const result = await probe(prepared);
+      assert.equal(result.videoCodec, "h264", `${name} copy has playable video`);
+      assert.deepEqual(
+         result.tracks.map((track) => [track.codec, track.title]),
+         source.tracks.map((track) => ["aac", track.title]),
+         `${name} copy keeps every audio track and its title for in-player switching`
+      );
+      assert.ok(Math.abs(result.duration - source.duration) < 0.25, `${name} copy keeps the full clip`);
+      await runMedia("ffmpeg", [...ffmpegBase, "-i", prepared, "-f", "null", process.platform === "win32" ? "NUL" : "/dev/null"]);
+   }
+   assert.equal(
+      await formatPlayback.prepare(join(formats, "stream.ts"), formatCache),
+      await formatPlayback.prepare(join(formats, "stream.ts"), formatCache),
+      "Prepared copies are reused"
+   );
    const before = await fileIdentity(original);
    const registrationRoot = join(workspace, "registration");
    await mkdir(registrationRoot);

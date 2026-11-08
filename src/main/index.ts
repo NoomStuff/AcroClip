@@ -36,6 +36,8 @@ import { updateTray as renderTray } from "./tray";
 import { CollectionRefresh } from "./collection-refresh";
 
 protocol.registerSchemesAsPrivileged([{ scheme: "acroclip-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+// The player switches and mixes a clip's audio tracks in place, instead of preparing a copy per selection.
+app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
 const here = dirname(fileURLToPath(import.meta.url));
 const testProfile = process.env["ACROCLIP_PROFILE"];
 if (testProfile) app.setPath("userData", resolve(testProfile));
@@ -871,17 +873,18 @@ function registerIPC() {
       child.once("error", () => notice("AttaCut couldn't open. Show the clip in your file manager and open it from there.", true, "info", "action"));
       child.unref();
    });
-   handle("playback", async (path, track, requestId) => {
+   handle("playback", async (path, track, requestId, options) => {
       const source = trustedPath(path);
       const selection =
          track === undefined ? undefined : z.union([z.number().int().min(0).max(63), z.array(z.number().int().min(0).max(63)).min(1).max(64)]).parse(track);
-      if (requestId === undefined) return collections.playback(source, selection);
+      const preparation = z.object({ compatible: z.boolean().optional() }).strict().optional().parse(options) ?? {};
+      if (requestId === undefined) return collections.playback(source, selection, undefined, preparation);
       const id = z.string().uuid().parse(requestId);
       playbackRequest?.controller.abort();
       const request = { id, controller: new AbortController() };
       playbackRequest = request;
       try {
-         return await collections.playback(source, selection, request.controller.signal);
+         return await collections.playback(source, selection, request.controller.signal, preparation);
       } finally {
          if (playbackRequest === request) playbackRequest = undefined;
       }
