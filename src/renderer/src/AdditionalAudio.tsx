@@ -159,6 +159,7 @@ export function AdditionalAudio({
                            Edit source
                         </MenuItem>
                         <MenuItem
+                           danger
                            disabled={active}
                            onClick={() => save((current) => ({ audioSources: current.audioSources.filter((item) => item.id !== source.id) }))}
                         >

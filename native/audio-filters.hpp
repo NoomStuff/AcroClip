@@ -15,7 +15,8 @@ struct Filter {
 };
 using Chain = std::vector<Filter>;
 void registerAudioFilters();
-// Validates the app's filter list. Ranges match src/shared/audio-filters.ts.
+// Validates the app's filter list against OBS's full ranges. The app offers a
+// practical subset of them (src/shared/audio-filters.ts).
 Chain parseChain(const nlohmann::json &value);
 // Brings the source's filters in line with the chain. Unchanged filters keep
 // their state, so adjusting one filter does not reset the others.

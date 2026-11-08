@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// OBS Studio's audio filters, run by the recorder. Ranges and defaults are
-// OBS's own and must stay in step with native/audio-filters.cpp.
+// OBS Studio's audio filters, run by the recorder. Defaults are OBS's own.
+// Ranges are the useful part of OBS's, which native/audio-filters.cpp accepts in full.
 export interface AudioFilterParameter {
    key: string;
    label: string;
@@ -75,11 +75,11 @@ export const audioFilterDefinitions: Record<AudioFilterKind, AudioFilterDefiniti
       label: "Noise gate",
       detail: "Silences the source until it is louder than the open threshold.",
       parameters: [
-         db("close_threshold", "Close threshold", -96, 0, -32, 1),
-         db("open_threshold", "Open threshold", -96, 0, -26, 1),
-         ms("attack_time", "Attack", 0, 10000, 25),
-         ms("hold_time", "Hold", 0, 10000, 200),
-         ms("release_time", "Release", 0, 10000, 150),
+         db("close_threshold", "Close threshold", -60, 0, -32, 1),
+         db("open_threshold", "Open threshold", -60, 0, -26, 1),
+         ms("attack_time", "Attack", 0, 100, 25),
+         ms("hold_time", "Hold", 0, 1000, 200),
+         ms("release_time", "Release", 0, 1000, 150),
       ],
    },
    gain: { label: "Gain", detail: "Boosts or reduces the level before the fader.", parameters: [db("db", "Gain", -30, 30, 0)] },
@@ -87,27 +87,27 @@ export const audioFilterDefinitions: Record<AudioFilterKind, AudioFilterDefiniti
       label: "Compressor",
       detail: "Reduces loud peaks so the level stays even.",
       parameters: [
-         ratio(1, 32, 10, 0.5),
+         ratio(1, 20, 10, 0.5),
          db("threshold", "Threshold", -60, 0, -18),
-         ms("attack_time", "Attack", 1, 500, 6),
+         ms("attack_time", "Attack", 1, 100, 6),
          ms("release_time", "Release", 1, 1000, 60),
-         db("output_gain", "Output gain", -32, 32, 0),
+         db("output_gain", "Output gain", -20, 20, 0),
       ],
    },
    limiter: {
       label: "Limiter",
       detail: "Keeps the level from exceeding the threshold.",
-      parameters: [db("threshold", "Threshold", -60, 0, -6), ms("release_time", "Release", 1, 1000, 60)],
+      parameters: [db("threshold", "Threshold", -30, 0, -6), ms("release_time", "Release", 1, 500, 60)],
    },
    expander: {
       label: "Expander",
       detail: "Lowers quiet sounds below the threshold.",
       parameters: [
-         ratio(1, 20, 2, 0.1),
+         ratio(1, 10, 2, 0.1),
          db("threshold", "Threshold", -60, 0, -40),
          ms("attack_time", "Attack", 1, 100, 10),
-         ms("release_time", "Release", 1, 1000, 50),
-         db("output_gain", "Output gain", -32, 32, 0),
+         ms("release_time", "Release", 1, 500, 50),
+         db("output_gain", "Output gain", -20, 20, 0),
       ],
       choices: [
          {
@@ -131,8 +131,8 @@ export const audioFilterDefinitions: Record<AudioFilterKind, AudioFilterDefiniti
          ratio(0, 1, 0.5, 0.01),
          db("threshold", "Threshold", -60, 0, -20),
          ms("attack_time", "Attack", 1, 100, 10),
-         ms("release_time", "Release", 1, 1000, 50),
-         db("output_gain", "Output gain", -32, 32, 0),
+         ms("release_time", "Release", 1, 500, 50),
+         db("output_gain", "Output gain", -20, 20, 0),
          { key: "knee_width", label: "Knee", min: 0, max: 20, step: 1, default: 10, unit: " dB", integer: true },
       ],
    },

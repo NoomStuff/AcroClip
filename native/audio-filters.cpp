@@ -42,7 +42,7 @@ struct Kind {
   std::vector<Choice> choices;
   std::vector<Fixed> fixed;
 };
-// Keep in step with src/shared/audio-filters.ts. Ranges are OBS's own.
+// OBS's own ranges. src/shared/audio-filters.ts narrows them to useful values.
 const std::vector<Kind> &kinds() {
   static const std::vector<Kind> value{
       {"gain", "gain_filter", {{"db", -30, 30, 0, false}}, {}, {}},
