@@ -180,7 +180,9 @@ export function App() {
             (target?.closest('button,a[href],[role="button"],[role="menuitem"],[role="menuitemradio"],[role="option"]') &&
                !event.ctrlKey &&
                !event.metaKey &&
-               !event.altKey)
+               !event.altKey) ||
+            // Copying selected text stays the usual copy.
+            ((action.id === "copyFile" || action.id === "copyClipFile") && !!window.getSelection()?.toString())
          )
             return;
          event.preventDefault();

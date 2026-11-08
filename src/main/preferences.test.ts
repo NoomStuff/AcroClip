@@ -57,6 +57,36 @@ describe("recording settings boundaries", () => {
       expect(preferencesSchema.safeParse({ ...defaultPreferences, unknown: true }).success).toBe(false);
    });
 });
+describe("overlapping clip choice", () => {
+   it("restarts capture only when the recorder's own trimming changes", () => {
+      const merge = { ...defaultPreferences, overlapClips: "merge" as const };
+      expect(requiresCaptureRestart(merge, { ...merge, overlapClips: "keep" })).toBe(false);
+      expect(requiresCaptureRestart(merge, { ...merge, overlapClips: "trim" })).toBe(true);
+   });
+   it("keeps the behavior of the retired overlap toggle and saves normally on new installs", async () => {
+      const root = await mkdtemp(join(tmpdir(), "acroclip-overlap-migration-"));
+      try {
+         const file = join(root, "preferences.json");
+         const legacy: Record<string, unknown> = { ...defaultPreferences, collection: root };
+         delete legacy["overlapClips"];
+         for (const [avoidOverlap, expected] of [
+            [true, "trim"],
+            [false, "keep"],
+            [undefined, "keep"],
+         ] as const) {
+            await writeFile(file, JSON.stringify({ ...legacy, ...(avoidOverlap === undefined ? {} : { avoidOverlap }) }));
+            const value = await readPreferences(file, root);
+            expect(value.overlapClips).toBe(expected);
+            expect(value).not.toHaveProperty("avoidOverlap");
+         }
+         await writeFile(file, JSON.stringify({ ...legacy, avoidOverlap: true, overlapClips: "merge" }));
+         expect((await readPreferences(file, root)).overlapClips).toBe("merge");
+         expect((await readPreferences(join(root, "missing.json"), root)).overlapClips).toBe("keep");
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+});
 describe("preference persistence recovery", () => {
    it("drops the retired refresh shortcut without resetting other preferences", async () => {
       const root = await mkdtemp(join(tmpdir(), "acroclip-retired-shortcut-"));

@@ -12,6 +12,7 @@ export const shortcutRegistry = [
    { id: "newCategory", label: "New tag", scope: "local", page: "all", group: "library", binding: "CommandOrControl+N" },
    { id: "newFolder", label: "New folder", scope: "local", page: "all", group: "library", binding: "CommandOrControl+Shift+N" },
    { id: "openClip", label: "Open first matching clip", scope: "local", page: "library", binding: "CommandOrControl+Enter" },
+   { id: "copyClipFile", label: "Copy file", scope: "local", page: "library", binding: "CommandOrControl+C" },
    { id: "playPause", label: "Play / pause", scope: "local", page: "viewer", binding: "Space" },
    { id: "seekBack", label: "Seek back 5 seconds", scope: "local", page: "viewer", binding: "Left" },
    { id: "seekForward", label: "Seek forward 5 seconds", scope: "local", page: "viewer", binding: "Right" },
@@ -19,6 +20,7 @@ export const shortcutRegistry = [
    { id: "fullscreen", label: "Fullscreen playback", scope: "local", page: "viewer", binding: "F" },
    { id: "createShareable", label: "Create shareable", scope: "local", page: "viewer", binding: "CommandOrControl+E" },
    { id: "showFile", label: "Show clip file", scope: "local", page: "viewer", binding: "CommandOrControl+Shift+O" },
+   { id: "copyFile", label: "Copy file", scope: "local", page: "viewer", binding: "CommandOrControl+C" },
 ] as const;
 export function shortcutGroup(item: (typeof shortcutRegistry)[number]) {
    return "group" in item ? item.group : item.page;

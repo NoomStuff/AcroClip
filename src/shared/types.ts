@@ -70,6 +70,7 @@ export interface AudioLevels {
    microphone: number;
    additional?: Record<string, number>;
 }
+export type OverlapClips = "keep" | "trim" | "merge";
 export interface Preferences {
    shortcuts: ShortcutBindings;
    collection: string;
@@ -106,7 +107,8 @@ export interface Preferences {
    autoRecord: boolean;
    notifications: "everywhere" | "outside-fullscreen" | "off";
    sound: boolean;
-   avoidOverlap: boolean;
+   // What a save does when its footage overlaps the previous clip.
+   overlapClips: OverlapClips;
    folderLayout: "flat" | "application";
    filenamePreset: "source-date" | "date-source" | "custom";
    filenameTemplate: string;
@@ -144,6 +146,10 @@ export interface Clip {
    tracks: AudioTrack[];
    categories: string[];
    shareables: Shareable[];
+   // How many saved clips this file combines.
+   mergedFrom?: number;
+   // Opened in the player, or older than view tracking.
+   watched?: boolean;
 }
 export interface Category {
    icon?: string | undefined;
@@ -288,6 +294,10 @@ export interface DesktopAPI {
       value: { id?: string; name?: string; color?: string; icon?: string; clipId?: string; categoryIds?: string[] }
    ): Promise<void>;
    reveal(path: string): Promise<void>;
+   /** Put a clip or shareable file on the clipboard, as the file manager's Copy does. */
+   copyFile(path: string): Promise<void>;
+   /** The player showed this clip. */
+   clipViewed(id: string): Promise<void>;
    openInAttaCut(id: string): Promise<void>;
    attaCutAvailable(): Promise<boolean>;
    dragFile(path: string): void;

@@ -11,6 +11,7 @@ import { formatSize, formatTime } from "./format";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { IconButton, Menu, MenuItem } from "./ui";
 import { ClipActions } from "./ClipActions";
+import { defaultClipFile } from "./clip-files";
 import type { ContextMenuRequest } from "./ui";
 
 const dragSurface = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>')}`;
@@ -55,6 +56,8 @@ export const ClipCard = memo(function ClipCard({
    ask: Ask;
 }) {
    const shareable = clip.shareables.at(-1);
+   // Dragging out shares the same file Copy file would.
+   const dragPath = defaultClipFile(clip)?.path;
    const thumbnail = useThumbnailVisibility();
    return (
       <article
@@ -75,10 +78,7 @@ export const ClipCard = memo(function ClipCard({
       >
          <button
             className="clip-open"
-            {...fileDragProps(
-               clip.originalMissing ? shareable?.path : clip.path,
-               !clip.originalMissing && !job ? { id: clip.id, collection: collectionRoot } : undefined
-            )}
+            {...fileDragProps(dragPath, !clip.originalMissing && !job ? { id: clip.id, collection: collectionRoot } : undefined)}
             onClick={() => openClip(clip)}
             aria-label={`Open ${clip.name}`}
             title={clip.availability === "unverified" ? "Checking file availability" : undefined}
@@ -138,7 +138,7 @@ export const ClipCard = memo(function ClipCard({
             </span>
             {/* Chromium can turn Shift-drag on a button into text selection.
                 A stable image target also works before the thumbnail loads. */}
-            <img className="clip-drag-surface" src={dragSurface} alt="" aria-hidden="true" draggable={!!(clip.originalMissing ? shareable?.path : clip.path)} />
+            <img className="clip-drag-surface" src={dragSurface} alt="" aria-hidden="true" draggable={!!dragPath} />
          </button>
          <div className="card-menu">
             <Menu

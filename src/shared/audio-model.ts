@@ -36,6 +36,8 @@ export function nativeAudioPreferences(value: Preferences) {
    const source = value.audioSources.find((source) => source.kind === "source");
    return {
       ...value,
+      // The recorder trims overlap itself. Merging happens after both clips are saved.
+      avoidOverlap: value.overlapClips === "trim",
       captureAudio: source?.enabled ?? false,
       captureVolume: source?.volume ?? 1,
       captureMuted: source?.muted ?? false,

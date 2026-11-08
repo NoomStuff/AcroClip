@@ -10,7 +10,7 @@ import { desktopExec } from "./startup";
 describe("recording destination safety", () => {
    it("keeps application names from escaping the chosen recording folder", () => {
       const prefs = { ...defaultPreferences, collection: "/clips", folderLayout: "application" as const };
-      const destination = recordingDestination(prefs, "../../App: title", new Date("2026-10-08T12:00:00Z"));
+      const destination = recordingDestination(prefs, "../../App: title", new Date(2026, 9, 8, 12, 0, 0));
       expect(destination).toBe(join("/clips", ".._.._App_ title", ".._.._App_ title 2026-10-08 12-00-00.mp4"));
       expect(safeFileStem("CON")).toBe("Clip");
       expect(safeFileStem("\u0000")).toBe("Clip");

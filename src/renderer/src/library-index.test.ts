@@ -97,12 +97,18 @@ const sampleClip = (id: string, relativePath: string, createdAt: number): Clip =
 it("counts nested folders across path separators while filtering only direct clips", () => {
    const clips = [sampleClip("Root", "Root.mp4", 1), sampleClip("Warmup", "Games\\Warmup.mp4", 5), sampleClip("Winner", "Games/Finals/Winner.mp4", 10)];
    const summaries = summarizeFolders(clips, "winner");
-   expect(summaries.get("Games")).toEqual({ count: 2, matchingCount: 1, matches: true, newest: 10, oldest: 5 });
+   expect(summaries.get("Games")).toEqual({ count: 2, matchingCount: 1, matches: true, newest: 10, oldest: 5, size: 2000, duration: 60 });
    expect(summaries.get("")?.count).toBe(3);
-   expect(selectChildFolders(["Games", "Games/Finals", "Empty"], "Games", "winner", summaries, "newest")).toEqual(["Games/Finals"]);
-   expect(selectChildFolders(["Games"], null, "", summaries, "name")).toEqual([]);
+   expect(selectChildFolders(["Games", "Games/Finals", "Empty"], "Games", "winner", summaries, { field: "date", reversed: false })).toEqual(["Games/Finals"]);
+   expect(selectChildFolders(["Games"], null, "", summaries, { field: "name", reversed: false })).toEqual([]);
    expect(
-      selectLibraryClips(clips, { search: "", filter: "folder:Games", folderPath: "Games", order: "newest", applications: new Map() }).map(({ id }) => id)
+      selectLibraryClips(clips, {
+         search: "",
+         filter: "folder:Games",
+         folderPath: "Games",
+         sort: { field: "date", reversed: false },
+         applications: new Map(),
+      }).map(({ id }) => id)
    ).toEqual(["Warmup"]);
 });
 
@@ -112,7 +118,7 @@ it("combines search, tags and application filters without mutating collection or
    const options = {
       search: "game",
       folderPath: null,
-      order: "newest",
+      sort: { field: "date", reversed: false },
       applications: new Map([
          ["First", "app-a"],
          ["Second", "app-b"],

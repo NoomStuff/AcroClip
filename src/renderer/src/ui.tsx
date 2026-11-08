@@ -8,7 +8,7 @@ import { SelectionIndicator } from "./SelectionIndicator";
 import { DropdownSelect } from "./DropdownSelect";
 import { menuPosition } from "./menu-position";
 import { MenuFamilyContext } from "./MenuSubmenu";
-export { MenuSubmenu, MenuCheckboxItem } from "./MenuSubmenu";
+export { MenuSubmenu, MenuCheckboxItem, MenuRadioGroup, MenuRadioItem } from "./MenuSubmenu";
 import type { DropdownOption } from "./DropdownSelect";
 
 export function HeaderActions({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -76,9 +76,9 @@ export function Button({
       </button>
    );
 }
-export function IconButton({ children, label, className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
+export function IconButton({ children, label, title, className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
    return (
-      <button type="button" {...props} title={label} aria-label={label} className={`icon-button ${className}`}>
+      <button type="button" {...props} title={title ?? label} aria-label={label} className={`icon-button ${className}`}>
          {children}
       </button>
    );
@@ -215,6 +215,7 @@ export function Menu({
    trigger,
    children,
    label,
+   title,
    className = "",
    columns = 1,
    contextRequest,
@@ -223,6 +224,8 @@ export function Menu({
    trigger: ReactNode;
    children: ReactNode;
    label: string;
+   // The trigger's tooltip, when it should say more than its name, such as the current choice.
+   title?: string | undefined;
    className?: string;
    columns?: number;
    contextRequest?: ContextMenuRequest | undefined;
@@ -326,6 +329,7 @@ export function Menu({
       <div className={`menu-wrap ${className}`} ref={ref}>
          <IconButton
             label={label}
+            title={title}
             aria-expanded={open}
             aria-haspopup="menu"
             onClick={() => {
@@ -405,15 +409,18 @@ export function MenuItem({
    onClick,
    danger = false,
    disabled = false,
+   separated = danger,
 }: {
    children: ReactNode;
    onClick: () => void;
    danger?: boolean;
    disabled?: boolean;
+   // Destructive items start their own group unless they share one.
+   separated?: boolean;
 }) {
    return (
       <>
-         {danger && <div className="menu-separator" role="separator" />}
+         {separated && <div className="menu-separator" role="separator" />}
          <button role="menuitem" tabIndex={-1} className={danger ? "danger" : ""} onClick={onClick} disabled={disabled}>
             {children}
          </button>

@@ -22,7 +22,7 @@ import {
    Scissors,
    Volume2,
 } from "lucide-react";
-import type { AppState, Preferences } from "../../shared/types";
+import type { AppState, OverlapClips, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
 import { previewFilename, filenamePatterns, filenameTemplateError, filenameTemplateWarning } from "../../shared/filename";
 import { SelectionIndicator } from "./SelectionIndicator";
@@ -38,6 +38,7 @@ import { GameManagement } from "./GameManagement";
 import { PaneDivider, usePaneSize } from "./layout";
 import { FolderPicker } from "./FolderPicker";
 import { timeAgo } from "./format";
+import { overlapDetail } from "./overlap-copy";
 import { TimeInput } from "./TimeInput";
 import { initialLocation, reportLocation } from "./navigation-history";
 import type { NavigationLocation } from "./navigation-history";
@@ -314,13 +315,13 @@ export function Settings({
                                  />
                               </div>
                            </Field>
-                           <Toggle
-                              icon={Scissors}
-                              checked={draft.avoidOverlap}
-                              onChange={(value) => change("avoidOverlap", value)}
-                              label="Reduce clip overlap"
-                              detail="Leave out footage already saved in the previous clip."
-                           />
+                           <Field icon={Scissors} label="Overlapping clips" detail={overlapDetail(draft.overlapClips, draft.clipSeconds)}>
+                              <Select label="Overlapping clips" value={draft.overlapClips} onChange={(value) => change("overlapClips", value as OverlapClips)}>
+                                 <option value="keep">Save normally</option>
+                                 <option value="trim">Save what's new</option>
+                                 <option value="merge">Extend previous clip</option>
+                              </Select>
+                           </Field>
                         </section>
                      </>
                   )}
@@ -414,7 +415,7 @@ export function Settings({
                                  <>
                                     <div className="filename-preview">
                                        <span>Example</span>
-                                       <code>{previewFilename(draft, "Desktop", new Date("2026-10-08T19:42:10Z"))}</code>
+                                       <code>{previewFilename(draft, "Desktop", new Date(2026, 9, 8, 19, 42, 10))}</code>
                                     </div>
                                  </>
                               )}

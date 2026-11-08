@@ -1,10 +1,11 @@
 import { shareableTargetAllowed } from "../../shared/shareable-target";
 import { useDirectionalContent } from "./useDirectionalContent";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Film, LibraryBig, FolderOpen, LoaderCircle, MoreHorizontal, Share2, SlidersHorizontal, Trash2, X } from "lucide-react";
+import { Film, LibraryBig, FolderOpen, LoaderCircle, MoreHorizontal, Share2, SlidersHorizontal, X } from "lucide-react";
 import type { AppState, Clip } from "../../shared/types";
-import { api, describeError, fileDragProps } from "./desktop";
-import { Button, Empty, HeaderActions, IconButton, Menu, MenuItem, Segmented, Select } from "./ui";
+import { api, describeError, fileDragProps, reportFeedback } from "./desktop";
+import { clipFiles, copiedMessage } from "./clip-files";
+import { Button, Empty, HeaderActions, IconButton, Menu, Segmented, Select } from "./ui";
 import type { ContextMenuRequest } from "./ui";
 import { formatSize, formatTime } from "./format";
 import type { Run } from "./desktop";
@@ -229,10 +230,30 @@ export function Viewer({
          else if (id === "createShareable" && targetAllowed && !clip.originalMissing && !job)
             void run(() => api.createShareable(clip.id, override ? target : undefined));
          else if (id === "showFile" && path) void run(() => api.reveal(path));
+         else if (id === "copyFile" && path && !window.getSelection()?.toString()) {
+            const files = clipFiles(clip);
+            const file = version === "shareable" && shareable ? files.shareables[clip.shareables.indexOf(shareable)] : files.original;
+            if (file)
+               void run(async () => {
+                  await api.copyFile(file.path);
+                  reportFeedback({ kind: "notice", message: copiedMessage(file), error: false });
+               });
+         }
       };
       window.addEventListener("acroclip-shortcut", command);
       return () => window.removeEventListener("acroclip-shortcut", command);
-   }, [visible, clip, override, target, path, run, targetAllowed, job, toggleMute]);
+   }, [visible, clip, override, target, path, run, targetAllowed, job, toggleMute, version, shareable]);
+   // A clip counts as viewed once it is on screen, which keeps a later save from merging it away.
+   const clipId = clip?.id;
+   useEffect(() => {
+      if (!visible || !clipId) return;
+      const viewed = () => {
+         if (document.visibilityState === "visible") void api.clipViewed(clipId).catch(() => undefined);
+      };
+      viewed();
+      document.addEventListener("visibilitychange", viewed);
+      return () => document.removeEventListener("visibilitychange", viewed);
+   }, [visible, clipId]);
    useEffect(() => {
       const changed = () => setFullscreen(document.fullscreenElement === player.current);
       document.addEventListener("fullscreenchange", changed);
@@ -312,22 +333,8 @@ export function Viewer({
                            ask={ask}
                            run={run}
                            create={create}
-                           remove={() => void remove()}
-                           shareable={shareable}
-                        >
-                           {shareable && (
-                              <MenuItem danger disabled={!!job} onClick={() => void remove(shareable.id)}>
-                                 <Trash2 size={14} />
-                                 {clip.shareables.length > 1 ? `Delete shareable ${clip.shareables.indexOf(shareable) + 1}` : "Delete shareable"}
-                              </MenuItem>
-                           )}
-                           {clip.shareables.length > 1 && (
-                              <MenuItem danger disabled={!!job} onClick={() => void remove(undefined, "shareables")}>
-                                 <Trash2 size={14} />
-                                 Delete all shareables
-                              </MenuItem>
-                           )}
-                        </ClipActions>
+                           remove={(shareableId, scope) => void remove(shareableId, scope)}
+                        />
                      </Menu>
                   </HeaderActions>
                   <div className="viewer-metadata">
@@ -381,6 +388,12 @@ export function Viewer({
                                  <span>Audio tracks</span>
                                  <strong>{clip.availability && !clip.tracks.length ? "Checking" : clip.tracks.length || "None"}</strong>
                               </div>
+                              {clip.mergedFrom && (
+                                 <div>
+                                    <span>Extended from</span>
+                                    <strong>{clip.mergedFrom} saves</strong>
+                                 </div>
+                              )}
                            </>
                         ) : shareable ? (
                            <>

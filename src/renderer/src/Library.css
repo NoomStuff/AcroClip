@@ -303,9 +303,66 @@
    height: 28px;
 }
 
-.sort-control {
-   width: 148px;
+.library-view-menu {
    flex-shrink: 0;
+}
+/* Group headers span the grid and fold like the sidebar's sections. */
+.clip-group-header {
+   grid-column: 1 / -1;
+   margin: 14px 2px -8px;
+   color: var(--subtle);
+   font-size: 11px;
+   font-weight: 600;
+}
+.clip-grid > .clip-group-header:first-child {
+   margin-top: 0;
+}
+.clip-group-control {
+   position: relative;
+   display: inline-flex;
+   align-items: baseline;
+   gap: 8px;
+   padding: 2px 0;
+   color: inherit;
+   font: inherit;
+   background: none;
+   border: 0;
+   cursor: pointer;
+   transition: color 140ms var(--ease);
+}
+.clip-group-control > svg {
+   position: absolute;
+   left: -15px;
+   top: calc(50% - 6px);
+   opacity: 0;
+   transform: rotate(90deg);
+   transition:
+      opacity 140ms var(--ease),
+      transform 220ms var(--ease);
+}
+.clip-group-control[aria-expanded="false"] > svg {
+   transform: rotate(0deg);
+}
+.clip-group-control:hover,
+.clip-group-control:focus-visible {
+   color: var(--text);
+}
+.clip-group-control:hover > svg,
+.clip-group-control:focus-visible > svg,
+.clip-group-control[aria-expanded="false"] > svg {
+   opacity: 1;
+}
+.clip-group-count {
+   font-weight: 400;
+}
+@media (prefers-reduced-motion: reduce) {
+   .clip-group-control,
+   .clip-group-control > svg {
+      transition: none;
+   }
+}
+.clip-grid[data-view="list"] .clip-group-header {
+   margin: 14px 10px 4px;
 }
 
 .library-scroll {

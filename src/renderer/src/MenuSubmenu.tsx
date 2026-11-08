@@ -5,7 +5,19 @@ import { Check, ChevronRight } from "lucide-react";
 import { submenuPosition } from "./menu-position";
 
 export const MenuFamilyContext = createContext({ id: "", closing: false, dismiss: () => {} });
-export function MenuSubmenu({ label, icon, disabled = false, children }: { label: string; icon?: ReactNode; disabled?: boolean; children: ReactNode }) {
+export function MenuSubmenu({
+   label,
+   icon,
+   disabled = false,
+   danger = false,
+   children,
+}: {
+   label: string;
+   icon?: ReactNode;
+   disabled?: boolean;
+   danger?: boolean;
+   children: ReactNode;
+}) {
    const family = useContext(MenuFamilyContext);
    const id = useId();
    const trigger = useRef<HTMLButtonElement>(null);
@@ -73,7 +85,7 @@ export function MenuSubmenu({ label, icon, disabled = false, children }: { label
             ref={trigger}
             id={id}
             role="menuitem"
-            className="menu-submenu-trigger"
+            className={danger ? "menu-submenu-trigger danger" : "menu-submenu-trigger"}
             tabIndex={-1}
             disabled={disabled}
             aria-haspopup="menu"
@@ -158,6 +170,34 @@ export function MenuCheckboxItem({ checked, onClick, children }: { checked: bool
    return (
       <button
          role="menuitemcheckbox"
+         aria-checked={checked}
+         tabIndex={-1}
+         onClick={(event) => {
+            event.stopPropagation();
+            onClick();
+         }}
+      >
+         {children}
+         {checked && <Check size={14} className="menu-item-check" aria-hidden="true" />}
+      </button>
+   );
+}
+
+/** A labelled set of choices that stays open, so related choices can be made in one visit. */
+export function MenuRadioGroup({ label, children }: { label: string; children: ReactNode }) {
+   return (
+      <div role="group" aria-label={label}>
+         <div className="menu-label" aria-hidden="true">
+            {label}
+         </div>
+         {children}
+      </div>
+   );
+}
+export function MenuRadioItem({ checked, onClick, children }: { checked: boolean; onClick: () => void; children: ReactNode }) {
+   return (
+      <button
+         role="menuitemradio"
          aria-checked={checked}
          tabIndex={-1}
          onClick={(event) => {

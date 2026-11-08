@@ -36,13 +36,18 @@ export function filenameTemplateWarning(template: string): string {
    return "";
 }
 
+// Names use the local clock people read. Stored times stay UTC epoch values.
+function localStamp(now: Date): { date: string; time: string } {
+   const pad = (value: number) => String(value).padStart(2, "0");
+   return {
+      date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+      time: `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`,
+   };
+}
+
 export function previewFilename(preferences: Pick<Preferences, "filenamePreset" | "filenameTemplate">, source: string, now: Date): string {
    const label = safeFileStem(source);
-   const stamp = now
-      .toISOString()
-      .replaceAll(":", "-")
-      .replace(/\.\d+Z$/, "");
-   const values = { source: label, date: stamp.slice(0, 10), time: stamp.slice(11) };
+   const values = { source: label, ...localStamp(now) };
    let name: string;
    if (preferences.filenamePreset === "custom") {
       if (!validFilenameTemplate(preferences.filenameTemplate)) throw new Error("Use {source}, {date}, or {time} in a filename without folder separators.");

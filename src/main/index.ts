@@ -34,6 +34,11 @@ import { StorageMonitor } from "./storage";
 import { StateChanges } from "./state-changes";
 import { updateTray as renderTray } from "./tray";
 import { CollectionRefresh } from "./collection-refresh";
+import { footageWindow, mergeCandidate } from "./merge-policy";
+import type { SavedFootage } from "./merge-policy";
+import { saveOutcomeMessage } from "../shared/save-outcome";
+import type { SaveOutcome } from "../shared/save-outcome";
+import { copyFileToClipboard } from "./clipboard-file";
 
 protocol.registerSchemesAsPrivileged([{ scheme: "acroclip-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 // The player switches and mixes a clip's audio tracks in place, instead of preparing a copy per selection.
@@ -127,10 +132,29 @@ const recorder = new Recorder({
    onSaved: async (path, source, _requestId, capture) => {
       const clip = await collections.registerRecording(path, source, capture.application);
       emitState();
-      notice(capture.previousFootage ? "Saved the footage that was still available" : "Clip saved", false, "saved", "native");
-      if (preferences.autoShare && shareableTargetAllowed(clip.size, preferences.shareSizeMB)) {
-         void collections.createShareable(clip.id, preferences.shareSizeMB).catch((e) => notice(errorMessage(e), true));
+      const request = [...savesRequested].find(([requested]) => samePath(requested, path));
+      if (request) savesRequested.delete(request[0]);
+      const footage: SavedFootage = {
+         clipId: clip.id,
+         session: capture.previousFootage ? "" : (request?.[1].session ?? ""),
+         ...footageWindow(request?.[1].requestedAt ?? Date.now(), capture.secondsSinceCapture, clip.duration),
+      };
+      const previous = previousSave;
+      const candidate = mergeCandidate(previous, footage, {
+         mode: preferences.overlapClips,
+         clipSeconds: preferences.clipSeconds,
+         previousUntouched: !!previous && collections.untouched(previous.clipId),
+      });
+      if (!candidate.merge || !previous) {
+         previousSave = footage;
+         reportSave({ kind: "saved", previousFootage: capture.previousFootage });
+         autoShare(clip.id);
+         return;
       }
+      // A chain keeps growing from the first clip's start.
+      previousSave = { ...footage, start: previous.start };
+      reportSave({ kind: "extended", seconds: candidate.seconds });
+      merges = merges.then(() => mergeSaves(previous.clipId, clip.id)).catch((error: unknown) => void log(`merge: ${errorMessage(error)}`));
    },
 });
 const captureSources = new CaptureSources(
@@ -248,6 +272,34 @@ async function showFeedback(message: string, error: boolean, saving: boolean) {
    feedback.show(message, error, saving);
 }
 let lastRecordingArtwork: RecordingArtwork | undefined;
+// Saves waiting for the recorder, by destination, and the last clip a new save may merge into.
+const savesRequested = new Map<string, { requestedAt: number; session: string }>();
+let previousSave: SavedFootage | undefined;
+let merges: Promise<void> = Promise.resolve();
+function reportSave(outcome: SaveOutcome) {
+   notice(saveOutcomeMessage(outcome), false, outcome.kind === "kept-both" ? "info" : "saved", "native");
+}
+function autoShare(clipId: string) {
+   const clip = collections.clips.find((item) => item.id === clipId);
+   if (!clip || !preferences.autoShare || !shareableTargetAllowed(clip.size, preferences.shareSizeMB)) return;
+   void collections.createShareable(clip.id, preferences.shareSizeMB, true).catch((e) => notice(errorMessage(e), true));
+}
+/** Runs after the newer clip is saved and announced. Anything unexpected keeps both clips. */
+async function mergeSaves(olderId: string, newerId: string) {
+   await collections.cancelAutomaticShareables(olderId);
+   const outcome = await collections.mergeRecordings(olderId, newerId, (path) => shell.trashItem(path));
+   emitState();
+   if (!outcome.merged) {
+      void log(`merge: kept both clips. ${outcome.reason}`);
+      if (previousSave?.clipId === newerId) {
+         const own = collections.clips.find((item) => item.id === newerId);
+         if (own) previousSave = { ...previousSave, start: previousSave.end - own.duration * 1000 };
+      }
+      reportSave({ kind: "kept-both" });
+   } else if (outcome.previousKept) reportSave({ kind: "extended-previous-kept" });
+   else if (windowShown() && mainWindow?.isFocused()) notice("Extended the previous clip. The shorter version is in the trash.", false, "info", "app");
+   autoShare(newerId);
+}
 function createWindow() {
    stateChanges.reset();
    const workArea = process.platform === "linux" ? screen.getPrimaryDisplay().workAreaSize : { width: 1380, height: 900 };
@@ -393,7 +445,17 @@ async function saveClip() {
    if (!withinRoot(collections.root, realpathSync(dirname(destination))))
       throw new Error("The capture folder points outside this collection. Choose another folder.");
    void storage.check(collections.root);
-   await recorder.save(destination, requestedAt, lastRecordingArtwork?.application);
+   const status = recorder.status;
+   const session = status.startedAt ? `${status.startedAt}:${status.bufferedSourceId || status.sourceId || ""}` : "";
+   // A save the recorder rejects never reports back, so forget requests long past any save.
+   for (const [path, request] of savesRequested) if (request.requestedAt < requestedAt - 600_000) savesRequested.delete(path);
+   savesRequested.set(destination, { requestedAt, session });
+   try {
+      await recorder.save(destination, requestedAt, lastRecordingArtwork?.application);
+   } catch (error) {
+      savesRequested.delete(destination);
+      throw error;
+   }
    // The status bar shows saves in progress, so this only reaches the desktop banner.
    notice("Saving clip…", false, "saving", "native");
 }
@@ -421,6 +483,7 @@ async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
    exiting = (async () => {
       await preferenceWrites.catch(() => undefined);
       await startingCapture?.catch(() => undefined);
+      await merges;
       await collections.finishFileChanges();
       phase("settled files");
       const saves = recorder.status.pendingSaves;
@@ -849,6 +912,12 @@ function registerIPC() {
             return collections.toggleCategory(idSchema.parse(request.clipId), idSchema.parse(request.id));
       }
    });
+   handle("clip-viewed", (id) => collections.markViewed(idSchema.parse(id)));
+   handle("copy-file", async (path) => {
+      const selected = trustedPath(path);
+      await copyFileToClipboard(selected);
+      await collections.markShared(selected);
+   });
    handle("reveal", (path) => {
       const selected = trustedPath(path);
       if (samePath(selected, collections.root)) void shell.openPath(selected);
@@ -919,7 +988,9 @@ function registerIPC() {
    ipcMain.on("drag", (event, path) => {
       if (event.sender !== mainWindow?.webContents) return;
       try {
-         event.sender.startDrag({ file: trustedPath(path), icon: trayIcon() });
+         const selected = trustedPath(path);
+         event.sender.startDrag({ file: selected, icon: trayIcon() });
+         void collections.markShared(selected).catch(() => undefined);
       } catch (e) {
          notice(errorMessage(e), true, "info", "action");
       }
