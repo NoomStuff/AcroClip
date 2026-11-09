@@ -65,7 +65,7 @@ test("settings autosave retains drafts, merges external changes and retries fail
       await expect(pattern).toHaveValue("{date} {time} {source}");
       await pattern.fill("Moment ");
       await pattern.evaluate((input: HTMLInputElement) => input.setSelectionRange(7, 7));
-      await page.locator(".filename-tokens").getByTitle("{source}", { exact: true }).click();
+      await page.locator(".filename-tokens").locator('[data-tooltip="{source}"]').click();
       await expect(pattern).toHaveValue("Moment {source}");
       await expect(pattern).toBeFocused();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.filenameTemplate).toBe("Moment {source}");
@@ -89,6 +89,7 @@ test("settings autosave retains drafts, merges external changes and retries fail
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.collection).toBe(broken);
       await expect(page.getByRole("status", { name: "Settings saved", exact: true })).toBeVisible();
       await page.locator(".settings-sidebar").getByRole("button", { name: "Collection", exact: true }).click();
+      await page.getByRole("group", { name: "Default maximum size choices", exact: true }).getByRole("button", { name: "Custom", exact: true }).click();
       const shareSize = page.getByRole("spinbutton", { name: "Default shareable size in MB", exact: true });
       await shareSize.fill("");
       await app.evaluate(({ ipcMain }) => {

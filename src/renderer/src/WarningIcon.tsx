@@ -15,13 +15,13 @@ export function WarningIcon({ message, error, id }: { message: string; error: bo
          aria-label={message || undefined}
          aria-hidden={!message}
          tabIndex={message ? 0 : -1}
+         data-tooltip={message || undefined}
       >
          {error ? <CircleAlert size={16} /> : <TriangleAlert size={16} />}
-         {message && (
-            <span className="filename-warning-tooltip" role="tooltip" id={id}>
-               {message}
-            </span>
-         )}
+         {/* Fields point their description here. The shared tooltip shows the same text on hover. */}
+         <span id={id} hidden>
+            {message}
+         </span>
       </span>
    );
 }

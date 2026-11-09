@@ -11,16 +11,42 @@ const electron = vi.hoisted(() => {
       scaleFactor: 1,
       nativeOrigin: { x: 0, y: 0 },
    };
+   interface Frame {
+      id: string;
+      name: string;
+      display_id: string;
+      thumbnail: { toDataURL: () => string };
+      appIcon?: { isEmpty: () => boolean; resize: () => { toDataURL: () => string } };
+   }
+   const defaults: Frame[] = [
+      { id: "screen:0:0", name: "Screen 1", display_id: "7", thumbnail: { toDataURL: () => "" } },
+      { id: "window:42:0", name: "Application", display_id: "", thumbnail: { toDataURL: () => "" } },
+   ];
+   // Frames queued for the next query of each source type. Screens and windows can be queried
+   // together or apart, so each type takes its share of a queued list once.
+   const queued = new Map<string, Frame[]>();
+   const kind = (frame: Frame) => frame.id.split(":")[0]!;
    return {
       icon,
       generic: { ...icon, resize: () => ({ toDataURL: () => "data:image/png;base64,generic" }) },
       display,
+      queued,
+      queue(frames: Frame[]) {
+         for (const type of ["screen", "window"])
+            queued.set(
+               type,
+               frames.filter((frame) => kind(frame) === type)
+            );
+      },
       getAllDisplays: vi.fn(() => [display]),
       getFileIcon: vi.fn(async () => icon),
-      getSources: vi.fn(async () => [
-         { id: "screen:0:0", name: "Screen 1", display_id: "7", thumbnail: { toDataURL: () => "" } },
-         { id: "window:42:0", name: "Application", display_id: "", thumbnail: { toDataURL: () => "" } },
-      ]),
+      getSources: vi.fn(async (options: { types: string[] }): Promise<Frame[]> =>
+         options.types.flatMap((type) => {
+            const frames = queued.get(type);
+            queued.delete(type);
+            return frames ?? defaults.filter((frame) => kind(frame) === type);
+         })
+      ),
    };
 });
 vi.mock("electron", () => ({
@@ -44,13 +70,14 @@ function recorder() {
 beforeEach(() => {
    electron.getAllDisplays.mockReset().mockReturnValue([electron.display]);
    electron.getSources.mockClear();
+   electron.queued.clear();
    electron.getFileIcon.mockReset().mockResolvedValue(electron.icon);
 });
 afterEach(() => vi.restoreAllMocks());
 
 describe.skipIf(process.platform !== "win32")("Windows source discovery", () => {
    it("labels the provider's Entire Screen as Desktop without renaming application windows", async () => {
-      electron.getSources.mockResolvedValueOnce([
+      electron.queue([
          { id: "screen:0:0", name: "Entire Screen", display_id: "7", thumbnail: { toDataURL: () => "" } },
          { id: application.id, name: "Entire Screen", display_id: "", thumbnail: { toDataURL: () => "" } },
       ]);
@@ -69,7 +96,7 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       time.mockReturnValue(now + 2000);
       expect((await sources.list())[1]?.applicationId).not.toBe(first[1]?.applicationId);
    });
-   it("starts native and Electron enumeration together without capturing thumbnails", async () => {
+   it("starts native and screen enumeration together without capturing thumbnails", async () => {
       const native = recorder();
       let finish: ((candidates: GameCandidate[]) => void) | undefined;
       native.capturableApplications.mockImplementation(
@@ -80,9 +107,33 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       );
       const sources = new CaptureSources(native, () => "999");
       const loading = sources.list();
-      expect(electron.getSources).toHaveBeenCalledWith({ types: ["screen", "window"], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: true });
+      expect(electron.getSources).toHaveBeenCalledWith({ types: ["screen"], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: true });
       finish!([application]);
       expect((await loading).map((source) => source.id)).toEqual(["screen:0:0", "window:42:0"]);
+      expect(electron.getSources).toHaveBeenCalledWith({ types: ["window"], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: true });
+   });
+
+   // Each enumeration blocks Electron's main thread, and with it the window's input, for a few hundred milliseconds.
+   it("reuses screen and window enumerations until the displays or native windows change", async () => {
+      const native = recorder();
+      const sources = new CaptureSources(native, () => "999");
+      await sources.list();
+      expect(electron.getSources).toHaveBeenCalledTimes(2);
+      const now = Date.now();
+      const time = vi.spyOn(Date, "now").mockReturnValue(now + 1000);
+      expect((await sources.list()).map((source) => source.id)).toEqual(["screen:0:0", "window:42:0"]);
+      expect(electron.getSources).toHaveBeenCalledTimes(2);
+      native.capturableApplications.mockResolvedValue([{ ...application, name: "Application - new title" }]);
+      electron.queue([{ id: application.id, name: "Application - new title", display_id: "", thumbnail: { toDataURL: () => "" } }]);
+      time.mockReturnValue(now + 2000);
+      expect((await sources.list())[1]?.name).toBe("Application - new title");
+      expect(electron.getSources).toHaveBeenLastCalledWith(expect.objectContaining({ types: ["window"] }));
+      expect(electron.getSources).toHaveBeenCalledTimes(3);
+      electron.getAllDisplays.mockReturnValue([{ ...electron.display, bounds: { ...electron.display.bounds, width: 2560 } }]);
+      time.mockReturnValue(now + 3000);
+      await sources.list();
+      expect(electron.getSources).toHaveBeenLastCalledWith(expect.objectContaining({ types: ["screen"] }));
+      expect(electron.getSources).toHaveBeenCalledTimes(4);
    });
 
    it("returns usable sources while executable icons are still loading", async () => {
@@ -105,7 +156,7 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
    });
 
    it("hydrates an Electron-owned window without replacing Electron's capture identity", async () => {
-      electron.getSources.mockResolvedValueOnce([{ id: "window:42:1", name: "Application", display_id: "", thumbnail: { toDataURL: () => "" } }]);
+      electron.queue([{ id: "window:42:1", name: "Application", display_id: "", thumbnail: { toDataURL: () => "" } }]);
       const sources = new CaptureSources(recorder(), () => "999");
       const list = await sources.list();
       expect(list[0]).toMatchObject({ id: "window:42:1", processId: 88 });
@@ -116,7 +167,7 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
    it("uses the stable executable icon instead of the window icon", async () => {
       const windowIcon = { isEmpty: () => false, resize: () => ({ toDataURL: () => "data:image/png;base64,window" }) };
       const windows = [{ id: "window:42:1", name: "Application", display_id: "", thumbnail: { toDataURL: () => "" }, appIcon: windowIcon }];
-      electron.getSources.mockResolvedValueOnce(windows);
+      electron.queue(windows);
       const sources = new CaptureSources(recorder(), () => "999");
       await sources.list();
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -129,7 +180,7 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       else electron.getFileIcon.mockResolvedValue({ ...electron.icon, isEmpty: () => true });
       const windowIcon = { isEmpty: () => false, resize: () => ({ toDataURL: () => "data:image/png;base64,fallback" }) };
       const window = { id: application.id, name: "Application", display_id: "", thumbnail: { toDataURL: () => "" }, appIcon: windowIcon };
-      electron.getSources.mockResolvedValueOnce([window]);
+      electron.queue([window]);
       const changed = vi.fn();
       const sources = new CaptureSources(recorder(), () => "999", changed);
       expect((await sources.list())[0]?.appIcon).toBe("data:image/png;base64,fallback");
@@ -137,7 +188,7 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       await new Promise((resolve) => setTimeout(resolve, 0));
       vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1000);
       const notified = { ...window, appIcon: { ...windowIcon, resize: () => ({ toDataURL: () => "data:image/png;base64,notification" }) } };
-      electron.getSources.mockResolvedValueOnce([notified]);
+      electron.queue([notified]);
       expect((await sources.list())[0]?.appIcon).toBe("data:image/png;base64,fallback");
    });
 
@@ -151,7 +202,7 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       );
       const windowIcon = { isEmpty: () => false, resize: () => ({ toDataURL: () => "data:image/png;base64,fallback" }) };
       const window = { id: application.id, name: "Application", display_id: "", thumbnail: { toDataURL: () => "" }, appIcon: windowIcon };
-      electron.getSources.mockResolvedValueOnce([window]);
+      electron.queue([window]);
       const native = recorder();
       const changed = vi.fn();
       const sources = new CaptureSources(native, () => "999", changed);
@@ -161,7 +212,7 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       expect(changed).toHaveBeenCalled();
       vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1000);
       native.capturableApplications.mockResolvedValue([{ ...application, id: "window:43:0" }]);
-      electron.getSources.mockResolvedValueOnce([{ id: "window:43:0", name: "Other window", display_id: "", thumbnail: { toDataURL: () => "" } }]);
+      electron.queue([{ id: "window:43:0", name: "Other window", display_id: "", thumbnail: { toDataURL: () => "" } }]);
       expect((await sources.list())[0]?.appIcon).toBe("data:image/png;base64,icon");
    });
 
@@ -180,9 +231,7 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       const native = recorder();
       const sources = new CaptureSources(native, () => "999");
       await sources.list();
-      electron.getSources.mockResolvedValueOnce([
-         { id: application.id, name: "Application", display_id: "", thumbnail: { toDataURL: () => "data:image/png;base64,poster" } },
-      ]);
+      electron.queue([{ id: application.id, name: "Application", display_id: "", thumbnail: { toDataURL: () => "data:image/png;base64,poster" } }]);
       await sources.list(true);
       const now = Date.now();
       const time = vi.spyOn(Date, "now").mockReturnValue(now + 1000);
@@ -210,7 +259,7 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
             })
       );
       const thumbnails = sources.list(true);
-      await expect.poll(() => electron.getSources.mock.calls.length).toBe(2);
+      await expect.poll(() => electron.getSources.mock.calls.length).toBe(3);
       expect((await sources.list()).map((source) => source.id)).toEqual(first.map((source) => source.id));
       finish!([]);
       await thumbnails;

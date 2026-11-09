@@ -172,7 +172,7 @@ export function AdditionalAudio({
             )}
          </MotionList>
          {preferences.audioSources.length < 5 && (
-            <Button className="audio-add" disabled={active} title={active ? "Stop capturing to add audio sources" : undefined} onClick={() => show()}>
+            <Button className="audio-add" disabled={active} data-tooltip={active ? "Stop capturing to add audio sources" : undefined} onClick={() => show()}>
                <Plus size={14} />
                Add audio source
             </Button>

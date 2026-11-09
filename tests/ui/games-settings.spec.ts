@@ -57,9 +57,9 @@ test("Auto game management searches the saved catalogue and persists application
       await page.getByRole("button", { name: "Add game", exact: true }).click();
       const search = page.getByRole("textbox", { name: "Search games", exact: true });
       await expect(search).toBeFocused();
-      await expect(page.locator(".game-list>li")).toHaveCount(3);
+      await expect(page.locator(".game-list .motion-list-item:not([data-exiting]) .game-entry")).toHaveCount(3);
       await search.fill("celeste");
-      await expect(page.locator(".game-list>li")).toHaveCount(1);
+      await expect(page.locator(".game-list .motion-list-item:not([data-exiting]) .game-entry")).toHaveCount(1);
       await expect(page.locator(".game-list")).toContainText("Celeste");
       await search.fill("missing");
       await expect(page.getByText("No matching games.", { exact: true })).toBeVisible();
@@ -72,8 +72,8 @@ test("Auto game management searches the saved catalogue and persists application
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.customGames)
          .toEqual([{ name: "My local game", executable: "C:/Controlled/local-game.exe" }]);
       await search.fill("");
-      await expect(page.locator(".game-list>li")).toHaveCount(3);
-      await expect(page.locator(".game-list>li").first()).toContainText("My local game");
+      await expect(page.locator(".game-list .motion-list-item:not([data-exiting]) .game-entry")).toHaveCount(3);
+      await expect(page.locator(".game-list .motion-list-item:not([data-exiting]) .game-entry").first()).toContainText("My local game");
       await expect(page.locator(".game-category")).toHaveText(["Added games"]);
       await page.locator(".rail").getByRole("button", { name: "Library", exact: true }).click();
       const addedApplication = page.locator(".application-filter").filter({ hasText: "My local game" });
@@ -84,7 +84,7 @@ test("Auto game management searches the saved catalogue and persists application
       await page.locator(".sidebar-group-title").getByRole("button", { name: "Add game", exact: true }).click();
       await expect(search).toBeFocused();
       await search.fill("My local game");
-      await expect(page.locator(".game-list>li")).toHaveCount(1);
+      await expect(page.locator(".game-list .motion-list-item:not([data-exiting]) .game-entry")).toHaveCount(1);
       await expect(page.getByRole("heading", { name: "Added games", exact: true })).toBeVisible();
       await page.reload();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -94,7 +94,7 @@ test("Auto game management searches the saved catalogue and persists application
       await page.getByRole("button", { name: "Remove game My local game", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.customGames.length).toBe(0);
       await page.getByRole("textbox", { name: "Search games", exact: true }).fill("Official fixture game");
-      await expect(page.locator(".game-list>li")).toHaveCount(1);
+      await expect(page.locator(".game-list .motion-list-item:not([data-exiting]) .game-entry")).toHaveCount(1);
       const state = await page.evaluate(() => window.acroClip.state());
       expect(state.preferences.desktopFallback).toBe(false);
       expect(state.recorder.state).toBe("stopped");

@@ -10,12 +10,20 @@
    flex: 1;
    min-width: 0;
    padding: 0 11px;
-   border-radius: 9px;
+   border-radius: 10px;
+   /* It sits on the page, not in a card, so it takes the card colour rather than a slot. */
    background: var(--surface);
    color: var(--subtle);
+   transition:
+      background 150ms var(--ease),
+      color 150ms var(--ease);
+}
+.game-search:hover {
+   background: var(--row-hover);
 }
 .game-search:focus-within {
-   box-shadow: 0 0 0 1px #b197fc66;
+   background: var(--raised);
+   color: var(--accent);
 }
 .game-search input {
    border: 0;
@@ -44,18 +52,18 @@
    margin: 0;
    padding: 0;
 }
-.game-list > li {
+.game-list .game-entry {
    display: flex;
    align-items: center;
    gap: 12px;
    min-height: 58px;
    padding: 10px 0;
 }
-.game-list > li > svg {
+.game-list .game-entry > svg {
    flex-shrink: 0;
    color: var(--subtle);
 }
-.game-list > li > div {
+.game-list .game-entry > div {
    min-width: 0;
    flex: 1;
    display: flex;
@@ -125,7 +133,7 @@
    font-size: 12px;
 }
 
-.game-list > li {
+.game-list .game-entry {
    content-visibility: auto;
    contain-intrinsic-size: auto 58px;
 }

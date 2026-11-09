@@ -17,6 +17,11 @@ export class CaptureSources {
    private query: Promise<CaptureSource[]> | null = null;
    private thumbnailQuery: Promise<CaptureSource[]> | null = null;
    private loadedAt = 0;
+   // Chromium enumerates sources on the main thread: about 300 ms for screens and 150 ms for windows on Windows.
+   // Mouse input reaches the window through that thread, so the Capture page's refresh made drags stall and catch up.
+   // Each part is reused until the displays or the native window list say it changed.
+   private screenEnumeration: { signature: string; list: DesktopCapturerSource[] } | null = null;
+   private windowEnumeration: { signature: string; list: DesktopCapturerSource[]; complete: boolean; at: number } | null = null;
    private thumbnailAt = new Map<string, number>();
    private readonly stableWindowIcons = new Map<string, string>();
    private readonly icons = new Map<string, Promise<string | undefined>>();
@@ -59,16 +64,10 @@ export class CaptureSources {
          // Electron's independent portal session would ask twice and cannot name the native selection.
          if (isWaylandSession()) return (this.cached = []);
       }
-      // Discovery needs identities, not captured images. Run the independent
-      // enumerations together, and fetch Windows executable icons afterwards.
-      const [nativeWindows, list] = await Promise.all([
-         ["win32", "linux"].includes(process.platform) ? this.recorder.capturableApplications() : this.recorder.applicationCandidates().catch(() => []),
-         desktopCapturer.getSources({
-            types: ["screen", "window"],
-            thumbnailSize: { width: 0, height: 0 },
-            fetchWindowIcons: true,
-         }),
-      ]);
+      // Discovery needs identities, not captured images. Executable icons are fetched afterwards.
+      const [nativeWindows, list] = await this.enumerate(
+         ["win32", "linux"].includes(process.platform) ? this.recorder.capturableApplications() : this.recorder.applicationCandidates().catch(() => [])
+      );
       const previous = new Map(this.cached.map((source) => [source.id, source]));
       const windowsByHandle = new Map(nativeWindows.map((item) => [item.id.split(":")[1], item]));
       const displays = new Map(screen.getAllDisplays().map((display) => [String(display.id), display]));
@@ -152,6 +151,36 @@ export class CaptureSources {
       if (process.platform === "win32" || process.platform === "darwin") this.hydrateIcons(nativeWindows);
       this.hydrateNames(nativeWindows);
       return this.cached;
+   }
+   private async enumerate(native: Promise<GameCandidate[]>): Promise<[GameCandidate[], DesktopCapturerSource[]]> {
+      const options = { thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: true };
+      // Only Windows and Linux list every capturable window natively, so elsewhere a change could go unseen.
+      if (!["win32", "linux"].includes(process.platform)) return Promise.all([native, desktopCapturer.getSources({ ...options, types: ["screen", "window"] })]);
+      const displays = JSON.stringify(screen.getAllDisplays().map((display) => [display.id, display.bounds, display.scaleFactor, display.rotation]));
+      // Screens depend only on the displays, so they load alongside the native window list.
+      const screens =
+         this.screenEnumeration?.signature === displays
+            ? Promise.resolve(this.screenEnumeration.list)
+            : desktopCapturer.getSources({ ...options, types: ["screen"] }).then((list) => {
+                 this.screenEnumeration = { signature: displays, list };
+                 return list;
+              });
+      // The screen query is awaited below, unless the native list fails first.
+      screens.catch(() => undefined);
+      const nativeWindows = await native;
+      const windows = JSON.stringify(nativeWindows.map((item) => [item.id, item.pid, item.name]).sort());
+      const cachedWindows = this.windowEnumeration;
+      // A window the native list has but Chromium missed may still be appearing, so an incomplete list is retried after a while.
+      const windowSources =
+         cachedWindows?.signature === windows && (cachedWindows.complete || Date.now() - cachedWindows.at < 10_000)
+            ? cachedWindows.list
+            : await desktopCapturer.getSources({ ...options, types: ["window"] }).then((list) => {
+                 const handles = new Set(list.map((source) => source.id.split(":")[1]));
+                 const complete = nativeWindows.every((item) => handles.has(item.id.split(":")[1]));
+                 this.windowEnumeration = { signature: windows, list, complete, at: Date.now() };
+                 return list;
+              });
+      return [nativeWindows, [...(await screens), ...windowSources]];
    }
    private hydrateNames(candidates: GameCandidate[]): void {
       void Promise.all(

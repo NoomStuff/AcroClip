@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { defaultPreferences } from "./defaults";
 import { preferencesSchema } from "./validation";
-import { bindingFor, normalizeBinding, shortcutConflict, eventBinding } from "./shortcuts";
+import { bindingFor, normalizeBinding, shortcutConflict, shortcutClashes, eventBinding } from "./shortcuts";
 describe("shortcut defaults and conflicts", () => {
    it("defaults to Alt+C for saving with no recording shortcut", () => {
       expect(bindingFor(defaultPreferences, "saveClip")).toBe("Alt+C");
@@ -25,9 +25,16 @@ describe("shortcut defaults and conflicts", () => {
    it("detects alias conflicts but allows page-specific bindings on different pages", () => {
       const preferences = { ...defaultPreferences, shortcuts: { recording: "Ctrl+2" } };
       expect(shortcutConflict(preferences, false)).toMatch(/same shortcut/);
+      expect(shortcutClashes(preferences, "recording", false)).toEqual(["Library page"]);
+      expect(shortcutClashes(preferences, "library", false)).toEqual(["Capture page"]);
+      expect(shortcutClashes(preferences, "settings", false)).toEqual([]);
       expect(normalizeBinding("CommandOrControl+Shift+E", false)).toBe(normalizeBinding("Ctrl+Shift+E", false));
    });
    it("uses physical letter and digit keys without changing native text modifiers", () => {
-      expect(eventBinding({ code: "Digit2", key: "2", ctrlKey: true, metaKey: false, altKey: false, shiftKey: false } as KeyboardEvent)).toBe("Control+2");
+      expect(eventBinding({ code: "Digit2", key: "2", ctrlKey: true, metaKey: false, altKey: false, shiftKey: false })).toBe("Control+2");
+      // AltGr layouts report Ctrl+Alt+Shift+T as Shift+T with AltGraph set.
+      const altGraph = { code: "KeyT", key: "Þ", ctrlKey: false, metaKey: false, altKey: false, shiftKey: true };
+      expect(eventBinding({ ...altGraph, getModifierState: (key) => key === "AltGraph" })).toBe("Control+Alt+Shift+T");
+      expect(eventBinding(altGraph, new Set(["Control", "Alt"]))).toBe("Control+Alt+Shift+T");
    });
 });

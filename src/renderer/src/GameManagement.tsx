@@ -1,3 +1,4 @@
+import { MotionList } from "./MotionList";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gamepad2, Plus, Search, Trash2 } from "lucide-react";
 import type { RefObject } from "react";
@@ -6,6 +7,10 @@ import { api, describeError } from "./desktop";
 import { Button, IconButton, Select } from "./ui";
 import { DialogPanel } from "./Dialog";
 import { ApplicationIcon } from "./ApplicationIcon";
+// The catalogue is large and rarely changes, so the Games page keeps it between visits instead of loading it every time.
+let cachedCatalog: GameCatalogSnapshot | null = null;
+const sameCatalog = (a: GameCatalogSnapshot, b: GameCatalogSnapshot) =>
+   a.source === b.source && a.entries.length === b.entries.length && a.entries.every((entry, index) => entry.id === b.entries[index]?.id);
 const executableKey = (value: string) => value.replaceAll("\\", "/").toLowerCase();
 const withAddedGame = (games: CustomGame[], game: CustomGame): CustomGame[] => [
    ...games.filter((item) => executableKey(item.executable) !== executableKey(game.executable)),
@@ -87,7 +92,9 @@ function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add
             {game && (
                <div className="game-add-identity">
                   <ApplicationIcon size={24} src={sources.find((source) => source.id.split(":")[1] === game.id.split(":")[1])?.appIcon} />
-                  <span title={game.executable}>{game.executable}</span>
+                  <span data-tooltip={game.executable} data-tooltip-overflow="">
+                     {game.executable}
+                  </span>
                </div>
             )}
             <label className="game-name">
@@ -123,7 +130,7 @@ export function GameManagement({
    change: (games: CustomGame[]) => void;
    searchRef: RefObject<HTMLInputElement | null>;
 }) {
-   const [catalog, setCatalog] = useState<GameCatalogSnapshot | null>(null),
+   const [catalog, setCatalog] = useState<GameCatalogSnapshot | null>(cachedCatalog),
       [error, setError] = useState(""),
       [query, setQuery] = useState(""),
       [limit, setLimit] = useState(80),
@@ -133,10 +140,13 @@ export function GameManagement({
       void api
          .gameCatalog()
          .then((value) => {
+            // A refreshed catalogue replaces the cached one, but an unchanged one keeps the list as it is.
+            if (cachedCatalog && sameCatalog(cachedCatalog, value)) return;
+            cachedCatalog = value;
             if (!disposed) setCatalog(value);
          })
          .catch((reason: unknown) => {
-            if (!disposed) setError(describeError(reason));
+            if (!disposed && !cachedCatalog) setError(describeError(reason));
          });
       return () => {
          disposed = true;
@@ -185,13 +195,13 @@ export function GameManagement({
       return () => observer.disconnect();
    }, [limit, filtered.length]);
    const renderGame = (game: (typeof entries)[number]) => (
-      <li key={game.id}>
+      <div className="game-entry" role="listitem">
          <Gamepad2 size={20} />
          <div>
-            <span className="game-entry-name" title={game.name}>
+            <span className="game-entry-name" data-tooltip={game.name} data-tooltip-overflow="">
                {game.name}
             </span>
-            <span className="game-executables" title={game.executables.join(", ")}>
+            <span className="game-executables" data-tooltip={game.executables.join(", ")} data-tooltip-overflow="">
                {game.executables.join(", ")}
             </span>
          </div>
@@ -203,7 +213,7 @@ export function GameManagement({
                <Trash2 size={15} />
             </IconButton>
          )}
-      </li>
+      </div>
    );
    return (
       <div className="game-settings">
@@ -230,9 +240,9 @@ export function GameManagement({
          {visibleEntries.some((game) => game.added) && (
             <section className="game-group" aria-label="Added games">
                <h3 className="game-category">Added games</h3>
-               <ul className="game-list" aria-label="Added games">
-                  {visibleEntries.filter((game) => game.added).map(renderGame)}
-               </ul>
+               <div className="game-list" role="list" aria-label="Added games">
+                  <MotionList items={visibleEntries.filter((game) => game.added)}>{renderGame}</MotionList>
+               </div>
             </section>
          )}
          <div className="game-list-summary">
@@ -246,9 +256,12 @@ export function GameManagement({
                {error}
             </p>
          )}
-         <ul className="game-list" aria-label="Games">
-            {visibleEntries.filter((game) => !game.added).map(renderGame)}
-         </ul>
+         {/* Search results slide and fade like the Library's lists instead of jumping. */}
+         <div className="game-list" role="list" aria-label="Games">
+            <MotionList items={visibleEntries.filter((game) => !game.added)} identity={catalog ? "ready" : "loading"}>
+               {renderGame}
+            </MotionList>
+         </div>
          {catalog && !filtered.length && <p className="game-empty">No matching games.</p>}
          <div ref={sentinel} aria-hidden="true" />
          {adding && (

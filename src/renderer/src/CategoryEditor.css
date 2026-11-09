@@ -5,12 +5,15 @@
    min-height: 42px;
    padding: 0 12px;
    margin: 20px 0 16px;
-   border: 1px solid var(--border-control);
-   border-radius: var(--radius-control);
-   background: var(--raised);
+   border-radius: 10px;
+   background: var(--base);
+   transition: background 150ms var(--ease);
+}
+.category-name-input:hover {
+   background: var(--slot-hover);
 }
 .category-name-input:focus-within {
-   border-color: var(--accent-border);
+   background: var(--raised);
 }
 .category-name-input > svg {
    flex: 0 0 20px;
@@ -116,6 +119,6 @@
 }
 :root[data-keyboard] .category-color-choices > button:focus-visible,
 :root[data-keyboard] .category-custom-swatch:has(input:focus-visible) {
-   outline: 2px solid var(--accent);
-   outline-offset: 0;
+   outline: 2px solid var(--focus);
+   outline-offset: -2px;
 }

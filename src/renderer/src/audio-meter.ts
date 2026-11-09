@@ -1,8 +1,8 @@
 export const gainDb = (gain: number): number => (gain > 0 ? 20 * Math.log10(gain) : -Infinity);
-export const gainText = (gain: number): string => (gain <= 0 ? "-inf" : `${gain > 1 ? "+" : ""}${gainDb(gain).toFixed(1)}`);
+export const gainText = (gain: number): string => (gain <= 0 ? "Off" : `${gain > 1 ? "+" : ""}${gainDb(gain).toFixed(1)}`);
 export const boundedGain = (gain: number): number => Math.round(Math.max(0, Math.min(4, gain)) * 100) / 100;
 export function parseGain(text: string): number | null {
-   if (/^-?inf(inity)?$/i.test(text.trim())) return 0;
+   if (/^(-?inf(inity)?|mute[ds]?|off)$/i.test(text.trim())) return 0;
    if (!text.trim() || !Number.isFinite(Number(text))) return null;
    return boundedGain(10 ** (Math.max(-80, Math.min(12, Number(text))) / 20));
 }

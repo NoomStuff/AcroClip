@@ -342,6 +342,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                                  aria-label="Setup clip length in seconds"
                                  min={5}
                                  max={1800}
+                                 step={5}
                                  value={draft.clipSeconds}
                                  onValueChange={(value) => change("clipSeconds", value)}
                                  unit="seconds"

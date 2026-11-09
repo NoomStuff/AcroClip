@@ -81,7 +81,6 @@ export const ClipCard = memo(function ClipCard({
             {...fileDragProps(dragPath, !clip.originalMissing && !job ? { id: clip.id, collection: collectionRoot } : undefined)}
             onClick={() => openClip(clip)}
             aria-label={`Open ${clip.name}`}
-            title={clip.availability === "unverified" ? "Checking file availability" : undefined}
          >
             <div className="clip-thumbnail" ref={thumbnail.ref}>
                {clip.thumbnail ? (
@@ -95,7 +94,7 @@ export const ClipCard = memo(function ClipCard({
                )}
                {clip.duration > 0 && <span className="duration">{formatTime(clip.duration)}</span>}
                {shareable && (
-                  <span className="copy-indicator" title={`${clip.shareables.length} shareable${clip.shareables.length === 1 ? "" : "s"}`}>
+                  <span className="copy-indicator" data-tooltip={`${clip.shareables.length} shareable${clip.shareables.length === 1 ? "" : "s"}`}>
                      <Share2 size={12} />
                   </span>
                )}
@@ -106,7 +105,9 @@ export const ClipCard = memo(function ClipCard({
                )}
             </div>
             <div className="clip-card-info">
-               <h3 title={clip.name}>{clip.name}</h3>
+               <h3 data-tooltip={clip.name} data-tooltip-overflow="">
+                  {clip.name}
+               </h3>
                <p className={job ? "card-job" : undefined}>
                   {job ? (
                      <>

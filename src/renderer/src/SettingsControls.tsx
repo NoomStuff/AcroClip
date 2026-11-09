@@ -1,6 +1,6 @@
-import { useId } from "react";
+import { useId, useRef } from "react";
 import { FieldDescription } from "./field-accessibility";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { Keyboard, Power } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Toggle as Switch } from "./ui";
@@ -21,9 +21,32 @@ export function Field({
    const Icon = icon ?? Keyboard;
    const labelId = useId();
    const detailId = useId();
+   const reopening = useRef(false);
+   const target = (row: HTMLElement) => {
+      if (row.querySelector("[data-row-ignore]")) return null;
+      const element = row.querySelector<HTMLElement>("[data-row-target]");
+      return element && !element.matches(":disabled") ? element : null;
+   };
+   // A row with one main control acts as that control, like a toggle row acts as its switch.
+   const activate = (event: MouseEvent<HTMLDivElement>) => {
+      const element = target(event.currentTarget);
+      if (!element || reopening.current || (event.target as Element).closest(".field-control")) return;
+      element.focus({ preventScroll: true });
+      if (element instanceof HTMLInputElement) element.select();
+      else element.click();
+   };
    return (
       <FieldDescription.Provider value={detail ? detailId : undefined}>
-         <div className={`settings-row field ${className}`} role="group" aria-labelledby={labelId}>
+         <div
+            className={`settings-row field ${className}`}
+            role="group"
+            aria-labelledby={labelId}
+            onPointerDown={(event) => {
+               // A dropdown closes on this press. The click must not open it again.
+               reopening.current = target(event.currentTarget)?.getAttribute("aria-expanded") === "true";
+            }}
+            onClick={activate}
+         >
             <Icon className="settings-row-icon" size={21} aria-hidden="true" />
             <div className="settings-row-copy">
                <span className="field-label" id={labelId}>

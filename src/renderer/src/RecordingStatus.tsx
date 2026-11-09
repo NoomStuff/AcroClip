@@ -1,3 +1,4 @@
+import { Popover } from "./Popover";
 import { AlertCircle, ChevronDown, LoaderCircle, Monitor, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppState, CaptureSource } from "../../shared/types";
@@ -89,7 +90,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
             ) : (
                <span className={`status-dot ${active ? "recording" : ""}`} aria-hidden="true" />
             )}
-            <span className="status-summary" title={status}>
+            <span className="status-summary" data-tooltip={status} data-tooltip-overflow="">
                {status}
             </span>
             {active && (
@@ -200,7 +201,7 @@ function NotificationChips() {
                      className={`notification-pill-main${open === group[0]!.id ? " holding" : ""}`}
                      aria-label={`Notification: ${group[0]!.title}`}
                      aria-expanded={open === group[0]!.id}
-                     title={group[0]!.title}
+                     data-tooltip={group[0]!.title}
                      onClick={() => toggle(group[0]!)}
                   >
                      <NotificationIcon tone={tone} size={12} />
@@ -227,7 +228,7 @@ function NotificationChips() {
          >
             <button
                className={`notification-pill-main${open === newest.id ? " holding" : ""}`}
-               title={newest.detail ? `${newest.title}. ${newest.detail}` : newest.title}
+               data-tooltip={newest.detail ? `${newest.title}. ${newest.detail}` : newest.title}
                aria-label={`Notification: ${newest.title}`}
                aria-expanded={open === newest.id}
                onClick={() => toggle(newest)}
@@ -249,31 +250,17 @@ function NotificationChips() {
                </button>
             )}
          </div>
-         {logOpen && <NotificationLog entries={groups.flatMap((group) => group.entries)} open={open} close={closeLog} />}
+         <Popover open={logOpen} anchor={area} onClose={closeLog} label="Notification log" className="notification-log-popover" placement="above" align="end">
+            <NotificationLog entries={groups.flatMap((group) => group.entries)} open={open} close={closeLog} />
+         </Popover>
       </div>
    );
 }
 
 /** Every chip, most severe first. A row reopens its message; dismiss removes it. */
 function NotificationLog({ entries, open, close }: { entries: NotificationEntry[]; open: number | null; close: () => void }) {
-   const root = useRef<HTMLDivElement>(null);
-   useEffect(() => {
-      const outside = (event: PointerEvent) => {
-         const target = event.target as Element;
-         if (!root.current?.contains(target) && !target.closest?.(".notification-log-toggle")) close();
-      };
-      const key = (event: KeyboardEvent) => {
-         if (event.key === "Escape") close();
-      };
-      window.addEventListener("pointerdown", outside);
-      window.addEventListener("keydown", key);
-      return () => {
-         window.removeEventListener("pointerdown", outside);
-         window.removeEventListener("keydown", key);
-      };
-   }, [close]);
    return (
-      <div className="notification-log-popover" role="dialog" aria-label="Notification log" ref={root}>
+      <>
          <div className="notification-log-entries">
             {entries.map((entry) => (
                <div key={entry.id} className={`notification-log-row ${entry.tone}`}>
@@ -309,6 +296,6 @@ function NotificationLog({ entries, open, close }: { entries: NotificationEntry[
                Clear all
             </button>
          </div>
-      </div>
+      </>
    );
 }

@@ -106,8 +106,16 @@
    background: var(--raised);
 }
 
+.filename-tokens button {
+   transition:
+      background 150ms var(--ease),
+      transform 260ms var(--spring);
+}
 .filename-tokens button:hover {
    background: var(--hover);
+}
+.filename-tokens button:active {
+   transform: scale(0.88);
 }
 
 .filename-tokens button span {
@@ -117,32 +125,6 @@
 .filename-error {
    color: var(--red);
 }
-
-.size-presets {
-   display: flex;
-   flex-wrap: wrap;
-   gap: 9px;
-   margin: 18px 0 25px;
-}
-
-.size-presets button {
-   border-radius: var(--radius-control);
-   min-height: var(--control-height);
-   padding: 9px 14px;
-   background: var(--surface);
-   color: var(--muted);
-   font-size: 13px;
-}
-
-.size-presets button.selected {
-   background: var(--hover);
-   color: var(--accent);
-}
-
-.size-presets button:hover {
-   background: var(--hover);
-}
-
 .settings-body:disabled {
    opacity: 0.55;
 }
@@ -313,27 +295,6 @@
    padding: 0;
    background: transparent;
 }
-.settings-row .size-presets {
-   margin: 8px 0 0;
-   gap: 4px;
-   justify-content: flex-end;
-}
-.settings-row .size-presets button {
-   min-height: 28px;
-   padding: 4px 9px;
-   font-size: 11px;
-   background: var(--raised);
-}
-.settings-row .size-presets button.selected {
-   color: var(--accent);
-   background: var(--accent-soft);
-}
-.settings-row:has(.size-presets) .number-unit {
-   justify-content: flex-end;
-}
-.settings-row:has(.size-presets) {
-   min-height: 108px;
-}
 .settings-body .custom-quality {
    margin: 5px 0 0;
 }
@@ -343,10 +304,7 @@
 .settings-group .section-description {
    margin: 0 0 12px;
 }
-.settings-body .game-search {
-   background: var(--raised);
-}
-.settings-body .game-list > li {
+.settings-body .game-list .game-entry {
    background: var(--surface);
    border-radius: 8px;
    margin-bottom: 5px;
@@ -416,7 +374,7 @@
    font-size: 12px;
 }
 .filename-pattern-input[data-invalid] > input {
-   border-color: var(--red);
+   box-shadow: inset 0 -2px 0 var(--red);
 }
 .filename-warning-icon {
    position: absolute;
@@ -485,34 +443,6 @@
    outline-offset: 2px;
    border-radius: 3px;
 }
-.filename-warning-tooltip {
-   position: absolute;
-   z-index: 100;
-   right: 0;
-   bottom: calc(100% + 7px);
-   width: max-content;
-   max-width: min(230px, calc(100vw - 50px));
-   padding: 7px 10px;
-   border: 1px solid var(--line);
-   border-radius: 6px;
-   background: var(--raised);
-   box-shadow: 0 6px 18px #0003;
-   color: var(--text);
-   font-size: 11px;
-   line-height: 1.4;
-   white-space: normal;
-   opacity: 0;
-   visibility: hidden;
-   pointer-events: none;
-   transition:
-      opacity 100ms ease-out,
-      visibility 100ms ease-out;
-}
-.filename-warning-icon:hover .filename-warning-tooltip,
-.filename-warning-icon:focus .filename-warning-tooltip {
-   opacity: 1;
-   visibility: visible;
-}
 @media (prefers-reduced-motion: reduce) {
    .filename-warning-icon[data-state] {
       animation: none;
@@ -531,4 +461,46 @@ fieldset.settings-group {
 }
 fieldset.settings-group:disabled {
    opacity: 0.55;
+}
+
+/* A row with one main control answers the pointer as a whole, the way a toggle row does. */
+.settings-body .settings-row:is(.settings-toggle:has(.toggle-row:not(.disabled)), .field:has([data-row-target]:not(:disabled)):not(:has([data-row-ignore]))) {
+   cursor: pointer;
+   transition: background 150ms var(--ease);
+}
+.settings-body
+   .settings-row:is(.settings-toggle:has(.toggle-row:not(.disabled)), .field:has([data-row-target]:not(:disabled)):not(:has([data-row-ignore]))):hover {
+   background: var(--row-hover);
+}
+.settings-body
+   .settings-row:is(.settings-toggle:has(.toggle-row:not(.disabled)), .field:has([data-row-target]:not(:disabled)):not(:has([data-row-ignore]))):active {
+   background: var(--row-press);
+}
+/* Over the control itself, the control shows the hover, not the row behind it. */
+.settings-body
+   .settings-row:is(.settings-toggle:has(.toggle-row:not(.disabled)), .field:has([data-row-target]:not(:disabled)):not(:has([data-row-ignore]))):is(
+      :hover,
+      :active
+   ):has(.field-control:hover) {
+   background: var(--surface);
+}
+.settings-body .settings-toggle {
+   position: relative;
+}
+.settings-body .settings-toggle > .toggle-row {
+   position: static;
+}
+/* The label's hit area covers the whole card, so the icon and padding toggle too. */
+.settings-body .settings-toggle > .toggle-row::before {
+   content: "";
+   position: absolute;
+   inset: 0;
+   border-radius: inherit;
+}
+.settings-body .settings-row .field-control {
+   cursor: auto;
+}
+
+.settings-row.shortcut-clash .field-detail {
+   color: var(--red);
 }

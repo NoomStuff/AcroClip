@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { createSliderMotion, createHoverMotion } from "./slider-motion";
+import { createSliderMotion } from "./slider-motion";
 
 export function useSliderMotion<T extends HTMLElement>(position: number) {
    const element = useRef<T>(null);
@@ -31,64 +31,5 @@ export function useSliderMotion<T extends HTMLElement>(position: number) {
    useLayoutEffect(() => {
       controller.current?.to(position, document.hidden || window.matchMedia("(prefers-reduced-motion: reduce)").matches);
    }, [position]);
-   useLayoutEffect(() => {
-      const node = element.current,
-         control = node?.querySelector<HTMLElement>(".slider-control"),
-         input = control?.querySelector<HTMLInputElement>("input");
-      if (!node || !control || !input) return;
-      const media = matchMedia("(prefers-reduced-motion: reduce)");
-      let hovered = false,
-         focused = false,
-         pressed = false;
-      const motion = createHoverMotion(0, (value) => node.style.setProperty("--slider-thumb-width", `${10 + value * 5}px`), {
-         request: (callback) => requestAnimationFrame(callback),
-         cancel: (frame) => cancelAnimationFrame(frame),
-      });
-      const update = () => motion.to(input.disabled ? 0 : pressed ? 1 : hovered || focused ? 0.6 : 0, media.matches || document.hidden);
-      const enter = () => {
-            hovered = true;
-            update();
-         },
-         leave = () => {
-            hovered = false;
-            update();
-         },
-         focus = () => {
-            focused = true;
-            update();
-         },
-         blur = () => {
-            focused = false;
-            pressed = false;
-            update();
-         },
-         down = () => {
-            pressed = true;
-            update();
-         },
-         up = () => {
-            pressed = false;
-            update();
-         };
-      control.addEventListener("pointerenter", enter);
-      control.addEventListener("pointerleave", leave);
-      input.addEventListener("focus", focus);
-      input.addEventListener("blur", blur);
-      input.addEventListener("pointerdown", down);
-      window.addEventListener("pointerup", up);
-      window.addEventListener("pointercancel", up);
-      media.addEventListener("change", update);
-      return () => {
-         motion.dispose();
-         control.removeEventListener("pointerenter", enter);
-         control.removeEventListener("pointerleave", leave);
-         input.removeEventListener("focus", focus);
-         input.removeEventListener("blur", blur);
-         input.removeEventListener("pointerdown", down);
-         window.removeEventListener("pointerup", up);
-         window.removeEventListener("pointercancel", up);
-         media.removeEventListener("change", update);
-      };
-   }, []);
    return element;
 }

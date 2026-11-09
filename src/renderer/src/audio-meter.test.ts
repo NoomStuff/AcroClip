@@ -4,10 +4,11 @@ describe("mixer gain and meter timing", () => {
    it("keeps stored linear gain while displaying signed decibels and silence", () => {
       expect(gainText(1)).toBe("0.0");
       expect(gainText(2)).toBe("+6.0");
-      expect(gainText(0)).toBe("-inf");
+      expect(gainText(0)).toBe("Off");
       expect(parseGain("-6.0206")).toBe(0.5);
       expect(parseGain("+6.0206")).toBe(2);
       expect(parseGain("-inf")).toBe(0);
+      expect(parseGain("Muted")).toBe(0);
       expect(parseGain("bad")).toBeNull();
       expect(parseGain("+12")).toBe(3.98);
       expect(parseGain("+30")).toBe(3.98);

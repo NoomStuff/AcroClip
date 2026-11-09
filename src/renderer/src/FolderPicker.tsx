@@ -1,5 +1,5 @@
 import type { Ref } from "react";
-import { ExternalLink, Folder } from "lucide-react";
+import { ExternalLink, Folder, FolderInput } from "lucide-react";
 import { Button } from "./ui";
 
 export function FolderPicker({
@@ -32,7 +32,8 @@ export function FolderPicker({
                type="button"
                className="folder-picker-path"
                aria-label="Open collection folder"
-               title={path}
+               data-tooltip={path}
+               data-tooltip-overflow=""
                disabled={revealDisabled || !path}
                onClick={onReveal}
             >
@@ -40,9 +41,12 @@ export function FolderPicker({
                <ExternalLink size={16} aria-hidden="true" />
             </button>
          ) : (
-            <span title={path}>{path || "No folder selected"}</span>
+            <span data-tooltip={path} data-tooltip-overflow="">
+               {path || "No folder selected"}
+            </span>
          )}
          <Button data-choose-folder onClick={onChoose}>
+            <FolderInput size={16} aria-hidden="true" />
             Choose collection folder
          </Button>
       </div>

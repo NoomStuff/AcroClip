@@ -334,8 +334,8 @@
    gap: 5px;
    height: 22px;
    padding: 0 9px 0 7px;
-   border: 1px solid var(--border-control);
    border-radius: 999px;
+   background: #ffffff0a;
    white-space: nowrap;
    font-size: 11px;
    color: var(--muted);
@@ -463,19 +463,8 @@
 }
 
 .notification-log-popover {
-   position: fixed;
-   right: 12px;
-   bottom: 34px;
-   z-index: 130;
    width: 360px;
-   max-width: calc(100vw - 24px);
    padding: 5px;
-   border: 1px solid var(--line);
-   border-radius: 12px;
-   background: var(--surface);
-   box-shadow: 0 10px 30px #0009;
-   transform-origin: bottom right;
-   animation: menu-in 160ms var(--ease);
 }
 
 .notification-log-entries {

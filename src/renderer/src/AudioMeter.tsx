@@ -82,7 +82,7 @@ export function AudioMeter({
          <div className="audio-db-track">
             <div className="audio-db-fill" />
             <span className="audio-db-peak" />
-            <span className="audio-db-clip" title="Peak reached 0 dBFS" />
+            <span className="audio-db-clip" />
          </div>
          <div className="audio-db-scale" aria-hidden="true">
             {[-60, -48, -36, -24, -12, 0].map((db) => (

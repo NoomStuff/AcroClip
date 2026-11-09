@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useMenuHighlight } from "./MenuHighlight";
 import type { ReactNode } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import { submenuPosition } from "./menu-position";
@@ -26,6 +27,11 @@ export function MenuSubmenu({
    const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
    const [phase, setPhase] = useState<"closed" | "open" | "closing">("closed");
    const [position, setPosition] = useState({ left: 0, top: 0, transformOrigin: "top left" });
+   const highlight = useMenuHighlight();
+   const clearHighlight = highlight.clear;
+   useEffect(() => {
+      if (phase === "closed") clearHighlight();
+   }, [phase, clearHighlight]);
    const clearClose = useCallback(() => {
       if (closeTimer.current) clearTimeout(closeTimer.current);
       closeTimer.current = null;
@@ -121,12 +127,15 @@ export function MenuSubmenu({
                   data-closing={phase === "closing" ? true : undefined}
                   inert={phase !== "open" || family.closing}
                   aria-hidden={phase !== "open" || family.closing}
+                  onPointerOver={highlight.handlers.onPointerOver}
+                  onFocus={highlight.handlers.onFocus}
                   onPointerEnter={(event) => {
                      event.stopPropagation();
                      clearClose();
                   }}
                   onPointerLeave={(event) => {
                      event.stopPropagation();
+                     highlight.handlers.onPointerLeave(event);
                      scheduleClose();
                   }}
                   onAnimationEnd={(event) => {
@@ -159,6 +168,7 @@ export function MenuSubmenu({
                      items[next]?.focus();
                   }}
                >
+                  {highlight.highlight}
                   {children}
                </div>,
                document.fullscreenElement ?? document.body

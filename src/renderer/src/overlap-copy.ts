@@ -6,5 +6,5 @@ import { extendWindowSeconds } from "../../shared/extend-window";
 export function overlapDetail(mode: OverlapClips, clipSeconds: number): string {
    if (mode === "merge") return `Saving again within ${formatTime(extendWindowSeconds(clipSeconds))} makes the previous clip longer.`;
    if (mode === "trim") return "Leave out footage already saved in the previous clip.";
-   return "Every clip saves it's full length separately.";
+   return "Every clip saves its full length separately.";
 }

@@ -109,13 +109,12 @@ export function DialogPanel({
                element.removeAttribute("role");
             }
             parent.append(snapshot);
-            const animation = snapshot.animate(
-               [
-                  { opacity: 1, transform: "translateY(0)" },
-                  { opacity: 0, transform: "translateY(5px)" },
-               ],
-               { duration: 120, easing: getComputedStyle(snapshot).getPropertyValue("--ease").trim() || "ease", fill: "forwards" }
-            );
+            const easing = getComputedStyle(snapshot).getPropertyValue("--ease").trim() || "ease";
+            // The page fades back while the card drops away slightly, mirroring how it opened.
+            const animation = snapshot.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140, easing, fill: "forwards" });
+            const card = snapshot.querySelector<HTMLElement>(".dialog");
+            if (card) card.style.animation = "none";
+            card?.animate([{ transform: "none" }, { transform: "translateY(6px) scale(0.97)" }], { duration: 140, easing, fill: "forwards" });
             void animation.finished.then(
                () => snapshot.remove(),
                () => snapshot.remove()

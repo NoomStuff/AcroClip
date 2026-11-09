@@ -6,6 +6,10 @@
    --radius-panel: 14px;
    --border-control: #ffffff18;
    --border-hover: #ffffff30;
+   --slot-hover: #25232b;
+   --row-hover: #1e1d22;
+   --focus: #b197fce6;
+   --row-press: #222126;
    font-family:
       "Segoe UI Variable Text",
       "Segoe UI Variable",
@@ -104,41 +108,51 @@ button:disabled {
 }
 
 :root[data-keyboard] [role="treeitem"]:focus-visible,
+:root[data-keyboard] [tabindex]:not(input, textarea):focus-visible,
 :root[data-keyboard] button:focus-visible,
 :root[data-keyboard] input:focus-visible,
 :root[data-keyboard] select:focus-visible,
 :root[data-keyboard] video:focus-visible {
-   outline: 2px solid var(--accent);
-   outline-offset: 3px;
+   outline: 2px solid var(--focus);
+   /* Drawn inside the element so scroll areas and cards never clip it. */
+   outline-offset: -2px;
 }
 
 :root:not([data-keyboard]) :focus {
    outline: none;
 }
 
+/* Releasing a press springs back slightly past rest. */
 button {
    transition:
       background 150ms var(--ease),
       color 150ms var(--ease),
       opacity 150ms var(--ease),
-      transform 150ms var(--ease);
+      transform 280ms var(--spring);
 }
 
+/* Fields are dark slots, like the segmented control. Focus lifts the slot instead of drawing a border. */
 input,
 select {
    color: inherit;
-   border: 1px solid var(--border-control);
-   background: var(--raised);
-   border-radius: var(--radius-control);
-   padding: 8px 11px;
+   border: 0;
+   background: var(--base);
+   border-radius: 10px;
+   padding: 9px 12px;
    min-height: var(--control-height);
    font-size: 13px;
    outline: none;
+   transition: background 150ms var(--ease);
 }
 
-input:focus,
-select:focus {
-   border-color: var(--accent-border);
+input:where(:hover:not(:disabled, :focus)),
+select:where(:hover:not(:disabled, :focus)) {
+   background: var(--slot-hover);
+}
+
+input:where(:focus),
+select:where(:focus) {
+   background: var(--raised);
 }
 
 input[type="number"] {

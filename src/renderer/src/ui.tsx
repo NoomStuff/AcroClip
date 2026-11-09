@@ -1,14 +1,17 @@
-import { FieldDescription, useFieldDescription } from "./field-accessibility";
+import { FieldDescription } from "./field-accessibility";
 import { Children, Fragment, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 
 import { SelectionIndicator } from "./SelectionIndicator";
 import { DropdownSelect } from "./DropdownSelect";
 import { menuPosition } from "./menu-position";
 import { MenuFamilyContext } from "./MenuSubmenu";
+import { useMenuHighlight } from "./MenuHighlight";
+import { selectionBounce } from "./value-kick";
 export { MenuSubmenu, MenuCheckboxItem, MenuRadioGroup, MenuRadioItem } from "./MenuSubmenu";
+export { NumberInput } from "./Stepper";
 import type { DropdownOption } from "./DropdownSelect";
 
 export function HeaderActions({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -47,11 +50,11 @@ export function ContextHeader({
       >
          <span className="context-header-label">{label}</span>
          {onTitleClick ? (
-            <button className="context-header-title" title={hint ?? title} onClick={onTitleClick}>
+            <button className="context-header-title" data-tooltip={hint ?? title} data-tooltip-overflow={hint ? undefined : ""} onClick={onTitleClick}>
                {content}
             </button>
          ) : (
-            <div className="context-header-title" title={hint ?? title}>
+            <div className="context-header-title" data-tooltip={hint ?? title} data-tooltip-overflow={hint ? undefined : ""}>
                {content}
             </div>
          )}
@@ -78,7 +81,7 @@ export function Button({
 }
 export function IconButton({ children, label, title, className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
    return (
-      <button type="button" {...props} title={title ?? label} aria-label={label} className={`icon-button ${className}`}>
+      <button type="button" {...props} data-tooltip={title ?? label} aria-label={label} className={`icon-button ${className}`}>
          {children}
       </button>
    );
@@ -88,14 +91,17 @@ export function Segmented<T extends string>({
    values,
    onChange,
    label,
+   compact = false,
 }: {
    value: T;
    values: { value: T; label: string; disabled?: boolean }[];
    onChange: (value: T) => void;
    label: string;
+   // Sized to sit in a settings row next to other row controls.
+   compact?: boolean;
 }) {
    return (
-      <div className="segmented moving-selection" role="group" aria-label={label}>
+      <div className={`segmented moving-selection ${compact ? "segmented-compact" : ""}`} role="group" aria-label={label}>
          <SelectionIndicator value={value} />
          {values.map((item) => (
             <button
@@ -144,9 +150,7 @@ export function Toggle({
             disabled={disabled}
          />
          <span className="switch" aria-hidden="true">
-            <span className="switch-thumb">
-               <span className="switch-mark" />
-            </span>
+            <span className="switch-thumb" />
          </span>
       </label>
    );
@@ -170,30 +174,6 @@ export function Field({ label, detail, children, stacked = false }: { label: str
             <div className="field-control">{children}</div>
          </div>
       </FieldDescription.Provider>
-   );
-}
-export function NumberInput({
-   value,
-   unit,
-   onValueChange,
-   ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "onChange"> & {
-   value: number;
-   unit: string;
-   onValueChange: (value: number) => void;
-}) {
-   const description = useFieldDescription(props["aria-describedby"]);
-   return (
-      <div className="number-unit">
-         <input
-            {...props}
-            aria-describedby={description}
-            type="number"
-            value={Number.isNaN(value) ? "" : value}
-            onChange={(event) => onValueChange(event.currentTarget.valueAsNumber)}
-         />
-         <span>{unit}</span>
-      </div>
    );
 }
 export function Empty({ icon, title, detail, children }: { icon: ReactNode; title: string; detail?: string; children?: ReactNode }) {
@@ -238,6 +218,11 @@ export function Menu({
       [familyId]
    );
    const open = phase === "open";
+   const highlight = useMenuHighlight();
+   const clearHighlight = highlight.clear;
+   useEffect(() => {
+      if (phase === "closed") clearHighlight();
+   }, [phase, clearHighlight]);
    const [contextAnchor, setContextAnchor] = useState<ContextMenuRequest | null>(null);
    const contextClose = useRef(onContextClose);
    contextClose.current = onContextClose;
@@ -359,12 +344,16 @@ export function Menu({
                   aria-hidden={!open}
                   inert={!open}
                   data-closing={phase === "closing" ? true : undefined}
+                  {...highlight.handlers}
                   onAnimationEnd={(event) => {
                      if (phase === "closing" && event.target === event.currentTarget) finishClosing();
                   }}
-                  onClick={() => {
+                  onClick={(event) => {
                      dismiss();
                      restoreFocus();
+                     // Picking an option pops the trigger, like a dropdown taking its choice.
+                     if (!contextAnchor && event.target instanceof Element && event.target.closest('[role="menuitemradio"], [role="menuitemcheckbox"]'))
+                        selectionBounce(ref.current?.querySelector("button"));
                   }}
                   onKeyDown={(event) => {
                      if (event.key === "Tab") {
@@ -397,6 +386,7 @@ export function Menu({
                      items[next]?.focus();
                   }}
                >
+                  {highlight.highlight}
                   <MenuFamilyContext.Provider value={{ id: familyId, closing: !open, dismiss }}>{children}</MenuFamilyContext.Provider>
                </div>,
                document.fullscreenElement ?? document.body

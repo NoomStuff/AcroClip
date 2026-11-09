@@ -364,7 +364,7 @@ export function Recording({
                         className={`record-action ${active ? "is-recording" : ""}`}
                         aria-label={active ? "Stop capturing" : state.recorder.state === "starting" ? "Starting capture" : "Start capturing"}
                         aria-busy={state.recorder.state === "starting"}
-                        title={active ? "Stop capturing. Footage you haven't saved will be discarded." : undefined}
+
                         aria-description={active ? "Stopping clears unsaved history." : undefined}
                         disabled={state.recorder.state === "starting" || !state.recorder.supported || (!active && !captureAvailable)}
                         onClick={() => void run(active ? () => api.stopRecording() : () => api.startRecording())}
@@ -426,7 +426,7 @@ export function Recording({
                               Add it
                            </button>
                         </div>
-                        <div className="auto-fallback" title="Capture this screen when no game is detected. Off keeps Auto waiting.">
+                        <div className="auto-fallback">
                            <Field label="Screen fallback" stacked>
                               <Select
                                  label="Screen fallback"

@@ -22,5 +22,5 @@
 .dialog-panel {
    max-height: calc(100vh - 64px);
    overflow: auto;
-   padding-right: calc(28px - var(--scrollbar-size));
+   padding-right: calc(24px - var(--scrollbar-size));
 }

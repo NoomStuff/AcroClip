@@ -97,7 +97,8 @@ export function FolderTree({
             data-list-control=""
             tabIndex={-1}
             className={`sidebar-item ${selected === path ? "selected" : ""}`}
-            title={path}
+            data-tooltip={path}
+            data-tooltip-overflow=""
             onClick={() => onSelect(path)}
          >
             {open ? <FolderOpen size={16} /> : <Folder size={16} />}

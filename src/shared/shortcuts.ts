@@ -46,22 +46,38 @@ export function normalizeBinding(value: string, mac: boolean): string {
       .sort()
       .join("+");
 }
+type ShortcutDefinition = (typeof shortcutRegistry)[number];
+function clashes(preferences: Pick<Preferences, "shortcut" | "shortcuts">, a: ShortcutDefinition, b: ShortcutDefinition, mac: boolean): boolean {
+   const key = bindingFor(preferences, a.id);
+   return (
+      !!key &&
+      normalizeBinding(key, mac) === normalizeBinding(bindingFor(preferences, b.id), mac) &&
+      (a.page === "all" || b.page === "all" || a.page === b.page)
+   );
+}
 export function shortcutConflict(preferences: Pick<Preferences, "shortcut" | "shortcuts">, mac: boolean): string | null {
    for (let i = 0; i < shortcutRegistry.length; i++)
       for (let j = i + 1; j < shortcutRegistry.length; j++) {
          const a = shortcutRegistry[i]!,
-            b = shortcutRegistry[j]!,
-            key = bindingFor(preferences, a.id);
-         if (
-            key &&
-            normalizeBinding(key, mac) === normalizeBinding(bindingFor(preferences, b.id), mac) &&
-            (a.page === "all" || b.page === "all" || a.page === b.page)
-         )
-            return `${a.label} and ${b.label} use the same shortcut.`;
+            b = shortcutRegistry[j]!;
+         if (clashes(preferences, a, b, mac)) return `${a.label} and ${b.label} use the same shortcut.`;
       }
    return null;
 }
-export function eventBinding(event: KeyboardEvent): string {
+/** The labels of other shortcuts that share this action's binding where both are active. */
+export function shortcutClashes(preferences: Pick<Preferences, "shortcut" | "shortcuts">, id: ShortcutAction, mac: boolean): string[] {
+   const item = shortcutRegistry.find((entry) => entry.id === id)!;
+   return shortcutRegistry.filter((other) => other.id !== id && clashes(preferences, item, other, mac)).map((other) => other.label);
+}
+export type ShortcutModifier = "Control" | "Command" | "Alt" | "Shift";
+type BindingEvent = Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey"> & { getModifierState?: (key: string) => boolean };
+/**
+ * The binding for a key press. On Windows, Ctrl+Alt is AltGr: when that types a character on the
+ * current layout, the browser drops the Ctrl and Alt flags and reports AltGraph instead, so AltGraph
+ * counts as both. `held` adds modifiers tracked from their own key presses, for flags the browser dropped.
+ */
+export function eventBinding(event: BindingEvent, held: ReadonlySet<ShortcutModifier> = new Set()): string {
+   const altGraph = event.getModifierState?.("AltGraph") ?? false;
    const key = event.code.startsWith("Key")
       ? event.code.slice(3)
       : event.code.startsWith("Digit")
@@ -69,7 +85,15 @@ export function eventBinding(event: KeyboardEvent): string {
         : event.key === " "
           ? "Space"
           : event.key.replace("Arrow", "");
-   return [event.ctrlKey && "Control", event.metaKey && "Command", event.altKey && "Alt", event.shiftKey && "Shift", key].filter(Boolean).join("+");
+   return [
+      (event.ctrlKey || altGraph || held.has("Control")) && "Control",
+      (event.metaKey || held.has("Command")) && "Command",
+      (event.altKey || altGraph || held.has("Alt")) && "Alt",
+      (event.shiftKey || held.has("Shift")) && "Shift",
+      key,
+   ]
+      .filter(Boolean)
+      .join("+");
 }
 export function formatBinding(value: string, mac: boolean): string {
    return value

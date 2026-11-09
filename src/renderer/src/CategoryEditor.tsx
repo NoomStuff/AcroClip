@@ -144,7 +144,7 @@ export function CategoryEditor({ category, close, run }: { category?: Category |
                      <span aria-hidden="true" style={{ background: value }} />
                   </button>
                ))}
-               <label className="category-custom-swatch" title="Choose a custom color" data-selected={!colors.includes(color) || undefined}>
+               <label className="category-custom-swatch" data-selected={!colors.includes(color) || undefined}>
                   <span aria-hidden="true" style={{ background: color }}>
                      <Pipette size={16} />
                   </span>

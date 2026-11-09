@@ -93,7 +93,8 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await page.keyboard.press("Escape");
       await expect(page.getByRole("slider", { name: "Capture compression", exact: true })).toHaveValue("20");
       await selectOption(page, "Resolution limit", "1440");
-      await expect(page.getByRole("button", { name: "Custom", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.locator(".quality-options").getByRole("button", { name: /^Custom/ })).toHaveAttribute("aria-pressed", "true");
+      await page.getByRole("group", { name: "Frame rate choices", exact: true }).getByRole("button", { name: "Custom", exact: true }).click();
       await page.getByRole("spinbutton", { name: "Capture frame rate" }).fill("48");
       await page.getByRole("slider", { name: "Capture compression" }).fill("25");
       await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).toBeHidden();
@@ -101,7 +102,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).toBeVisible();
       await expect(page.getByRole("combobox", { name: "Replay memory" })).toHaveAttribute("data-value", "0");
       await selectOption(page, "Replay memory", "1024");
-      await expect(page.getByRole("button", { name: "Custom", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.locator(".quality-options").getByRole("button", { name: /^Custom/ })).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).not.toBeChecked();
       await page.getByRole("checkbox", { name: /Allow software encoding/ }).check();
       await page.waitForTimeout(300);
@@ -109,6 +110,9 @@ test("onboarding UI persists choices without starting recording or OS startup", 
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences)
          .toMatchObject({ resolutionLimit: 1440, customFPS: 48, customCQ: 25, allowSoftwareEncoder: true, replayMemoryMB: 1024 });
       await page.getByRole("button", { name: "Collection", exact: true }).click();
+      const sizes = page.getByRole("group", { name: "Default maximum size choices", exact: true });
+      await expect(sizes.getByRole("button", { name: "20 MB", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await sizes.getByRole("button", { name: "Custom", exact: true }).click();
       await expect(page.getByRole("spinbutton", { name: "Default shareable size in MB" })).toHaveValue("20");
       await page.getByRole("spinbutton", { name: "Default shareable size in MB" }).fill("50");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.shareSizeMB).toBe(50);
@@ -116,7 +120,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await selectOption(page, "Filename preset", "custom");
       const pattern = page.getByRole("textbox", { name: "Name pattern" });
       await pattern.fill("Moment ");
-      await page.locator(".filename-tokens").getByTitle("{source}", { exact: true }).click();
+      await page.locator(".filename-tokens").locator('[data-tooltip="{source}"]').click();
       await expect(pattern).toHaveValue("Moment {source}");
       await pattern.press("Control+Z");
       await expect(pattern).toHaveValue("Moment ");
