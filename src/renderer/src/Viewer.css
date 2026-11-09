@@ -148,10 +148,10 @@
    background: var(--accent-hover);
    color: #181818;
 }
-.viewer-size-picker .select-trigger.icon-button > svg {
+.viewer-size-picker .select-trigger.icon-button svg {
    transition: transform 200ms var(--ease);
 }
-.viewer-size-picker .select-trigger.icon-button[aria-expanded="true"] > svg {
+.viewer-size-picker .select-trigger.icon-button[aria-expanded="true"] svg {
    transform: rotate(180deg);
 }
 .viewer-size-popover {
@@ -292,13 +292,18 @@
    height: 11px;
    border-radius: 50%;
    background: var(--text);
-   transform: translate(-50%, -50%);
+   /* The translate property, not transform, so the scale below grows from the handle's center. */
+   translate: -50% -50%;
    pointer-events: none;
-   transition: scale 120ms ease-out;
+   transition: scale 420ms cubic-bezier(0.25, 2.4, 0.4, 1);
 }
+/* The same bouncy hover growth and grab squeeze as the other sliders. */
 .player-progress:hover > i,
 :root[data-keyboard] .player-progress:has(input:focus-visible) > i {
-   scale: 1.3;
+   scale: 1.2;
+}
+.player-progress:has(input:active:not(:disabled)) > i {
+   scale: 0.95;
 }
 .player-progress input {
    position: relative;

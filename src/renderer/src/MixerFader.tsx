@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useSliderMotion } from "./useSliderMotion";
 import { boundedGain, gainText, parseGain } from "./audio-meter";
+import { useHandleReset } from "./slider-handle";
+import { readoutKick, useValueKick } from "./value-kick";
+// The fader tops out at +6 dB. Typed values can still go to +12 dB, past its end.
+const faderMax = 2;
 export function MixerFader({
    value,
    muted,
@@ -16,7 +20,7 @@ export function MixerFader({
 }) {
    const [display, setDisplay] = useState(muted ? 0 : value),
       [draft, setDraft] = useState<string | null>(null);
-   const motion = useSliderMotion<HTMLDivElement>(Math.min(1, display / 1.41) * 100);
+   const motion = useSliderMotion<HTMLDivElement>(Math.min(1, display / faderMax) * 100);
    const revision = useRef(0);
    const gestureVolume = useRef<number | null>(null);
    const latest = useRef(muted ? 0 : value),
@@ -51,7 +55,7 @@ export function MixerFader({
          dragging.current &&
          !exact.current &&
          input.current &&
-         (Math.abs(next - 1) / 1.41) * Math.max(1, input.current.getBoundingClientRect().width - 16) <= 5
+         (Math.abs(next - 1) / faderMax) * Math.max(1, input.current.getBoundingClientRect().width - 16) <= 5
       )
          next = 1;
       revision.current += 1;
@@ -64,6 +68,9 @@ export function MixerFader({
       change(1);
       commit(1);
    };
+   const handleReset = useHandleReset(".mixer-fader-thumb", reset);
+   const readout = useRef<HTMLSpanElement>(null);
+   useValueKick(display, readout, readoutKick, () => draft !== null, faderMax);
    const accept = () => {
       if (draft !== null) {
          const gain = parseGain(draft);
@@ -84,9 +91,9 @@ export function MixerFader({
                aria-label={label}
                aria-valuetext={display <= 0 ? "Silence" : `${gainText(display)} dB`}
                min={0}
-               max={1.41}
+               max={faderMax}
                step={0.01}
-               value={Math.min(display, 1.41)}
+               value={Math.min(display, faderMax)}
                disabled={disabled}
                onChange={(event) => change(Number(event.target.value))}
                onPointerDown={(event) => {
@@ -116,7 +123,8 @@ export function MixerFader({
                   if (changing.current) commit(latest.current);
                   gestureVolume.current = null;
                }}
-               onDoubleClick={reset}
+               onMouseDown={handleReset.onMouseDown}
+               onDoubleClick={handleReset.onDoubleClick}
                onKeyDown={(event) => {
                   gestureVolume.current ??= value;
                   if (event.key === "Delete") {
@@ -131,32 +139,34 @@ export function MixerFader({
             </span>
          </span>
          <span className="mixer-gain-value">
-            <input
-               type="text"
-               inputMode="decimal"
-               aria-label={`${label} in decibels`}
-               value={draft ?? gainText(display)}
-               disabled={disabled}
-               onFocus={() => setDraft(gainText(display))}
-               onChange={(event) => setDraft(event.target.value)}
-               onBlur={accept}
-               onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                     event.preventDefault();
-                     accept();
-                  } else if (event.key === "Escape") {
-                     setDraft(null);
-                     event.preventDefault();
-                  } else if (["ArrowUp", "ArrowDown"].includes(event.key)) {
-                     event.preventDefault();
-                     setDraft(null);
-                     const next = boundedGain(latest.current + (event.key === "ArrowUp" ? 0.01 : -0.01));
-                     change(next);
-                     commit(next);
-                  }
-               }}
-            />
-            <span aria-hidden="true">dB</span>
+            <span className="mixer-gain-content" ref={readout}>
+               <input
+                  type="text"
+                  inputMode="decimal"
+                  aria-label={`${label} in decibels`}
+                  value={draft ?? gainText(display)}
+                  disabled={disabled}
+                  onFocus={() => setDraft(gainText(display))}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onBlur={accept}
+                  onKeyDown={(event) => {
+                     if (event.key === "Enter") {
+                        event.preventDefault();
+                        accept();
+                     } else if (event.key === "Escape") {
+                        setDraft(null);
+                        event.preventDefault();
+                     } else if (["ArrowUp", "ArrowDown"].includes(event.key)) {
+                        event.preventDefault();
+                        setDraft(null);
+                        const next = boundedGain(latest.current + (event.key === "ArrowUp" ? 0.01 : -0.01));
+                        change(next);
+                        commit(next);
+                     }
+                  }}
+               />
+               {(draft !== null || display > 0) && <span aria-hidden="true">dB</span>}
+            </span>
          </span>
       </div>
    );

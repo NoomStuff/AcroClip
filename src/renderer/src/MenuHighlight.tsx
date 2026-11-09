@@ -1,26 +1,48 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FocusEvent, PointerEvent } from "react";
 
 const items = '[role="option"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]';
 
+type Box = { x: number; y: number; width: number; height: number; instant: boolean };
+
+// Layout offsets ignore transforms, so the menu's open animation cannot skew the measurement.
+function measure(container: HTMLElement, item: HTMLElement): Omit<Box, "instant"> | null {
+   let x = 0,
+      y = 0,
+      node: HTMLElement | null = item;
+   while (node && node !== container) {
+      x += node.offsetLeft;
+      y += node.offsetTop;
+      node = node.offsetParent as HTMLElement | null;
+   }
+   return node === container ? { x, y, width: item.offsetWidth, height: item.offsetHeight } : null;
+}
+
 /** One highlight glides between a menu's items instead of each item lighting up on its own. */
 export function useMenuHighlight() {
-   const [box, setBox] = useState<{ x: number; y: number; width: number; height: number; instant: boolean } | null>(null);
-   const point = (container: HTMLElement, target: EventTarget | null) => {
-      const item = target instanceof Element ? target.closest<HTMLElement>(items) : null;
+   const [box, setBox] = useState<Box | null>(null);
+   const target = useRef<{ container: HTMLElement; item: HTMLElement } | null>(null);
+   const observer = useRef<ResizeObserver | null>(null);
+   const watched = useRef<HTMLElement | null>(null);
+   useEffect(() => () => observer.current?.disconnect(), []);
+   const point = (container: HTMLElement, node: EventTarget | null) => {
+      const item = node instanceof Element ? node.closest<HTMLElement>(items) : null;
       // Events from portaled submenus bubble through React, so ignore items in other panels.
       if (!item || item.matches(":disabled") || item.closest('[role="menu"], [role="listbox"]') !== container) return;
-      // Layout offsets ignore transforms, so the menu's open animation cannot skew the measurement.
-      let x = 0,
-         y = 0,
-         node: HTMLElement | null = item;
-      while (node && node !== container) {
-         x += node.offsetLeft;
-         y += node.offsetTop;
-         node = node.offsetParent as HTMLElement | null;
+      const next = measure(container, item);
+      if (!next) return;
+      target.current = { container, item };
+      // A menu can still be settling its width when the first item is focused, so measure again whenever it resizes.
+      if (watched.current !== container) {
+         observer.current?.disconnect();
+         observer.current = new ResizeObserver(() => {
+            const current = target.current;
+            const box = current?.item.isConnected ? measure(current.container, current.item) : null;
+            if (box) setBox((shown) => (shown ? { ...box, instant: true } : shown));
+         });
+         observer.current.observe(container);
+         watched.current = container;
       }
-      if (node !== container) return;
-      const next = { x, y, width: item.offsetWidth, height: item.offsetHeight };
       setBox((current) => ({ ...next, instant: current === null }));
    };
    const handlers = {
@@ -40,6 +62,11 @@ export function useMenuHighlight() {
          style={box ? { transform: `translate(${box.x}px, ${box.y}px)`, width: box.width, height: box.height } : undefined}
       />
    );
-   const clear = useCallback(() => setBox(null), []);
+   const clear = useCallback(() => {
+      target.current = null;
+      observer.current?.disconnect();
+      watched.current = null;
+      setBox(null);
+   }, []);
    return { handlers, highlight, clear };
 }

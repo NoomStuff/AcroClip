@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import { useFieldDescription } from "./field-accessibility";
 import { useMenuHighlight } from "./MenuHighlight";
+import { selectionBounce } from "./value-kick";
 
 export interface DropdownOption {
    value: string;
@@ -199,6 +200,8 @@ export function DropdownSelect({
                            } else {
                               onChange(option.value);
                               close();
+                              // The trigger takes the choice with a small pop.
+                              selectionBounce(trigger.current);
                            }
                         }}
                      >

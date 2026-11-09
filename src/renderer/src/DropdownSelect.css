@@ -35,6 +35,11 @@
 .select-trigger[aria-expanded="true"] .select-chevron {
    color: var(--accent);
 }
+/* Icon triggers center their icon instead of sitting it on a text baseline. */
+.select-trigger.icon-button > span {
+   display: grid;
+   place-items: center;
+}
 .select-trigger > span {
    min-width: 0;
    overflow: hidden;

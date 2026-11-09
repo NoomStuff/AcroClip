@@ -7,6 +7,10 @@ import { api, describeError } from "./desktop";
 import { Button, IconButton, Select } from "./ui";
 import { DialogPanel } from "./Dialog";
 import { ApplicationIcon } from "./ApplicationIcon";
+// The catalogue is large and rarely changes, so the Games page keeps it between visits instead of loading it every time.
+let cachedCatalog: GameCatalogSnapshot | null = null;
+const sameCatalog = (a: GameCatalogSnapshot, b: GameCatalogSnapshot) =>
+   a.source === b.source && a.entries.length === b.entries.length && a.entries.every((entry, index) => entry.id === b.entries[index]?.id);
 const executableKey = (value: string) => value.replaceAll("\\", "/").toLowerCase();
 const withAddedGame = (games: CustomGame[], game: CustomGame): CustomGame[] => [
    ...games.filter((item) => executableKey(item.executable) !== executableKey(game.executable)),
@@ -126,7 +130,7 @@ export function GameManagement({
    change: (games: CustomGame[]) => void;
    searchRef: RefObject<HTMLInputElement | null>;
 }) {
-   const [catalog, setCatalog] = useState<GameCatalogSnapshot | null>(null),
+   const [catalog, setCatalog] = useState<GameCatalogSnapshot | null>(cachedCatalog),
       [error, setError] = useState(""),
       [query, setQuery] = useState(""),
       [limit, setLimit] = useState(80),
@@ -136,10 +140,13 @@ export function GameManagement({
       void api
          .gameCatalog()
          .then((value) => {
+            // A refreshed catalogue replaces the cached one, but an unchanged one keeps the list as it is.
+            if (cachedCatalog && sameCatalog(cachedCatalog, value)) return;
+            cachedCatalog = value;
             if (!disposed) setCatalog(value);
          })
          .catch((reason: unknown) => {
-            if (!disposed) setError(describeError(reason));
+            if (!disposed && !cachedCatalog) setError(describeError(reason));
          });
       return () => {
          disposed = true;

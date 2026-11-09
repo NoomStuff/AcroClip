@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { Check, ChevronDown, Cpu, Monitor, Gauge, MemoryStick, Settings2, SlidersHorizontal } from "lucide-react";
+import { Check, ChevronDown, Cpu, Monitor, Gauge, MemoryStick, SlidersHorizontal } from "lucide-react";
 import type { Preferences, RecordingCapabilities } from "../../shared/types";
 import { applyRecordingPreset } from "../../shared/recording-presets";
 import { automaticReplayMemoryMB, memoryLabel, replayMemoryChoicesFor } from "../../shared/replay-memory";
@@ -90,24 +90,9 @@ function AdvancedQualityControls({
    choices.sort((a, b) => a - b);
    return (
       <div className="quality-advanced" data-open={open || undefined}>
-         <button
-            type="button"
-            className={`quality-advanced-toggle ${compact ? "settings-row" : ""}`}
-            aria-expanded={open}
-            aria-controls={id}
-            aria-describedby={compact ? `${id}-detail` : undefined}
-            onClick={() => setOpen(!open)}
-         >
-            {compact && <Settings2 className="settings-row-icon" size={21} aria-hidden="true" />}
-            <span className="quality-advanced-copy">
-               Advanced
-               {compact && (
-                  <span className="field-detail" id={`${id}-detail`} aria-hidden="true">
-                     Replay memory and software encoding
-                  </span>
-               )}
-            </span>
-            <ChevronDown size={compact ? 18 : 14} aria-hidden="true" />
+         <button type="button" className="quality-advanced-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+            Advanced
+            <ChevronDown size={14} aria-hidden="true" />
          </button>
          <div className="quality-advanced-fold" id={id} inert={!open} aria-hidden={!open}>
             <div className="quality-advanced-body">

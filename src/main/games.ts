@@ -63,6 +63,8 @@ export class GameCatalog {
    private loadPromise: Promise<void> | null = null;
    private updated = 0;
    private attempted = 0;
+   // The filtered list only changes when the catalog does, so build it once per index.
+   private listed: GameCatalogSnapshot | null = null;
    private readonly file: string;
    private readonly onWarning: (message: string) => void;
    private readonly platform: NodeJS.Platform;
@@ -73,6 +75,7 @@ export class GameCatalog {
       this.reindex();
    }
    private reindex(): void {
+      this.listed = null;
       this.index.clear();
       for (const game of this.entries)
          for (const executable of game.executables) {
@@ -106,6 +109,7 @@ export class GameCatalog {
    }
    async list(): Promise<GameCatalogSnapshot> {
       await this.load();
+      if (this.listed) return this.listed;
       const entries = new Map<string, GameCatalogSnapshot["entries"][number]>();
       for (const game of this.entries) {
          const names = game.executables
@@ -115,7 +119,8 @@ export class GameCatalog {
          const previous = entries.get(game.id);
          entries.set(game.id, { id: game.id, name: game.name, executables: [...new Set([...(previous?.executables ?? []), ...names])] });
       }
-      return { source: this.saved ? "saved" : "built-in", entries: [...entries.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+      this.listed = { source: this.saved ? "saved" : "built-in", entries: [...entries.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+      return this.listed;
    }
    async refresh(): Promise<void> {
       await this.load();

@@ -1,5 +1,5 @@
 import type { Ref } from "react";
-import { ExternalLink, Folder } from "lucide-react";
+import { ExternalLink, Folder, FolderInput } from "lucide-react";
 import { Button } from "./ui";
 
 export function FolderPicker({
@@ -46,6 +46,7 @@ export function FolderPicker({
             </span>
          )}
          <Button data-choose-folder onClick={onChoose}>
+            <FolderInput size={16} aria-hidden="true" />
             Choose collection folder
          </Button>
       </div>

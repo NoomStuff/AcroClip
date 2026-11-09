@@ -2,27 +2,20 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { InputHTMLAttributes, ReactNode, RefObject } from "react";
 import { Minus, Plus } from "lucide-react";
 import { useFieldDescription } from "./field-accessibility";
+import { useValueKick } from "./value-kick";
 
 // Interaction reference: Better Osiris NumberField. The value bounces in the direction it moved.
+// Each step kicks the value. Holding a button stacks the kicks up to a limit.
+const stepKick = { strength: 0.8, limit: 1.2, lift: 2.5, grow: 0.06 };
+
 function useValueBump(value: number, content: RefObject<HTMLSpanElement | null>, input: RefObject<HTMLInputElement | null>) {
-   const previous = useRef(value);
    const stepped = useRef(false);
-   useLayoutEffect(() => {
-      const from = previous.current;
-      previous.current = value;
-      const node = content.current;
-      // Typing already shows the change, so only steps and outside changes move.
+   // Typing already shows the change, so only steps and outside changes move.
+   useValueKick(value, content, stepKick, () => {
       const typing = document.activeElement === input.current && !stepped.current;
       stepped.current = false;
-      if (!node || typing || from === value || !Number.isFinite(from) || !Number.isFinite(value)) return;
-      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      // Up for an increase, down for a decrease, then back.
-      const offset = value > from ? -3 : 3;
-      node.animate([{ transform: "none" }, { transform: `translateY(${offset}px) scale(1.08)`, offset: 0.35 }, { transform: "none" }], {
-         duration: 260,
-         easing: "cubic-bezier(0.22, 0.8, 0.3, 1)",
-      });
-   }, [value, content, input]);
+      return typing;
+   });
    return () => {
       stepped.current = true;
    };
@@ -237,8 +230,9 @@ export function DraftStepper({
       onValueChange(Math.max(min, Math.min(max, next)));
    };
    const move = (direction: 1 | -1) => {
-      markStepped();
-      commit((draft === null ? value : (parse(draft) ?? value)) + direction * step);
+      const next = Math.max(min, Math.min(max, (draft === null ? value : (parse(draft) ?? value)) + direction * step));
+      if (next !== value) markStepped();
+      commit(next);
    };
    const accept = () => {
       const next = draft === null ? null : parse(draft);

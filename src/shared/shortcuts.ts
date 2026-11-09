@@ -69,7 +69,15 @@ export function shortcutClashes(preferences: Pick<Preferences, "shortcut" | "sho
    const item = shortcutRegistry.find((entry) => entry.id === id)!;
    return shortcutRegistry.filter((other) => other.id !== id && clashes(preferences, item, other, mac)).map((other) => other.label);
 }
-export function eventBinding(event: KeyboardEvent): string {
+export type ShortcutModifier = "Control" | "Command" | "Alt" | "Shift";
+type BindingEvent = Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey"> & { getModifierState?: (key: string) => boolean };
+/**
+ * The binding for a key press. On Windows, Ctrl+Alt is AltGr: when that types a character on the
+ * current layout, the browser drops the Ctrl and Alt flags and reports AltGraph instead, so AltGraph
+ * counts as both. `held` adds modifiers tracked from their own key presses, for flags the browser dropped.
+ */
+export function eventBinding(event: BindingEvent, held: ReadonlySet<ShortcutModifier> = new Set()): string {
+   const altGraph = event.getModifierState?.("AltGraph") ?? false;
    const key = event.code.startsWith("Key")
       ? event.code.slice(3)
       : event.code.startsWith("Digit")
@@ -77,7 +85,15 @@ export function eventBinding(event: KeyboardEvent): string {
         : event.key === " "
           ? "Space"
           : event.key.replace("Arrow", "");
-   return [event.ctrlKey && "Control", event.metaKey && "Command", event.altKey && "Alt", event.shiftKey && "Shift", key].filter(Boolean).join("+");
+   return [
+      (event.ctrlKey || altGraph || held.has("Control")) && "Control",
+      (event.metaKey || held.has("Command")) && "Command",
+      (event.altKey || altGraph || held.has("Alt")) && "Alt",
+      (event.shiftKey || held.has("Shift")) && "Shift",
+      key,
+   ]
+      .filter(Boolean)
+      .join("+");
 }
 export function formatBinding(value: string, mac: boolean): string {
    return value

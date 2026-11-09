@@ -9,6 +9,7 @@ import { DropdownSelect } from "./DropdownSelect";
 import { menuPosition } from "./menu-position";
 import { MenuFamilyContext } from "./MenuSubmenu";
 import { useMenuHighlight } from "./MenuHighlight";
+import { selectionBounce } from "./value-kick";
 export { MenuSubmenu, MenuCheckboxItem, MenuRadioGroup, MenuRadioItem } from "./MenuSubmenu";
 export { NumberInput } from "./Stepper";
 import type { DropdownOption } from "./DropdownSelect";
@@ -347,9 +348,12 @@ export function Menu({
                   onAnimationEnd={(event) => {
                      if (phase === "closing" && event.target === event.currentTarget) finishClosing();
                   }}
-                  onClick={() => {
+                  onClick={(event) => {
                      dismiss();
                      restoreFocus();
+                     // Picking an option pops the trigger, like a dropdown taking its choice.
+                     if (!contextAnchor && event.target instanceof Element && event.target.closest('[role="menuitemradio"], [role="menuitemcheckbox"]'))
+                        selectionBounce(ref.current?.querySelector("button"));
                   }}
                   onKeyDown={(event) => {
                      if (event.key === "Tab") {

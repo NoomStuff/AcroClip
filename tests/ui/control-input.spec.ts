@@ -41,20 +41,21 @@ test("gain entry commits, rejects invalid input and supports keyboard resets", a
       await expect(number).toHaveValue("-6.0");
       await number.fill("+6.0206");
       await number.press("Enter");
-      await expect(level).toHaveValue("1.41");
+      await expect(level).toHaveValue("2");
       await expect(number).toHaveValue("+6.0");
       await number.fill("+12");
       await number.press("Enter");
       await expect(number).toHaveValue("+12.0");
-      await expect(level).toHaveValue("1.41");
+      await expect(level).toHaveValue("2");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureVolume).toBe(3.98);
       await number.fill("-inf");
       await number.press("Enter");
       await expect(level).toHaveValue("0");
+      await expect(number).toHaveValue("Off");
       await level.focus();
       await level.press("Home");
       await level.press("End");
-      await expect(level).toHaveValue("1.41");
+      await expect(level).toHaveValue("2");
       await level.press("Delete");
       await expect(level).toHaveValue("1");
       await expect(number).toHaveValue("0.0");
@@ -67,7 +68,16 @@ test("gain entry commits, rejects invalid input and supports keyboard resets", a
       await number.press("Escape");
       await number.blur();
       await expect(level).toHaveValue("0.99");
-      await level.dblclick();
+      // Reset only answers a double-click on the handle, not on the track.
+      // The handle springs to new values, so measure it once it has settled.
+      await page.waitForTimeout(600);
+      const levelBox = (await level.boundingBox())!;
+      const thumbBox = (await level.locator("xpath=..").locator(".mixer-fader-thumb").boundingBox())!;
+      await level.dblclick({ position: { x: 4, y: levelBox.height / 2 } });
+      await expect(level).not.toHaveValue("1");
+      await level.fill("0.99");
+      await page.waitForTimeout(600);
+      await level.dblclick({ position: { x: thumbBox.x + thumbBox.width / 2 - levelBox.x, y: levelBox.height / 2 } });
       await expect(level).toHaveValue("1");
       await page.getByRole("button", { name: "Mute application", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureMuted).toBe(true);

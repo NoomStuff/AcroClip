@@ -295,61 +295,6 @@
    padding: 0;
    background: transparent;
 }
-/* Advanced is a row like its neighbours, so it reads as part of the list instead of loose text. */
-.settings-body .quality-advanced-toggle.settings-row {
-   width: 100%;
-   margin: 0 0 5px;
-   color: var(--text);
-   text-align: left;
-   cursor: pointer;
-   transition:
-      background 150ms var(--ease),
-      transform 260ms var(--spring);
-}
-.settings-body .quality-advanced-toggle.settings-row:hover {
-   background: var(--row-hover);
-   color: var(--text);
-}
-.settings-body .quality-advanced-toggle.settings-row:active {
-   background: var(--row-press);
-}
-.quality-advanced-copy {
-   flex: 1;
-   display: flex;
-   flex-direction: column;
-   font-size: 13px;
-}
-.settings-body .quality-advanced-toggle.settings-row > svg:last-child {
-   color: var(--muted);
-}
-/* Threads drop from the Advanced icon and branch into each row it reveals. */
-.settings-body .quality-advanced-body {
-   --thread: #ffffff1c;
-   padding-left: 40px;
-}
-.settings-body .quality-advanced-body > .settings-row {
-   position: relative;
-}
-.settings-body .quality-advanced-body > .settings-row::before,
-.settings-body .quality-advanced-body > .settings-row:not(:last-child)::after {
-   content: "";
-   position: absolute;
-   left: -10px;
-   pointer-events: none;
-}
-.settings-body .quality-advanced-body > .settings-row::before {
-   top: -5px;
-   width: 10px;
-   height: calc(50% + 5px);
-   border-left: 2px solid var(--thread);
-   border-bottom: 2px solid var(--thread);
-   border-bottom-left-radius: 8px;
-}
-.settings-body .quality-advanced-body > .settings-row:not(:last-child)::after {
-   top: 50%;
-   bottom: -5px;
-   border-left: 2px solid var(--thread);
-}
 .settings-body .custom-quality {
    margin: 5px 0 0;
 }
@@ -558,21 +503,4 @@ fieldset.settings-group:disabled {
 
 .settings-row.shortcut-clash .field-detail {
    color: var(--red);
-}
-/* Bridges the gap between the Advanced row and the first thread. */
-.settings-body .quality-advanced-toggle.settings-row {
-   position: relative;
-}
-.settings-body .quality-advanced-toggle.settings-row::after {
-   content: "";
-   position: absolute;
-   left: 30px;
-   bottom: -5px;
-   height: 5px;
-   border-left: 2px solid #ffffff1c;
-   opacity: 0;
-   transition: opacity 160ms var(--ease);
-}
-.settings-body .quality-advanced[data-open] .quality-advanced-toggle.settings-row::after {
-   opacity: 1;
 }

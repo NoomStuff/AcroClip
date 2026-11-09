@@ -353,7 +353,11 @@
    font-size: 14px;
    transition:
       background-color 240ms var(--ease),
-      color 240ms var(--ease);
+      color 240ms var(--ease),
+      transform 280ms var(--spring);
+}
+.source-row:active {
+   transform: scale(0.97);
 }
 
 .source-row:hover {
@@ -653,7 +657,11 @@
    font-variant-numeric: tabular-nums;
    outline: none;
 }
-.mixer-gain-value > span {
+.mixer-gain-content {
+   display: inline-flex;
+   align-items: baseline;
+}
+.mixer-gain-content > span {
    margin-left: 3px;
    font-size: 11px;
    color: var(--subtle);
@@ -703,6 +711,8 @@
    flex: 1;
    min-width: 0;
    height: 28px;
+   /* The track is inset by the handle's half width, so pull the control back to line the track up with the meter below. */
+   margin-left: -5px;
 }
 .mixer-fader-track {
    position: absolute;
@@ -733,16 +743,15 @@
    box-shadow: 0 1px 4px #0007;
    transition:
       background 120ms ease,
-      scale 300ms var(--spring);
+      scale 420ms cubic-bezier(0.25, 2.4, 0.4, 1);
 }
-/* The same hover growth and grab squeeze as the settings slider. */
+/* The same bouncy hover scale and grab squeeze as the settings slider. */
 .mixer-fader-control:has(input:hover:not(:disabled)) .mixer-fader-thumb,
 :root[data-keyboard] .mixer-fader-control:has(input:focus-visible:not(:disabled)) .mixer-fader-thumb {
-   background: var(--accent);
-   scale: 1.25 1.06;
+   scale: 1.1;
 }
 .mixer-fader-control:has(input:active:not(:disabled)) .mixer-fader-thumb {
-   scale: 0.9 0.94;
+   scale: 0.92;
 }
 .mixer-fader-control:has(input:disabled) .mixer-fader-track {
    opacity: 0.35;
@@ -813,7 +822,9 @@
 }
 
 .source-list > .selection-indicator {
-   transition: background-color 220ms;
+   transition:
+      background-color 220ms,
+      scale 280ms var(--spring);
 }
 @media (prefers-reduced-motion: reduce) {
    .record-action,

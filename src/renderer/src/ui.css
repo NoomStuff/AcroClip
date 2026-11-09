@@ -664,6 +664,30 @@
    z-index: -1;
    background: var(--selection-background, #b197fc12);
    border-radius: 9px;
+   transition: scale 280ms var(--spring);
+}
+/* Matches the press scale of the items it sits under. */
+.selection-indicator[data-pressed] {
+   scale: var(--selection-press, 0.94);
+}
+.library-view-switch {
+   --selection-press: 0.9;
+}
+.sidebar-scroll,
+.settings-nav,
+.source-list {
+   --selection-press: 0.97;
+}
+.rail {
+   --selection-press: 0.92;
+}
+.rail-button:active {
+   transform: scale(0.92);
+}
+@media (prefers-reduced-motion: reduce) {
+   .selection-indicator {
+      transition: none;
+   }
 }
 .moving-selection button.selected {
    background: transparent;

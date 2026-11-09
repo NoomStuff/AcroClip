@@ -755,7 +755,9 @@
    background: #ffffff05;
 }
 .sidebar-scroll > .selection-indicator {
-   transition: background-color 180ms ease-out;
+   transition:
+      background-color 180ms ease-out,
+      scale 280ms var(--spring);
 }
 @media (prefers-reduced-motion: reduce) {
    .sidebar-scroll > .selection-indicator {

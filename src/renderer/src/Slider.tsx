@@ -2,6 +2,8 @@ import { useFieldDescription } from "./field-accessibility";
 // Interaction reference: ppy/osu FormSliderBar and RoundedSliderBar. Implemented for native HTML inputs.
 import { useEffect, useRef, useState } from "react";
 import { useSliderMotion } from "./useSliderMotion";
+import { readoutKick, useValueKick } from "./value-kick";
+import { useHandleReset } from "./slider-handle";
 import type { InputHTMLAttributes } from "react";
 
 type SliderProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "defaultValue" | "min" | "max" | "step" | "onChange"> & {
@@ -56,6 +58,9 @@ export function Slider({
    // A range that crosses zero, such as gain in dB, fills outward from zero.
    const origin = min < 0 && max > 0 ? (-min / (max - min)) * 100 : 0;
    const motion = useSliderMotion<HTMLSpanElement>(progress);
+   const numberContent = useRef<HTMLSpanElement>(null);
+   // A drag's changes stack up to the kick's limit.
+   useValueKick(value, numberContent, readoutKick, () => editing, max - min);
    const snapped = (point: number, input: HTMLInputElement) => {
       if (!pointer.current.active || pointer.current.exact || max <= min) return point;
       const usable = Math.max(1, input.getBoundingClientRect().width - 16);
@@ -84,6 +89,7 @@ export function Slider({
          onCommit?.(defaultValue);
       }
    };
+   const handleReset = useHandleReset(".slider-thumb", reset);
    return (
       <span
          className={`slider ${variant === "compact" ? "slider-compact" : ""} ${numeric ? "slider-with-number" : ""} ${className}`}
@@ -140,8 +146,12 @@ export function Slider({
                   onCommit?.(latest.current);
                   props.onKeyUp?.(event);
                }}
+               onMouseDown={(event) => {
+                  handleReset.onMouseDown(event);
+                  props.onMouseDown?.(event);
+               }}
                onDoubleClick={(event) => {
-                  reset();
+                  handleReset.onDoubleClick();
                   props.onDoubleClick?.(event);
                }}
             />
@@ -164,41 +174,43 @@ export function Slider({
          </span>
          {numeric && (
             <label className="slider-number">
-               <input
-                  type="number"
-                  inputMode="decimal"
-                  aria-label={`${props["aria-label"]} value`}
-                  aria-describedby={description}
-                  min={min * displayScale}
-                  max={max * displayScale}
-                  step={step * displayScale}
-                  value={editing ? draft : display}
-                  disabled={disabled}
-                  onFocus={(event) => {
-                     setEditing(true);
-                     setDraft(display);
-                     event.currentTarget.select();
-                  }}
-                  onChange={(event) => {
-                     const text = event.currentTarget.value;
-                     setDraft(text);
-                     const next = Number(text) / displayScale;
-                     if (text.trim() && Number.isFinite(next) && next >= min && next <= max) change(rounded(next));
-                  }}
-                  onBlur={(event) => commitNumber(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                     if (event.key === "Enter") {
-                        event.preventDefault();
-                        event.currentTarget.blur();
-                     }
-                     if (event.key === "Escape") {
-                        event.preventDefault();
-                        event.currentTarget.value = display;
-                        event.currentTarget.blur();
-                     }
-                  }}
-               />
-               {unit && <span aria-hidden="true">{unit}</span>}
+               <span className="slider-number-content" ref={numberContent}>
+                  <input
+                     type="number"
+                     inputMode="decimal"
+                     aria-label={`${props["aria-label"]} value`}
+                     aria-describedby={description}
+                     min={min * displayScale}
+                     max={max * displayScale}
+                     step={step * displayScale}
+                     value={editing ? draft : display}
+                     disabled={disabled}
+                     onFocus={(event) => {
+                        setEditing(true);
+                        setDraft(display);
+                        event.currentTarget.select();
+                     }}
+                     onChange={(event) => {
+                        const text = event.currentTarget.value;
+                        setDraft(text);
+                        const next = Number(text) / displayScale;
+                        if (text.trim() && Number.isFinite(next) && next >= min && next <= max) change(rounded(next));
+                     }}
+                     onBlur={(event) => commitNumber(event.currentTarget.value)}
+                     onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                           event.preventDefault();
+                           event.currentTarget.blur();
+                        }
+                        if (event.key === "Escape") {
+                           event.preventDefault();
+                           event.currentTarget.value = display;
+                           event.currentTarget.blur();
+                        }
+                     }}
+                  />
+                  {unit && <span aria-hidden="true">{unit}</span>}
+               </span>
             </label>
          )}
       </span>
