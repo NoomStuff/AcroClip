@@ -7,7 +7,16 @@ import { tmpdir } from "node:os";
 import sharp from "sharp";
 import { CollectionService, fileIdentity, withinRoot } from "../src/main/collection";
 import { PlaybackCache } from "../src/main/playback";
-import { createKeyframeStrip, createThumbnail, ffmpegBase, keyframeStripColumns, keyframeStripFrames, loudnessEnvelope, probe, runMedia } from "../src/main/media";
+import {
+   createKeyframeStrip,
+   createThumbnail,
+   ffmpegBase,
+   keyframeStripColumns,
+   keyframeStripFrames,
+   loudnessEnvelope,
+   probe,
+   runMedia,
+} from "../src/main/media";
 
 const workspace = await realpath(await mkdtemp(join(tmpdir(), "acroclip-media-")));
 const root = join(workspace, "collection");
