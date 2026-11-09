@@ -93,7 +93,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await page.keyboard.press("Escape");
       await expect(page.getByRole("slider", { name: "Capture compression", exact: true })).toHaveValue("20");
       await selectOption(page, "Resolution limit", "1440");
-      await expect(page.locator(".quality-options").getByRole("button", { name: "Custom", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.locator(".quality-options").getByRole("button", { name: /^Custom/ })).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("group", { name: "Frame rate choices", exact: true }).getByRole("button", { name: "Custom", exact: true }).click();
       await page.getByRole("spinbutton", { name: "Capture frame rate" }).fill("48");
       await page.getByRole("slider", { name: "Capture compression" }).fill("25");
@@ -102,7 +102,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).toBeVisible();
       await expect(page.getByRole("combobox", { name: "Replay memory" })).toHaveAttribute("data-value", "0");
       await selectOption(page, "Replay memory", "1024");
-      await expect(page.locator(".quality-options").getByRole("button", { name: "Custom", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.locator(".quality-options").getByRole("button", { name: /^Custom/ })).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("checkbox", { name: /Allow software encoding/ })).not.toBeChecked();
       await page.getByRole("checkbox", { name: /Allow software encoding/ }).check();
       await page.waitForTimeout(300);

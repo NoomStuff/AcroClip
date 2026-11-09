@@ -271,7 +271,7 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await navigation.click();
       await expect(navigation).toHaveText(/Press a shortcut/);
       await navigation.press("Control+2");
-      await expect(page.locator(".settings-row", { hasText: "Capture page" })).toContainText("Also used by Library page");
+      await expect(page.getByRole("group", { name: "Capture page", exact: true })).toContainText("Also used by Library page");
       expect((await page.evaluate(() => window.acroClip.state())).preferences.shortcuts.recording).toBeUndefined();
       await navigation.click();
       await expect(navigation).toHaveText(/Press a shortcut/);
