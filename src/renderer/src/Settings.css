@@ -555,12 +555,12 @@ fieldset.settings-group:disabled {
    opacity: 1;
    cursor: not-allowed;
 }
-.notification-switch .toggle-row input:disabled + .switch {
-   background: #ffffff06;
-   border-color: #ffffff14;
+/* Error banners are always on. The switch reads as on, dimmed so it is clearly not editable. */
+.notification-switch .toggle-row input:disabled:checked + .switch {
+   background: color-mix(in srgb, var(--accent) 42%, transparent);
 }
-.notification-switch .toggle-row input:disabled + .switch .switch-thumb {
-   background: #77747e;
+.notification-switch .toggle-row input:disabled:checked + .switch .switch-thumb {
+   background: #17161a;
    box-shadow: none;
 }
 @container (max-width: 460px) {
