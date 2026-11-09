@@ -543,6 +543,23 @@ fieldset.settings-group:disabled {
    padding: 8px 0;
    gap: 0;
 }
+/* The checkbox covers the switch it draws, so a click on the switch lands on the control itself. */
+.notification-switch .toggle-row {
+   position: relative;
+}
+.notification-switch .toggle-row input {
+   top: 50%;
+   right: 0;
+   translate: 0 -50%;
+   width: 42px;
+   height: 26px;
+   margin: 0;
+   z-index: 1;
+   cursor: pointer;
+}
+.notification-switch .toggle-row input:disabled {
+   cursor: not-allowed;
+}
 .notification-switch .toggle-row > span:first-child {
    position: absolute;
    width: 1px;

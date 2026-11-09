@@ -90,14 +90,7 @@ test("the viewer rail retains its first clip, version and position when a newer 
       await expect(page.locator(".toast.error")).toHaveCount(0);
       // Persistent action errors remain dismissible without blocking playback.
       await page.evaluate(async () => {
-         await window.acroClip.renameClip("missing-clip", "Changed").catch((error: unknown) => {
-            // Renderer actions report rejected IPC calls through this event.
-            window.dispatchEvent(
-               new CustomEvent("acroclip-feedback", {
-                  detail: { kind: "notice", message: String(error), error: true },
-               })
-            );
-         });
+         await window.acroClip.renameClip("missing-clip", "Changed").catch(() => undefined);
       });
       await expect(page.locator(".toast.error")).toBeVisible();
       await page.getByRole("button", { name: "Play", exact: true }).click();
