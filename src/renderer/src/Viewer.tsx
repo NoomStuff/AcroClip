@@ -65,6 +65,11 @@ export function Viewer({
    const [controlsShown, setControlsShown] = useState(true);
    const controlsTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
    const [track, setTrack] = useState<number[] | undefined>(undefined);
+   // The menu shows a choice at once. A choice that needs a mixed copy waits a moment, so toggling
+   // tracks one by one never loads a copy for a combination that only existed between two clicks.
+   const [shownTrack, setShownTrack] = useState<number[] | undefined>(undefined);
+   const mixDelay = useRef<number | undefined>(undefined);
+   useEffect(() => () => window.clearTimeout(mixDelay.current), []);
    const [speed, setSpeed] = useState(1);
    const [target, setTarget] = useState(state.preferences.shareSizeMB);
    const [override, setOverride] = useState(false);
@@ -116,7 +121,9 @@ export function Viewer({
          resume.current = false;
          setTime(0);
          setVersion(clip?.originalMissing ? "shareable" : "original");
+         window.clearTimeout(mixDelay.current);
          setTrack(undefined);
+         setShownTrack(undefined);
          setShareId("");
          setOverride(false);
          setTarget(state.preferences.shareSizeMB);
@@ -208,8 +215,14 @@ export function Viewer({
       setVersion(next);
    };
    const changeTrack = (value: number[]) => {
-      rememberPlayback();
-      setTrack(value);
+      setShownTrack(value);
+      window.clearTimeout(mixDelay.current);
+      const apply = () => {
+         rememberPlayback();
+         setTrack(value);
+      };
+      if (value.length > 1 || !nativeTrackSelection) mixDelay.current = window.setTimeout(apply, 350);
+      else apply();
    };
    const toggle = () => {
       if (!video.current) return;
@@ -618,7 +631,7 @@ export function Viewer({
                volume={volume}
                muted={muted}
                tracks={version === "original" ? clip.tracks : clip.tracks.length ? [{ index: -1, title: "Master" }] : []}
-               track={version === "original" ? (track ?? clip.tracks.slice(0, 1).map((item) => item.index)) : clip.tracks.length ? [-1] : []}
+               track={version === "original" ? (shownTrack ?? clip.tracks.slice(0, 1).map((item) => item.index)) : clip.tracks.length ? [-1] : []}
                speed={speed}
                onSpeed={setSpeed}
                disabled={!url || loading}
