@@ -1,6 +1,7 @@
 import { Gauge, Headphones, ListVideo, Maximize, Minimize, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { loudnessCurve } from "./loudness-curve";
+import { restartThreshold } from "./play-queue";
 import { useKeyframeScrub } from "./useKeyframeScrub";
 import type { CSSProperties, RefObject } from "react";
 import type { AudioTrack, Clip } from "../../shared/types";
@@ -203,8 +204,8 @@ export function ViewerTransport({
             </span>
             <div className="player-playback">
                <IconButton
-                  label={previousTitle ? `Previous clip: ${previousTitle}` : "Restart clip"}
-                  title={previousTitle ? `Previous: ${previousTitle}. Restarts the clip after the first few seconds.` : "Restart clip"}
+                  // Names what a click does now: past the first seconds, previous restarts the clip.
+                  label={time > restartThreshold || !previousTitle ? "Restart" : "Previous"}
                   className="player-skip-button"
                   disabled={disabled}
                   onClick={onPrevious}
@@ -220,12 +221,7 @@ export function ViewerTransport({
                >
                   {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
                </IconButton>
-               <IconButton
-                  label={nextTitle ? `Next clip: ${nextTitle}` : "Last clip in this view"}
-                  className="player-skip-button"
-                  disabled={!nextTitle}
-                  onClick={onNext}
-               >
+               <IconButton label="Next" className="player-skip-button" disabled={!nextTitle} onClick={onNext}>
                   <SkipForward size={15} fill="currentColor" />
                </IconButton>
             </div>

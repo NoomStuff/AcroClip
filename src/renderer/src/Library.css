@@ -617,10 +617,12 @@
       scale 480ms var(--ease),
       transform 350ms var(--ease);
 }
+/* Leaving is an even crossfade back to the thumbnail. The zoom unwinds quickly while the
+   thumbnail is still faint, so it settles in place instead of shrinking into view. */
 .clip-thumbnail :is(img, .thumbnail-fallback) {
    transition:
-      opacity 220ms var(--ease),
-      scale 360ms var(--ease),
+      opacity 380ms cubic-bezier(0.45, 0, 0.55, 1),
+      scale 220ms cubic-bezier(0.2, 0, 0, 1),
       transform 350ms var(--ease);
 }
 .duration[data-scrubbing] > span {

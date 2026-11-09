@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, copyFile, writeFile, readFile, rename, rm, stat, symlink, realpath, readdir, open } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -219,6 +220,30 @@ try {
    await checkColor(await cell(6), "blue");
    await checkColor(await cell(8), "blue");
    await checkColor(await cell(11), "blue");
+
+   // The background fill prepares every clip's strip after a scan and clears strips nothing owns.
+   const fillRoot = join(workspace, "strip-fill");
+   const fillStrips = join(fillRoot, ".acroclip", "thumbnails");
+   await mkdir(fillStrips, { recursive: true });
+   await copyFile(colored, join(fillRoot, "Short.mp4"));
+   await copyFile(wrapped, join(fillRoot, "Wrapped.mp4"));
+   const orphan = join(fillStrips, `${"a".repeat(64)}.keyframes-v2-5.jpg`);
+   const outdated = join(fillStrips, `${await fileIdentity(colored)}.keyframes-v1-5.jpg`);
+   const unrelated = join(fillStrips, "notes.jpg");
+   for (const file of [orphan, outdated, unrelated]) await writeFile(file, "old strip");
+   const filling = new CollectionService({ backgroundStrips: true });
+   await filling.open(fillRoot);
+   const expected = [`${await fileIdentity(colored)}.keyframes-v2-5.jpg`, `${await fileIdentity(wrapped)}.keyframes-v2-12.jpg`];
+   const fillStarted = Date.now();
+   while (!expected.every((name) => existsSync(join(fillStrips, name)))) {
+      assert.ok(Date.now() - fillStarted < 60_000, "the fill makes a strip for every clip");
+      await delay(200);
+   }
+   assert.ok(!existsSync(orphan) && !existsSync(outdated), "strips for unknown files and old layouts are removed");
+   assert.ok(existsSync(unrelated), "other files in the folder are left alone");
+   const filledTile = join(fillRoot, "first-tile.png");
+   await sharp(join(fillStrips, expected[1]!)).extract({ left: 8, top: 8, width: 400, height: 224 }).toFile(filledTile);
+   await checkColor(filledTile, "red");
 
    // Loudness follows the actual audio: quiet, a burst from 2 to 3 seconds, quiet again.
    const burst = join(thumbnailRoot, "burst.mp4");

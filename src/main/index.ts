@@ -91,6 +91,7 @@ const collections = new CollectionService({
    applications: () => applicationArtwork(captureSources.cached),
    beforeFolderChange: assertFolderChangesAllowed,
    scanConcurrency: () => (captureActive() ? 1 : 3),
+   backgroundStrips: true,
    onChange: () => emitState(),
    onJob: (job) => {
       if (job.state === "failed") notice(job.message, true);
