@@ -260,7 +260,7 @@
    background: var(--accent-hover);
 }
 .capture-actions > button:active:not(:disabled) {
-   transform: scale(0.97);
+   transform: scale(0.95);
 }
 .capture-actions > button:disabled {
    opacity: 0.48;
@@ -603,45 +603,58 @@
    margin-top: -8px;
 }
 :root[data-keyboard] .mixer-fader-range:focus-visible {
-   outline: 2px solid var(--accent);
-   outline-offset: 2px;
-   border-radius: 4px;
+   outline: none;
+}
+:root[data-keyboard] .mixer-fader-control:has(.mixer-fader-range:focus-visible) .mixer-fader-thumb {
+   outline: 2px solid var(--focus);
+   outline-offset: 1px;
 }
 .mixer-fader-range:disabled {
    opacity: 0.35;
    cursor: default;
 }
+/* The same borderless slot as settings number fields, with the unit right after the value. */
 .mixer-gain-value {
    width: 80px;
    flex-shrink: 0;
    height: 28px;
    display: flex;
    align-items: center;
-   border: 1px solid #ffffff18;
-   border-radius: 5px;
-   background: #100f13;
-   padding-right: 6px;
+   justify-content: center;
+   border-radius: 7px;
+   background: var(--base);
+   padding: 0 6px;
+   cursor: text;
+   transition: background 150ms var(--ease);
+}
+.mixer-gain-value:hover {
+   background: var(--slot-hover);
 }
 .mixer-gain-value:focus-within {
-   border-color: var(--accent);
-   box-shadow: 0 0 0 2px var(--accent-soft);
+   background: var(--raised);
+}
+:root[data-keyboard] .mixer-gain-value:has(input:focus-visible) {
+   box-shadow: inset 0 0 0 2px var(--focus);
 }
 :root[data-keyboard] .mixer-gain-value input:focus-visible {
    outline: none;
 }
 .mixer-gain-value input {
-   width: 100%;
-   min-width: 0;
+   field-sizing: content;
+   width: auto;
+   min-width: 1ch;
    min-height: 0;
-   padding: 3px 4px;
+   padding: 0;
    border: 0;
    background: transparent;
    text-align: right;
    font-size: 12px;
+   font-weight: 600;
    font-variant-numeric: tabular-nums;
    outline: none;
 }
 .mixer-gain-value > span {
+   margin-left: 3px;
    font-size: 11px;
    color: var(--subtle);
 }
@@ -695,10 +708,10 @@
    position: absolute;
    left: 5px;
    right: 5px;
-   top: 12px;
-   height: 4px;
+   top: 11.5px;
+   height: 5px;
    border-radius: 3px;
-   background: #ffffff1b;
+   background: var(--base);
    pointer-events: none;
 }
 .mixer-fader-fill {
@@ -713,16 +726,23 @@
    left: var(--slider-position, 0%);
    top: 50%;
    translate: -50% -50%;
-   width: 11px;
+   width: 10px;
    height: 20px;
    background: #ded7e8;
-   border-radius: 3px;
-   border: 1px solid #fff4;
-   transition: background 120ms ease;
+   border-radius: 4px;
+   box-shadow: 0 1px 4px #0007;
+   transition:
+      background 120ms ease,
+      scale 300ms var(--spring);
 }
+/* The same hover growth and grab squeeze as the settings slider. */
 .mixer-fader-control:has(input:hover:not(:disabled)) .mixer-fader-thumb,
 :root[data-keyboard] .mixer-fader-control:has(input:focus-visible:not(:disabled)) .mixer-fader-thumb {
    background: var(--accent);
+   scale: 1.25 1.06;
+}
+.mixer-fader-control:has(input:active:not(:disabled)) .mixer-fader-thumb {
+   scale: 0.9 0.94;
 }
 .mixer-fader-control:has(input:disabled) .mixer-fader-track {
    opacity: 0.35;

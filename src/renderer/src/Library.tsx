@@ -655,7 +655,7 @@ export function Library({
                                           onClick={() => setFilter(`category:${item.id}`)}
                                        >
                                           <CategoryMark category={item} />
-                                          <span className="sidebar-label" title={item.name}>
+                                          <span className="sidebar-label" data-tooltip={item.name} data-tooltip-overflow="">
                                              {item.name}
                                           </span>
                                           <span className="count">
@@ -694,7 +694,7 @@ export function Library({
                                        onClick={() => setFilter(`source:${source.id}`)}
                                     >
                                        <ApplicationIcon src={source.icon} size={16} />
-                                       <span className="sidebar-label" title={source.name}>
+                                       <span className="sidebar-label" data-tooltip={source.name} data-tooltip-overflow="">
                                           {source.name}
                                        </span>
                                        <span className="count">
@@ -827,12 +827,7 @@ export function Library({
                              const open = !foldedKeys.has(group.key);
                              return [
                                 <h2 key={`group:${group.key}`} className="clip-group-header" data-layout-key={`group:${group.key}`}>
-                                   <button
-                                      className="clip-group-control"
-                                      aria-expanded={open}
-                                      title={open ? "Click to fold" : "Click to unfold"}
-                                      onClick={() => toggleGroup(group.key)}
-                                   >
+                                   <button className="clip-group-control" aria-expanded={open} onClick={() => toggleGroup(group.key)}>
                                       <ChevronRight size={12} aria-hidden="true" />
                                       {group.label}
                                       <span className="clip-group-count">{group.clips.length}</span>

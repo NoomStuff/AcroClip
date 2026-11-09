@@ -15,6 +15,8 @@ type SliderProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" 
    snapPoints?: readonly number[];
    variant?: "default" | "compact";
    numeric?: boolean;
+   // The value reads best on the side away from the row's label: end in a full-width form, start when the slider sits at a row's right edge.
+   numberSide?: "start" | "end";
    unit?: string;
    displayScale?: number;
    "aria-label": string;
@@ -30,6 +32,7 @@ export function Slider({
    snapPoints = [],
    variant = "default",
    numeric = false,
+   numberSide = "end",
    unit = "",
    displayScale = 1,
    className = "",
@@ -50,6 +53,8 @@ export function Slider({
    const display = String(Number((value * displayScale).toFixed(3)));
    const progress = max > min ? ((bounded(value) - min) / (max - min)) * 100 : 0;
    const markers = Array.from(new Set([...snapPoints, ...(defaultValue === undefined ? [] : [defaultValue])])).filter((point) => point > min && point < max);
+   // A range that crosses zero, such as gain in dB, fills outward from zero.
+   const origin = min < 0 && max > 0 ? (-min / (max - min)) * 100 : 0;
    const motion = useSliderMotion<HTMLSpanElement>(progress);
    const snapped = (point: number, input: HTMLInputElement) => {
       if (!pointer.current.active || pointer.current.exact || max <= min) return point;
@@ -84,48 +89,11 @@ export function Slider({
          className={`slider ${variant === "compact" ? "slider-compact" : ""} ${numeric ? "slider-with-number" : ""} ${className}`}
          data-disabled={disabled || undefined}
          data-default={(defaultValue !== undefined && Math.abs(value - defaultValue) < step / 2) || undefined}
+         data-bipolar={origin > 0 || undefined}
+         data-number-side={numeric ? numberSide : undefined}
          ref={motion}
-         style={style}
+         style={{ ...style, ["--slider-origin" as string]: `${origin}%` }}
       >
-         {numeric && (
-            <span className="slider-number">
-               <input
-                  type="number"
-                  inputMode="decimal"
-                  aria-label={`${props["aria-label"]} value`}
-                  aria-describedby={description}
-                  min={min * displayScale}
-                  max={max * displayScale}
-                  step={step * displayScale}
-                  value={editing ? draft : display}
-                  disabled={disabled}
-                  onFocus={(event) => {
-                     setEditing(true);
-                     setDraft(display);
-                     event.currentTarget.select();
-                  }}
-                  onChange={(event) => {
-                     const text = event.currentTarget.value;
-                     setDraft(text);
-                     const next = Number(text) / displayScale;
-                     if (text.trim() && Number.isFinite(next) && next >= min && next <= max) change(rounded(next));
-                  }}
-                  onBlur={(event) => commitNumber(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                     if (event.key === "Enter") {
-                        event.preventDefault();
-                        event.currentTarget.blur();
-                     }
-                     if (event.key === "Escape") {
-                        event.preventDefault();
-                        event.currentTarget.value = display;
-                        event.currentTarget.blur();
-                     }
-                  }}
-               />
-               {unit && <span aria-hidden="true">{unit}</span>}
-            </span>
-         )}
          <span className="slider-control">
             <input
                {...props}
@@ -137,11 +105,6 @@ export function Slider({
                step={step}
                value={value}
                disabled={disabled}
-               title={
-                  defaultValue === undefined
-                     ? props.title
-                     : `Default: ${defaultValue * displayScale}${unit}. Double-click or press Delete to reset. Hold Shift to bypass snapping.`
-               }
                onChange={(event) => {
                   const next = snapped(Number(event.currentTarget.value), event.currentTarget);
                   change(next);
@@ -184,16 +147,60 @@ export function Slider({
             />
             <span className="slider-track" aria-hidden="true">
                <span className="slider-fill" />
-               {markers.map((point) => (
-                  <span
-                     key={point}
-                     className={`slider-marker ${point === defaultValue ? "default" : ""}`}
-                     style={{ left: `${max > min ? ((point - min) / (max - min)) * 100 : 0}%` }}
-                  />
-               ))}
+               {markers.length > 0 &&
+                  ["slider-markers", "slider-markers slider-markers-filled"].map((layer) => (
+                     <span key={layer} className={layer}>
+                        {markers.map((point) => (
+                           <span
+                              key={point}
+                              className={`slider-marker ${point === defaultValue ? "default" : ""}`}
+                              style={{ left: `${max > min ? ((point - min) / (max - min)) * 100 : 0}%` }}
+                           />
+                        ))}
+                     </span>
+                  ))}
                <span className="slider-thumb" />
             </span>
          </span>
+         {numeric && (
+            <label className="slider-number">
+               <input
+                  type="number"
+                  inputMode="decimal"
+                  aria-label={`${props["aria-label"]} value`}
+                  aria-describedby={description}
+                  min={min * displayScale}
+                  max={max * displayScale}
+                  step={step * displayScale}
+                  value={editing ? draft : display}
+                  disabled={disabled}
+                  onFocus={(event) => {
+                     setEditing(true);
+                     setDraft(display);
+                     event.currentTarget.select();
+                  }}
+                  onChange={(event) => {
+                     const text = event.currentTarget.value;
+                     setDraft(text);
+                     const next = Number(text) / displayScale;
+                     if (text.trim() && Number.isFinite(next) && next >= min && next <= max) change(rounded(next));
+                  }}
+                  onBlur={(event) => commitNumber(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                     if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                     }
+                     if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.currentTarget.value = display;
+                        event.currentTarget.blur();
+                     }
+                  }}
+               />
+               {unit && <span aria-hidden="true">{unit}</span>}
+            </label>
+         )}
       </span>
    );
 }

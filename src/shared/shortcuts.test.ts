@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { defaultPreferences } from "./defaults";
 import { preferencesSchema } from "./validation";
-import { bindingFor, normalizeBinding, shortcutConflict, eventBinding } from "./shortcuts";
+import { bindingFor, normalizeBinding, shortcutConflict, shortcutClashes, eventBinding } from "./shortcuts";
 describe("shortcut defaults and conflicts", () => {
    it("defaults to Alt+C for saving with no recording shortcut", () => {
       expect(bindingFor(defaultPreferences, "saveClip")).toBe("Alt+C");
@@ -25,6 +25,9 @@ describe("shortcut defaults and conflicts", () => {
    it("detects alias conflicts but allows page-specific bindings on different pages", () => {
       const preferences = { ...defaultPreferences, shortcuts: { recording: "Ctrl+2" } };
       expect(shortcutConflict(preferences, false)).toMatch(/same shortcut/);
+      expect(shortcutClashes(preferences, "recording", false)).toEqual(["Library page"]);
+      expect(shortcutClashes(preferences, "library", false)).toEqual(["Capture page"]);
+      expect(shortcutClashes(preferences, "settings", false)).toEqual([]);
       expect(normalizeBinding("CommandOrControl+Shift+E", false)).toBe(normalizeBinding("Ctrl+Shift+E", false));
    });
    it("uses physical letter and digit keys without changing native text modifiers", () => {

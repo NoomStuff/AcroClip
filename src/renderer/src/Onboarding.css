@@ -132,25 +132,22 @@
 .setup-source-tile {
    min-width: 0;
    padding: 5px;
-   border: 1px solid var(--border-control);
    border-radius: 10px;
-   background: #ffffff03;
+   background: #ffffff06;
    text-align: left;
    transition:
       transform 260ms var(--spring),
-      background 200ms,
-      border-color 200ms;
+      background 200ms;
 }
 .setup-source-tile:hover {
    transform: translateY(-3px);
-   border-color: var(--border-hover);
+   background: #ffffff0d;
 }
 .setup-source-tile:active {
    transform: scale(0.97);
 }
 .setup-source-tile[aria-pressed="true"] {
-   border-color: var(--accent);
-   background: var(--accent-soft);
+   background: #b197fc24;
 }
 .setup-source-preview {
    display: flex;

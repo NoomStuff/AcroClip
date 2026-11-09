@@ -64,7 +64,7 @@ test("sorting and grouping share one compact control and remember the choice", a
       await expect(page.locator(".clip-card")).toHaveCount(3);
       const names = () => page.locator(".clip-card h3").allTextContents();
       const control = page.getByRole("button", { name: "Sort and group", exact: true });
-      await expect(control).toHaveAttribute("title", "Sort: Newest first");
+      await expect(control).toHaveAttribute("data-tooltip", "Sort: Newest first");
       await expect(page.locator(".clip-group-header")).toHaveCount(0);
 
       await control.click();
@@ -92,7 +92,7 @@ test("sorting and grouping share one compact control and remember the choice", a
       await expect(page.locator(".clip-group-header")).toHaveText(["Today3"]);
       // Cards keep their nodes when grouping changes, so they slide rather than reload.
       const card = await page.locator(".clip-card", { hasText: "Alpha" }).elementHandle();
-      await expect(control).toHaveAttribute("title", "Sort: Shortest first. Group: Date");
+      await expect(control).toHaveAttribute("data-tooltip", "Sort: Shortest first. Group: Date");
 
       await control.click();
       await menu.getByRole("menuitemradio", { name: "Watched", exact: true }).click();
@@ -116,7 +116,7 @@ test("sorting and grouping share one compact control and remember the choice", a
       page = await app.firstWindow();
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.locator(".clip-group-header")).toHaveText(["New2", "Watched1"]);
-      await expect(page.getByRole("button", { name: "Sort and group", exact: true })).toHaveAttribute("title", "Sort: Shortest first. Group: Watched");
+      await expect(page.getByRole("button", { name: "Sort and group", exact: true })).toHaveAttribute("data-tooltip", "Sort: Shortest first. Group: Watched");
       await expect(page.locator(".clip-card")).toHaveCount(2);
       await page.getByRole("button", { name: /^Watched/ }).click();
       await expect(page.locator(".clip-card")).toHaveCount(3);

@@ -46,20 +46,28 @@ export function normalizeBinding(value: string, mac: boolean): string {
       .sort()
       .join("+");
 }
+type ShortcutDefinition = (typeof shortcutRegistry)[number];
+function clashes(preferences: Pick<Preferences, "shortcut" | "shortcuts">, a: ShortcutDefinition, b: ShortcutDefinition, mac: boolean): boolean {
+   const key = bindingFor(preferences, a.id);
+   return (
+      !!key &&
+      normalizeBinding(key, mac) === normalizeBinding(bindingFor(preferences, b.id), mac) &&
+      (a.page === "all" || b.page === "all" || a.page === b.page)
+   );
+}
 export function shortcutConflict(preferences: Pick<Preferences, "shortcut" | "shortcuts">, mac: boolean): string | null {
    for (let i = 0; i < shortcutRegistry.length; i++)
       for (let j = i + 1; j < shortcutRegistry.length; j++) {
          const a = shortcutRegistry[i]!,
-            b = shortcutRegistry[j]!,
-            key = bindingFor(preferences, a.id);
-         if (
-            key &&
-            normalizeBinding(key, mac) === normalizeBinding(bindingFor(preferences, b.id), mac) &&
-            (a.page === "all" || b.page === "all" || a.page === b.page)
-         )
-            return `${a.label} and ${b.label} use the same shortcut.`;
+            b = shortcutRegistry[j]!;
+         if (clashes(preferences, a, b, mac)) return `${a.label} and ${b.label} use the same shortcut.`;
       }
    return null;
+}
+/** The labels of other shortcuts that share this action's binding where both are active. */
+export function shortcutClashes(preferences: Pick<Preferences, "shortcut" | "shortcuts">, id: ShortcutAction, mac: boolean): string[] {
+   const item = shortcutRegistry.find((entry) => entry.id === id)!;
+   return shortcutRegistry.filter((other) => other.id !== id && clashes(preferences, item, other, mac)).map((other) => other.label);
 }
 export function eventBinding(event: KeyboardEvent): string {
    const key = event.code.startsWith("Key")

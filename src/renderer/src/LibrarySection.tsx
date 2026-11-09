@@ -31,7 +31,6 @@ export function LibrarySection({
                data-list-control=""
                aria-expanded={empty ? undefined : expanded}
                aria-controls={empty ? undefined : id}
-               title={empty ? "Drag to reorder. Alt+Up or Alt+Down" : "Click to fold. Drag to reorder. Alt+Up or Alt+Down"}
                onClick={empty ? undefined : toggle}
             >
                {!empty && <ChevronRight size={12} aria-hidden="true" />}

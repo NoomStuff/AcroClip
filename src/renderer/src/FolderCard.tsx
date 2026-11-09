@@ -42,8 +42,10 @@ export function FolderCard({
                <Folder size={58} />
             </div>
             <div className="clip-card-info">
-               <h3 title={name}>{name}</h3>
-               <p title="Includes clips in subfolders">
+               <h3 data-tooltip={name} data-tooltip-overflow="">
+                  {name}
+               </h3>
+               <p>
                   {count} {count === 1 ? "clip" : "clips"}
                </p>
             </div>

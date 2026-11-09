@@ -3,6 +3,7 @@ import type { CSSProperties, KeyboardEvent, ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import { useFieldDescription } from "./field-accessibility";
+import { useMenuHighlight } from "./MenuHighlight";
 
 export interface DropdownOption {
    value: string;
@@ -47,6 +48,11 @@ export function DropdownSelect({
    const selected = options.find((option) => values.includes(option.value));
    const available = options.some((option) => !option.disabled);
    const shown = open && !disabled && available;
+   const highlight = useMenuHighlight();
+   const clearHighlight = highlight.clear;
+   useEffect(() => {
+      if (!shown) clearHighlight();
+   }, [shown, clearHighlight]);
    useEffect(() => {
       if (disabled || !available) setOpen(false);
    }, [disabled, available]);
@@ -142,10 +148,11 @@ export function DropdownSelect({
             }}
             type="button"
             role="combobox"
+            data-row-target=""
             className={`select-trigger ${iconOnly ? "icon-button" : ""}`}
             aria-label={label}
             aria-describedby={description}
-            title={label}
+            data-tooltip={iconOnly ? label : undefined}
             aria-controls={shown ? listId : undefined}
             aria-haspopup="listbox"
             aria-expanded={shown}
@@ -173,7 +180,9 @@ export function DropdownSelect({
                   className={`select-menu ${className ? `${className}-menu` : ""}`}
                   style={position}
                   onKeyDown={navigate}
+                  {...highlight.handlers}
                >
+                  {highlight.highlight}
                   {options.map((option) => (
                      <button
                         type="button"

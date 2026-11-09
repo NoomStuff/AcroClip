@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useSliderMotion } from "./useSliderMotion";
-import { boundedGain, gainDb, gainText, parseGain } from "./audio-meter";
+import { boundedGain, gainText, parseGain } from "./audio-meter";
 export function MixerFader({
    value,
    muted,
@@ -135,7 +135,6 @@ export function MixerFader({
                type="text"
                inputMode="decimal"
                aria-label={`${label} in decibels`}
-               title={display <= 0 ? "Silence" : `${gainDb(display).toFixed(2)} dB`}
                value={draft ?? gainText(display)}
                disabled={disabled}
                onFocus={() => setDraft(gainText(display))}

@@ -45,7 +45,7 @@ export function UpdateChip({ state, run }: Props) {
             className={`update-chip-trigger ${phase}`}
             aria-label={label}
             aria-disabled={!action}
-            title={phase === "error" && state.message ? state.message : `AcroClip ${state.version} · ${label}`}
+            data-tooltip={phase === "error" && state.message ? state.message : undefined}
             onClick={action ? () => void run(() => api[action.method]()) : undefined}
             style={{ "--update-expanded-width": `${expandedWidth}px` } as CSSProperties}
          >

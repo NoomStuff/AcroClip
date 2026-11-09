@@ -1,3 +1,4 @@
+import { MotionList } from "./MotionList";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gamepad2, Plus, Search, Trash2 } from "lucide-react";
 import type { RefObject } from "react";
@@ -87,7 +88,9 @@ function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add
             {game && (
                <div className="game-add-identity">
                   <ApplicationIcon size={24} src={sources.find((source) => source.id.split(":")[1] === game.id.split(":")[1])?.appIcon} />
-                  <span title={game.executable}>{game.executable}</span>
+                  <span data-tooltip={game.executable} data-tooltip-overflow="">
+                     {game.executable}
+                  </span>
                </div>
             )}
             <label className="game-name">
@@ -185,13 +188,13 @@ export function GameManagement({
       return () => observer.disconnect();
    }, [limit, filtered.length]);
    const renderGame = (game: (typeof entries)[number]) => (
-      <li key={game.id}>
+      <div className="game-entry" role="listitem">
          <Gamepad2 size={20} />
          <div>
-            <span className="game-entry-name" title={game.name}>
+            <span className="game-entry-name" data-tooltip={game.name} data-tooltip-overflow="">
                {game.name}
             </span>
-            <span className="game-executables" title={game.executables.join(", ")}>
+            <span className="game-executables" data-tooltip={game.executables.join(", ")} data-tooltip-overflow="">
                {game.executables.join(", ")}
             </span>
          </div>
@@ -203,7 +206,7 @@ export function GameManagement({
                <Trash2 size={15} />
             </IconButton>
          )}
-      </li>
+      </div>
    );
    return (
       <div className="game-settings">
@@ -230,9 +233,9 @@ export function GameManagement({
          {visibleEntries.some((game) => game.added) && (
             <section className="game-group" aria-label="Added games">
                <h3 className="game-category">Added games</h3>
-               <ul className="game-list" aria-label="Added games">
-                  {visibleEntries.filter((game) => game.added).map(renderGame)}
-               </ul>
+               <div className="game-list" role="list" aria-label="Added games">
+                  <MotionList items={visibleEntries.filter((game) => game.added)}>{renderGame}</MotionList>
+               </div>
             </section>
          )}
          <div className="game-list-summary">
@@ -246,9 +249,12 @@ export function GameManagement({
                {error}
             </p>
          )}
-         <ul className="game-list" aria-label="Games">
-            {visibleEntries.filter((game) => !game.added).map(renderGame)}
-         </ul>
+         {/* Search results slide and fade like the Library's lists instead of jumping. */}
+         <div className="game-list" role="list" aria-label="Games">
+            <MotionList items={visibleEntries.filter((game) => !game.added)} identity={catalog ? "ready" : "loading"}>
+               {renderGame}
+            </MotionList>
+         </div>
          {catalog && !filtered.length && <p className="game-empty">No matching games.</p>}
          <div ref={sentinel} aria-hidden="true" />
          {adding && (

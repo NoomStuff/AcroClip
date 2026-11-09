@@ -1,15 +1,17 @@
 import { shareableTargetAllowed } from "../../shared/shareable-target";
 import { useDirectionalContent } from "./useDirectionalContent";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Film, LibraryBig, FolderOpen, LoaderCircle, MoreHorizontal, Share2, SlidersHorizontal, X } from "lucide-react";
+import { ChevronDown, Film, LibraryBig, FolderOpen, LoaderCircle, MoreHorizontal, Share2, X } from "lucide-react";
+import type { RefObject } from "react";
 import type { AppState, Clip } from "../../shared/types";
 import { api, describeError, fileDragProps, reportFeedback } from "./desktop";
 import { clipFiles, copiedMessage } from "./clip-files";
-import { Button, Empty, HeaderActions, IconButton, Menu, Segmented, Select } from "./ui";
+import { Button, Empty, HeaderActions, IconButton, Menu, NumberInput, Segmented, Select } from "./ui";
 import type { ContextMenuRequest } from "./ui";
 import { formatSize, formatTime } from "./format";
 import type { Run } from "./desktop";
 import { DropdownSelect } from "./DropdownSelect";
+import { Popover } from "./Popover";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { ViewerTransport } from "./ViewerTransport";
 import { PaneDivider, usePaneSize } from "./layout";
@@ -66,6 +68,7 @@ export function Viewer({
    const [speed, setSpeed] = useState(1);
    const [target, setTarget] = useState(state.preferences.shareSizeMB);
    const [override, setOverride] = useState(false);
+   const createRow = useRef<HTMLDivElement>(null);
    const [mediaError, setMediaError] = useState("");
    const video = useRef<HTMLVideoElement>(null);
    const player = useRef<HTMLDivElement>(null);
@@ -342,7 +345,7 @@ export function Viewer({
                         <ApplicationIcon src={state.applicationIcons[clip.applicationId]} size={14} />
                      )}
                      {clip.source.trim() && clip.source.trim().toLowerCase() !== "unknown" && (
-                        <span className="source-label" title={clip.source}>
+                        <span className="source-label" data-tooltip={clip.source} data-tooltip-overflow="">
                            {clip.source}
                         </span>
                      )}
@@ -452,13 +455,13 @@ export function Viewer({
                      </Button>
                   </div>
                )}
-               <div className="viewer-create-row">
+               <div className="viewer-create-row" ref={createRow}>
                   <div className="viewer-create-main">
                      <Button
                         className="primary wide"
                         onClick={create}
                         disabled={!!clip.originalMissing || !targetAllowed}
-                        title={!targetAllowed ? "Choose a size target no larger than the clip" : undefined}
+                        data-tooltip={!targetAllowed ? "Choose a size target no larger than the clip" : undefined}
                         busy={!!job}
                         busyIndicator="content"
                         {...(job ? { progress: job.progress } : {})}
@@ -477,6 +480,7 @@ export function Viewer({
                            <>
                               <Share2 size={17} />
                               Create shareable
+                              {override && <span className="viewer-create-size">({target} MB)</span>}
                            </>
                         )}
                      </Button>
@@ -493,6 +497,7 @@ export function Viewer({
                      disabled={!!clip.originalMissing || !!job}
                      onOverride={setOverride}
                      onTarget={setTarget}
+                     anchor={createRow}
                   />
                </div>
             </div>
@@ -645,6 +650,7 @@ function ShareSizePicker({
    disabled,
    onOverride,
    onTarget,
+   anchor,
 }: {
    defaultTarget: number;
    target: number;
@@ -652,12 +658,15 @@ function ShareSizePicker({
    disabled: boolean;
    onOverride: (value: boolean) => void;
    onTarget: (value: number) => void;
+   // The whole split button, so the custom size popover lines up with it.
+   anchor: RefObject<HTMLDivElement | null>;
 }) {
    const [custom, setCustom] = useState(false);
    const [editing, setEditing] = useState(false);
    const [draft, setDraft] = useState("");
    const trigger = useRef<HTMLButtonElement>(null);
    const input = useRef<HTMLInputElement>(null);
+   const popover = useRef<HTMLDivElement>(null);
    const valid = draft.trim() !== "" && Number.isInteger(Number(draft)) && Number(draft) >= 1 && Number(draft) <= 2000;
    const commit = () => {
       if (!valid) return false;
@@ -682,7 +691,8 @@ function ShareSizePicker({
             if (event.target instanceof Element && event.target.closest(".select-trigger")) setEditing(false);
          }}
          onBlur={(event) => {
-            if (editing && !event.currentTarget.contains(event.relatedTarget)) {
+            // The popover is portaled, so focus moving into it is not leaving the picker.
+            if (editing && !event.currentTarget.contains(event.relatedTarget) && !popover.current?.contains(event.relatedTarget as Node | null)) {
                commit();
                setEditing(false);
             }
@@ -701,7 +711,8 @@ function ShareSizePicker({
             disabled={disabled}
             iconOnly
             placement="up"
-            triggerContent={<SlidersHorizontal size={17} />}
+            className="viewer-size-select"
+            triggerContent={<ChevronDown size={16} />}
             value={custom && override ? "custom" : String(override ? target : defaultTarget)}
             options={[
                ...Array.from(new Set([10, 20, 50, 100, defaultTarget]))
@@ -721,30 +732,34 @@ function ShareSizePicker({
                }
             }}
          />
-         {editing && (
-            <div className="viewer-size-popover">
-               <label htmlFor="viewer-custom-size">Custom size</label>
-               <div className="number-unit">
-                  <input
-                     ref={input}
-                     id="viewer-custom-size"
-                     type="number"
-                     min={1}
-                     max={2000}
-                     step={1}
-                     value={draft}
-                     aria-label="Shareable size target in MB"
-                     aria-describedby="viewer-size-range"
-                     aria-invalid={!valid}
-                     onChange={(event) => setDraft(event.target.value)}
-                  />
-                  <span>MB</span>
-               </div>
-               <p id="viewer-size-range" hidden={valid} className={valid ? "muted" : "error-text"}>
-                  Enter a whole number, 1 to 2000 MB.
-               </p>
-            </div>
-         )}
+         <Popover
+            open={editing}
+            anchor={anchor}
+            onClose={() => setEditing(false)}
+            label="Custom shareable size"
+            panelRef={popover}
+            className="viewer-size-popover"
+         >
+            <label className="popover-title" htmlFor="viewer-custom-size">
+               Custom size
+            </label>
+            <NumberInput
+               inputRef={input}
+               id="viewer-custom-size"
+               min={1}
+               max={2000}
+               step={1}
+               value={draft.trim() === "" ? NaN : Number(draft)}
+               unit="MB"
+               aria-label="Shareable size target in MB"
+               aria-describedby="viewer-size-range"
+               aria-invalid={!valid}
+               onValueChange={(next) => setDraft(Number.isNaN(next) ? "" : String(next))}
+            />
+            <p id="viewer-size-range" hidden={valid} className="popover-note" data-tone="error">
+               Enter a whole number, 1 to 2000 MB.
+            </p>
+         </Popover>
       </div>
    );
 }

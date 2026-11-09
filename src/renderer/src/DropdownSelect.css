@@ -3,6 +3,7 @@
    min-width: 0;
    width: 100%;
 }
+/* A dark slot like the segmented control and number fields, so selects need no border. */
 .select-trigger:not(.icon-button) {
    width: 100%;
    min-height: var(--control-height);
@@ -10,25 +11,29 @@
    align-items: center;
    justify-content: space-between;
    gap: 12px;
-   padding: 8px 11px;
+   padding: 8px 12px;
    color: var(--text);
-   background: var(--raised);
-   border: 1px solid var(--border-control);
-   border-radius: var(--radius-control);
+   background: var(--base);
+   border: 0;
+   border-radius: 10px;
    font-size: 13px;
    text-align: left;
    transition:
       background 150ms var(--ease),
-      border-color 150ms var(--ease),
-      transform 160ms var(--spring);
+      color 150ms var(--ease),
+      transform 260ms var(--spring);
 }
 .select-trigger:not(.icon-button):active:not(:disabled) {
-   transform: translateY(1px);
+   transform: scale(0.95);
 }
-.select-trigger:not(.icon-button):hover:not(:disabled),
+.select-trigger:not(.icon-button):hover:not(:disabled) {
+   background: var(--slot-hover);
+}
 .select-trigger:not(.icon-button)[aria-expanded="true"] {
-   background: var(--hover);
-   border-color: var(--border-hover);
+   background: var(--raised);
+}
+.select-trigger[aria-expanded="true"] .select-chevron {
+   color: var(--accent);
 }
 .select-trigger > span {
    min-width: 0;
@@ -50,12 +55,15 @@
    overscroll-behavior: contain;
    padding: 5px;
    background: var(--raised);
-   border: 1px solid var(--border-control);
-   border-radius: var(--radius-control);
-   box-shadow: 0 10px 28px #0006;
-   animation: select-menu-in 140ms cubic-bezier(0.2, 0.9, 0.3, 1);
+   border: 0;
+   border-radius: 10px;
+   box-shadow:
+      0 12px 32px #0008,
+      0 2px 6px #0005;
+   animation: menu-in 240ms var(--spring);
 }
 .select-menu button {
+   position: relative;
    width: 100%;
    display: flex;
    align-items: center;
@@ -72,7 +80,6 @@
 }
 .select-menu button:hover:not(:disabled),
 :root[data-keyboard] .select-menu button:focus-visible {
-   background: var(--hover);
    outline: none;
 }
 .select-menu button[aria-selected="true"] {
@@ -83,16 +90,9 @@
    cursor: default;
 }
 .select-check {
+   display: grid;
+   place-items: center;
    width: 14px;
+   height: 14px;
    flex: 0 0 14px;
-}
-@keyframes select-menu-in {
-   from {
-      opacity: 0;
-      transform: translateY(-4px) scale(0.98);
-   }
-   to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-   }
 }

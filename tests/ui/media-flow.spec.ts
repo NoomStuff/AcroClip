@@ -230,7 +230,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await page.getByRole("option", { name: "Custom", exact: true }).click();
       await sizeDraft.fill("2000");
       await page.keyboard.press("Enter");
-      await expect(page.getByRole("button", { name: "Create shareable", exact: true })).toBeDisabled();
+      await expect(page.getByRole("button", { name: /^Create shareable/ })).toBeDisabled();
       await page.evaluate(() => window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: "createShareable" })));
       expect((await page.evaluate(() => window.acroClip.state())).jobs).toHaveLength(0);
       await page.getByRole("combobox", { name: /Shareable size:/ }).click();
@@ -358,7 +358,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: "Exit fullscreen", exact: true }).click();
       await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
-      await page.getByRole("button", { name: "Create shareable", exact: true }).click();
+      await page.getByRole("button", { name: /^Create shareable/ }).click();
       await expect(page.locator(".viewer-create-main .button[data-progress]")).toBeVisible();
       await expect(page.getByRole("combobox", { name: /Shareable size:/ })).toBeDisabled();
       await expect(page.getByRole("button", { name: "Cancel shareable", exact: true })).toBeVisible();
@@ -386,7 +386,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
 
       const firstShare = result.clips[0]!.shareables[0]!;
       const firstBytes = await readFile(firstShare.path);
-      await page.getByRole("button", { name: "Create shareable", exact: true }).click();
+      await page.getByRole("button", { name: /^Create shareable/ }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips[0]?.shareables.length, { timeout: 90000 }).toBe(2);
       const copies = (await page.evaluate(() => window.acroClip.state())).clips[0]!.shareables;
       expect(new Set(copies.map((copy) => copy.path)).size).toBe(2);
@@ -474,11 +474,11 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       expect(await readFile(firstShare.path)).toEqual(firstBytes);
       await page.getByRole("button", { name: "Shareable", exact: true }).click();
 
-      await page.getByRole("button", { name: "Create shareable", exact: true }).click();
+      await page.getByRole("button", { name: /^Create shareable/ }).click();
       await expect(page.getByRole("button", { name: "Cancel shareable", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Cancel shareable", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).jobs.some((job) => job.state === "cancelled")).toBe(true);
-      await expect(page.getByRole("button", { name: "Create shareable", exact: true })).toBeEnabled();
+      await expect(page.getByRole("button", { name: /^Create shareable/ })).toBeEnabled();
       expect((await page.evaluate(() => window.acroClip.state())).clips[0]!.shareables).toHaveLength(2);
       await desktop.evaluate(({ ipcMain }) => {
          ipcMain.removeHandler("share");
@@ -486,7 +486,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
             throw new Error("Fixture export failure");
          });
       });
-      await page.getByRole("button", { name: "Create shareable", exact: true }).click();
+      await page.getByRole("button", { name: /^Create shareable/ }).click();
       await expect(page.locator(".toast.error")).toContainText("Fixture export failure");
       await page.getByRole("button", { name: "Dismiss", exact: true }).click();
       await page.getByRole("button", { name: "Play", exact: true }).click();

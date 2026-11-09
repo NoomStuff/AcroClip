@@ -115,7 +115,7 @@ export function AudioFilters({
                               onClick={() => setSelectedId(filter.id)}
                            >
                               <AudioWaveform size={16} aria-hidden="true" />
-                              <span className="sidebar-label" title={label}>
+                              <span className="sidebar-label" data-tooltip={label} data-tooltip-overflow="">
                                  {label}
                               </span>
                               {!filter.enabled && (

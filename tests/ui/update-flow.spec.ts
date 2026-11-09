@@ -105,7 +105,7 @@ test("verified portable update lifecycle shares state with Settings", async () =
       await expect(chip).toHaveAttribute("aria-label", "Download update");
       await chip.click();
       await expect(chip).toHaveAttribute("aria-label", "Retry download");
-      await expect(chip).toHaveAttribute("title", /verification/);
+      await expect(chip).toHaveAttribute("data-tooltip", /verification/);
       expect((await readdir(downloads)).filter((name) => name.endsWith(".part"))).toEqual([]);
       await chip.click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).update.progress).toBeGreaterThan(0);

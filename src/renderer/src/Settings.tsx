@@ -27,12 +27,13 @@ import { useSettingsAutosave } from "./useSettingsAutosave";
 import { previewFilename, filenamePatterns, filenameTemplateError, filenameTemplateWarning } from "../../shared/filename";
 import { SelectionIndicator } from "./SelectionIndicator";
 import { MotionList } from "./MotionList";
-import { HeaderActions, Button, Select, NumberInput } from "./ui";
+import { HeaderActions, Button, Select } from "./ui";
+import { PresetNumberInput } from "./PresetNumberInput";
 import { Field, Toggle } from "./SettingsControls";
 import { api } from "./desktop";
 import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
-import { shortcutRegistry, shortcutGroup, bindingFor } from "../../shared/shortcuts";
+import { shortcutRegistry, shortcutGroup, bindingFor, shortcutClashes, shortcutConflict } from "../../shared/shortcuts";
 import { ShortcutInput } from "./ShortcutInput";
 import { GameManagement } from "./GameManagement";
 import { PaneDivider, usePaneSize } from "./layout";
@@ -55,6 +56,7 @@ const sections = [
    { id: "general", label: "App & updates", icon: Settings2 },
 ] as const;
 type Section = (typeof sections)[number]["id"];
+const shareSizes = [10, 20, 50, 100];
 function LastChecked({ timestamp }: { timestamp: number }) {
    const [now, setNow] = useState(Date.now);
    useEffect(() => {
@@ -127,7 +129,7 @@ function FilenameEditor({
                { token: "{date}", name: "Date" },
                { token: "{time}", name: "Time" },
             ].map((item) => (
-               <button key={item.token} title={item.token} onMouseDown={(event) => event.preventDefault()} onClick={() => insert(item.token)}>
+               <button key={item.token} data-tooltip={item.token} onMouseDown={(event) => event.preventDefault()} onClick={() => insert(item.token)}>
                   {item.name}
                   <span>{item.token}</span>
                </button>
@@ -223,6 +225,9 @@ export function Settings({
       highlightTimer.current = setTimeout(() => setCollectionHighlighted(false), 1600);
    }, [target, section]);
    useEffect(() => () => clearTimeout(highlightTimer.current), []);
+   const mac = state.platform === "darwin";
+   // Clashing shortcuts are marked on their rows, so the footer does not repeat them.
+   const inlineClash = section === "shortcuts" && shortcutConflict(draft, mac) !== null;
    const qualityError = customQualityError(draft);
    const memoryBytes = useInstalledMemory();
    const lengthWarning = clipLengthWarning(draft, memoryBytes);
@@ -348,17 +353,27 @@ export function Settings({
                            <section className="settings-group" key={group.title}>
                               <h2>{group.title}</h2>
                               <p className="section-description">{group.detail}</p>
-                              {group.items.map((item) => (
-                                 <Field icon={Keyboard} key={item.id} label={item.label}>
-                                    <ShortcutInput
-                                       label={item.id === "saveClip" ? "Clip shortcut" : `${item.label} shortcut`}
-                                       value={bindingFor(draft, item.id)}
-                                       onChange={(value) =>
-                                          item.id === "saveClip" ? change("shortcut", value) : change("shortcuts", { ...draft.shortcuts, [item.id]: value })
-                                       }
-                                    />
-                                 </Field>
-                              ))}
+                              {group.items.map((item) => {
+                                 const clashes = shortcutClashes(draft, item.id, mac);
+                                 return (
+                                    <Field
+                                       icon={Keyboard}
+                                       key={item.id}
+                                       label={item.label}
+                                       className={clashes.length ? "shortcut-clash" : ""}
+                                       {...(clashes.length ? { detail: `Also used by ${clashes.join(" and ")}` } : {})}
+                                    >
+                                       <ShortcutInput
+                                          clash={clashes.length > 0}
+                                          label={item.id === "saveClip" ? "Clip shortcut" : `${item.label} shortcut`}
+                                          value={bindingFor(draft, item.id)}
+                                          onChange={(value) =>
+                                             item.id === "saveClip" ? change("shortcut", value) : change("shortcuts", { ...draft.shortcuts, [item.id]: value })
+                                          }
+                                       />
+                                    </Field>
+                                 );
+                              })}
                            </section>
                         ))}
                      </>
@@ -424,26 +439,17 @@ export function Settings({
                         <section className="settings-group">
                            <h2>Shareables</h2>
                            <Field icon={FileVideo} label="Default maximum size" detail="You can choose a different limit for each clip.">
-                              <NumberInput
+                              <PresetNumberInput
+                                 label="Default maximum size"
+                                 inputLabel="Default shareable size in MB"
+                                 presets={shareSizes}
+                                 presetLabel={(size) => `${size} MB`}
                                  min={1}
                                  max={2000}
                                  value={draft.shareSizeMB}
-                                 aria-label="Default shareable size in MB"
-                                 onValueChange={(value) => change("shareSizeMB", value)}
                                  unit="MB"
+                                 onValueChange={(value) => change("shareSizeMB", value)}
                               />
-                              <div className="size-presets">
-                                 {[10, 20, 50, 100].map((size) => (
-                                    <button
-                                       className={draft.shareSizeMB === size ? "selected" : ""}
-                                       aria-pressed={draft.shareSizeMB === size}
-                                       key={size}
-                                       onClick={() => change("shareSizeMB", size)}
-                                    >
-                                       {size} MB
-                                    </button>
-                                 ))}
-                              </div>
                            </Field>
                            <Toggle
                               icon={Copy}
@@ -544,7 +550,7 @@ export function Settings({
                   )}
                </fieldset>
             </div>
-            {(qualityError || (!filenameError && saveError) || locked) && (
+            {(qualityError || (!filenameError && !inlineClash && saveError) || locked) && (
                <div className="settings-save-feedback" role="status">
                   <span>
                      {qualityError ||

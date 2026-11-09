@@ -1,22 +1,25 @@
 import { useEffect, useId, useState } from "react";
-import { Check, ChevronDown, Cpu, Monitor, Gauge, MemoryStick, SlidersHorizontal } from "lucide-react";
+import { Check, ChevronDown, Cpu, Monitor, Gauge, MemoryStick, Settings2, SlidersHorizontal } from "lucide-react";
 import type { Preferences, RecordingCapabilities } from "../../shared/types";
 import { applyRecordingPreset } from "../../shared/recording-presets";
 import { automaticReplayMemoryMB, memoryLabel, replayMemoryChoicesFor } from "../../shared/replay-memory";
 import { replayEstimate } from "./replay-estimate";
 import { durationText } from "./TimeInput";
 import { api } from "./desktop";
-import { Field, Select, Toggle, NumberInput } from "./ui";
+import { Field, Select, Toggle } from "./ui";
+import { PresetNumberInput } from "./PresetNumberInput";
 import { Field as SettingsField, Toggle as SettingsToggle } from "./SettingsControls";
 import { Slider } from "./Slider";
 function QualityPicker({
    value,
    onChange,
    recommended,
+   customSummary,
 }: {
    value: Preferences["quality"];
    onChange: (value: Preferences["quality"]) => void;
    recommended?: "low" | "standard";
+   customSummary: string;
 }) {
    return (
       <div className="quality-options">
@@ -25,7 +28,7 @@ function QualityPicker({
                { value: "low", title: "Low", detail: "720p · 30 fps" },
                { value: "standard", title: "Standard", detail: "1080p · 60 fps" },
                { value: "high", title: "High", detail: "Source · 60 fps" },
-               { value: "custom", title: "Custom", detail: "" },
+               { value: "custom", title: "Custom", detail: customSummary },
             ] as const
          ).map((item) => (
             <button
@@ -38,7 +41,7 @@ function QualityPicker({
                <strong>
                   {item.title}
                   {item.value === recommended && (
-                     <span className="quality-hardware-hint" role="img" aria-label="Suggested for your hardware" title="Suggested for your hardware">
+                     <span className="quality-hardware-hint" role="img" aria-label="Suggested for your hardware" data-tooltip="Suggested for your hardware">
                         <Cpu size={14} aria-hidden="true" />
                      </span>
                   )}
@@ -52,6 +55,13 @@ function QualityPicker({
 export function customQualityError(value: Preferences): string {
    if (!Number.isInteger(value.customFPS) || value.customFPS < 1 || value.customFPS > 120) return "Frame rate must be between 1 and 120 fps.";
    return "";
+}
+function compressionLevel(cq: number): string {
+   if (cq <= 16) return "Near lossless";
+   if (cq <= 21) return "High detail";
+   if (cq <= 25) return "Balanced";
+   if (cq <= 30) return "Compact";
+   return "Smallest";
 }
 function replayMemoryDetail(value: Preferences, memoryBytes: number | undefined): string {
    const base = "Holds recent footage for clips.";
@@ -80,9 +90,24 @@ function AdvancedQualityControls({
    choices.sort((a, b) => a - b);
    return (
       <div className="quality-advanced" data-open={open || undefined}>
-         <button type="button" className="quality-advanced-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
-            Advanced
-            <ChevronDown size={14} aria-hidden="true" />
+         <button
+            type="button"
+            className={`quality-advanced-toggle ${compact ? "settings-row" : ""}`}
+            aria-expanded={open}
+            aria-controls={id}
+            aria-describedby={compact ? `${id}-detail` : undefined}
+            onClick={() => setOpen(!open)}
+         >
+            {compact && <Settings2 className="settings-row-icon" size={21} aria-hidden="true" />}
+            <span className="quality-advanced-copy">
+               Advanced
+               {compact && (
+                  <span className="field-detail" id={`${id}-detail`} aria-hidden="true">
+                     Replay memory and software encoding
+                  </span>
+               )}
+            </span>
+            <ChevronDown size={compact ? 18 : 14} aria-hidden="true" />
          </button>
          <div className="quality-advanced-fold" id={id} inert={!open} aria-hidden={!open}>
             <div className="quality-advanced-body">
@@ -108,6 +133,7 @@ function AdvancedQualityControls({
       </div>
    );
 }
+const frameRates = [30, 60, 120];
 function CustomQualityControls({
    value,
    onChange,
@@ -140,22 +166,20 @@ function CustomQualityControls({
             </Select>
          </ControlField>
          <ControlField {...(compact ? { icon: Gauge } : {})} label="Frame rate">
-            <NumberInput
+            <PresetNumberInput
+               label="Frame rate"
+               inputLabel="Capture frame rate"
+               presets={frameRates}
+               presetLabel={String}
                min={1}
                max={120}
-               step={1}
-               aria-label="Capture frame rate"
                value={value.customFPS}
-               onValueChange={(customFPS) => onChange({ customFPS })}
                unit="fps"
+               onValueChange={(customFPS) => onChange({ customFPS })}
             />
          </ControlField>
          <ControlField {...(compact ? { icon: SlidersHorizontal } : {})} label="Compression" detail="Lower values keep more detail and use more space.">
             <div className="compression-slider">
-               <div>
-                  <span>More detail</span>
-                  <span>Smaller files</span>
-               </div>
                <Slider
                   aria-label="Capture compression"
                   min={12}
@@ -163,10 +187,16 @@ function CustomQualityControls({
                   step={1}
                   value={value.customCQ}
                   numeric
+                  numberSide="start"
                   defaultValue={23}
                   snapPoints={[12, 20, 23, 35]}
                   onValueChange={(next) => onChange({ customCQ: next })}
                />
+               <div className="compression-scale" aria-hidden="true">
+                  <span>More detail</span>
+                  <strong>{compressionLevel(value.customCQ)}</strong>
+                  <span>Smaller files</span>
+               </div>
             </div>
          </ControlField>
          <AdvancedQualityControls compact={compact} value={value} onChange={onChange} memoryBytes={memoryBytes} />
@@ -186,6 +216,7 @@ export function RecordingPresets({ value, onChange, compact = false }: { value: 
       <>
          <QualityPicker
             value={value.quality}
+            customSummary={`${value.resolutionLimit === 0 ? "Source" : value.resolutionLimit === 2160 ? "4K" : `${value.resolutionLimit}p`} · ${value.customFPS} fps`}
             {...(capabilities?.supported ? { recommended: capabilities.recommended } : {})}
             onChange={(quality) => onChange(applyRecordingPreset(value, quality))}
          />

@@ -16,6 +16,7 @@ import type { SettingsTarget } from "./Settings";
 import { UpdateChip } from "./UpdateChip";
 import { clearNotification, notify, type NotificationInput } from "./notifications";
 import { NotificationToast } from "./NotificationToast";
+import { TooltipLayer } from "./Tooltip";
 import { useNavigationHistory } from "./navigation-history";
 import type { Ask } from "./Dialog";
 import { preloadedPage } from "./preloaded-page";
@@ -270,7 +271,8 @@ export function App() {
                {pages.map((item) => (
                   <button
                      key={item.id}
-                     title={item.title}
+                     data-tooltip={item.title}
+                     data-tooltip-side="right"
                      aria-label={item.title}
                      aria-current={page === item.id ? "page" : undefined}
                      className={`rail-button ${page === item.id ? "selected" : ""}`}
@@ -286,7 +288,8 @@ export function App() {
                ))}
             </div>
             <button
-               title="Settings"
+               data-tooltip="Settings"
+               data-tooltip-side="right"
                aria-label="Settings"
                aria-current={page === "settings" ? "page" : undefined}
                className={`rail-button ${page === "settings" ? "selected" : ""}`}
@@ -357,6 +360,7 @@ export function App() {
          </main>
          <RecordingStatus state={state} visible={windowVisible} audioMessage={page === "recording" ? audioStatus : ""} />
          <NotificationToast />
+         <TooltipLayer />
          {dialog && <Dialog key={dialog.title} request={dialog} close={() => setDialog(null)} />}
          {state && !state.preferences.setupComplete && (
             <Suspense fallback={null}>

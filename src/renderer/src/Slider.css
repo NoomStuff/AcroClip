@@ -6,33 +6,50 @@
    height: 40px;
    vertical-align: middle;
 }
+/* The value is its own slot after the bar, close enough to belong to it. */
 .slider-with-number {
-   gap: 10px;
+   gap: 2px;
+}
+.slider[data-number-side="start"] .slider-number {
+   order: -1;
 }
 .slider-number {
    display: flex;
    align-items: center;
-   width: 76px;
-   min-width: 76px;
-   height: var(--control-height);
-   padding-right: 8px;
-   border-radius: var(--radius-control);
-   background: var(--raised);
-   border: 1px solid var(--border-control);
+   justify-content: center;
+   width: 64px;
+   min-width: 64px;
+   height: 28px;
+   padding: 0 6px;
+   border-radius: 6px;
+   background: var(--base);
+   cursor: text;
+   transition:
+      background 150ms var(--ease),
+      color 150ms var(--ease);
+}
+.slider-number:hover {
+   background: var(--slot-hover);
 }
 .slider-number:focus-within {
-   border-color: var(--accent);
+   background: var(--hover);
+}
+:root[data-keyboard] .slider-number:has(input:focus-visible) {
+   box-shadow: inset 0 0 0 2px var(--focus);
 }
 .slider-number input[type="number"] {
-   width: 100%;
-   min-width: 0;
+   field-sizing: content;
+   width: auto;
+   min-width: 1ch;
    min-height: 0;
-   padding: 7px 4px 7px 8px;
+   padding: 0;
    border: 0;
-   border-radius: inherit;
+   border-radius: 0;
    background: transparent;
    font-size: 13px;
+   font-weight: 600;
    font-variant-numeric: tabular-nums;
+   text-align: center;
    outline: none;
    appearance: textfield;
 }
@@ -42,6 +59,7 @@
    margin: 0;
 }
 .slider-number > span {
+   margin-left: 2px;
    color: var(--muted);
    font-size: 12px;
 }
@@ -89,27 +107,50 @@
    right: 8px;
    top: 6px;
    height: 28px;
-   background: #2a2a2a;
-   border-radius: 5px;
+   background: var(--base);
+   border-radius: 6px;
    pointer-events: none;
 }
 .slider-fill {
-   display: block;
-   width: var(--slider-position, 0%);
+   position: absolute;
+   top: 0;
+   left: min(var(--slider-origin, 0%), var(--slider-position, 0%));
+   width: max(calc(var(--slider-position, 0%) - var(--slider-origin, 0%)), calc(var(--slider-origin, 0%) - var(--slider-position, 0%)));
    height: 100%;
-   border-radius: 5px 0 0 5px;
+   border-radius: 6px 0 0 6px;
    background: #9b82d0;
+}
+.slider[data-bipolar] .slider-fill {
+   border-radius: 0;
 }
 .slider-thumb {
    position: absolute;
    left: var(--slider-position, 0%);
    top: 50%;
-   width: var(--slider-thumb-width, 10px);
+   width: 10px;
    height: 36px;
    translate: -50% -50%;
    border-radius: 4px;
    background: var(--accent);
-   transition: background 150ms var(--ease);
+   transition:
+      background 150ms var(--ease),
+      scale 300ms var(--spring);
+}
+/* A slight bouncy growth on hover, and a slight squeeze while held. */
+.slider-input:hover:not(:disabled) + .slider-track .slider-thumb,
+:root[data-keyboard] .slider-input:focus-visible:not(:disabled) + .slider-track .slider-thumb {
+   scale: 1.25 1.06;
+}
+.slider-input:active:not(:disabled) + .slider-track .slider-thumb {
+   scale: 0.9 0.94;
+}
+/* Markers are drawn twice: faint on the empty track, and dark where the fill covers them. */
+.slider-markers {
+   position: absolute;
+   inset: 0;
+}
+.slider-markers-filled {
+   clip-path: inset(0 calc(100% - max(var(--slider-position, 0%), var(--slider-origin, 0%))) 0 min(var(--slider-position, 0%), var(--slider-origin, 0%)));
 }
 .slider-marker {
    position: absolute;
@@ -117,12 +158,18 @@
    width: 2px;
    height: 6px;
    translate: -50% -50%;
-   background: #68646f;
-   border-radius: 2px;
+   background: #ffffff26;
+   border-radius: 1px;
 }
 .slider-marker.default {
-   height: 16px;
-   background: #9d97a6;
+   height: 12px;
+   background: #ffffff4d;
+}
+.slider-markers-filled .slider-marker {
+   background: #0d0c0f59;
+}
+.slider-markers-filled .slider-marker.default {
+   background: #0d0c0fa6;
 }
 .slider-input:hover:not(:disabled) + .slider-track .slider-thumb,
 :root[data-keyboard] .slider-input:focus-visible:not(:disabled) + .slider-track .slider-thumb {
@@ -132,8 +179,8 @@
    background: #dfd0ff;
 }
 :root[data-keyboard] .slider-input:focus-visible + .slider-track {
-   outline: 2px solid var(--accent);
-   outline-offset: 4px;
+   outline: 2px solid var(--focus);
+   outline-offset: -2px;
 }
 .slider[data-disabled] {
    opacity: 0.42;
@@ -141,6 +188,13 @@
 .slider-input:disabled,
 .slider-input:disabled::-webkit-slider-thumb {
    cursor: default;
+}
+.slider-compact .slider-input:hover:not(:disabled) + .slider-track .slider-thumb,
+:root[data-keyboard] .slider-compact .slider-input:focus-visible:not(:disabled) + .slider-track .slider-thumb {
+   scale: 1.3;
+}
+.slider-compact .slider-input:active:not(:disabled) + .slider-track .slider-thumb {
+   scale: 1.1;
 }
 @media (prefers-reduced-motion: reduce) {
    .slider-thumb {
@@ -185,8 +239,8 @@
    border-radius: inherit;
 }
 .slider-compact .slider-thumb {
-   width: var(--slider-thumb-width, 10px);
-   height: var(--slider-thumb-width, 10px);
+   width: 11px;
+   height: 11px;
    border-radius: 50%;
    box-shadow: 0 1px 3px #0003;
 }
