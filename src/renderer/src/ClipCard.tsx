@@ -94,7 +94,7 @@ export const ClipCard = memo(function ClipCard({
             onClick={() => openClip(clip)}
             aria-label={`Open ${clip.name}`}
          >
-            <div className="clip-thumbnail" ref={thumbnail.ref} data-scrubbing={scrub.shown || undefined}>
+            <div className="clip-thumbnail" ref={thumbnail.ref} data-scrubbing={scrub.shown || undefined} data-same-frame={scrub.same || undefined}>
                {/* Under the thumbnail, which zooms and fades away to reveal it. */}
                <canvas ref={scrub.canvas} className="clip-scrub" aria-hidden="true" />
                {clip.thumbnail ? (

@@ -43,7 +43,11 @@ import { saveOutcomeMessage } from "../shared/save-outcome";
 import type { SaveOutcome } from "../shared/save-outcome";
 import { copyFileToClipboard } from "./clipboard-file";
 
-protocol.registerSchemesAsPrivileged([{ scheme: "acroclip-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+// CORS lets the renderer read back images it asks for with crossOrigin, such as hover strips it
+// compares with their thumbnail. Requests without it, like playback, are unchanged.
+protocol.registerSchemesAsPrivileged([
+   { scheme: "acroclip-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+]);
 // The player switches and mixes a clip's audio tracks in place, instead of preparing a copy per selection.
 app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
 const here = dirname(fileURLToPath(import.meta.url));
@@ -1218,7 +1222,9 @@ else {
             try {
                const actual = await realpath(path);
                if (!withinRoot(collections.root, actual)) return new Response(null, { status: 403 });
-               return await serveMedia(actual, request);
+               const response = await serveMedia(actual, request);
+               response.headers.set("Access-Control-Allow-Origin", "*");
+               return response;
             } catch {
                return new Response(null, { status: 404 });
             }

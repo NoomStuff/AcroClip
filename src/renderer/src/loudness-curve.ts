@@ -9,6 +9,12 @@ export interface LoudnessCurve {
 // Below about 7 dB between the quiet and loud parts there is no moment to point at,
 // such as a clip carried by constant music. Exaggerating that would only draw noise.
 const minimumSpread = 0.12;
+const smoothingSigma = 1.6;
+const smoothingRadius = 4;
+// This share of the clip sits at the baseline: the quieter half, roughly.
+const quietShare = 0.45;
+// Above 1 lifts peaks over middling moments, and leaves the baseline with zero slope.
+const peakLift = 1.8;
 
 /**
  * Smooths the envelope, scales it so the quiet floor sits at 0 and the loudest moment at 1,
@@ -22,15 +28,26 @@ export function loudnessCurve(levels: readonly number[], points = 120): Loudness
       const to = Math.max(from + 1, Math.floor(((index + 1) / points) * levels.length));
       return Math.max(...levels.slice(from, to));
    });
+   // A Gaussian blur rounds the outline without the steps a box average leaves.
+   const kernel = Array.from({ length: smoothingRadius * 2 + 1 }, (_, index) => Math.exp(-((index - smoothingRadius) ** 2) / (2 * smoothingSigma ** 2)));
    const smoothed = resampled.map((_, index) => {
-      const window = resampled.slice(Math.max(0, index - 2), index + 3);
-      return window.reduce((total, value) => total + value, 0) / window.length;
+      let total = 0;
+      let weight = 0;
+      kernel.forEach((factor, offset) => {
+         const value = resampled[index + offset - smoothingRadius];
+         if (value === undefined) return;
+         total += value * factor;
+         weight += factor;
+      });
+      return total / weight;
    });
    const sorted = [...smoothed].sort((a, b) => a - b);
-   const floor = sorted[Math.floor(sorted.length * 0.2)]!;
    const peak = sorted.at(-1)!;
-   if (peak - floor < minimumSpread) return null;
-   const shaped = smoothed.map((value) => Math.max(0, Math.min(1, (value - floor) / (peak - floor))) ** 1.6);
+   if (peak - sorted[Math.floor(sorted.length * 0.2)]! < minimumSpread) return null;
+   // Everything up to the typical level reads as quiet, so only moments above it rise.
+   // A clip that is loud most of the time keeps some room under its peak.
+   const floor = Math.min(sorted[Math.floor(sorted.length * quietShare)]!, peak - minimumSpread / 2);
+   const shaped = smoothed.map((value) => Math.max(0, Math.min(1, (value - floor) / (peak - floor))) ** peakLift);
    // Curves through the midpoints between samples keep the outline smooth without overshooting.
    const x = (index: number) => (index / (points - 1)) * 1000;
    const y = (value: number) => 100 - value * 100;

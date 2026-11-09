@@ -638,6 +638,15 @@
       scale 520ms cubic-bezier(0.3, 0, 0.2, 1),
       transform 350ms var(--ease);
 }
+/* A frame that looks like the thumbnail would make the push-through look like a glitch, so it
+   becomes a plain crossfade both ways. */
+.clip-thumbnail[data-same-frame] .clip-scrub {
+   scale: none;
+   filter: none;
+}
+.clip-thumbnail[data-scrubbing][data-same-frame] :is(img, .thumbnail-fallback) {
+   scale: none;
+}
 .duration[data-scrubbing] > span {
    color: var(--muted);
 }

@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Clip, DesktopAPI } from "../../shared/types";
 import { api } from "./desktop";
+import { sameAsThumbnail, signatureSize } from "./frame-difference";
 
 type Strip = Awaited<ReturnType<DesktopAPI["keyframes"]>>;
-type Loaded = { key: string; image: HTMLImageElement; frames: number; columns: number };
+type Loaded = { key: string; image: HTMLImageElement; frames: number; columns: number; same: boolean[] | null };
 // One request per clip file for the whole session. A failed request may be retried on a later hover.
 const requests = new Map<string, Promise<Strip>>();
 const stripKey = (clip: Pick<Clip, "id" | "thumbnail">) => `${clip.id}\n${clip.thumbnail}`;
@@ -17,6 +18,43 @@ function requestStrip(clip: Pick<Clip, "id" | "thumbnail">): Promise<Strip> {
       void request.then((strip) => strip || requests.delete(key));
    }
    return request;
+}
+
+function loadImage(url: string, readable: boolean): Promise<HTMLImageElement> {
+   const image = new Image();
+   image.decoding = "async";
+   // Canvas can only read back pixels from an image fetched with CORS.
+   if (readable) image.crossOrigin = "anonymous";
+   image.src = url;
+   return image.decode().then(() => image);
+}
+function pixels(image: HTMLImageElement, width: number, height: number): Uint8ClampedArray {
+   const canvas = document.createElement("canvas");
+   canvas.width = width;
+   canvas.height = height;
+   const context = canvas.getContext("2d", { willReadFrequently: true })!;
+   context.drawImage(image, 0, 0, width, height);
+   return context.getImageData(0, 0, width, height).data;
+}
+/**
+ * Loads a strip and works out which of its frames look like the thumbnail, so revealing one of
+ * those can skip the zoom. If the pixels can't be read, every frame counts as different.
+ */
+async function loadStrip(result: NonNullable<Strip>, thumbnail: string): Promise<Omit<Loaded, "key">> {
+   const strip = { frames: result.frames, columns: result.columns };
+   try {
+      const [image, cover] = await Promise.all([loadImage(result.url, true), loadImage(thumbnail, true)]);
+      const rows = Math.ceil(result.frames / result.columns);
+      const same = sameAsThumbnail(
+         pixels(image, result.columns * signatureSize, rows * signatureSize),
+         pixels(cover, signatureSize, signatureSize),
+         result.frames,
+         result.columns
+      );
+      return { ...strip, image, same };
+   } catch {
+      return { ...strip, image: await loadImage(result.url, false), same: null };
+   }
 }
 
 /** Which frame of a strip a pointer position shows. Positions run from 0 to 1 across the thumbnail. */
@@ -51,11 +89,8 @@ export function useKeyframeScrub(clip: Pick<Clip, "id" | "thumbnail" | "width" |
          () => {
             void requestStrip({ id, thumbnail }).then((result) => {
                if (!result || !current) return;
-               const image = new Image();
-               image.decoding = "async";
-               image.src = result.url;
-               void image.decode().then(
-                  () => current && setLoaded({ key, image, frames: result.frames, columns: result.columns }),
+               void loadStrip(result, thumbnail).then(
+                  (next) => current && setLoaded({ key, ...next }),
                   () => undefined
                );
             });
@@ -68,6 +103,13 @@ export function useKeyframeScrub(clip: Pick<Clip, "id" | "thumbnail" | "width" |
       };
    }, [wanted, strip, eager, key, id, thumbnail]);
    const frame = strip && position !== null ? stripFrame(position, strip.frames) : null;
+   // Whether the frame shown last matches the thumbnail. It holds after the pointer leaves, so the
+   // way out matches the frame being covered, and resets once the strip is dropped.
+   const [settledSame, setSettledSame] = useState(false);
+   const same = frame !== null && strip ? strip.same?.[frame] === true : strip ? settledSame : false;
+   useEffect(() => {
+      if (frame !== null) setSettledSame(same);
+   }, [frame, same]);
    useLayoutEffect(() => {
       const target = canvas.current;
       const context = target?.getContext("2d");
@@ -125,6 +167,8 @@ export function useKeyframeScrub(clip: Pick<Clip, "id" | "thumbnail" | "width" |
       frame: hovering ? frame : null,
       frames: strip?.frames ?? 0,
       shown: hovering && !!strip,
+      // The frame on show looks like the thumbnail, so revealing it shouldn't look like a change.
+      same,
       setPosition,
    };
 }

@@ -19,6 +19,15 @@ describe("loudnessCurve", () => {
       expect(half).toBeLessThan(0.95);
       expect(curve.points.filter((value) => value > 0.5).length).toBeLessThan(curve.points.filter((value) => value > 0.05).length);
    });
+   it("keeps the quieter half at the baseline", () => {
+      const curve = loudnessCurve(envelope(240, [120], 0.3).map((value, index) => value + (index % 40 < 20 ? 0.08 : 0)))!;
+      expect(curve.points.filter((value) => value === 0).length).toBeGreaterThanOrEqual(curve.points.length * 0.4);
+   });
+   it("still draws a clip that is loud most of the time", () => {
+      const curve = loudnessCurve(Array.from({ length: 240 }, (_, index) => (index < 60 ? 0.2 : 0.9)))!;
+      expect(curve.points.every(Number.isFinite)).toBe(true);
+      expect(Math.max(...curve.points)).toBeCloseTo(1, 5);
+   });
    it("hides flat audio instead of exaggerating noise", () => {
       expect(loudnessCurve(Array.from({ length: 240 }, (_, index) => 0.6 + (index % 3) * 0.02))).toBeNull();
       expect(loudnessCurve([])).toBeNull();
