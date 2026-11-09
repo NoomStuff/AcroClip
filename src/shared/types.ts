@@ -302,7 +302,7 @@ export interface DesktopAPI {
    /** The player showed this clip. */
    clipViewed(id: string): Promise<void>;
    /** A strip of the clip's keyframes for scrubbing its thumbnail, made on first request. */
-   keyframes(clipId: string): Promise<{ url: string; frames: number } | null>;
+   keyframes(clipId: string): Promise<{ url: string; frames: number; columns: number } | null>;
    /** One playback session of a clip, for local statistics. */
    recordView(event: ViewEvent): Promise<void>;
    /** Deletes the open collection's statistics history. */

@@ -595,35 +595,36 @@
    transform: none;
 }
 
-/* Hover scrubbing cuts between frames; only showing and hiding the strip fades. */
+/* The strip sits under the thumbnail. Scrubbing cuts between its frames; only the thumbnail
+   moves, zooming in as it fades to reveal the strip and settling back when the pointer leaves. */
 .clip-scrub {
    position: absolute;
    inset: 0;
    width: 100%;
    height: 100%;
+   pointer-events: none;
+}
+.clip-thumbnail img,
+.clip-thumbnail .thumbnail-fallback {
+   position: relative;
+}
+.clip-thumbnail[data-scrubbing] :is(img, .thumbnail-fallback) {
    opacity: 0;
-   pointer-events: none;
-   transition: opacity 120ms var(--ease);
+   /* The scale property composes with the hover transform instead of competing with it. */
+   scale: 1.12;
+   transition:
+      opacity 280ms var(--ease),
+      scale 480ms var(--ease),
+      transform 350ms var(--ease);
 }
-.clip-thumbnail[data-scrubbing] .clip-scrub {
-   opacity: 1;
+.clip-thumbnail :is(img, .thumbnail-fallback) {
+   transition:
+      opacity 220ms var(--ease),
+      scale 360ms var(--ease),
+      transform 350ms var(--ease);
 }
-.clip-thumbnail[data-scrubbing] img {
-   transform: none;
-}
-.clip-scrub-bar {
-   position: absolute;
-   left: 0;
-   right: 0;
-   bottom: 0;
-   height: 3px;
-   background: #ffffff26;
-   pointer-events: none;
-}
-.clip-scrub-bar > span {
-   display: block;
-   height: 100%;
-   background: var(--accent);
+.duration[data-scrubbing] > span {
+   color: var(--muted);
 }
 
 .thumbnail-fallback {

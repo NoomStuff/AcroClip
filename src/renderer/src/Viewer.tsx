@@ -746,6 +746,7 @@ export function Viewer({
                onPrevious={stepBack}
                onNext={stepForward}
                loudness={loudness && loudness.path === clipPath ? loudness.levels : undefined}
+               preview={clip}
                onSeek={(next) => {
                   if (video.current) video.current.currentTime = next;
                   setTime(next);

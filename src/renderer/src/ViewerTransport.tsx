@@ -1,8 +1,9 @@
 import { Gauge, Headphones, ListVideo, Maximize, Minimize, Pause, Play, SkipBack, SkipForward } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { loudnessCurve } from "./loudness-curve";
+import { useKeyframeScrub } from "./useKeyframeScrub";
 import type { CSSProperties, RefObject } from "react";
-import type { AudioTrack } from "../../shared/types";
+import type { AudioTrack, Clip } from "../../shared/types";
 import { DropdownSelect } from "./DropdownSelect";
 import { formatTime } from "./format";
 import { IconButton } from "./ui";
@@ -29,6 +30,7 @@ export function ViewerTransport({
    onPrevious,
    onNext,
    loudness,
+   preview,
    onSeek,
    onToggle,
    onVolume,
@@ -58,6 +60,8 @@ export function ViewerTransport({
    onPrevious: () => void;
    onNext: () => void;
    loudness: number[] | undefined;
+   // The clip whose keyframes preview a position while the seek bar is hovered.
+   preview: Pick<Clip, "id" | "thumbnail" | "width" | "height">;
    onSeek: (value: number) => void;
    onToggle: () => void;
    onVolume: (value: number, restore: number) => void;
@@ -95,6 +99,14 @@ export function ViewerTransport({
    };
    const curve = useMemo(() => (loudness ? loudnessCurve(loudness) : null), [loudness]);
    const fraction = duration > 0 ? Math.min(1, Math.max(0, time / duration)) : 0;
+   const scrub = useKeyframeScrub(preview, visible && !disabled && duration > 0, { eager: true });
+   const [bar, setBar] = useState(0);
+   const gradient = useId();
+   // Landscape previews share a width and portrait ones a height, like the clip itself.
+   const previewSize =
+      preview.height > preview.width
+         ? { width: Math.round((150 * preview.width) / preview.height), height: 150 }
+         : { width: 176, height: Math.round((176 * preview.height) / Math.max(1, preview.width)) };
    const audioLabel = !tracks.length
       ? "None"
       : track.length === tracks.length
@@ -104,19 +116,59 @@ export function ViewerTransport({
           : `${track.length}/${tracks.length}`;
    return (
       <div className="player-controls">
-         <label className="player-progress" style={{ "--played": `${fraction * 100}%` } as CSSProperties}>
+         <label
+            className="player-progress"
+            style={{ "--played": `${fraction * 100}%`, "--hovered": `${(scrub.position ?? 0) * 100}%` } as CSSProperties}
+            data-hovering={scrub.position !== null || undefined}
+            onPointerMove={(event) => {
+               if (event.pointerType === "touch") return;
+               const bounds = event.currentTarget.getBoundingClientRect();
+               setBar(bounds.width);
+               scrub.setPosition(Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)));
+            }}
+            onPointerLeave={() => scrub.setPosition(null)}
+         >
             {curve && (
                // Shown while the seek bar is hovered or dragged, like a "most replayed" graph.
                <span className="player-loudness" aria-hidden="true">
                   <svg viewBox="0 0 1000 100" preserveAspectRatio="none">
-                     <path d={curve.path} />
+                     <defs>
+                        <linearGradient id={`${gradient}-rest`} x1="0" y1="0" x2="0" y2="1">
+                           <stop offset="0" stopColor="var(--loudness-rest)" stopOpacity="0.22" />
+                           <stop offset="1" stopColor="var(--loudness-rest)" stopOpacity="0.03" />
+                        </linearGradient>
+                        <linearGradient id={`${gradient}-played`} x1="0" y1="0" x2="0" y2="1">
+                           <stop offset="0" stopColor="var(--accent)" stopOpacity="0.34" />
+                           <stop offset="1" stopColor="var(--accent)" stopOpacity="0.04" />
+                        </linearGradient>
+                     </defs>
+                     <path d={curve.path} fill={`url(#${gradient}-rest)`} />
+                     <path className="player-loudness-line" d={curve.line} />
                   </svg>
                   <svg className="played" viewBox="0 0 1000 100" preserveAspectRatio="none">
-                     <path d={curve.path} />
+                     <path d={curve.path} fill={`url(#${gradient}-played)`} />
+                     <path className="player-loudness-line" d={curve.line} />
                   </svg>
                </span>
             )}
+            {scrub.position !== null && (
+               <span
+                  className="player-preview"
+                  aria-hidden="true"
+                  data-ready={scrub.shown || undefined}
+                  style={{
+                     // Kept inside the bar so the preview never hangs off the player's edge.
+                     left: `${Math.min(Math.max(scrub.position * bar, previewSize.width / 2), Math.max(previewSize.width / 2, bar - previewSize.width / 2))}px`,
+                  }}
+               >
+                  <span className="player-preview-frame" style={{ width: previewSize.width, height: previewSize.height }}>
+                     <canvas ref={scrub.canvas} />
+                  </span>
+                  <time className="tabular">{formatTime(scrub.position * duration)}</time>
+               </span>
+            )}
             <span className="player-progress-track" />
+            <span className="player-progress-hover" />
             <span className="player-progress-fill" />
             <i aria-hidden="true" />
             <input

@@ -24,8 +24,11 @@ describe("loudnessCurve", () => {
       expect(loudnessCurve([])).toBeNull();
    });
    it("draws a closed path inside its box", () => {
-      const { path } = loudnessCurve(envelope(240, [100]))!;
+      const { path, line } = loudnessCurve(envelope(240, [100]))!;
       expect(path.startsWith("M0 100")).toBe(true);
       expect(path.endsWith("L1000 100Z")).toBe(true);
+      // The outline is the area's top edge, without the baseline.
+      expect(path).toContain(line.slice(1));
+      expect(line).not.toContain("Z");
    });
 });

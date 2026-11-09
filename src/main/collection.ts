@@ -10,7 +10,7 @@ import type { ApplicationArtwork } from "../shared/types";
 import type { Category, Clip, FolderContents, Job, Shareable } from "../shared/types";
 import { collectionFolder, folderContents, folderName } from "./collection-folders";
 import { normalizeApplicationLabel } from "./application-identity";
-import { createKeyframeStrip, createThumbnail, encodeShareable, keyframeStripFrames, probe } from "./media";
+import { createKeyframeStrip, createThumbnail, encodeShareable, keyframeStripColumns, keyframeStripFrames, probe } from "./media";
 import type { MediaInfo } from "./media";
 import { PlaybackCache } from "./playback";
 import { mapConcurrent } from "./concurrent";
@@ -18,6 +18,15 @@ import { mergeClips } from "./clip-merge";
 import type { MergeResult } from "./clip-merge";
 
 const categorySchema = z.object({ id: z.string(), name: z.string(), color: z.string(), icon: z.string().max(80).optional() });
+/** A grid of evenly spaced frames, read left to right, then top to bottom. */
+export type KeyframeStrip = { url: string; frames: number; columns: number };
+type StripJob = {
+   order: number;
+   started: boolean;
+   promise: Promise<KeyframeStrip | null>;
+   run: () => Promise<KeyframeStrip | null>;
+   settle: (result: Promise<KeyframeStrip | null>) => void;
+};
 const thumbnailName = (identity: string) => `${identity}.last-keyframe-v1.jpg`;
 const fileSchema = z.object({ relativePath: z.string(), absolutePath: z.string(), identity: z.string() });
 const shareSchema = fileSchema.extend({
@@ -201,9 +210,11 @@ export class CollectionService {
    private identities = new Map<string, { stamp: string; identity: string }>();
    private writtenMetadata: { snapshot: string; stamp: string } | undefined;
    private automaticJobs = new Set<string>();
-   // Hover strips are made one at a time, so sweeping across the library never starts a burst of decoders.
-   private strips: Promise<unknown> = Promise.resolve();
-   private pendingStrips = new Map<string, Promise<{ url: string; frames: number } | null>>();
+   // Hover strips are made one at a time, so sweeping across the library never starts a burst of
+   // decoders. The newest request goes first: it is the clip under the pointer.
+   private stripJobs = new Map<string, StripJob>();
+   private stripOrder = 0;
+   private stripWorking = false;
    private activeMerges = new Set<string>();
    constructor(options: CollectionOptions = {}) {
       this.options = options;
@@ -262,33 +273,63 @@ export class CollectionService {
     * The keyframe strip for scrubbing a clip's thumbnail, made on first request and kept beside
     * the thumbnail under the same file identity. Null when the original is unavailable.
     */
-   keyframeStrip(id: string): Promise<{ url: string; frames: number } | null> {
+   async keyframeStrip(id: string): Promise<KeyframeStrip | null> {
       const clip = this.visible(id);
       const stored = this.stored(id);
-      if (clip.originalMissing || !(clip.duration > 0)) return Promise.resolve(null);
+      if (clip.originalMissing || !(clip.duration > 0)) return null;
       const frames = keyframeStripFrames(clip.duration);
       const root = this.root;
-      const output = join(root, ".acroclip", "thumbnails", `${stored.identity}.keyframes-v1-${frames}.jpg`);
-      const pending = this.pendingStrips.get(output);
-      if (pending) return pending;
-      const request = (this.strips = this.strips
-         .catch(() => undefined)
-         .then(async () => {
-            const exists = await stat(output).then(
-               (info) => info.size > 0,
-               () => false
-            );
-            if (!exists) {
-               const source = await this.resolveFile(stored);
-               if (!source || this.root !== root) return null;
-               await this.safeDirectory(dirname(output));
-               await createKeyframeStrip(source, output, clip.duration, frames);
-            }
-            return { url: this.url(output), frames };
-         })
-         .finally(() => this.pendingStrips.delete(output))) as Promise<{ url: string; frames: number } | null>;
-      this.pendingStrips.set(output, request);
-      return request;
+      const output = join(root, ".acroclip", "thumbnails", `${stored.identity}.keyframes-v2-${frames}.jpg`);
+      const strip: KeyframeStrip = { url: this.url(output), frames, columns: keyframeStripColumns(frames) };
+      const pending = this.stripJobs.get(output);
+      if (pending) {
+         pending.order = ++this.stripOrder;
+         return pending.promise;
+      }
+      // A strip made earlier never waits behind one being made now.
+      if (
+         await stat(output).then(
+            (info) => info.size > 0,
+            () => false
+         )
+      )
+         return strip;
+      let settle!: (result: Promise<KeyframeStrip | null>) => void;
+      const promise = new Promise<KeyframeStrip | null>((resolve) => (settle = resolve));
+      this.stripJobs.set(output, {
+         order: ++this.stripOrder,
+         started: false,
+         promise,
+         run: async () => {
+            const source = await this.resolveFile(stored);
+            if (!source || this.root !== root) return null;
+            await this.safeDirectory(dirname(output));
+            await createKeyframeStrip(source, output, clip.duration, frames);
+            return strip;
+         },
+         settle,
+      });
+      void this.makeStrips();
+      return promise;
+   }
+   private async makeStrips(): Promise<void> {
+      if (this.stripWorking) return;
+      this.stripWorking = true;
+      try {
+         for (;;) {
+            let next: [string, StripJob] | undefined;
+            for (const entry of this.stripJobs) if (!entry[1].started && (!next || entry[1].order > next[1].order)) next = entry;
+            if (!next) return;
+            const [output, job] = next;
+            job.started = true;
+            const result = job.run();
+            job.settle(result);
+            await result.catch(() => undefined);
+            this.stripJobs.delete(output);
+         }
+      } finally {
+         this.stripWorking = false;
+      }
    }
    /** Usage history lives next to the collection info, so it moves with the clips. */
    async statsDirectory(root: string): Promise<string> {

@@ -1,7 +1,9 @@
 /** Loudness to show above the seek bar, shaped like a "most replayed" graph: 0 to 1, peak at 1. */
 export interface LoudnessCurve {
    points: number[];
+   // The filled area, and its top edge alone for an outline.
    path: string;
+   line: string;
 }
 
 // Below about 7 dB between the quiet and loud parts there is no moment to point at,
@@ -11,7 +13,7 @@ const minimumSpread = 0.12;
 /**
  * Smooths the envelope, scales it so the quiet floor sits at 0 and the loudest moment at 1,
  * and lifts the peaks so the moment stands out. Null for clips without a clear loud part.
- * The path fills a 0 to 1000 by 0 to 100 box from the baseline up.
+ * Both paths sit in a 0 to 1000 by 0 to 100 box; the area fills it from the baseline up.
  */
 export function loudnessCurve(levels: readonly number[], points = 120): LoudnessCurve | null {
    if (levels.length < 4) return null;
@@ -32,12 +34,13 @@ export function loudnessCurve(levels: readonly number[], points = 120): Loudness
    // Curves through the midpoints between samples keep the outline smooth without overshooting.
    const x = (index: number) => (index / (points - 1)) * 1000;
    const y = (value: number) => 100 - value * 100;
-   let path = `M0 100L0 ${y(shaped[0]!).toFixed(1)}`;
+   let edge = "";
    for (let index = 1; index < points; index++) {
       const midX = (x(index - 1) + x(index)) / 2;
       const midY = (y(shaped[index - 1]!) + y(shaped[index]!)) / 2;
-      path += `Q${x(index - 1).toFixed(1)} ${y(shaped[index - 1]!).toFixed(1)} ${midX.toFixed(1)} ${midY.toFixed(1)}`;
+      edge += `Q${x(index - 1).toFixed(1)} ${y(shaped[index - 1]!).toFixed(1)} ${midX.toFixed(1)} ${midY.toFixed(1)}`;
    }
-   path += `L1000 ${y(shaped.at(-1)!).toFixed(1)}L1000 100Z`;
-   return { points: shaped, path };
+   edge += `L1000 ${y(shaped.at(-1)!).toFixed(1)}`;
+   const start = y(shaped[0]!).toFixed(1);
+   return { points: shaped, path: `M0 100L0 ${start}${edge}L1000 100Z`, line: `M0 ${start}${edge}` };
 }
