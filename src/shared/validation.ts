@@ -99,6 +99,7 @@ export const preferencesSchema = z
       autoRecord: z.boolean(),
       notifications: z.enum(["everywhere", "outside-fullscreen", "off"]),
       sound: z.boolean(),
+      stats: z.boolean().default(true),
       overlapClips: z.enum(["keep", "trim", "merge"]),
       folderLayout: z.enum(["flat", "application"]),
       filenamePreset: z.enum(["source-date", "date-source", "custom"]),

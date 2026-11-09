@@ -156,8 +156,10 @@ export class GameCatalog {
             this.saved = true;
             this.updated = updated;
             this.reindex();
-         } catch {
-            this.onWarning("Game catalog could not update. Using the saved list and your added games.");
+         } catch (error) {
+            this.onWarning(
+               `Game catalog could not update (${error instanceof Error ? error.message : String(error)}). Using the saved list and your added games.`
+            );
          }
       })().finally(() => {
          this.loading = null;

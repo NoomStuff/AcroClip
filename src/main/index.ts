@@ -21,6 +21,9 @@ import type { ShortcutAction } from "../shared/shortcuts";
 import { Recorder } from "./recorder";
 import { CaptureSources } from "./capture-sources";
 import { serveMedia } from "./serve";
+import { StatsLog } from "./stats";
+import { viewEventSchema } from "../shared/stats";
+import { loudnessEnvelope, probe } from "./media";
 import { BACKGROUND_CHECK_INTERVAL, Updates } from "./updates";
 import { testUpdateServer } from "./update-manager";
 import { isWaylandSession } from "./linux-session";
@@ -40,7 +43,11 @@ import { saveOutcomeMessage } from "../shared/save-outcome";
 import type { SaveOutcome } from "../shared/save-outcome";
 import { copyFileToClipboard } from "./clipboard-file";
 
-protocol.registerSchemesAsPrivileged([{ scheme: "acroclip-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+// CORS lets the renderer read back images it asks for with crossOrigin, such as hover strips it
+// compares with their thumbnail. Requests without it, like playback, are unchanged.
+protocol.registerSchemesAsPrivileged([
+   { scheme: "acroclip-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+]);
 // The player switches and mixes a clip's audio tracks in place, instead of preparing a copy per selection.
 app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
 const here = dirname(fileURLToPath(import.meta.url));
@@ -82,17 +89,69 @@ const applicationArtwork = (sources: CaptureSource[]): ApplicationArtwork[] =>
 function assertFolderChangesAllowed(): void {
    if (recorder.status.pendingSaves) throw new Error("Wait for clips to finish saving before changing folders.");
 }
+// When each export started running, so stats can report how long encoding took.
+const jobStarts = new Map<string, number>();
 const collections = new CollectionService({
    applications: () => applicationArtwork(captureSources.cached),
    beforeFolderChange: assertFolderChangesAllowed,
    scanConcurrency: () => (captureActive() ? 1 : 3),
+   backgroundStrips: true,
    onChange: () => emitState(),
    onJob: (job) => {
       if (job.state === "failed") notice(job.message, true);
+      if (job.state === "running" && !jobStarts.has(job.id)) jobStarts.set(job.id, Date.now());
+      if (["complete", "failed", "cancelled"].includes(job.state)) {
+         const started = jobStarts.get(job.id);
+         jobStarts.delete(job.id);
+         const clip = collections.clips.find((item) => item.id === job.clipId);
+         const shareable = clip?.shareables.find((item) => item.id === job.id);
+         if (job.state === "complete" && clip && shareable)
+            stats.record({
+               type: "shareable",
+               clipId: clip.id,
+               targetMB: shareable.targetMB,
+               bytes: shareable.size,
+               sourceBytes: clip.size,
+               encodeSeconds: started ? (Date.now() - started) / 1000 : 0,
+               automatic: collections.automaticShareable(clip.id, shareable.id),
+            });
+      }
    },
    onWarning: (message, level) => (level === "log" ? void log(message) : notice(message, level === "error", "info", "app", { tone: level })),
    mediaUrl,
 });
+const stats = new StatsLog({
+   root: () => collections.root,
+   directory: (root) => collections.statsDirectory(root),
+   // Preferences load after the services exist; nothing records before then.
+   enabled: () => (preferences as Preferences | undefined)?.stats === true,
+   onError: (message) => void log(message),
+});
+/** The clip a collection file belongs to, and whether it is the clip itself or a shareable. */
+function fileOwner(path: string): { clipId: string; file: "clip" | "shareable" } | undefined {
+   for (const clip of collections.clips) {
+      if (samePath(clip.path, path)) return { clipId: clip.id, file: "clip" };
+      if (clip.shareables.some((share) => samePath(share.path, path))) return { clipId: clip.id, file: "shareable" };
+   }
+   return undefined;
+}
+// The capture session in progress, recorded as one event when it ends.
+let captureSession: { startedAt: number; sourceKind?: "screen" | "app"; application?: string; source?: string } | null = null;
+function trackCaptureSession(current: RecorderState) {
+   if (current.state === "recording") {
+      captureSession ??= { startedAt: current.startedAt ?? Date.now() };
+      const footage = bufferedCaptureSource(current);
+      if (footage.kind === "screen" || footage.kind === "app") captureSession.sourceKind = footage.kind;
+      if (footage.name) captureSession.source = footage.name;
+      if (lastRecordingArtwork?.application.id) captureSession.application = lastRecordingArtwork.application.id;
+   } else if (captureSession && current.state !== "waiting" && current.state !== "starting") endCaptureSession();
+}
+function endCaptureSession() {
+   if (!captureSession) return;
+   const { startedAt, ...rest } = captureSession;
+   captureSession = null;
+   stats.record({ type: "capture", startedAt, seconds: Math.max(0, (Date.now() - startedAt) / 1000), ...rest });
+}
 const libraryRefresh = new CollectionRefresh({
    refresh: () => collections.refresh(),
    busy: () => collections.pendingJobs.length > 0,
@@ -107,6 +166,7 @@ const feedback = new Feedback(helperPath("acroclip-notifier"), (message) => void
 const storage = new StorageMonitor({ onChange: () => emitState(), onWarning: (message) => notice(message, false, "info", "native", { tone: "warning" }) });
 const recorder = new Recorder({
    gameCatalogPath: join(app.getPath("userData"), "game-catalog.json"),
+   onCatalogWarning: (message) => void log(message),
    onAudioMonitorError: (monitorError, listeningError) =>
       send({ type: "audio-monitor", monitorError, ...(listeningError !== undefined ? { listeningError } : {}) }),
    onAudioLevels: (levels) => {
@@ -124,6 +184,7 @@ const recorder = new Recorder({
    onState: (current) => {
       const footage = bufferedCaptureSource(current);
       if (current.state === "recording") lastRecordingArtwork = recordingArtwork(footage, captureSources.cached, lastRecordingArtwork);
+      trackCaptureSession(current);
       updateStorageActivity();
       send({ type: "recorder", recorder: recorderState() });
       updateTray();
@@ -140,6 +201,17 @@ const recorder = new Recorder({
          ...footageWindow(request?.[1].requestedAt ?? Date.now(), capture.secondsSinceCapture, clip.duration),
       };
       const previous = previousSave;
+      const record = (outcome: "saved" | "extended", into?: string) =>
+         stats.record({
+            type: "save",
+            clipId: clip.id,
+            ...(request ? { latencyMs: Math.max(0, Date.now() - request[1].requestedAt) } : {}),
+            seconds: clip.duration,
+            outcome,
+            ...(into ? { into } : {}),
+            ...(capture.application?.id ? { application: capture.application.id } : {}),
+            ...(clip.source ? { source: clip.source } : {}),
+         });
       const candidate = mergeCandidate(previous, footage, {
          mode: preferences.overlapClips,
          clipSeconds: preferences.clipSeconds,
@@ -147,12 +219,14 @@ const recorder = new Recorder({
       });
       if (!candidate.merge || !previous) {
          previousSave = footage;
+         record("saved");
          reportSave({ kind: "saved", previousFootage: capture.previousFootage });
          autoShare(clip.id);
          return;
       }
       // A chain keeps growing from the first clip's start.
       previousSave = { ...footage, start: previous.start };
+      record("extended", previous.clipId);
       reportSave({ kind: "extended", seconds: candidate.seconds });
       merges = merges.then(() => mergeSaves(previous.clipId, clip.id)).catch((error: unknown) => void log(`merge: ${errorMessage(error)}`));
    },
@@ -586,6 +660,8 @@ function releaseServices() {
 async function requestExit() {
    try {
       if (await prepareExit()) {
+         endCaptureSession();
+         await stats.flush();
          quitting = true;
          releaseServices();
          app.quit();
@@ -644,8 +720,19 @@ const changesWhileExiting = new Set([
    "clip-move",
 ]);
 // Playback and preview report errors locally and discard obsolete requests.
-// A global notice would outlive a source or file switch.
-const locallyReported = new Set(["playback", "cancel-playback", "preview-source", "monitor-audio", "listen-audio", "preferences"]);
+// A global notice would outlive a source or file switch. Hover strips and view
+// history run in the background, so their failures only reach the log.
+const locallyReported = new Set([
+   "playback",
+   "cancel-playback",
+   "preview-source",
+   "monitor-audio",
+   "listen-audio",
+   "preferences",
+   "keyframes",
+   "loudness",
+   "stats-view",
+]);
 function handle(channel: string, fn: (...args: unknown[]) => unknown) {
    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
       if (event.sender !== mainWindow?.webContents) throw new Error("Unknown window");
@@ -789,7 +876,12 @@ function registerIPC() {
             const reportRollback = (error: unknown) => notice(errorMessage(error), true, "info", "action");
             try {
                if (needsMicrophonePermission(next) && !needsMicrophonePermission(preferences)) await ensureMicrophoneAccess(next);
-               if (next.collection !== preferences.collection) await collections.open(next.collection);
+               if (next.collection !== preferences.collection) {
+                  // Events belong to the collection they happened in.
+                  endCaptureSession();
+                  await stats.flush();
+                  await collections.open(next.collection);
+               }
                if (capturing() && sourceChanged) await recorder.switchSource(next, await captureSources.list());
                if (next.startWithOS !== preferences.startWithOS) await applyStartup(next.startWithOS);
                if (capturing())
@@ -886,6 +978,7 @@ function registerIPC() {
          cancelId: 0,
       });
       if (result.response !== 1) return;
+      const before = collections.clips.find((item) => item.id === clipId);
       const deleted: string[] = [];
       try {
          for (const path of await collections.filesForDeletion(clipId, shareableId, selection)) {
@@ -894,6 +987,16 @@ function registerIPC() {
          }
       } finally {
          await collections.removeDeleted(clipId, deleted);
+         if (before && deleted.length)
+            stats.record({
+               type: "delete",
+               clipId,
+               scope: shareableId ? "shareable" : selection === "shareables" ? "shareables" : "clip",
+               clipCreatedAt: before.createdAt,
+               duration: before.duration,
+               watched: !!before.watched,
+               ...(before.applicationId ? { application: before.applicationId } : {}),
+            });
       }
    });
    handle("category-reorder", (id, beforeId) => collections.reorderCategory(idSchema.parse(id), idSchema.nullable().parse(beforeId)));
@@ -913,10 +1016,20 @@ function registerIPC() {
       }
    });
    handle("clip-viewed", (id) => collections.markViewed(idSchema.parse(id)));
+   handle("keyframes", (id) => collections.keyframeStrip(idSchema.parse(id)));
+   handle("stats-view", (value) => {
+      const event = viewEventSchema.parse(value);
+      if (collections.clips.some((clip) => clip.id === event.clipId)) stats.record(event);
+   });
+   handle("stats-clear", async () => {
+      if (collections.root) await stats.clear(collections.root);
+   });
    handle("copy-file", async (path) => {
       const selected = trustedPath(path);
       await copyFileToClipboard(selected);
       await collections.markShared(selected);
+      const owner = fileOwner(selected);
+      if (owner) stats.record({ type: "copy", ...owner, method: "clipboard" });
    });
    handle("reveal", (path) => {
       const selected = trustedPath(path);
@@ -941,6 +1054,19 @@ function registerIPC() {
       const child = spawn(executable, [clip.path], { detached: true, stdio: "ignore", windowsHide: true, env: attaCutEnvironment(process.env) });
       child.once("error", () => notice("AttaCut couldn't open. Show the clip in your file manager and open it from there.", true, "info", "action"));
       child.unref();
+   });
+   // Envelopes are small and files rarely change during a session, so they stay cached by path and size.
+   const loudness = new Map<string, Promise<number[]>>();
+   handle("loudness", async (path) => {
+      const source = trustedPath(path);
+      const key = `${source}:${(await stat(source)).size}`;
+      let envelope = loudness.get(key);
+      if (!envelope) {
+         envelope = probe(source).then((info) => (info.tracks.length ? loudnessEnvelope(source, info.duration) : []));
+         envelope.catch(() => loudness.delete(key));
+         loudness.set(key, envelope);
+      }
+      return envelope;
    });
    handle("playback", async (path, track, requestId, options) => {
       const source = trustedPath(path);
@@ -991,6 +1117,8 @@ function registerIPC() {
          const selected = trustedPath(path);
          event.sender.startDrag({ file: selected, icon: trayIcon() });
          void collections.markShared(selected).catch(() => undefined);
+         const owner = fileOwner(selected);
+         if (owner) stats.record({ type: "copy", ...owner, method: "drag" });
       } catch (e) {
          notice(errorMessage(e), true, "info", "action");
       }
@@ -1094,7 +1222,9 @@ else {
             try {
                const actual = await realpath(path);
                if (!withinRoot(collections.root, actual)) return new Response(null, { status: 403 });
-               return await serveMedia(actual, request);
+               const response = await serveMedia(actual, request);
+               response.headers.set("Access-Control-Allow-Origin", "*");
+               return response;
             } catch {
                return new Response(null, { status: 404 });
             }
@@ -1117,6 +1247,9 @@ else {
          if (process.argv.includes("--clip")) void saveClip().catch((error: unknown) => notice(errorMessage(error), true));
          if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
             void startRecording().catch((e) => notice(errorMessage(e), true));
+         // Detection only refreshed the catalogue while it ran, so a machine that never detected a
+         // game kept the built-in stand-in. Fetch it once at launch; it then refreshes weekly.
+         if (process.env["ACROCLIP_TEST"] !== "1") setTimeout(() => void recorder.gameCatalog().catch(() => undefined), 5000).unref();
          await collectionReady;
          const previousInstall = await updates.reviewPreviousInstall();
          if (previousInstall) notice(previousInstall, true);

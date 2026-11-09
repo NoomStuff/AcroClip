@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { rm, stat } from "node:fs/promises";
+import { rename, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import os from "node:os";
 import type { AudioTrack } from "../shared/types";
@@ -219,6 +219,69 @@ export async function probe(path: string, options: Pick<MediaOptions, "signal" |
    };
 }
 
+/** Frames in a hover strip: about one per second of footage, from 2 up to 48. */
+export function keyframeStripFrames(duration: number): number {
+   return Math.max(2, Math.min(48, Math.round(Number.isFinite(duration) ? duration : 0)));
+}
+/** Strips wrap into rows of this many frames, which keeps the image inside GPU texture limits. */
+export function keyframeStripColumns(frames: number): number {
+   return Math.min(frames, 8);
+}
+
+/**
+ * One image with evenly spaced frames in a grid, for scrubbing a thumbnail on hover. Only
+ * keyframes are read and decoded, so the cost follows the keyframe count, not the file size.
+ * A position between keyframes shows the keyframe before it, which is the frame a seek would
+ * land on first anyway.
+ */
+export async function createKeyframeStrip(source: string, output: string, duration: number, frames = keyframeStripFrames(duration)): Promise<void> {
+   if (!(duration > 0)) throw new Error("The clip has no duration to sample.");
+   const temporary = `${output}.partial.jpg`;
+   const columns = keyframeStripColumns(frames);
+   const make = (discard: boolean) =>
+      runMedia(
+         "ffmpeg",
+         [
+            ...ffmpegBase,
+            "-y",
+            // Dropping other packets in the demuxer skips reading most of the file.
+            ...(discard ? ["-discard", "nokey"] : []),
+            "-skip_frame",
+            "nokey",
+            "-threads",
+            "2",
+            "-i",
+            source,
+            "-map",
+            "0:v:0",
+            "-an",
+            // Each slot shows the keyframe at or before its start. Cloning the last keyframe
+            // past the end fills the final slots, which would otherwise flush as black padding.
+            "-vf",
+            `tpad=stop_mode=clone:stop_duration=${Math.ceil(duration)},fps=${(frames / duration).toFixed(6)}:round=down,scale=-2:240:flags=bilinear,tile=${columns}x${Math.ceil(frames / columns)}`,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "6",
+            "-filter_threads",
+            "1",
+            "-f",
+            "image2",
+            temporary,
+         ],
+         { belowNormal: true }
+      ).then(() => stat(temporary).then((info) => info.size > 0));
+   await rm(temporary, { force: true });
+   try {
+      // Some containers don't flag keyframes, so nothing survives the discard. Decoding finds them.
+      const made = await make(true).catch(() => false);
+      if (!made && !(await make(false))) throw new Error("No keyframes were decoded.");
+      await rename(temporary, output);
+   } finally {
+      await rm(temporary, { force: true }).catch(() => undefined);
+   }
+}
+
 /** Two-pass software encoding reserves audio/container overhead and never truncates the requested moment. */
 export async function encodeShareable(
    source: string,
@@ -279,5 +342,35 @@ export async function encodeShareable(
       belowNormal: true,
       duration: info.duration,
       onProgress: (fraction) => options.onProgress?.(0.45 + fraction * 0.5),
+   });
+}
+
+/**
+ * How loud each slice of the first audio track is, from 0 (silence, -60 dB or below) to 1 (full scale).
+ * Measured at 8 kHz mono, which keeps the work small while leaving the shape of the moment intact.
+ */
+export async function loudnessEnvelope(path: string, duration: number, buckets = 240, options: Pick<MediaOptions, "signal"> = {}): Promise<number[]> {
+   if (!(duration > 0)) return [];
+   const samples = Math.max(1, Math.ceil((8000 * duration) / buckets));
+   const output = await runMedia(
+      "ffmpeg",
+      [
+         ...ffmpegBase,
+         "-i",
+         path,
+         "-map",
+         "0:a:0",
+         "-vn",
+         "-af",
+         `aresample=8000,aformat=channel_layouts=mono,asetnsamples=n=${samples}:p=0,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-`,
+         "-f",
+         "null",
+         "-",
+      ],
+      { ...options, belowNormal: true }
+   );
+   return Array.from(output.matchAll(/RMS_level=(-?[\d.]+|-inf)/g), (match) => {
+      const level = match[1] === "-inf" ? -Infinity : Number(match[1]);
+      return Number.isFinite(level) ? Math.min(1, Math.max(0, (level + 60) / 60)) : 0;
    });
 }

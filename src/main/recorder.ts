@@ -28,6 +28,8 @@ import { resolveReplayMemoryMB } from "../shared/replay-memory";
 interface RecorderOptions {
    nativePath?: string;
    gameCatalogPath?: string;
+   /** Reaches the app log only: capture still works on the built-in list and added games. */
+   onCatalogWarning?: (message: string) => void;
    onState: (state: RecorderState) => void;
    onSaved: (
       file: string,
@@ -130,7 +132,7 @@ export class Recorder {
    private fastStatusUntil = 0;
    constructor(options: RecorderOptions) {
       this.options = options;
-      this.catalog = new GameCatalog(options.gameCatalogPath ?? path.join(process.cwd(), ".cache", "game-catalog.json"));
+      this.catalog = new GameCatalog(options.gameCatalogPath ?? path.join(process.cwd(), ".cache", "game-catalog.json"), options.onCatalogWarning);
       this.current.supported =
          (process.platform === "win32" || process.platform === "linux" || process.platform === "darwin") &&
          (existsSync(this.executable) || (!options.nativePath && existsSync(this.developmentExecutable)));
@@ -204,7 +206,14 @@ export class Recorder {
          };
       }
    }
+   /**
+    * The full catalogue for the Games page. Until one has been downloaded only the short built-in
+    * list exists, so that case waits for the download instead of showing the stand-in.
+    */
    async gameCatalog() {
+      const listed = await this.catalog.list();
+      if (listed.source === "built-in") await this.catalog.refresh();
+      else void this.catalog.refresh();
       return this.catalog.list();
    }
    async games(additions: CustomGame[] = []): Promise<GameCandidate[]> {

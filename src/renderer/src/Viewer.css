@@ -263,21 +263,86 @@
    padding-top: 8px;
 }
 .player-progress {
+   --loudness-rest: #ffffff;
+   --track-inset: 6px;
    display: block;
    position: relative;
-   height: 15px;
+   /* Above the video, which the grown hit area reaches into. */
+   z-index: 3;
+   height: 16px;
    cursor: pointer;
    touch-action: none;
 }
+/* While hovered the bar thickens and its hit area reaches well above and below, so following
+   the preview along the bar doesn't drop off it. */
+.player-progress:is(:hover, [data-hovering]) {
+   --track-inset: 4.5px;
+}
+.player-loudness {
+   position: absolute;
+   left: 0;
+   right: 0;
+   bottom: calc(100% - var(--track-inset));
+   height: 26px;
+   pointer-events: none;
+   opacity: 0;
+   transform: scaleY(0.4);
+   transform-origin: bottom;
+   transition:
+      opacity 200ms var(--ease),
+      transform 260ms var(--ease);
+}
+.player-progress:is(:hover, :active) .player-loudness,
+:root[data-keyboard] .player-progress:has(input:focus-visible) .player-loudness {
+   opacity: 1;
+   transform: none;
+}
+.player-loudness svg {
+   position: absolute;
+   inset: 0;
+   width: 100%;
+   height: 100%;
+   overflow: visible;
+}
+.player-loudness-line {
+   fill: none;
+   stroke: #ffffff3d;
+   stroke-width: 1.25px;
+   vector-effect: non-scaling-stroke;
+   stroke-linejoin: round;
+}
+.player-loudness svg.played {
+   clip-path: inset(-2px calc(100% - var(--played)) 0 0);
+}
+.player-loudness svg.played .player-loudness-line {
+   stroke: color-mix(in srgb, var(--accent) 70%, transparent);
+}
 .player-progress-track,
+.player-progress-hover,
 .player-progress-fill {
    position: absolute;
-   inset: 5px 0;
-   border-radius: 2.5px;
+   left: 0;
+   right: 0;
+   top: var(--track-inset);
+   bottom: var(--track-inset);
+   border-radius: 999px;
    pointer-events: none;
+   transition:
+      top 160ms var(--ease),
+      bottom 160ms var(--ease);
 }
 .player-progress-track {
    background: var(--line);
+}
+/* How far a click would jump, like a lighter fill up to the pointer. */
+.player-progress-hover {
+   right: auto;
+   width: var(--hovered);
+   background: #ffffff1c;
+   opacity: 0;
+}
+.player-progress[data-hovering] .player-progress-hover {
+   opacity: 1;
 }
 .player-progress-fill {
    right: auto;
@@ -300,13 +365,14 @@
 /* The same bouncy hover growth and grab squeeze as the other sliders. */
 .player-progress:hover > i,
 :root[data-keyboard] .player-progress:has(input:focus-visible) > i {
-   scale: 1.2;
+   scale: 1.25;
 }
 .player-progress:has(input:active:not(:disabled)) > i {
    scale: 0.95;
 }
 .player-progress input {
-   position: relative;
+   position: absolute;
+   inset: 0;
    display: block;
    opacity: 0;
    margin: 0;
@@ -314,10 +380,58 @@
    height: 100%;
    cursor: pointer;
 }
+.player-progress:is(:hover, [data-hovering]) input:not(:disabled) {
+   inset: -14px 0 -6px;
+   height: auto;
+}
 :root[data-keyboard] .player-progress:has(input:focus-visible) {
    outline: 2px solid var(--focus);
    outline-offset: 1px;
    border-radius: 3px;
+}
+/* A frame from the keyframe strip above the pointer, with the time it points at. */
+.player-preview {
+   position: absolute;
+   bottom: calc(100% + 14px);
+   z-index: 2;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   gap: 6px;
+   translate: -50% 0;
+   pointer-events: none;
+}
+.player-preview-frame {
+   display: none;
+   overflow: hidden;
+   border-radius: 8px;
+   background: #000;
+   box-shadow:
+      0 0 0 1px #ffffff1f,
+      0 8px 24px #000a;
+}
+.player-preview[data-ready] .player-preview-frame {
+   display: block;
+   animation: player-preview-in 140ms var(--ease);
+}
+.player-preview-frame canvas {
+   display: block;
+   width: 100%;
+   height: 100%;
+}
+.player-preview time {
+   padding: 2px 7px;
+   border-radius: 5px;
+   background: #090909e6;
+   color: var(--text);
+   font-size: 12px;
+   font-weight: 600;
+}
+@keyframes player-preview-in {
+   from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.97);
+   }
 }
 .player-control-row {
    min-height: 52px;
@@ -338,9 +452,34 @@
 .player-time time:last-child {
    color: var(--muted);
 }
+.player-time {
+   min-width: 0;
+}
+.player-time > .player-queue {
+   margin-left: 8px;
+   padding-left: 12px;
+   border-left: 1px solid var(--line);
+   overflow: hidden;
+   text-overflow: ellipsis;
+   color: var(--subtle);
+}
+.player-auto-advance.icon-button[aria-pressed="true"] {
+   color: var(--accent);
+}
 .player-playback {
    display: flex;
+   align-items: center;
    justify-content: center;
+   gap: 10px;
+}
+.player-skip-button.icon-button {
+   width: 32px;
+   height: 32px;
+   border-radius: 50%;
+   color: var(--muted);
+}
+.player-skip-button.icon-button:not(:disabled):hover {
+   color: var(--text);
 }
 .player-play-button.icon-button {
    width: 39px;

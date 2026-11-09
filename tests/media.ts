@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, copyFile, writeFile, readFile, rename, rm, stat, symlink, realpath, readdir, open } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -7,7 +8,16 @@ import { tmpdir } from "node:os";
 import sharp from "sharp";
 import { CollectionService, fileIdentity, withinRoot } from "../src/main/collection";
 import { PlaybackCache } from "../src/main/playback";
-import { createThumbnail, ffmpegBase, probe, runMedia } from "../src/main/media";
+import {
+   createKeyframeStrip,
+   createThumbnail,
+   ffmpegBase,
+   keyframeStripColumns,
+   keyframeStripFrames,
+   loudnessEnvelope,
+   probe,
+   runMedia,
+} from "../src/main/media";
 
 const workspace = await realpath(await mkdtemp(join(tmpdir(), "acroclip-media-")));
 const root = join(workspace, "collection");
@@ -138,6 +148,130 @@ try {
    await new CollectionService().open(migrationRoot);
    assert.equal((await stat(migratedThumbnail)).mtimeMs, generatedAt, "the migrated thumbnail is reused on reopen");
    assert.equal(await fileIdentity(migrationVideo), migrationIdentity, "thumbnail migration never modifies the video");
+
+   // Hover strips: one tile per keyframe slot, the keyframe before each position, never the source touched.
+   const migrationClip = migration.clips[0]!;
+   const strip = await migration.keyframeStrip(migrationClip.id);
+   assert.ok(strip, "a strip is made for an available clip");
+   assert.equal(strip.frames, keyframeStripFrames(5));
+   assert.equal(strip.columns, 5, "a short clip fits one row");
+   const stripFile = fileURLToPath(strip.url);
+   assert.ok(stripFile.includes(join(".acroclip", "thumbnails")), "strips live beside the thumbnails");
+   const stripInfo = await sharp(stripFile).metadata();
+   assert.equal(stripInfo.height, 240);
+   const tileWidth = Math.floor(stripInfo.width! / strip.columns);
+   assert.ok(Math.abs(tileWidth - 426) <= 2, `16:9 tiles, got ${tileWidth}px`);
+   const tile = async (index: number) => {
+      const output = join(migrationRoot, `tile-${index}.png`);
+      await sharp(stripFile)
+         .extract({ left: index * tileWidth + 8, top: 8, width: tileWidth - 16, height: 224 })
+         .toFile(output);
+      return output;
+   };
+   await checkColor(await tile(0), "red");
+   await checkColor(await tile(2), "red");
+   await checkColor(await tile(3), "blue");
+   // Black starts at 4.5 s, between keyframes, so the last slot still shows the 4 s keyframe.
+   await checkColor(await tile(4), "blue");
+   const stripMade = (await stat(stripFile)).mtimeMs;
+   assert.deepEqual(await migration.keyframeStrip(migrationClip.id), strip, "a second hover reuses the strip");
+   assert.equal((await stat(stripFile)).mtimeMs, stripMade);
+   assert.equal(await fileIdentity(migrationVideo), migrationIdentity, "making a strip never modifies the video");
+
+   // Longer clips wrap into rows: 12 frames in rows of 8, red for 6 s, then blue.
+   const wrapped = join(thumbnailRoot, "wrapped.mp4");
+   await runMedia("ffmpeg", [
+      ...ffmpegBase,
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=red:s=320x180:r=10:d=6",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=blue:s=320x180:r=10:d=6",
+      "-filter_complex",
+      "[0:v][1:v]concat=n=2:v=1:a=0",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-g",
+      "10",
+      wrapped,
+   ]);
+   const wrappedStrip = join(thumbnailRoot, "wrapped-strip.jpg");
+   const wrappedFrames = keyframeStripFrames(12);
+   assert.equal(wrappedFrames, 12);
+   assert.equal(keyframeStripColumns(wrappedFrames), 8);
+   await createKeyframeStrip(wrapped, wrappedStrip, 12, wrappedFrames);
+   const wrappedInfo = await sharp(wrappedStrip).metadata();
+   assert.equal(wrappedInfo.height, 480, "two rows of 240 px");
+   const cell = async (index: number) => {
+      const output = join(thumbnailRoot, `cell-${index}.png`);
+      const width = Math.floor(wrappedInfo.width! / 8);
+      await sharp(wrappedStrip)
+         .extract({ left: (index % 8) * width + 8, top: Math.floor(index / 8) * 240 + 8, width: width - 16, height: 224 })
+         .toFile(output);
+      return output;
+   };
+   await checkColor(await cell(5), "red");
+   await checkColor(await cell(6), "blue");
+   await checkColor(await cell(8), "blue");
+   await checkColor(await cell(11), "blue");
+
+   // The background fill prepares every clip's strip after a scan and clears strips nothing owns.
+   const fillRoot = join(workspace, "strip-fill");
+   const fillStrips = join(fillRoot, ".acroclip", "thumbnails");
+   await mkdir(fillStrips, { recursive: true });
+   await copyFile(colored, join(fillRoot, "Short.mp4"));
+   await copyFile(wrapped, join(fillRoot, "Wrapped.mp4"));
+   const orphan = join(fillStrips, `${"a".repeat(64)}.keyframes-v2-5.jpg`);
+   const outdated = join(fillStrips, `${await fileIdentity(colored)}.keyframes-v1-5.jpg`);
+   const unrelated = join(fillStrips, "notes.jpg");
+   for (const file of [orphan, outdated, unrelated]) await writeFile(file, "old strip");
+   const filling = new CollectionService({ backgroundStrips: true });
+   await filling.open(fillRoot);
+   const expected = [`${await fileIdentity(colored)}.keyframes-v2-5.jpg`, `${await fileIdentity(wrapped)}.keyframes-v2-12.jpg`];
+   const fillStarted = Date.now();
+   while (!expected.every((name) => existsSync(join(fillStrips, name)))) {
+      assert.ok(Date.now() - fillStarted < 60_000, "the fill makes a strip for every clip");
+      await delay(200);
+   }
+   assert.ok(!existsSync(orphan) && !existsSync(outdated), "strips for unknown files and old layouts are removed");
+   assert.ok(existsSync(unrelated), "other files in the folder are left alone");
+   const filledTile = join(fillRoot, "first-tile.png");
+   await sharp(join(fillStrips, expected[1]!)).extract({ left: 8, top: 8, width: 400, height: 224 }).toFile(filledTile);
+   await checkColor(filledTile, "red");
+
+   // Loudness follows the actual audio: quiet, a burst from 2 to 3 seconds, quiet again.
+   const burst = join(thumbnailRoot, "burst.mp4");
+   await runMedia("ffmpeg", [
+      ...ffmpegBase,
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=red:s=160x90:r=10:d=5",
+      "-f",
+      "lavfi",
+      "-i",
+      "aevalsrc='0.01*sin(2*PI*200*t)+if(between(t,2,3),0.8*sin(2*PI*440*t),0)':s=48000:d=5",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-c:a",
+      "aac",
+      "-shortest",
+      burst,
+   ]);
+   const levels = await loudnessEnvelope(burst, 5, 50);
+   assert.ok(levels.length >= 48 && levels.length <= 51, `about one level per bucket, got ${levels.length}`);
+   const loudest = levels.indexOf(Math.max(...levels));
+   assert.ok(loudest >= 19 && loudest <= 30, `the burst peaks between 2 and 3 s, got bucket ${loudest}`);
+   assert.ok(levels[5]! < levels[loudest]! - 0.3 && levels[40]! < levels[loudest]! - 0.3, "quiet stretches stay low");
    await runMedia("ffmpeg", [
       ...ffmpegBase,
       "-y",
@@ -685,7 +819,7 @@ try {
    await mergeReopened.open(mergeRoot);
    assert.equal(mergeReopened.clips.find((entry) => entry.id === newerId)?.mergedFrom, 2, "merge details survive reopening");
    console.log(
-      "Media verification passed: last-keyframe thumbnails and cache migration, real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, deletion boundaries, and lossless merging of overlapping saves."
+      "Media verification passed: last-keyframe thumbnails and cache migration, keyframe hover strips, loudness envelopes, real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, deletion boundaries, and lossless merging of overlapping saves."
    );
 } finally {
    assert.ok(withinRoot(await realpath(tmpdir()), workspace), "test cleanup stays within isolated temporary workspace");

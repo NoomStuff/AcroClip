@@ -22,10 +22,26 @@ import { CategoryEditor, CategoryMark } from "./CategoryEditor";
 import { categoryStyle } from "./category-color";
 import { usePlaybackFade } from "./usePlaybackFade";
 import { mediaAudioTracks, nativeAudioTracks, selectAudioTracks } from "./audio-tracks";
+import { restartThreshold } from "./play-queue";
+import type { QueuePosition } from "./play-queue";
+import { startWatch, watchEvent, watchSeek, watchTick } from "./view-stats";
+import type { WatchSession } from "./view-stats";
+
+const autoAdvanceKey = "acroclip.player.autoAdvance";
+function readAutoAdvance(): boolean {
+   try {
+      return localStorage.getItem(autoAdvanceKey) === "true";
+   } catch {
+      return false;
+   }
+}
 
 export function Viewer({
    state,
    clip,
+   queue,
+   autoplay,
+   stepClip,
    visible,
    run,
    openLibrary,
@@ -33,6 +49,9 @@ export function Viewer({
 }: {
    state: Pick<AppState, "applicationIcons" | "jobs" | "preferences" | "categories">;
    clip: Clip | undefined;
+   queue: QueuePosition | null;
+   autoplay: boolean;
+   stepClip: (clip: Clip, play: boolean) => void;
    visible: boolean;
    run: Run;
    openLibrary: () => void;
@@ -82,6 +101,67 @@ export function Viewer({
    const currentUrl = useRef("");
    const resume = useRef(false);
    const previousClip = useRef<string | undefined>(undefined);
+   const autoplayRef = useRef(autoplay);
+   useLayoutEffect(() => {
+      autoplayRef.current = autoplay;
+   }, [autoplay]);
+   const [autoAdvance, setAutoAdvance] = useState(readAutoAdvance);
+   const changeAutoAdvance = useCallback((value: boolean) => {
+      setAutoAdvance(value);
+      try {
+         localStorage.setItem(autoAdvanceKey, String(value));
+      } catch {
+         /* The toggle still works for this session. */
+      }
+   }, []);
+   // Previous restarts a clip that has been playing for a moment, like a music player.
+   const stepBack = useCallback(() => {
+      const media = video.current;
+      if (media && (media.currentTime > restartThreshold || !queue?.previous)) {
+         media.currentTime = 0;
+         seek.current = 0;
+         setTime(0);
+         return;
+      }
+      if (queue?.previous) stepClip(queue.previous, !!media && !media.paused);
+   }, [queue?.previous, stepClip]);
+   const stepForward = useCallback(() => {
+      if (queue?.next) stepClip(queue.next, !!video.current && !video.current.paused);
+   }, [queue?.next, stepClip]);
+   // Media keys step through the queue too, while this player has the media session.
+   useEffect(() => {
+      if (!visible || !("mediaSession" in navigator)) return;
+      const session = navigator.mediaSession;
+      session.setActionHandler("previoustrack", stepBack);
+      session.setActionHandler("nexttrack", queue?.next ? stepForward : null);
+      return () => {
+         session.setActionHandler("previoustrack", null);
+         session.setActionHandler("nexttrack", null);
+      };
+   }, [visible, stepBack, stepForward, queue?.next]);
+   // One watch session per clip while the player shows it, recorded when it ends.
+   const watch = useRef<WatchSession | null>(null);
+   const watchedClip = clip?.id;
+   const watchedDuration = clip?.duration ?? 0;
+   useEffect(() => {
+      if (!visible || !watchedClip) return;
+      const finish = () => {
+         const event = watch.current && watchEvent(watch.current);
+         watch.current = null;
+         if (event) void api.recordView(event).catch(() => undefined);
+      };
+      watch.current = startWatch(watchedClip, watchedDuration);
+      const hidden = () => {
+         if (document.visibilityState !== "hidden") return;
+         finish();
+         watch.current = startWatch(watchedClip, watchedDuration);
+      };
+      document.addEventListener("visibilitychange", hidden);
+      return () => {
+         document.removeEventListener("visibilitychange", hidden);
+         finish();
+      };
+   }, [visible, watchedClip, watchedDuration]);
    const shareable = clip?.shareables.find((item) => item.id === shareId) ?? clip?.shareables.at(-1);
    const path = version === "shareable" ? shareable?.path : clip?.path;
    // Files the player failed to decode, and files whose audio tracks it can't toggle. Both
@@ -111,6 +191,20 @@ export function Viewer({
    }, [playbackIdentity, urlGeneration]);
    const ownsMedia = (media: HTMLVideoElement) =>
       visible && urlOwner === currentPlayback.current.identity && urlGeneration === currentPlayback.current.generation && media.currentSrc === url;
+   // The envelope describes the original's first track, which every version shares in shape.
+   const [loudness, setLoudness] = useState<{ path: string; levels: number[] } | null>(null);
+   const clipPath = clip?.originalMissing ? undefined : clip?.path;
+   useEffect(() => {
+      if (!clipPath || !visible || loudness?.path === clipPath) return;
+      let current = true;
+      void api.loudness(clipPath).then(
+         (levels) => current && setLoudness({ path: clipPath, levels }),
+         () => current && setLoudness({ path: clipPath, levels: [] })
+      );
+      return () => {
+         current = false;
+      };
+   }, [clipPath, visible, loudness?.path]);
    const fade = usePlaybackFade(video, playbackIdentity, url, urlOwner === playbackIdentity, visible, urlGeneration);
    const targetAllowed = shareableTargetAllowed(clip?.size ?? 0, override ? target : state.preferences.shareSizeMB);
    const job = state.jobs.find((item) => item.clipId === clip?.id && item.kind === "shareable" && ["queued", "running"].includes(item.state));
@@ -118,7 +212,8 @@ export function Viewer({
       if (previousClip.current !== clip?.id) {
          previousClip.current = clip?.id;
          seek.current = 0;
-         resume.current = false;
+         // Stepping through a queue while playing keeps playing.
+         resume.current = autoplayRef.current;
          setTime(0);
          setVersion(clip?.originalMissing ? "shareable" : "original");
          window.clearTimeout(mixDelay.current);
@@ -241,6 +336,8 @@ export function Viewer({
          } else if (id === "seekBack") node.currentTime = Math.max(0, node.currentTime - 5);
          else if (id === "seekForward" && Number.isFinite(node.duration)) node.currentTime = Math.min(node.duration, node.currentTime + 5);
          else if (id === "mutePlayback") toggleMute();
+         else if (id === "previousClip") stepBack();
+         else if (id === "nextClip") stepForward();
          else if (id === "fullscreen" && player.current)
             void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()));
          else if (id === "createShareable" && targetAllowed && !clip.originalMissing && !job)
@@ -258,7 +355,7 @@ export function Viewer({
       };
       window.addEventListener("acroclip-shortcut", command);
       return () => window.removeEventListener("acroclip-shortcut", command);
-   }, [visible, clip, override, target, path, run, targetAllowed, job, toggleMute, version, shareable]);
+   }, [visible, clip, override, target, path, run, targetAllowed, job, toggleMute, version, shareable, stepBack, stepForward]);
    // A clip counts as viewed once it is on screen, which keeps a later save from merging it away.
    const clipId = clip?.id;
    useEffect(() => {
@@ -570,7 +667,9 @@ export function Viewer({
                      onTimeUpdate={(event) => {
                         if (switching.current || !ownsMedia(event.currentTarget)) return;
                         seek.current = event.currentTarget.currentTime;
+                        if (watch.current && !event.currentTarget.paused) watchTick(watch.current, event.currentTarget.currentTime);
                      }}
+                     onSeeking={() => watch.current && watchSeek(watch.current)}
                      onPlay={(event) => {
                         if (ownsMedia(event.currentTarget)) setPlaying(true);
                      }}
@@ -579,8 +678,10 @@ export function Viewer({
                      }}
                      onEnded={(event) => {
                         if (!ownsMedia(event.currentTarget)) return;
+                        if (watch.current) watchTick(watch.current, event.currentTarget.currentTime);
                         resume.current = false;
                         setPlaying(false);
+                        if (autoAdvance && queue?.next) stepClip(queue.next, true);
                      }}
                      onError={(event) => {
                         if (!ownsMedia(event.currentTarget)) return;
@@ -637,6 +738,15 @@ export function Viewer({
                disabled={!url || loading}
                fullscreen={fullscreen}
                onToggle={toggle}
+               previousTitle={queue?.previous?.name}
+               nextTitle={queue?.next?.name}
+               queueLabel={queue && queue.total > 1 ? `${queue.label} · ${queue.index + 1} of ${queue.total}` : ""}
+               autoAdvance={autoAdvance}
+               onAutoAdvance={changeAutoAdvance}
+               onPrevious={stepBack}
+               onNext={stepForward}
+               loudness={loudness && loudness.path === clipPath ? loudness.levels : undefined}
+               preview={clip}
                onSeek={(next) => {
                   if (video.current) video.current.currentTime = next;
                   setTime(next);

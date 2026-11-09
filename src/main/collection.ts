@@ -10,7 +10,7 @@ import type { ApplicationArtwork } from "../shared/types";
 import type { Category, Clip, FolderContents, Job, Shareable } from "../shared/types";
 import { collectionFolder, folderContents, folderName } from "./collection-folders";
 import { normalizeApplicationLabel } from "./application-identity";
-import { createThumbnail, encodeShareable, probe } from "./media";
+import { createKeyframeStrip, createThumbnail, encodeShareable, keyframeStripColumns, keyframeStripFrames, probe } from "./media";
 import type { MediaInfo } from "./media";
 import { PlaybackCache } from "./playback";
 import { mapConcurrent } from "./concurrent";
@@ -18,6 +18,15 @@ import { mergeClips } from "./clip-merge";
 import type { MergeResult } from "./clip-merge";
 
 const categorySchema = z.object({ id: z.string(), name: z.string(), color: z.string(), icon: z.string().max(80).optional() });
+/** A grid of evenly spaced frames, read left to right, then top to bottom. */
+export type KeyframeStrip = { url: string; frames: number; columns: number };
+type StripJob = {
+   order: number;
+   started: boolean;
+   promise: Promise<KeyframeStrip | null>;
+   run: () => Promise<KeyframeStrip | null>;
+   settle: (result: Promise<KeyframeStrip | null>) => void;
+};
 const thumbnailName = (identity: string) => `${identity}.last-keyframe-v1.jpg`;
 const fileSchema = z.object({ relativePath: z.string(), absolutePath: z.string(), identity: z.string() });
 const shareSchema = fileSchema.extend({
@@ -166,6 +175,8 @@ export interface CollectionOptions {
    onWarning?: (message: string, level: "log" | "warning" | "error") => void;
    mediaUrl?: (path: string) => string;
    scanConcurrency?: () => number;
+   /** Prepare hover strips for the whole library after scans. The app turns this on; tests don't. */
+   backgroundStrips?: boolean;
 }
 export class CollectionService {
    root = "";
@@ -201,6 +212,14 @@ export class CollectionService {
    private identities = new Map<string, { stamp: string; identity: string }>();
    private writtenMetadata: { snapshot: string; stamp: string } | undefined;
    private automaticJobs = new Set<string>();
+   // Hover strips are made one at a time, so sweeping across the library never starts a burst of
+   // decoders. The newest request goes first: it is the clip under the pointer.
+   private stripJobs = new Map<string, StripJob>();
+   private stripOrder = 0;
+   private stripWorking = false;
+   private stripFill: ReturnType<typeof setTimeout> | undefined;
+   // Failed strips aren't retried by the background fill until the app restarts. A hover still tries.
+   private stripFailed = new Set<string>();
    private activeMerges = new Set<string>();
    constructor(options: CollectionOptions = {}) {
       this.options = options;
@@ -254,6 +273,125 @@ export class CollectionService {
    }
    private url(path: string) {
       return this.options.mediaUrl?.(path) ?? pathToFileURL(path).href;
+   }
+   /**
+    * The keyframe strip for scrubbing a clip's thumbnail, made on first request and kept beside
+    * the thumbnail under the same file identity. Null when the original is unavailable.
+    */
+   keyframeStrip(id: string): Promise<KeyframeStrip | null> {
+      return this.requestStrip(this.visible(id), this.stored(id), ++this.stripOrder, true);
+   }
+   private stripFile(identity: string, duration: number) {
+      return join(this.root, ".acroclip", "thumbnails", `${identity}.keyframes-v2-${keyframeStripFrames(duration)}.jpg`);
+   }
+   /**
+    * Queues a strip at a priority: hovers count up from 1, the background fill sits below every
+    * hover, newest clips first. A hover on a queued clip moves it to the front.
+    */
+   private async requestStrip(clip: Clip, stored: StoredClip, order: number, existing: boolean): Promise<KeyframeStrip | null> {
+      if (clip.originalMissing || !(clip.duration > 0)) return null;
+      const frames = keyframeStripFrames(clip.duration);
+      const root = this.root;
+      const output = this.stripFile(stored.identity, clip.duration);
+      const strip: KeyframeStrip = { url: this.url(output), frames, columns: keyframeStripColumns(frames) };
+      const pending = this.stripJobs.get(output);
+      if (pending) {
+         pending.order = Math.max(pending.order, order);
+         return pending.promise;
+      }
+      // A strip made earlier never waits behind one being made now.
+      if (
+         existing &&
+         (await stat(output).then(
+            (info) => info.size > 0,
+            () => false
+         ))
+      )
+         return strip;
+      let settle!: (result: Promise<KeyframeStrip | null>) => void;
+      const promise = new Promise<KeyframeStrip | null>((resolve) => (settle = resolve));
+      this.stripJobs.set(output, {
+         order,
+         started: false,
+         promise,
+         run: async () => {
+            const source = await this.resolveFile(stored);
+            if (!source || this.root !== root) return null;
+            await this.safeDirectory(dirname(output));
+            await createKeyframeStrip(source, output, clip.duration, frames);
+            return strip;
+         },
+         settle,
+      });
+      void this.makeStrips();
+      return promise;
+   }
+   /** After each scan settles, so a save or a burst of file changes starts one fill, not many. */
+   private scheduleStripFill() {
+      if (!this.options.backgroundStrips) return;
+      clearTimeout(this.stripFill);
+      this.stripFill = setTimeout(
+         () => void this.fillStrips().catch((error: unknown) => this.warn(`Hover previews could not be prepared: ${message(error)}`, "log")),
+         3000
+      );
+      this.stripFill.unref?.();
+   }
+   /**
+    * Makes strips for every clip that lacks one, newest first, so hovering and seeking rarely
+    * wait. Strips left behind by deleted or replaced files are removed.
+    */
+   private async fillStrips(): Promise<void> {
+      const root = this.root;
+      if (!root || this.phase !== "ready" || this.scanRetryNeeded) return;
+      const directory = join(root, ".acroclip", "thumbnails");
+      const names = new Set(await readdir(directory).catch(() => [] as string[]));
+      if (root !== this.root) return;
+      // Clips whose file is offline still own their strips; only a forgotten identity lets one go.
+      const known = new Set(this.metadata.clips.map((stored) => stored.identity));
+      for (const name of names) {
+         const match = /^([a-f0-9]{64})\.keyframes-v(\d+)-\d+\.jpg$/i.exec(name);
+         if (match && (!known.has(match[1]!) || match[2] !== "2")) await rm(join(directory, name), { force: true }).catch(() => undefined);
+      }
+      for (const clip of this.clips) {
+         const stored = this.metadata.clips.find((item) => item.id === clip.id);
+         if (!stored || clip.originalMissing || !(clip.duration > 0)) continue;
+         const output = this.stripFile(stored.identity, clip.duration);
+         if (names.has(basename(output)) || this.stripFailed.has(output)) continue;
+         // Below every hover, which count up from 1. Newer clips come first.
+         void this.requestStrip(clip, stored, clip.createdAt - 1e13, false).then(
+            (strip) => strip || this.stripFailed.add(output),
+            (error: unknown) => {
+               this.stripFailed.add(output);
+               this.warn(`Hover preview unavailable for ${clip.name}: ${message(error)}`, "log");
+            }
+         );
+      }
+   }
+   private async makeStrips(): Promise<void> {
+      if (this.stripWorking) return;
+      this.stripWorking = true;
+      try {
+         for (;;) {
+            let next: [string, StripJob] | undefined;
+            for (const entry of this.stripJobs) if (!entry[1].started && (!next || entry[1].order > next[1].order)) next = entry;
+            if (!next) return;
+            const [output, job] = next;
+            job.started = true;
+            const result = job.run();
+            job.settle(result);
+            await result.catch(() => undefined);
+            this.stripJobs.delete(output);
+         }
+      } finally {
+         this.stripWorking = false;
+      }
+   }
+   /** Usage history lives next to the collection info, so it moves with the clips. */
+   async statsDirectory(root: string): Promise<string> {
+      if (root !== this.root) throw new Error("The collection changed before stats were written.");
+      const directory = join(root, ".acroclip", "stats");
+      await this.safeDirectory(directory);
+      return directory;
    }
    private metaPath() {
       return join(this.root, ".acroclip", "collection.json");
@@ -648,6 +786,7 @@ export class CollectionService {
             (clips) => {
                this.scanned = true;
                this.phase = "ready";
+               this.scheduleStripFill();
                return clips;
             },
             (error: unknown) => {
@@ -1323,6 +1462,10 @@ export class CollectionService {
          });
       this.queue = operation;
       await operation;
+   }
+   /** Made by "Create shareables automatically" rather than on request. */
+   automaticShareable(clipId: string, shareableId: string): boolean {
+      return !!this.metadata.clips.find((clip) => clip.id === clipId)?.shareables.find((share) => share.id === shareableId)?.automatic;
    }
    cancelJob(id: string): void {
       this.controllers.get(id)?.abort();

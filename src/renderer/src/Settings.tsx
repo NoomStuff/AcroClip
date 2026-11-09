@@ -21,6 +21,8 @@ import {
    Power,
    Scissors,
    Volume2,
+   History,
+   Trash2,
 } from "lucide-react";
 import type { AppState, OverlapClips, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
@@ -30,10 +32,11 @@ import { MotionList } from "./MotionList";
 import { HeaderActions, Button, Select } from "./ui";
 import { PresetNumberInput } from "./PresetNumberInput";
 import { Field, Toggle } from "./SettingsControls";
-import { api } from "./desktop";
+import { api, reportFeedback } from "./desktop";
+import type { Ask } from "./Dialog";
 import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
-import { shortcutRegistry, shortcutGroup, bindingFor, shortcutClashes, shortcutConflict } from "../../shared/shortcuts";
+import { shortcutRegistry, shortcutGroup, bindingFor, shortcutClashes, shortcutConflict, formatBinding } from "../../shared/shortcuts";
 import { ShortcutInput } from "./ShortcutInput";
 import { GameManagement } from "./GameManagement";
 import { PaneDivider, usePaneSize } from "./layout";
@@ -139,17 +142,21 @@ function FilenameEditor({
    );
 }
 export interface SettingsTarget {
-   section: "collection" | "games";
+   section: "collection" | "games" | "shortcuts";
    request: number;
 }
 export function Settings({
    state,
    run,
+   ask,
    target,
+   showShortcuts,
 }: {
    state: Pick<AppState, "preferences" | "recorder" | "jobs" | "update" | "version" | "platform">;
    run: Run;
+   ask: Ask;
    target: SettingsTarget | null;
+   showShortcuts: () => void;
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const content = useRef<HTMLDivElement>(null);
@@ -214,7 +221,7 @@ export function Settings({
    }, [target, setSection]);
    useLayoutEffect(() => {
       if (!target || section !== target.section || target.request === handledNavigationRequest.current) return;
-      const element = target.section === "collection" ? collectionFolder.current : gameSearch.current;
+      const element = target.section === "collection" ? collectionFolder.current : target.section === "games" ? gameSearch.current : null;
       if (!element) return;
       handledNavigationRequest.current = target.request;
       element.scrollIntoView({ block: "center" });
@@ -332,6 +339,15 @@ export function Settings({
                   )}
                   {section === "shortcuts" && (
                      <>
+                        <section className="settings-group">
+                           <Field
+                              icon={Keyboard}
+                              label="Shortcut sheet"
+                              detail={`Every shortcut on one screen. Press ${formatBinding(bindingFor(draft, "shortcutHelp"), state.platform === "darwin")} to open it from anywhere.`}
+                           >
+                              <Button onClick={showShortcuts}>Show all</Button>
+                           </Field>
+                        </section>
                         {[
                            {
                               title: "Capture",
@@ -507,6 +523,32 @@ export function Settings({
                               checked={draft.autoRecord}
                               onChange={(value) => change("autoRecord", value)}
                            />
+                        </section>
+                        <section className="settings-group">
+                           <h2>History</h2>
+                           <p className="section-description">
+                              Views, saves, shares and capture time, kept in the collection's .acroclip folder for statistics. It never leaves your computer.
+                           </p>
+                           <Toggle icon={History} label="Keep a usage history" checked={draft.stats} onChange={(value) => change("stats", value)} />
+                           <Field icon={Trash2} label="Clear history" detail="Removes this collection's history. Clips, tags and shareables stay.">
+                              <Button
+                                 onClick={() =>
+                                    void run(async () => {
+                                       const confirmed = await ask({
+                                          title: "Clear usage history?",
+                                          detail: "Statistics for this collection start over. This can't be undone.",
+                                          confirm: "Clear history",
+                                          danger: true,
+                                       });
+                                       if (!confirmed) return;
+                                       await api.clearStats();
+                                       reportFeedback({ kind: "notice", message: "Usage history cleared", error: false });
+                                    })
+                                 }
+                              >
+                                 Clear
+                              </Button>
+                           </Field>
                         </section>
                         <section className="settings-group">
                            <h2>Updates</h2>

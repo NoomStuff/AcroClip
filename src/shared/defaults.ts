@@ -35,6 +35,7 @@ export const defaultPreferences: Preferences = {
    autoRecord: false,
    notifications: "everywhere",
    sound: true,
+   stats: true,
    overlapClips: "keep",
    folderLayout: "flat",
    filenamePreset: "source-date",

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { defaultPreferences } from "./defaults";
 import { preferencesSchema } from "./validation";
-import { bindingFor, normalizeBinding, shortcutConflict, shortcutClashes, eventBinding } from "./shortcuts";
+import { bindingFor, normalizeBinding, shortcutConflict, shortcutClashes, eventBinding, physicalBinding } from "./shortcuts";
 describe("shortcut defaults and conflicts", () => {
    it("defaults to Alt+C for saving with no recording shortcut", () => {
       expect(bindingFor(defaultPreferences, "saveClip")).toBe("Alt+C");
@@ -36,5 +36,11 @@ describe("shortcut defaults and conflicts", () => {
       const altGraph = { code: "KeyT", key: "Þ", ctrlKey: false, metaKey: false, altKey: false, shiftKey: true };
       expect(eventBinding({ ...altGraph, getModifierState: (key) => key === "AltGraph" })).toBe("Control+Alt+Shift+T");
       expect(eventBinding(altGraph, new Set(["Control", "Alt"]))).toBe("Control+Alt+Shift+T");
+   });
+   it("matches punctuation by position, so Ctrl+/ works where / needs Shift", () => {
+      const german = { code: "Slash", key: "-", ctrlKey: true, metaKey: false, altKey: false, shiftKey: false };
+      expect(eventBinding(german as KeyboardEvent)).toBe("Control+-");
+      expect(normalizeBinding(physicalBinding(german)!, false)).toBe(normalizeBinding(bindingFor(defaultPreferences, "shortcutHelp"), false));
+      expect(physicalBinding({ code: "KeyA", ctrlKey: true, metaKey: false, altKey: false, shiftKey: false })).toBeNull();
    });
 });

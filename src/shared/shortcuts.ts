@@ -8,6 +8,7 @@ export const shortcutRegistry = [
    { id: "library", label: "Library page", scope: "local", page: "all", binding: "CommandOrControl+2" },
    { id: "viewer", label: "Player page", scope: "local", page: "all", binding: "CommandOrControl+3" },
    { id: "settings", label: "Settings page", scope: "local", page: "all", binding: "CommandOrControl+," },
+   { id: "shortcutHelp", label: "Show shortcuts", scope: "local", page: "all", binding: "CommandOrControl+/" },
    { id: "search", label: "Search clips", scope: "local", page: "library", binding: "CommandOrControl+F" },
    { id: "newCategory", label: "New tag", scope: "local", page: "all", group: "library", binding: "CommandOrControl+N" },
    { id: "newFolder", label: "New folder", scope: "local", page: "all", group: "library", binding: "CommandOrControl+Shift+N" },
@@ -16,6 +17,8 @@ export const shortcutRegistry = [
    { id: "playPause", label: "Play / pause", scope: "local", page: "viewer", binding: "Space" },
    { id: "seekBack", label: "Seek back 5 seconds", scope: "local", page: "viewer", binding: "Left" },
    { id: "seekForward", label: "Seek forward 5 seconds", scope: "local", page: "viewer", binding: "Right" },
+   { id: "previousClip", label: "Previous clip", scope: "local", page: "viewer", binding: "PageUp" },
+   { id: "nextClip", label: "Next clip", scope: "local", page: "viewer", binding: "PageDown" },
    { id: "mutePlayback", label: "Mute playback", scope: "local", page: "viewer", binding: "M" },
    { id: "fullscreen", label: "Fullscreen playback", scope: "local", page: "viewer", binding: "F" },
    { id: "createShareable", label: "Create shareable", scope: "local", page: "viewer", binding: "CommandOrControl+E" },
@@ -94,6 +97,29 @@ export function eventBinding(event: BindingEvent, held: ReadonlySet<ShortcutModi
    ]
       .filter(Boolean)
       .join("+");
+}
+// US-layout symbols for punctuation keys, by physical position.
+const physicalSymbols: Record<string, string> = {
+   Slash: "/",
+   Backslash: "\\",
+   Comma: ",",
+   Period: ".",
+   Semicolon: ";",
+   Quote: "'",
+   BracketLeft: "[",
+   BracketRight: "]",
+   Minus: "-",
+   Equal: "=",
+   Backquote: "`",
+};
+/**
+ * The binding for a punctuation key by its position on a US layout, or null for other keys.
+ * On layouts where / needs Shift, the key in the US / position still opens Ctrl+/ shortcuts.
+ */
+export function physicalBinding(event: Pick<KeyboardEvent, "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): string | null {
+   const symbol = physicalSymbols[event.code];
+   if (!symbol) return null;
+   return [event.ctrlKey && "Control", event.metaKey && "Command", event.altKey && "Alt", event.shiftKey && "Shift", symbol].filter(Boolean).join("+");
 }
 export function formatBinding(value: string, mac: boolean): string {
    return value
