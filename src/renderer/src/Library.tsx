@@ -65,6 +65,7 @@ import type { LibraryGrouping } from "./library-groups";
 import { readFoldedGroups, readLibraryView, storeFoldedGroups, storeLibraryView } from "./library-view";
 import { LibraryViewMenu } from "./LibraryViewMenu";
 import { LibrarySection } from "./LibrarySection";
+import type { PlayQueue } from "./play-queue";
 
 export function Library({
    state,
@@ -79,7 +80,7 @@ export function Library({
    visible?: boolean;
    run: Run;
    ask: Ask;
-   openClip: (clip: Clip) => void;
+   openClip: (clip: Clip, queue?: PlayQueue) => void;
    openSettings: () => void;
    openGames: () => void;
 }) {
@@ -430,6 +431,9 @@ export function Library({
       [view, gridMetrics.width, thumbnailSizes, childFolders, groups, shownClips]
    );
    const captureLayout = useGridMotion(grid, layoutSignature, visible, JSON.stringify([collectionRoot, filter]), view, view === "list" && listSizing);
+   // Opening a clip hands the player this view as its queue: the same filter, search, sort and folds.
+   const playQueue = useRef<PlayQueue>({ ids: [], label: "" });
+   const openFromView = useCallback((clip: Clip) => openClip(clip, playQueue.current), [openClip]);
    const renderClip = (clip: Clip) => (
       <ClipCard
          createTag={createCategory}
@@ -446,7 +450,7 @@ export function Library({
          contextRequest={contextMenu?.clipId === clip.id ? contextMenu : undefined}
          requestMenu={requestMenu}
          closeMenu={closeMenu}
-         openClip={openClip}
+         openClip={openFromView}
          categories={state.categories}
          moveClip={moveClip}
          run={run}
@@ -459,6 +463,10 @@ export function Library({
          : folderPath !== null
            ? folderPath.split("/").at(-1) || folderName(collectionRoot)
            : (selectedCategory?.name ?? sources.find((source) => `source:${source.id}` === filter)?.name ?? filter.slice(filter.indexOf(":") + 1));
+   const viewLabel = query.trim() ? `"${query.trim()}" in ${heading}` : heading;
+   useLayoutEffect(() => {
+      playQueue.current = { ids: shownClips.map((clip) => clip.id), label: viewLabel };
+   }, [shownClips, viewLabel]);
    const [editingCategory, setEditingCategory] = useState<Category | "new" | null>(null);
    const createCategory = useCallback(() => {
       setCollapsedSections((current) => current.filter((id) => id !== "tags"));
@@ -496,7 +504,7 @@ export function Library({
          else if (id === "newCategory") setEditingCategory("new");
          else if (id === "newFolder") void createFolder(folderPath ?? "");
          else if (id === "newFolderRoot") void createFolder("");
-         else if (id === "openClip" && shownClips[0]) openClip(shownClips[0]);
+         else if (id === "openClip" && shownClips[0]) openFromView(shownClips[0]);
          else if (id === "copyClipFile") {
             // Selected text keeps its usual copy.
             if (window.getSelection()?.toString()) return;
@@ -512,7 +520,7 @@ export function Library({
       };
       window.addEventListener("acroclip-shortcut", command);
       return () => window.removeEventListener("acroclip-shortcut", command);
-   }, [clips, shownClips, openClip, createFolder, folderPath, run]);
+   }, [clips, shownClips, openFromView, createFolder, folderPath, run]);
    const renameFolder = async (path: string) => {
       const name = await ask({ title: "Rename folder", initial: path.split("/").at(-1)!, confirm: "Rename" });
       if (typeof name !== "string" || !name) return;

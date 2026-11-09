@@ -1,5 +1,6 @@
 import type { AudioFilter } from "./audio-filters";
 import type { ShortcutBindings } from "./shortcuts";
+import type { ViewEvent } from "./stats";
 export type SourceKind = "screen" | "app" | "auto";
 export interface ApplicationArtwork {
    id: string;
@@ -107,6 +108,8 @@ export interface Preferences {
    autoRecord: boolean;
    notifications: "everywhere" | "outside-fullscreen" | "off";
    sound: boolean;
+   // Keep a local history of views, saves and shares for statistics. It never leaves the collection.
+   stats: boolean;
    // What a save does when its footage overlaps the previous clip.
    overlapClips: OverlapClips;
    folderLayout: "flat" | "application";
@@ -298,12 +301,20 @@ export interface DesktopAPI {
    copyFile(path: string): Promise<void>;
    /** The player showed this clip. */
    clipViewed(id: string): Promise<void>;
+   /** A strip of the clip's keyframes for scrubbing its thumbnail, made on first request. */
+   keyframes(clipId: string): Promise<{ url: string; frames: number } | null>;
+   /** One playback session of a clip, for local statistics. */
+   recordView(event: ViewEvent): Promise<void>;
+   /** Deletes the open collection's statistics history. */
+   clearStats(): Promise<void>;
    openInAttaCut(id: string): Promise<void>;
    attaCutAvailable(): Promise<boolean>;
    dragFile(path: string): void;
    reorderCategory(id: string, beforeId: string | null): Promise<void>;
    /** `compatible` asks for a converted copy after the renderer failed to decode the original. */
    playback(path: string, track?: number | number[], requestId?: string, options?: { compatible?: boolean }): Promise<string>;
+   /** Loudness of the first audio track over time, 0 to 1. Empty without audio. */
+   loudness(path: string): Promise<number[]>;
    cancelPlayback(requestId: string): Promise<void>;
    refresh(): Promise<void>;
    checkUpdate(): Promise<void>;

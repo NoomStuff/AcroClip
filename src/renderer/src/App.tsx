@@ -10,7 +10,7 @@ import { RecordingStatus } from "./RecordingStatus";
 import { IconButton } from "./ui";
 import type { DialogRequest } from "./Dialog";
 import type { RendererFeedback, Run } from "./desktop";
-import { shortcutRegistry, bindingFor, eventBinding, normalizeBinding } from "../../shared/shortcuts";
+import { shortcutRegistry, bindingFor, eventBinding, normalizeBinding, physicalBinding } from "../../shared/shortcuts";
 import { Recording } from "./Recording";
 import type { SettingsTarget } from "./Settings";
 import { UpdateChip } from "./UpdateChip";
@@ -20,6 +20,10 @@ import { TooltipLayer } from "./Tooltip";
 import { useNavigationHistory } from "./navigation-history";
 import type { Ask } from "./Dialog";
 import { preloadedPage } from "./preloaded-page";
+import { ShortcutSheet } from "./ShortcutSheet";
+import { queuePosition } from "./play-queue";
+import type { PlayQueue } from "./play-queue";
+import { readLibraryView } from "./library-view";
 
 type Page = "recording" | "library" | "viewer" | "settings";
 // Capture is the first screen. Other pages load after it paints and preload
@@ -93,6 +97,7 @@ export function App() {
    });
    const [audioStatus, setAudioStatus] = useState("");
    const [dialog, setDialog] = useState<DialogRequest | null>(null);
+   const [shortcutSheet, setShortcutSheet] = useState(false);
    const [clipPulse, setClipPulse] = useState(0);
    const run: Run = useCallback(async (action) => {
       try {
@@ -167,14 +172,15 @@ export function App() {
          const target = event.target instanceof HTMLElement ? event.target : null;
          const editing = target?.closest("input,textarea,select,[contenteditable=true],[role=textbox],[role=slider],[role=combobox],.shortcut-input.editing");
          if (event.defaultPrevented || event.repeat || document.querySelector('[role="dialog"]')) return;
-         const pressed = normalizeBinding(eventBinding(event), mac);
-         const action = shortcutRegistry.find(
-            (item) =>
-               item.scope === "local" &&
-               (item.page === "all" || item.page === page) &&
-               bindingFor(shortcutPreferences, item.id) &&
-               normalizeBinding(bindingFor(shortcutPreferences, item.id), mac) === pressed
+         const candidates = shortcutRegistry.filter(
+            (item) => item.scope === "local" && (item.page === "all" || item.page === page) && bindingFor(shortcutPreferences, item.id)
          );
+         const matches = (binding: string | null) =>
+            binding === null
+               ? undefined
+               : candidates.find((item) => normalizeBinding(bindingFor(shortcutPreferences, item.id), mac) === normalizeBinding(binding, mac));
+         // The typed character wins. The physical key lets Ctrl+/ work where / needs Shift.
+         const action = matches(eventBinding(event)) ?? matches(physicalBinding(event));
          if (
             !action ||
             (editing && action.id !== "newCategory" && action.id !== "newFolder") ||
@@ -187,7 +193,8 @@ export function App() {
          )
             return;
          event.preventDefault();
-         if (["recording", "library", "viewer", "settings"].includes(action.id)) setPage(action.id as Page);
+         if (action.id === "shortcutHelp") setShortcutSheet(true);
+         else if (["recording", "library", "viewer", "settings"].includes(action.id)) setPage(action.id as Page);
          else if ((action.id === "newCategory" || action.id === "newFolder") && page !== "library") {
             pendingLibraryAction.current = action.id === "newFolder" ? "newFolderRoot" : action.id;
             setPage("library");
@@ -197,14 +204,26 @@ export function App() {
       return () => window.removeEventListener("keydown", key);
    }, [shortcutPreferences, mac, page, setPage]);
    const clip = useMemo(() => (selected === null ? state?.clips[0] : state?.clips.find((item) => item.id === selected)), [state?.clips, selected]);
+   // The library view a clip was opened from, frozen for previous and next.
+   const [queue, setQueue] = useState<PlayQueue | null>(null);
+   // A clip the player should start playing as soon as it loads, such as the next one in a queue.
+   const [autoplay, setAutoplay] = useState<string | null>(null);
+   const allClips = state?.clips;
+   const position = useMemo(() => (clip && allClips ? queuePosition(clip, allClips, queue, readLibraryView().sort) : null), [clip, allClips, queue]);
+   const stepClip = useCallback((value: Clip, play: boolean) => {
+      setSelected(value.id);
+      setAutoplay(play ? value.id : null);
+   }, []);
    useEffect(() => {
       // An empty viewer may receive its first clip after opening. Retain that
       // clip once it exists, just as when choosing an existing clip from the rail.
       if (page === "viewer" && selected === null && clip) setSelected(clip.id);
    }, [page, selected, clip]);
    const openClip = useCallback(
-      (value: Clip) => {
+      (value: Clip, from?: PlayQueue) => {
          setSelected(value.id);
+         setQueue(from ?? null);
+         setAutoplay(null);
          setPage("viewer");
       },
       [setPage]
@@ -334,6 +353,9 @@ export function App() {
                               ask={ask}
                               state={viewerState}
                               clip={clip}
+                              queue={position}
+                              autoplay={!!clip && autoplay === clip.id}
+                              stepClip={stepClip}
                               visible={page === "viewer" && windowVisible}
                               run={run}
                               openLibrary={openLibrary}
@@ -344,7 +366,7 @@ export function App() {
                   <section className="page" hidden={page !== "settings"}>
                      {visited.includes("settings") && (
                         <Suspense fallback={null}>
-                           <SettingsPage state={settingsState} run={run} target={settingsTarget} />
+                           <SettingsPage state={settingsState} run={run} ask={ask} target={settingsTarget} showShortcuts={() => setShortcutSheet(true)} />
                         </Suspense>
                      )}
                   </section>
@@ -362,6 +384,15 @@ export function App() {
          <NotificationToast />
          <TooltipLayer />
          {dialog && <Dialog key={dialog.title} request={dialog} close={() => setDialog(null)} />}
+         {shortcutSheet && state && (
+            <ShortcutSheet
+               preferences={state.preferences}
+               page={page}
+               mac={mac}
+               close={() => setShortcutSheet(false)}
+               openSettings={() => openSettings("shortcuts")}
+            />
+         )}
          {state && !state.preferences.setupComplete && (
             <Suspense fallback={null}>
                <Onboarding state={state} run={run} />

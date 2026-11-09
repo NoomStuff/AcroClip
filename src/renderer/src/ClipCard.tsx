@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useThumbnailVisibility } from "./useThumbnailVisibility";
+import { useKeyframeScrub } from "./useKeyframeScrub";
 import type { CSSProperties } from "react";
 import { Clapperboard, LoaderCircle, MoreHorizontal, Play, Share2, X } from "lucide-react";
 import type { Category, Clip, Job } from "../../shared/types";
@@ -59,6 +60,7 @@ export const ClipCard = memo(function ClipCard({
    // Dragging out shares the same file Copy file would.
    const dragPath = defaultClipFile(clip)?.path;
    const thumbnail = useThumbnailVisibility();
+   const scrub = useKeyframeScrub(clip, clip.duration > 0 && !clip.originalMissing && !job);
    return (
       <article
          className="clip-card"
@@ -80,9 +82,17 @@ export const ClipCard = memo(function ClipCard({
             className="clip-open"
             {...fileDragProps(dragPath, !clip.originalMissing && !job ? { id: clip.id, collection: collectionRoot } : undefined)}
             onClick={() => openClip(clip)}
+            // The drag surface covers the card, so the button tracks the pointer over the thumbnail.
+            onPointerMove={(event) => {
+               const frame = event.currentTarget.querySelector(".clip-thumbnail")?.getBoundingClientRect();
+               if (event.pointerType !== "mouse" || event.buttons || !frame) return;
+               const inside = event.clientY >= frame.top && event.clientY <= frame.bottom && event.clientX >= frame.left && event.clientX <= frame.right;
+               scrub.setPosition(inside ? Math.min(1, Math.max(0, (event.clientX - frame.left) / frame.width)) : null);
+            }}
+            onPointerLeave={() => scrub.setPosition(null)}
             aria-label={`Open ${clip.name}`}
          >
-            <div className="clip-thumbnail" ref={thumbnail.ref}>
+            <div className="clip-thumbnail" ref={thumbnail.ref} data-scrubbing={scrub.shown || undefined}>
                {clip.thumbnail ? (
                   thumbnail.visible ? (
                      <img src={clip.thumbnail} alt="" loading="lazy" decoding="async" className={clip.height > clip.width ? "portrait-thumbnail" : undefined} />
@@ -91,6 +101,12 @@ export const ClipCard = memo(function ClipCard({
                   <div className="thumbnail-fallback">
                      <Clapperboard size={34} />
                   </div>
+               )}
+               <canvas ref={scrub.canvas} className="clip-scrub" aria-hidden="true" />
+               {scrub.shown && scrub.position !== null && (
+                  <span className="clip-scrub-bar" aria-hidden="true">
+                     <span style={{ width: `${scrub.position * 100}%` }} />
+                  </span>
                )}
                {clip.duration > 0 && <span className="duration">{formatTime(clip.duration)}</span>}
                {shareable && (

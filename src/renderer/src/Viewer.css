@@ -269,6 +269,40 @@
    cursor: pointer;
    touch-action: none;
 }
+.player-loudness {
+   position: absolute;
+   left: 0;
+   right: 0;
+   bottom: 100%;
+   height: 40px;
+   margin-bottom: 2px;
+   pointer-events: none;
+   opacity: 0;
+   transform: translateY(4px);
+   transition:
+      opacity 160ms var(--ease),
+      transform 160ms var(--ease);
+}
+.player-progress:is(:hover, :active) .player-loudness,
+:root[data-keyboard] .player-progress:has(input:focus-visible) .player-loudness {
+   opacity: 1;
+   transform: none;
+}
+.player-loudness svg {
+   position: absolute;
+   inset: 0;
+   width: 100%;
+   height: 100%;
+}
+.player-loudness path {
+   fill: #ffffff2e;
+}
+.player-loudness svg.played {
+   clip-path: inset(0 calc(100% - var(--played)) 0 0);
+}
+.player-loudness svg.played path {
+   fill: color-mix(in srgb, var(--accent) 55%, transparent);
+}
 .player-progress-track,
 .player-progress-fill {
    position: absolute;
@@ -338,9 +372,34 @@
 .player-time time:last-child {
    color: var(--muted);
 }
+.player-time {
+   min-width: 0;
+}
+.player-time > .player-queue {
+   margin-left: 8px;
+   padding-left: 12px;
+   border-left: 1px solid var(--line);
+   overflow: hidden;
+   text-overflow: ellipsis;
+   color: var(--subtle);
+}
+.player-auto-advance.icon-button[aria-pressed="true"] {
+   color: var(--accent);
+}
 .player-playback {
    display: flex;
+   align-items: center;
    justify-content: center;
+   gap: 10px;
+}
+.player-skip-button.icon-button {
+   width: 32px;
+   height: 32px;
+   border-radius: 50%;
+   color: var(--muted);
+}
+.player-skip-button.icon-button:not(:disabled):hover {
+   color: var(--text);
 }
 .player-play-button.icon-button {
    width: 39px;

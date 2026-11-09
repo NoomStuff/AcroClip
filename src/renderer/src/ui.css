@@ -1084,3 +1084,79 @@
 .popover-note[data-tone="error"] {
    color: var(--red);
 }
+.dialog.shortcut-sheet {
+   width: min(780px, calc(100vw - 48px));
+   padding: 26px 28px 22px;
+}
+.shortcut-sheet-grid {
+   display: grid;
+   grid-template-columns: repeat(2, minmax(0, 1fr));
+   gap: 22px 34px;
+   margin-top: 20px;
+}
+.shortcut-sheet-section h3 {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   margin-bottom: 8px;
+   font-size: 11px;
+   font-weight: 600;
+   letter-spacing: 0.04em;
+   text-transform: uppercase;
+   color: var(--subtle);
+}
+.shortcut-sheet-section h3 > span {
+   padding: 1px 7px;
+   border-radius: 999px;
+   background: var(--accent-soft);
+   color: var(--accent);
+   letter-spacing: 0;
+   text-transform: none;
+}
+.shortcut-sheet-section dl > div {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   gap: 12px;
+   min-height: 32px;
+   border-bottom: 1px solid var(--line);
+   font-size: 13px;
+}
+.shortcut-sheet-section dd {
+   display: flex;
+   gap: 4px;
+   flex-shrink: 0;
+}
+.shortcut-sheet kbd {
+   min-width: 22px;
+   padding: 2px 7px;
+   border: 1px solid var(--border-control);
+   border-bottom-width: 2px;
+   border-radius: 5px;
+   background: var(--raised);
+   color: var(--text);
+   font-family: inherit;
+   font-size: 11px;
+   font-weight: 600;
+   line-height: 1.5;
+   text-align: center;
+}
+.shortcut-sheet-unset {
+   color: var(--subtle);
+   font-size: 12px;
+}
+.shortcut-sheet-section [data-unset] dt {
+   color: var(--muted);
+}
+.shortcut-sheet-footer {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   gap: 16px;
+   margin-top: 22px;
+   color: var(--muted);
+   font-size: 12px;
+}
+.shortcut-sheet-footer kbd {
+   margin: 0 2px;
+}

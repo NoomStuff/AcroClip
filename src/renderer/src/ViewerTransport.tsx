@@ -1,5 +1,6 @@
-import { Gauge, Headphones, Maximize, Minimize, Pause, Play } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Gauge, Headphones, ListVideo, Maximize, Minimize, Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { loudnessCurve } from "./loudness-curve";
 import type { CSSProperties, RefObject } from "react";
 import type { AudioTrack } from "../../shared/types";
 import { DropdownSelect } from "./DropdownSelect";
@@ -20,6 +21,14 @@ export function ViewerTransport({
    onSpeed,
    disabled,
    fullscreen,
+   previousTitle,
+   nextTitle,
+   queueLabel,
+   autoAdvance,
+   onAutoAdvance,
+   onPrevious,
+   onNext,
+   loudness,
    onSeek,
    onToggle,
    onVolume,
@@ -40,6 +49,15 @@ export function ViewerTransport({
    onSpeed: (value: number) => void;
    disabled: boolean;
    fullscreen: boolean;
+   previousTitle: string | undefined;
+   nextTitle: string | undefined;
+   // Where this clip sits, such as "Ranked · 3 of 12". Empty for a queue of one.
+   queueLabel: string;
+   autoAdvance: boolean;
+   onAutoAdvance: (value: boolean) => void;
+   onPrevious: () => void;
+   onNext: () => void;
+   loudness: number[] | undefined;
    onSeek: (value: number) => void;
    onToggle: () => void;
    onVolume: (value: number, restore: number) => void;
@@ -75,6 +93,7 @@ export function ViewerTransport({
       setTime(next);
       onSeek(next);
    };
+   const curve = useMemo(() => (loudness ? loudnessCurve(loudness) : null), [loudness]);
    const fraction = duration > 0 ? Math.min(1, Math.max(0, time / duration)) : 0;
    const audioLabel = !tracks.length
       ? "None"
@@ -86,6 +105,17 @@ export function ViewerTransport({
    return (
       <div className="player-controls">
          <label className="player-progress" style={{ "--played": `${fraction * 100}%` } as CSSProperties}>
+            {curve && (
+               // Shown while the seek bar is hovered or dragged, like a "most replayed" graph.
+               <span className="player-loudness" aria-hidden="true">
+                  <svg viewBox="0 0 1000 100" preserveAspectRatio="none">
+                     <path d={curve.path} />
+                  </svg>
+                  <svg className="played" viewBox="0 0 1000 100" preserveAspectRatio="none">
+                     <path d={curve.path} />
+                  </svg>
+               </span>
+            )}
             <span className="player-progress-track" />
             <span className="player-progress-fill" />
             <i aria-hidden="true" />
@@ -113,8 +143,22 @@ export function ViewerTransport({
                <time>{formatTime(time)}</time>
                <span>/</span>
                <time>{formatTime(duration)}</time>
+               {queueLabel && (
+                  <span className="player-queue" title={queueLabel}>
+                     {queueLabel}
+                  </span>
+               )}
             </span>
             <div className="player-playback">
+               <IconButton
+                  label={previousTitle ? `Previous clip: ${previousTitle}` : "Restart clip"}
+                  title={previousTitle ? `Previous: ${previousTitle}. Restarts the clip after the first few seconds.` : "Restart clip"}
+                  className="player-skip-button"
+                  disabled={disabled}
+                  onClick={onPrevious}
+               >
+                  <SkipBack size={15} fill="currentColor" />
+               </IconButton>
                <IconButton
                   label={playing ? "Pause" : "Play"}
                   disabled={disabled}
@@ -124,8 +168,24 @@ export function ViewerTransport({
                >
                   {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
                </IconButton>
+               <IconButton
+                  label={nextTitle ? `Next clip: ${nextTitle}` : "Last clip in this view"}
+                  className="player-skip-button"
+                  disabled={!nextTitle}
+                  onClick={onNext}
+               >
+                  <SkipForward size={15} fill="currentColor" />
+               </IconButton>
             </div>
             <div className="player-volume-controls">
+               <IconButton
+                  label="Play the next clip automatically"
+                  className="player-auto-advance"
+                  aria-pressed={autoAdvance}
+                  onClick={() => onAutoAdvance(!autoAdvance)}
+               >
+                  <ListVideo size={16} />
+               </IconButton>
                <DropdownSelect
                   label="Playback speed"
                   className="player-speed-picker"

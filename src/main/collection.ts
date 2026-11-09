@@ -10,7 +10,7 @@ import type { ApplicationArtwork } from "../shared/types";
 import type { Category, Clip, FolderContents, Job, Shareable } from "../shared/types";
 import { collectionFolder, folderContents, folderName } from "./collection-folders";
 import { normalizeApplicationLabel } from "./application-identity";
-import { createThumbnail, encodeShareable, probe } from "./media";
+import { createKeyframeStrip, createThumbnail, encodeShareable, keyframeStripFrames, probe } from "./media";
 import type { MediaInfo } from "./media";
 import { PlaybackCache } from "./playback";
 import { mapConcurrent } from "./concurrent";
@@ -201,6 +201,9 @@ export class CollectionService {
    private identities = new Map<string, { stamp: string; identity: string }>();
    private writtenMetadata: { snapshot: string; stamp: string } | undefined;
    private automaticJobs = new Set<string>();
+   // Hover strips are made one at a time, so sweeping across the library never starts a burst of decoders.
+   private strips: Promise<unknown> = Promise.resolve();
+   private pendingStrips = new Map<string, Promise<{ url: string; frames: number } | null>>();
    private activeMerges = new Set<string>();
    constructor(options: CollectionOptions = {}) {
       this.options = options;
@@ -254,6 +257,45 @@ export class CollectionService {
    }
    private url(path: string) {
       return this.options.mediaUrl?.(path) ?? pathToFileURL(path).href;
+   }
+   /**
+    * The keyframe strip for scrubbing a clip's thumbnail, made on first request and kept beside
+    * the thumbnail under the same file identity. Null when the original is unavailable.
+    */
+   keyframeStrip(id: string): Promise<{ url: string; frames: number } | null> {
+      const clip = this.visible(id);
+      const stored = this.stored(id);
+      if (clip.originalMissing || !(clip.duration > 0)) return Promise.resolve(null);
+      const frames = keyframeStripFrames(clip.duration);
+      const root = this.root;
+      const output = join(root, ".acroclip", "thumbnails", `${stored.identity}.keyframes-v1-${frames}.jpg`);
+      const pending = this.pendingStrips.get(output);
+      if (pending) return pending;
+      const request = (this.strips = this.strips
+         .catch(() => undefined)
+         .then(async () => {
+            const exists = await stat(output).then(
+               (info) => info.size > 0,
+               () => false
+            );
+            if (!exists) {
+               const source = await this.resolveFile(stored);
+               if (!source || this.root !== root) return null;
+               await this.safeDirectory(dirname(output));
+               await createKeyframeStrip(source, output, clip.duration, frames);
+            }
+            return { url: this.url(output), frames };
+         })
+         .finally(() => this.pendingStrips.delete(output))) as Promise<{ url: string; frames: number } | null>;
+      this.pendingStrips.set(output, request);
+      return request;
+   }
+   /** Usage history lives next to the collection info, so it moves with the clips. */
+   async statsDirectory(root: string): Promise<string> {
+      if (root !== this.root) throw new Error("The collection changed before stats were written.");
+      const directory = join(root, ".acroclip", "stats");
+      await this.safeDirectory(directory);
+      return directory;
    }
    private metaPath() {
       return join(this.root, ".acroclip", "collection.json");
@@ -1323,6 +1365,10 @@ export class CollectionService {
          });
       this.queue = operation;
       await operation;
+   }
+   /** Made by "Create shareables automatically" rather than on request. */
+   automaticShareable(clipId: string, shareableId: string): boolean {
+      return !!this.metadata.clips.find((clip) => clip.id === clipId)?.shareables.find((share) => share.id === shareableId)?.automatic;
    }
    cancelJob(id: string): void {
       this.controllers.get(id)?.abort();
