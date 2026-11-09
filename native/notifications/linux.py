@@ -325,6 +325,10 @@ class Banner:
                 elif self.data.get('recordingStatus') == 'stopped':
                     cr.rectangle(-12, -12, 24, 24)
                     cr.fill()
+                elif self.data.get('recordingStatus') == 'paused':
+                    cr.rectangle(-11, -12, 8, 24)
+                    cr.rectangle(3, -12, 8, 24)
+                    cr.fill()
                 else:
                     cr.arc(0, 0, 15, 0, math.tau)
                     cr.fill()

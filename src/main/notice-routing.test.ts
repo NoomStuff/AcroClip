@@ -12,7 +12,9 @@ describe("notice surfaces", () => {
          "save-note",
          "recording-starting",
          "recording-progress",
-         "recording-waiting",
+         "recording-source",
+         "recording-paused",
+         "recording-resumed",
          "recording-started",
          "recording-stopped",
       ] as const)
@@ -92,9 +94,19 @@ describe("banner requests", () => {
       expect(flags("saved")).toMatchObject({ completed: true, pulse: false });
       expect(flags("recording-started")).toMatchObject({ completed: false, pulse: true, busy: false });
       expect(flags("recording-progress")).toMatchObject({ busy: true, replay: false, pulse: false });
-      // Waiting for a game can last the whole session, so its banner must be able to time out.
-      expect(flags("recording-waiting")).toMatchObject({ busy: false, pulse: false });
-      expect(flags("recording-waiting")).not.toHaveProperty("sound");
+      for (const kind of ["recording-source", "recording-paused", "recording-resumed"] as const) {
+         expect(flags(kind)).toMatchObject({ busy: false, pulse: false });
+         expect(flags(kind)).not.toHaveProperty("sound");
+      }
+   });
+
+   it("follows the source and pause banners, and only announces a return after a pause the user saw", () => {
+      expect(feedbackRequest(false, "recording-source", {}, defaultPreferences, null)).toMatchObject({ action: "captureSource", visual: true });
+      expect(feedbackRequest(false, "recording-paused", {}, defaultPreferences, null)).toMatchObject({ action: "capturePaused", visual: false });
+      expect(feedbackRequest(false, "recording-resumed", {}, defaultPreferences, null)).toMatchObject({ visual: false });
+      const paused = { ...defaultPreferences, notificationPauseBanner: true };
+      expect(feedbackRequest(false, "recording-paused", {}, paused, null)).toMatchObject({ visual: true });
+      expect(feedbackRequest(false, "recording-resumed", {}, paused, "capturePaused")).toMatchObject({ visual: true });
    });
 
    it("names six distinct sounds", () => {

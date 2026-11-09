@@ -149,6 +149,9 @@ void drawRecordingStatus(Graphics &g) {
     SolidBrush dot(color); g.FillEllipse(&dot, 50.5f, 60.f, 3.f, 3.f);
   } else if (active) {
     SolidBrush dot(color); g.FillEllipse(&dot, 41.f, 41.f, 22.f, 22.f);
+  } else if (recordingStatus == "paused") {
+    GraphicsPath bars; rounded(bars, 43, 43, 7, 18, 2.5f); rounded(bars, 54, 43, 7, 18, 2.5f);
+    SolidBrush ink(color); g.FillPath(&ink, &bars);
   } else {
     GraphicsPath stop; rounded(stop, 43, 43, 18, 18, 4);
     SolidBrush ink(color); g.FillPath(&ink, &stop);

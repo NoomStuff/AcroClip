@@ -154,6 +154,9 @@ final class FeedbackView: NSView {
                 let mark = NSBezierPath(); mark.lineWidth = 3; mark.lineCapStyle = .round
                 mark.move(to: NSPoint(x: 52, y: 63)); mark.line(to: NSPoint(x: 52, y: 50)); mark.stroke()
                 NSBezierPath(ovalIn: NSRect(x: 50.5, y: 41, width: 3, height: 3)).fill()
+            } else if recordingStatus == "paused" {
+                NSBezierPath(roundedRect: NSRect(x: 43, y: 43, width: 7, height: 18), xRadius: 2.5, yRadius: 2.5).fill()
+                NSBezierPath(roundedRect: NSRect(x: 54, y: 43, width: 7, height: 18), xRadius: 2.5, yRadius: 2.5).fill()
             } else { NSBezierPath(roundedRect: NSRect(x: 43, y: 43, width: 18, height: 18), xRadius: 4, yRadius: 4).fill() }
         }
         let paragraph = NSMutableParagraphStyle()

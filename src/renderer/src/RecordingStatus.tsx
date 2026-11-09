@@ -1,5 +1,5 @@
 import { Popover } from "./Popover";
-import { AlertCircle, ChevronDown, LoaderCircle, Monitor, X } from "lucide-react";
+import { AlertCircle, ChevronDown, CirclePause, LoaderCircle, Monitor, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppState, CaptureSource } from "../../shared/types";
 import { age, formatTime } from "./format";
@@ -53,25 +53,28 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    const appIcon = captured?.appIcon || state?.applicationIcons[captured?.applicationId ?? ""];
    const isApplication = recorder?.sourceKind === "app";
    const audioWarning = useAudioWarning(recorder?.audioWarning || audioMessage);
+   const paused = recorder?.state === "waiting" && recorder.startingDetail === undefined;
    const status =
       recorder && !recorder.supported
          ? "Capture unavailable"
          : active
            ? recorder?.message || "Capturing"
-           : recorder?.state === "waiting"
-             ? recorder?.message || "Waiting for application"
-             : recorder?.state === "starting" || recorder?.startingDetail !== undefined
-               ? "Starting capture"
+           : recorder?.state === "starting" || recorder?.startingDetail !== undefined
+             ? "Starting capture"
+             : paused
+               ? "Capture paused"
                : recorder?.state === "error"
                  ? "Capture stopped"
                  : "Not capturing";
+   // Why capture is paused, such as "Waiting for game". It is the reason, not an error.
+   const pauseReason = paused ? recorder?.message || "Waiting for application" : "";
    const captureName =
       recorder?.sourceName || (state?.preferences.sourceKind === "screen" ? "Desktop" : state?.preferences.sourceKind === "auto" ? "Auto" : "Application");
    useCondition(
       "recorder",
       recorder && !recorder.supported
          ? { message: "Recorder unavailable", detail: "Reinstall AcroClip to capture clips.", tone: "error" }
-         : recorder && !active && recorder.message && recorder.message !== status
+         : recorder && !active && recorder.state !== "waiting" && recorder.message && recorder.message !== status
            ? { message: recorder.message, tone: "error" }
            : null
    );
@@ -83,7 +86,9 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    return (
       <footer className={`status-strip ${recorder?.state === "error" ? "has-error" : ""}`}>
          <div className="status-primary">
-            {recorder?.startingDetail !== undefined || recorder?.state === "starting" || recorder?.state === "waiting" || !recorder ? (
+            {paused ? (
+               <CirclePause size={13} />
+            ) : recorder?.startingDetail !== undefined || recorder?.state === "starting" || !recorder ? (
                <LoaderCircle size={12} className="spin" />
             ) : recorder?.state === "error" ? (
                <AlertCircle size={13} />
@@ -93,6 +98,14 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
             <span className="status-summary" data-tooltip={status} data-tooltip-overflow="">
                {status}
             </span>
+            {pauseReason && (
+               <>
+                  <span className="status-divider" />
+                  <span className="status-secondary" data-tooltip={pauseReason} data-tooltip-overflow="">
+                     {pauseReason}
+                  </span>
+               </>
+            )}
             {recorder?.startingDetail && recorder.startingDetail !== status && (
                <>
                   <span className="status-divider" />

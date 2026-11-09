@@ -77,15 +77,14 @@ describe("recording buffer status", () => {
       expect(html).toContain('data-tooltip="Preparing capture"');
       expect(html).not.toContain("available</span>");
    });
-   it("does not repeat a waiting message as its own detail", () => {
+   it("shows a pause with its reason, not as an error", () => {
       const html = renderToStaticMarkup(
-         createElement(RecordingStatus, {
-            state: { ...state, recorder: { ...state.recorder, state: "waiting", message: "Waiting for game", startingDetail: "Waiting for game" } },
-            visible: true,
-         })
+         createElement(RecordingStatus, { state: { ...state, recorder: { ...state.recorder, state: "waiting", message: "Waiting for game" } }, visible: true })
       );
-      expect(html.match(/Waiting for game/g)).toHaveLength(2);
-      expect(html).not.toContain('class="status-secondary"');
+      expect(html).toContain(">Capture paused</span>");
+      expect(html).toContain('data-tooltip="Waiting for game"');
+      expect(html).not.toContain("spin");
+      expect(html).not.toContain("available</span>");
    });
    it.each(["stopped", "starting", "waiting", "error"] as const)("hides available time while %s", (phase) => {
       const html = renderToStaticMarkup(createElement(RecordingStatus, { state: { ...state, recorder: { ...state.recorder, state: phase } }, visible: true }));

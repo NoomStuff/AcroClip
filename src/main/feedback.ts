@@ -7,7 +7,7 @@ export interface FeedbackDetails {
    completed?: boolean;
    replay?: boolean;
    pulse?: boolean;
-   recordingStatus?: "starting" | "recording" | "stopped" | "error";
+   recordingStatus?: "starting" | "recording" | "paused" | "stopped" | "error";
    errorTitle?: string;
    detail?: string;
    artwork?: string;

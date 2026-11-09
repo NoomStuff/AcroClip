@@ -1,7 +1,14 @@
 import type { RecorderState } from "../shared/types";
 
 export type RecordingNoticeKind =
-   "recording-starting" | "recording-started" | "recording-progress" | "recording-waiting" | "recording-stopped" | "critical-error";
+   | "recording-starting"
+   | "recording-started"
+   | "recording-progress"
+   | "recording-source"
+   | "recording-paused"
+   | "recording-resumed"
+   | "recording-stopped"
+   | "critical-error";
 export interface RecordingNotice {
    kind: RecordingNoticeKind;
    message: string;
@@ -9,25 +16,48 @@ export interface RecordingNotice {
    error: boolean;
 }
 
-/** One capture session, independent of source switches and status polling. */
+/**
+ * How long capture must have nothing to keep before it counts as paused. Fullscreen
+ * games minimize on alt-tab, and a quick switch away should not be a pause.
+ */
+export const PAUSE_AFTER_MS = 3000;
+/** How long a new session with nothing selected to capture, like Auto with no game, shows its spinner. */
+export const ARMED_AFTER_MS = 1500;
+/**
+ * A selected source that isn't ready yet, such as a game capture still hooking, also reports
+ * waiting. It usually starts within seconds, so the spinner holds longer before calling it armed.
+ */
+export const SOURCE_READY_MS = 10_000;
+
+/** Capture is running but keeping nothing, such as Auto with no game or a closed application. */
+const idle = (current: RecorderState) => current.state === "waiting" || (current.state === "recording" && current.sourceKind === "waiting");
+
+/** One capture session, independent of status polling. */
 export class RecordingNotices {
    private active = false;
    private confirmed = false;
    private stopping = false;
-   private waiting = false;
    private pendingText = "";
    private source = "";
+   /** The source the user was last told about. Empty while armed without one. */
+   private announced = "";
+   private idleSince: number | undefined;
+   private pauseReported = false;
    private readonly reportedErrors = new Set<string>();
    private readonly publish: (notice: RecordingNotice) => void;
-   constructor(publish: (notice: RecordingNotice) => void) {
+   private readonly now: () => number;
+   constructor(publish: (notice: RecordingNotice) => void, now: () => number = Date.now) {
       this.publish = publish;
+      this.now = now;
    }
 
    starting(source: string): void {
       this.active = true;
-      this.confirmed = this.stopping = this.waiting = false;
+      this.confirmed = this.stopping = this.pauseReported = false;
+      this.idleSince = undefined;
       this.pendingText = source;
       this.source = source;
+      this.announced = "";
       this.reportedErrors.clear();
       this.emit("recording-starting", "Starting capture...");
    }
@@ -37,7 +67,6 @@ export class RecordingNotices {
    }
 
    private progress(detail: string): void {
-      this.waiting = false;
       if (detail === this.pendingText) return;
       this.pendingText = detail;
       this.emit("recording-progress", "Starting capture...", detail);
@@ -78,25 +107,50 @@ export class RecordingNotices {
          } else if (this.confirmed) this.fail("Start capturing again.");
          return;
       }
-      if (current.state === "recording" && current.availableSeconds > 0 && current.sourceKind !== "waiting" && current.sourceName)
-         this.source = current.sourceName;
-      if (this.stopping || this.confirmed) return;
-      if (current.state === "waiting") {
-         // Capture is armed but has nothing to keep yet, possibly for a long time. A spinner would sit on screen
-         // until a game opens, so this banner finishes, and "Capture started" follows once footage flows.
-         if (this.waiting) return;
-         this.waiting = true;
-         this.pendingText = current.message || "Waiting for game";
-         this.emit("recording-waiting", this.pendingText);
-      } else if (current.state === "starting") {
-         this.progress(current.message && current.message !== "Starting capture" ? current.message : "Preparing capture");
-      } else if (current.state === "recording" && current.availableSeconds <= 0) {
-         this.progress("Waiting for source");
-      } else if (current.state === "recording" && current.availableSeconds > 0 && current.sourceKind !== "waiting") {
-         this.confirmed = true;
-         this.source = current.sourceName || this.source;
-         this.emit("recording-started", "Capture started");
+      const name = current.sourceName ?? "";
+      const footage = current.state === "recording" && current.availableSeconds > 0 && !idle(current) && name !== "";
+      if (footage) this.source = name;
+      if (this.stopping) return;
+      if (idle(current)) {
+         this.idleSince ??= this.now();
+         this.idleFor(this.now() - this.idleSince, current.message || "Waiting for game", current.sourceKind === "waiting" ? ARMED_AFTER_MS : SOURCE_READY_MS);
+         return;
       }
+      this.idleSince = undefined;
+      if (!this.confirmed) {
+         if (current.state === "starting") this.progress(current.message && current.message !== "Starting capture" ? current.message : "Preparing capture");
+         else if (current.state === "recording" && current.availableSeconds <= 0) this.progress("Waiting for source");
+         else if (footage) {
+            this.confirmed = true;
+            this.announced = name;
+            this.emit("recording-started", "Capture started");
+         }
+         return;
+      }
+      if (!footage) return;
+      const resumed = this.pauseReported;
+      this.pauseReported = false;
+      if (name !== this.announced) {
+         this.announced = name;
+         this.emit("recording-source", "Now capturing", name);
+      } else if (resumed) this.emit("recording-resumed", "Now capturing", name);
+   }
+
+   private idleFor(elapsed: number, reason: string, armedAfter: number): void {
+      if (!this.confirmed) {
+         if (elapsed < armedAfter) {
+            this.progress(reason);
+            return;
+         }
+         // The hotkey is answered. Capture is on and will keep footage once a source appears,
+         // which "Now capturing" announces. The user already knows it is waiting, so no pause follows.
+         this.confirmed = this.pauseReported = true;
+         this.emit("recording-started", "Capture started", reason);
+         return;
+      }
+      if (this.pauseReported || elapsed < PAUSE_AFTER_MS) return;
+      this.pauseReported = true;
+      this.emit("recording-paused", "Capture paused", reason);
    }
 
    private fail(message: string): void {

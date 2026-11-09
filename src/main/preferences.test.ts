@@ -115,7 +115,7 @@ describe("preference persistence recovery", () => {
          const legacy: Record<string, unknown> = { ...defaultPreferences, collection: root, clipSeconds: 95, notifications: "off", sound: false };
          for (const keys of Object.values(notificationActions)) {
             delete legacy[keys.banner];
-            delete legacy[keys.sound];
+            if ("sound" in keys) delete legacy[keys.sound];
          }
          await writeFile(file, JSON.stringify(legacy));
          const migrated = await readPreferences(file, root);

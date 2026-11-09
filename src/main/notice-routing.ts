@@ -22,8 +22,11 @@ const notificationAction: Record<NoticeKind, NotificationAction> = {
    "save-note": "saveClip",
    "recording-starting": "startRecording",
    "recording-progress": "startRecording",
-   "recording-waiting": "startRecording",
    "recording-started": "startRecording",
+   "recording-source": "captureSource",
+   // Coming back after a pause the user was told about. Without that banner, an alt-tab would announce every return.
+   "recording-paused": "capturePaused",
+   "recording-resumed": "capturePaused",
    "recording-stopped": "stopRecording",
    "critical-error": "error",
 };

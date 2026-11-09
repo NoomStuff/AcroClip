@@ -1,11 +1,13 @@
-import { CircleDot, CircleStop, Clapperboard, PanelTop, TriangleAlert, Volume2 } from "lucide-react";
+import { CircleDot, CirclePause, CircleStop, Clapperboard, Gamepad2, PanelTop, TriangleAlert, Volume2 } from "lucide-react";
 import { notificationActions } from "../../shared/notifications";
-import type { NotificationEditableKey, NotificationPreferences } from "../../shared/notifications";
+import type { NotificationEditableKey, NotificationPreferenceKey, NotificationPreferences } from "../../shared/notifications";
 import { Toggle } from "./ui";
 
 const rows = [
    { action: "startRecording", label: "Start capture", detail: "When capture starts.", icon: CircleDot },
    { action: "stopRecording", label: "Stop capture", detail: "When capture stops.", icon: CircleStop },
+   { action: "captureSource", label: "Now capturing", detail: "When capture picks up a new game or application.", icon: Gamepad2 },
+   { action: "capturePaused", label: "Capture paused", detail: "When there's nothing to capture for a few seconds, and when it resumes.", icon: CirclePause },
    { action: "saveClip", label: "Save clip", detail: "When saving begins and finishes.", icon: Clapperboard },
    { action: "error", label: "Error", detail: "Capture and save failures.", icon: TriangleAlert },
 ] as const;
@@ -31,8 +33,10 @@ export function NotificationSettings({
             </span>
          </div>
          {rows.map(({ action, label, detail, icon: Icon }) => {
-            const keys = notificationActions[action];
-            const locked = action === "error";
+            const keys: { banner: NotificationPreferenceKey; sound?: NotificationEditableKey } = notificationActions[action];
+            const banner = keys.banner;
+            const sound = keys.sound;
+            const locked = banner === "notificationErrorBanner";
             return (
                <div className="settings-row notification-settings-row" key={action}>
                   <Icon className="settings-row-icon" size={21} aria-hidden="true" />
@@ -43,15 +47,16 @@ export function NotificationSettings({
                   <div className="notification-switch" title={locked ? "Error banners are always on" : `${label} banner`}>
                      <Toggle
                         label={`${label} banner`}
-                        checked={locked || value[keys.banner]}
+                        checked={locked || value[banner]}
                         disabled={locked}
                         onChange={(enabled) => {
-                           if (keys.banner !== "notificationErrorBanner") onChange(keys.banner, enabled);
+                           if (banner !== "notificationErrorBanner") onChange(banner, enabled);
                         }}
                      />
                   </div>
+                  {/* Source changes and pauses can happen mid-game, so they never make a sound. */}
                   <div className="notification-switch">
-                     <Toggle label={`${label} sound`} checked={value[keys.sound]} onChange={(enabled) => onChange(keys.sound, enabled)} />
+                     {sound && <Toggle label={`${label} sound`} checked={value[sound]} onChange={(enabled) => onChange(sound, enabled)} />}
                   </div>
                </div>
             );

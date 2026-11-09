@@ -112,6 +112,8 @@ export interface Preferences {
    notificationStopSound: boolean;
    notificationSaveBanner: boolean;
    notificationSaveSound: boolean;
+   notificationSourceBanner: boolean;
+   notificationPauseBanner: boolean;
    notificationErrorBanner: true;
    notificationErrorSound: boolean;
    // Keep a local history of views, saves and shares for statistics. It never leaves the collection.

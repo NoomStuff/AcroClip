@@ -103,6 +103,8 @@ export const preferencesSchema = z
       notificationStopSound: z.boolean().default(true),
       notificationSaveBanner: z.boolean().default(true),
       notificationSaveSound: z.boolean().default(true),
+      notificationSourceBanner: z.boolean().default(true),
+      notificationPauseBanner: z.boolean().default(false),
       notificationErrorBanner: z.literal(true).default(true),
       notificationErrorSound: z.boolean().default(true),
       stats: z.boolean().default(true),

@@ -39,6 +39,8 @@ export const defaultPreferences: Preferences = {
    notificationStopSound: true,
    notificationSaveBanner: true,
    notificationSaveSound: true,
+   notificationSourceBanner: true,
+   notificationPauseBanner: false,
    notificationErrorBanner: true,
    notificationErrorSound: true,
    stats: true,

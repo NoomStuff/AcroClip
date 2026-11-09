@@ -6,8 +6,12 @@ import { NotificationSettings } from "./NotificationSettings";
 
 it("uses one row per action and keeps the error banner checked and disabled", () => {
    const html = renderToStaticMarkup(createElement(NotificationSettings, { value: defaultPreferences, onChange: () => undefined }));
-   expect(html.match(/notification-settings-row/g)).toHaveLength(4);
-   expect(html.match(/type="checkbox"/g)).toHaveLength(8);
+   expect(html.match(/notification-settings-row/g)).toHaveLength(6);
+   // Now capturing and Capture paused have a banner but no sound.
+   expect(html.match(/type="checkbox"/g)).toHaveLength(10);
+   expect(html).not.toContain('aria-label="Now capturing sound"');
+   expect(html).not.toContain('aria-label="Capture paused sound"');
+   expect(html.match(/<input[^>]*aria-label="Capture paused banner"[^>]*>/)?.[0]).not.toContain('checked=""');
    expect(html.match(/disabled=""/g)).toHaveLength(1);
    const errorBanner = html.match(/<input[^>]*aria-label="Error banner"[^>]*>/)?.[0] ?? "";
    expect(errorBanner).toContain('checked=""');

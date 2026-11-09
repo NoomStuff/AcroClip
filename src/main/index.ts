@@ -43,7 +43,7 @@ import { updateTray as renderTray } from "./tray";
 import { CollectionRefresh } from "./collection-refresh";
 import { footageWindow, mergeCandidate } from "./merge-policy";
 import type { SavedFootage } from "./merge-policy";
-import { saveOutcomeMessage } from "../shared/save-outcome";
+import { saveOutcomeNotice } from "../shared/save-outcome";
 import type { SaveOutcome } from "../shared/save-outcome";
 import { copyFileToClipboard } from "./clipboard-file";
 
@@ -171,8 +171,10 @@ const feedback = new Feedback(helperPath("acroclip-notifier"), (message) => void
 const recordingStatus: Record<RecordingNoticeKind, NonNullable<FeedbackDetails["recordingStatus"]>> = {
    "recording-starting": "starting",
    "recording-progress": "starting",
-   "recording-waiting": "starting",
    "recording-started": "recording",
+   "recording-source": "recording",
+   "recording-paused": "paused",
+   "recording-resumed": "recording",
    "recording-stopped": "stopped",
    "critical-error": "error",
 };
@@ -264,7 +266,7 @@ const recorder = new Recorder({
       // A chain keeps growing from the first clip's start.
       previousSave = { ...footage, start: previous.start };
       record("extended", previous.clipId);
-      reportSave({ kind: "extended", seconds: candidate.seconds }, banner);
+      reportSave({ kind: "extended", seconds: candidate.seconds, added: candidate.added }, banner);
       merges = merges.then(() => mergeSaves(previous.clipId, clip.id)).catch((error: unknown) => void log(`merge: ${errorMessage(error)}`));
    },
 });
@@ -423,7 +425,8 @@ let merges: Promise<void> = Promise.resolve();
 function reportSave(outcome: SaveOutcome, details: FeedbackDetails = {}) {
    const correction = outcome.kind === "kept-both" || outcome.kind === "extended-previous-kept";
    if (!correction) send({ type: "notice-clear", key: "save" });
-   notice(saveOutcomeMessage(outcome), false, correction ? "save-note" : "saved", "native", {}, details);
+   const { message, detail } = saveOutcomeNotice(outcome);
+   notice(message, false, correction ? "save-note" : "saved", "native", detail ? { detail } : {}, details);
 }
 function autoShare(clipId: string) {
    const clip = collections.clips.find((item) => item.id === clipId);
