@@ -31,8 +31,14 @@ await writeFile(
       clipSeconds: 10,
       quality: "low",
       shortcut: "Control+Alt+Shift+F12",
-      notifications: "off",
-      sound: false,
+      notificationStartBanner: false,
+      notificationStartSound: false,
+      notificationStopBanner: false,
+      notificationStopSound: false,
+      notificationSaveBanner: false,
+      notificationSaveSound: false,
+      notificationErrorBanner: true as const,
+      notificationErrorSound: false,
       allowSoftwareEncoder: linux || process.env["ACROCLIP_PACKAGED_TEST_SOFTWARE"] === "1",
    })
 );

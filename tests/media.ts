@@ -147,6 +147,9 @@ try {
    const generatedAt = (await stat(migratedThumbnail)).mtimeMs;
    await new CollectionService().open(migrationRoot);
    assert.equal((await stat(migratedThumbnail)).mtimeMs, generatedAt, "the migrated thumbnail is reused on reopen");
+   const completedRecording = await migration.registerRecording(migrationVideo, "Completed notification fixture");
+   await checkColor(fileURLToPath(completedRecording.thumbnail), "blue");
+   assert.equal(fileURLToPath(completedRecording.thumbnail), migratedThumbnail, "save completion exposes the library's near-end thumbnail");
    assert.equal(await fileIdentity(migrationVideo), migrationIdentity, "thumbnail migration never modifies the video");
 
    // Hover strips: one tile per keyframe slot, the keyframe before each position, never the source touched.

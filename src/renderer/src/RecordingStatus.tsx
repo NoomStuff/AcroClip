@@ -45,7 +45,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    const capacity = state?.preferences.clipSeconds ?? 60;
    const available = Math.max(0, Math.min(capacity, state?.recorder.availableSeconds ?? 0));
    const fill = capacity > 0 ? Math.min(1, available / capacity) : 0;
-   const active = state?.recorder.state === "recording";
+   const active = state?.recorder.state === "recording" && state.recorder.startingDetail === undefined;
    const recorder = state?.recorder;
    const captured = sources.find(
       (source) => source.id === sourceId || (source.kind === "app" && sourceId?.startsWith("window:") && source.id.split(":")[1] === sourceId.split(":")[1])
@@ -60,7 +60,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
            ? recorder?.message || "Capturing"
            : recorder?.state === "waiting"
              ? recorder?.message || "Waiting for application"
-             : recorder?.state === "starting"
+             : recorder?.state === "starting" || recorder?.startingDetail !== undefined
                ? "Starting capture"
                : recorder?.state === "error"
                  ? "Capture stopped"
@@ -83,7 +83,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
    return (
       <footer className={`status-strip ${recorder?.state === "error" ? "has-error" : ""}`}>
          <div className="status-primary">
-            {recorder?.state === "starting" || recorder?.state === "waiting" || !recorder ? (
+            {recorder?.startingDetail !== undefined || recorder?.state === "starting" || recorder?.state === "waiting" || !recorder ? (
                <LoaderCircle size={12} className="spin" />
             ) : recorder?.state === "error" ? (
                <AlertCircle size={13} />
@@ -93,6 +93,14 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
             <span className="status-summary" data-tooltip={status} data-tooltip-overflow="">
                {status}
             </span>
+            {recorder?.startingDetail && recorder.startingDetail !== status && (
+               <>
+                  <span className="status-divider" />
+                  <span className="status-secondary" data-tooltip={recorder.startingDetail} data-tooltip-overflow="">
+                     {recorder.startingDetail}
+                  </span>
+               </>
+            )}
             {active && (
                <>
                   <span className="status-divider" />

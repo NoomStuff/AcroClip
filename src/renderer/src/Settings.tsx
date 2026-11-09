@@ -20,7 +20,6 @@ import {
    FolderTree,
    Power,
    Scissors,
-   Volume2,
    History,
    Trash2,
 } from "lucide-react";
@@ -32,6 +31,7 @@ import { MotionList } from "./MotionList";
 import { HeaderActions, Button, Select } from "./ui";
 import { PresetNumberInput } from "./PresetNumberInput";
 import { Field, Toggle } from "./SettingsControls";
+import { NotificationSettings } from "./NotificationSettings";
 import { api, reportFeedback } from "./desktop";
 import type { Ask } from "./Dialog";
 import type { Run } from "./desktop";
@@ -477,30 +477,7 @@ export function Settings({
                         </section>
                      </>
                   )}
-                  {section === "notifications" && (
-                     <>
-                        <section className="settings-group">
-                           <Field icon={Bell} label="Show notifications" detail="Choose when to show a saved clip notification.">
-                              <Select
-                                 label="Notification visibility"
-                                 value={draft.notifications}
-                                 onChange={(value) => change("notifications", value as Preferences["notifications"])}
-                              >
-                                 <option value="everywhere">Everywhere</option>
-                                 <option value="outside-fullscreen">Outside fullscreen</option>
-                                 <option value="off">Off</option>
-                              </Select>
-                           </Field>
-                           <Toggle
-                              icon={Volume2}
-                              checked={draft.sound}
-                              onChange={(value) => change("sound", value)}
-                              label="Play a sound"
-                              detail="Play a confirmation even when visual notifications are off."
-                           />
-                        </section>
-                     </>
-                  )}
+                  {section === "notifications" && <NotificationSettings value={draft} onChange={(key, enabled) => change(key, enabled)} />}
                   {section === "general" && (
                      <>
                         <section className="settings-group">

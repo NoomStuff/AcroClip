@@ -254,7 +254,7 @@ export function Recording({
    const save = async () => {
       setSaving(true);
       setPulsing(true);
-      await run(() => api.saveClip());
+      await run(() => api.saveClip(), { feedback: "external" });
       setSaving(false);
       window.setTimeout(() => setPulsing(false), 550);
    };
@@ -367,7 +367,7 @@ export function Recording({
 
                         aria-description={active ? "Stopping clears unsaved history." : undefined}
                         disabled={state.recorder.state === "starting" || !state.recorder.supported || (!active && !captureAvailable)}
-                        onClick={() => void run(active ? () => api.stopRecording() : () => api.startRecording())}
+                        onClick={() => void run(active ? () => api.stopRecording() : () => api.startRecording(), { feedback: "external" })}
                      >
                         {active ? (
                            <CircleStop size={50} strokeWidth={1.7} />

@@ -7,17 +7,37 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { synchronizeLegacyAudio } from "../shared/audio-model";
 import { createAudioFilter } from "../shared/audio-filters";
+import { notificationActions } from "../shared/notifications";
 describe("recording settings boundaries", () => {
    it("merges an autosave at write time without overwriting another queued edit", () => {
-      const before = { ...defaultPreferences, collection: "clips", sound: true };
+      const before = { ...defaultPreferences, collection: "clips", notificationStopSound: true };
       const draft = { ...before, clipSeconds: 74 };
-      const afterExternalWrite = { ...before, sound: false, shareSizeMB: 35 };
-      expect(mergePreferenceChanges(afterExternalWrite, draft, ["clipSeconds"])).toMatchObject({ clipSeconds: 74, sound: false, shareSizeMB: 35 });
+      const afterExternalWrite = { ...before, notificationStopSound: false, shareSizeMB: 35 };
+      expect(mergePreferenceChanges(afterExternalWrite, draft, ["clipSeconds"])).toMatchObject({
+         clipSeconds: 74,
+         notificationStopSound: false,
+         shareSizeMB: 35,
+      });
       expect(mergePreferenceChanges(afterExternalWrite, draft, undefined)).toEqual(draft);
       expect(() => mergePreferenceChanges(afterExternalWrite, draft, ["unrecognized-setting"])).toThrow();
    });
+   it("saves one notification control without overwriting another row", () => {
+      const before = preferencesSchema.parse({ ...defaultPreferences, collection: "clips" });
+      const draft = { ...before, notificationStartBanner: false };
+      const external = { ...before, notificationStopSound: false };
+      const merged = mergePreferenceChanges(external, draft, ["notificationStartBanner"]);
+      expect(merged).toMatchObject({
+         notificationStartBanner: false,
+         notificationStartSound: true,
+         notificationStopSound: false,
+         notificationErrorBanner: true,
+      });
+      expect(requiresCaptureRestart(before, merged)).toBe(false);
+   });
    it("permits source switches and notification preferences without rebuilding capture", () => {
-      expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, sourceId: "window:11:0", sourceKind: "app", sound: false })).toBe(false);
+      expect(
+         requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, sourceId: "window:11:0", sourceKind: "app", notificationStopSound: false })
+      ).toBe(false);
    });
    it("requires restart for audio routing and encoding changes", () => {
       expect(requiresCaptureRestart(defaultPreferences, { ...defaultPreferences, microphoneDevice: "another-device" })).toBe(true);
@@ -88,6 +108,37 @@ describe("overlapping clip choice", () => {
    });
 });
 describe("preference persistence recovery", () => {
+   it("migrates and backs up old global notification choices without resetting the collection", async () => {
+      const root = await mkdtemp(join(tmpdir(), "acroclip-notification-migration-"));
+      try {
+         const file = join(root, "preferences.json");
+         const legacy: Record<string, unknown> = { ...defaultPreferences, collection: root, clipSeconds: 95, notifications: "off", sound: false };
+         for (const keys of Object.values(notificationActions)) {
+            delete legacy[keys.banner];
+            delete legacy[keys.sound];
+         }
+         await writeFile(file, JSON.stringify(legacy));
+         const migrated = await readPreferences(file, root);
+         expect(migrated).toMatchObject({
+            collection: root,
+            clipSeconds: 95,
+            notificationStartBanner: false,
+            notificationSaveSound: false,
+            notificationErrorBanner: true,
+         });
+         await writePreferences(file, { ...migrated, notificationStartBanner: true });
+         expect(JSON.parse(await readFile(`${file}.bak`, "utf8"))).toMatchObject({ notifications: "off", sound: false });
+         await writeFile(file, "damaged");
+         expect(await readPreferences(file, root)).toMatchObject({
+            collection: root,
+            clipSeconds: 95,
+            notificationStartBanner: false,
+            notificationErrorBanner: true,
+         });
+      } finally {
+         await rm(root, { force: true, recursive: true });
+      }
+   });
    it("drops the retired refresh shortcut without resetting other preferences", async () => {
       const root = await mkdtemp(join(tmpdir(), "acroclip-retired-shortcut-"));
       try {
@@ -133,16 +184,16 @@ describe("preference persistence recovery", () => {
          await writeFile(path, JSON.stringify({ sound: false, shortcut: "Control+Shift+F8", shortcuts: { toggleRecording: "Control+Shift+F9" } }));
          const initial = await readPreferences(path, root);
          expect(initial.collection).toBe(root);
-         expect(initial.sound).toBe(false);
+         expect(initial.notificationStopSound).toBe(false);
          expect(initial.shortcut).toBe("Control+Shift+F8");
          expect(initial.shortcuts.toggleRecording).toBe("Control+Shift+F9");
          await writePreferences(path, initial);
-         await writePreferences(path, { ...initial, sound: true });
+         await writePreferences(path, { ...initial, notificationStopSound: true });
          await writeFile(path, "damaged");
          const recovered = await readPreferences(path, root);
-         expect(recovered.sound).toBe(false);
+         expect(recovered.notificationStopSound).toBe(false);
          await writePreferences(path, recovered);
-         expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ collection: root, sound: false });
+         expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ collection: root, notificationStopSound: false });
       } finally {
          await rm(root, { recursive: true, force: true });
       }
