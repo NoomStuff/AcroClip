@@ -162,6 +162,7 @@ const feedback = new Feedback(helperPath("acroclip-notifier"), (message) => void
 const storage = new StorageMonitor({ onChange: () => emitState(), onWarning: (message) => notice(message, false, "info", "native", { tone: "warning" }) });
 const recorder = new Recorder({
    gameCatalogPath: join(app.getPath("userData"), "game-catalog.json"),
+   onCatalogWarning: (message) => void log(message),
    onAudioMonitorError: (monitorError, listeningError) =>
       send({ type: "audio-monitor", monitorError, ...(listeningError !== undefined ? { listeningError } : {}) }),
    onAudioLevels: (levels) => {
@@ -1240,6 +1241,9 @@ else {
          if (process.argv.includes("--clip")) void saveClip().catch((error: unknown) => notice(errorMessage(error), true));
          if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
             void startRecording().catch((e) => notice(errorMessage(e), true));
+         // Detection only refreshed the catalogue while it ran, so a machine that never detected a
+         // game kept the built-in stand-in. Fetch it once at launch; it then refreshes weekly.
+         if (process.env["ACROCLIP_TEST"] !== "1") setTimeout(() => void recorder.gameCatalog().catch(() => undefined), 5000).unref();
          await collectionReady;
          const previousInstall = await updates.reviewPreviousInstall();
          if (previousInstall) notice(previousInstall, true);
