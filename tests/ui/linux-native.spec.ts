@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { copyFile, mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { mediaTool } from "./media-tool";
@@ -99,9 +99,20 @@ test("Linux native decorations, exact application capture and source loss", asyn
       await page.evaluate(({ id, folder }) => window.acroClip.moveClip(id, folder), { id: clip.id, folder });
       await page.evaluate(() => window.acroClip.refresh());
       expect((await page.evaluate(() => window.acroClip.state())).clips.find((item) => item.id === clip.id)?.path).toContain("Saved captures");
+      const history = await page.evaluate(() => window.acroClip.statsSummary());
+      expect(history.saves).toMatchObject({ moments: 1, newClips: 1, triggers: { app: 1 } });
+      expect(history.saves.latency?.median).toBeGreaterThan(0);
+      expect(history.actions).toMatchObject({ "folder-create": 1, move: 1 });
       fixture.kill();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.state, { timeout: 15000 }).toBe("waiting");
       await page.evaluate(() => window.acroClip.stopRecording());
+      // The capture session and OBS's own log are both kept for statistics and bug reports.
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.statsSummary())).capture.sessions, { timeout: 10000 }).toBe(1);
+      await expect
+         .poll(async () => (await readFile(join(profile, "logs", "recorder.log"), "utf8").catch(() => "")).split("\n").filter((line) => line.trim()).length, {
+            timeout: 10000,
+         })
+         .toBeGreaterThan(5);
       const exited = new Promise<void>((done) => app.once("close", () => done()));
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.close());
       await exited;

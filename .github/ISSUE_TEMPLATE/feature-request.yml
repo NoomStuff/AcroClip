@@ -1,0 +1,53 @@
+name: Feature request
+description: An idea that makes clipping, rewatching or sharing better
+labels: ["enhancement"]
+body:
+   - type: markdown
+     attributes:
+        value: |
+           AcroClip does three things: it keeps recent footage so you can save a moment, lets you rewatch it, and makes it easy to share. Requests that make one of those better have the best chance.
+
+           Some things are out of scope on purpose. Full-session recording belongs in OBS, and cutting belongs in AttaCut. If your idea is one of those, say why it belongs in AcroClip anyway.
+   - type: textarea
+     id: problem
+     attributes:
+        label: What's the problem?
+        description: What you were trying to do, and what got in the way. Start from the situation, not the solution.
+        placeholder: After a long session I have 40 clips and no idea which ones had the good moments, so I end up deleting all of them.
+     validations:
+        required: true
+   - type: textarea
+     id: idea
+     attributes:
+        label: What would fix it?
+        description: How you picture it working. Rough is fine.
+     validations:
+        required: true
+   - type: textarea
+     id: alternatives
+     attributes:
+        label: What do you do today instead?
+        description: Workarounds, other apps, or ideas you already ruled out.
+   - type: dropdown
+     id: area
+     attributes:
+        label: Which part of AcroClip?
+        options:
+           - Capture
+           - Saving clips
+           - Audio
+           - Playback and the viewer
+           - Library
+           - Shareables and copying
+           - Setup and settings
+           - Something new
+     validations:
+        required: true
+   - type: checkboxes
+     id: checks
+     attributes:
+        label: Before you send it
+        options:
+           - label: I searched the existing issues and this idea is new.
+             required: true
+           - label: I'd like to build this myself. A maintainer agrees on the approach in this issue before I open a pull request.

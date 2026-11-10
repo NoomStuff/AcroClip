@@ -1,0 +1,112 @@
+name: Bug report
+description: Something in AcroClip doesn't work the way it should
+labels: ["bug"]
+body:
+   - type: markdown
+     attributes:
+        value: |
+           Thanks for taking the time. A few things make a report much easier to fix:
+
+           - **Use Report a bug in the app** (Settings → App & updates → Troubleshooting). It saves your logs and fills in your version and system here. Drag the zip into the Logs box.
+           - **One bug per issue.** Two problems in one report usually means one gets lost.
+           - **Search first.** If someone already reported it, add your details there instead.
+
+           Missed a clip? Say so in the title. A save that captured the wrong moment, or no moment at all, is the worst kind of bug here.
+   - type: textarea
+     id: what-happened
+     attributes:
+        label: What happened?
+        description: What you saw. Error messages word for word, if there were any.
+        placeholder: I pressed Alt+C during a match. The notification said "Clip saved", but the clip was 2 seconds of a black screen.
+     validations:
+        required: true
+   - type: textarea
+     id: expected
+     attributes:
+        label: What did you expect?
+        placeholder: A 60 second clip of the match, with game audio.
+     validations:
+        required: true
+   - type: textarea
+     id: steps
+     attributes:
+        label: How do we make it happen?
+        description: The steps from opening AcroClip to the bug. Skip it if you have no idea, but say how often it happens below.
+        placeholder: |
+           1. Set Capture to Automatic
+           2. Launch the game in exclusive fullscreen
+           3. Save a clip
+   - type: dropdown
+     id: frequency
+     attributes:
+        label: How often does it happen?
+        options:
+           - Every time
+           - Often
+           - Sometimes
+           - It happened once
+     validations:
+        required: true
+   - type: dropdown
+     id: area
+     attributes:
+        label: Which part of AcroClip?
+        options:
+           - Capture (starting, stopping, picking a source)
+           - Saving clips
+           - Audio (missing, out of sync, wrong source)
+           - Playback and the viewer
+           - Library (folders, tags, search, moving files)
+           - Shareables and copying
+           - Setup and settings
+           - Updates and installing
+           - Performance (stutter, CPU, memory)
+           - Crash or freeze
+           - Something else
+     validations:
+        required: true
+   - type: input
+     id: source
+     attributes:
+        label: What were you capturing?
+        description: A game, window or screen. Mention fullscreen mode, anti-cheat or multiple monitors if they apply.
+        placeholder: Counter-Strike 2, borderless fullscreen, second monitor at 144 Hz
+   - type: input
+     id: version
+     attributes:
+        label: AcroClip version
+        description: Shown in Settings → App & updates.
+        placeholder: "0.20.0"
+     validations:
+        required: true
+   - type: input
+     id: system
+     attributes:
+        label: System
+        description: Operating system, and on Linux your desktop and whether it runs Wayland or X11.
+        placeholder: Windows 11 24H2, Arch Linux KDE Wayland, macOS 15.1…
+     validations:
+        required: true
+   - type: textarea
+     id: logs
+     attributes:
+        label: Logs
+        description: |
+           Drag in the zip from Report a bug or Export logs. If AcroClip won't open, the logs are in the `logs` folder of AcroClip's app data (`%APPDATA%\AcroClip` on Windows, `~/.config/AcroClip` on Linux, `~/Library/Application Support/AcroClip` on macOS).
+           The zip holds AcroClip's logs, your settings, device names, captured window titles and clip counts. It never includes clips, and your user folder shows up as `~`. Look through it first if you're unsure.
+     validations:
+        required: true
+   - type: textarea
+     id: extra
+     attributes:
+        label: Anything else?
+        description: Screenshots, a short recording, or what you already tried.
+   - type: checkboxes
+     id: checks
+     attributes:
+        label: Before you send it
+        options:
+           - label: I searched the existing issues and this one is new.
+             required: true
+           - label: I'm on the newest AcroClip release, or I said above why I'm not.
+             required: true

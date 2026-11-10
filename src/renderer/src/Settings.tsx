@@ -22,6 +22,8 @@ import {
    Scissors,
    History,
    Trash2,
+   Bug,
+   FileArchive,
 } from "lucide-react";
 import type { AppState, OverlapClips, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
@@ -248,6 +250,19 @@ export function Settings({
          if (path) change("collection", path);
       });
    };
+   const [exporting, setExporting] = useState<"report" | "export" | null>(null);
+   const exportLogs = (kind: "report" | "export") =>
+      void run(async () => {
+         setExporting(kind);
+         try {
+            if (kind === "report") {
+               await api.reportBug();
+               reportFeedback({ kind: "notice", message: "Logs saved to Downloads. Attach the zip to your report.", error: false, tone: "success" });
+            } else if (await api.exportLogs()) reportFeedback({ kind: "notice", message: "Logs exported", error: false, tone: "success" });
+         } finally {
+            setExporting(null);
+         }
+      });
    const update = updateAction(state.update);
    const downloading = updateDownloading(state.update);
    const title = sections.find((item) => item.id === section)?.label;
@@ -504,7 +519,8 @@ export function Settings({
                         <section className="settings-group">
                            <h2>History</h2>
                            <p className="section-description">
-                              Views, saves, shares and capture time, kept in the collection's .acroclip folder for statistics. It never leaves your computer.
+                              App use, capture time, saves, views and shares, kept in the collection's .acroclip folder for statistics. It never leaves your
+                              computer.
                            </p>
                            <Toggle icon={History} label="Keep a usage history" checked={draft.stats} onChange={(value) => change("stats", value)} />
                            <Field icon={Trash2} label="Clear history" detail="Removes this collection's history. Clips, tags and shareables stay.">
@@ -563,6 +579,23 @@ export function Settings({
                                     {downloading ? updateDownloadLabel(state.update) : "Check for updates"}
                                  </Button>
                               )}
+                           </Field>
+                        </section>
+                        <section className="settings-group">
+                           <h2>Troubleshooting</h2>
+                           <p className="section-description">
+                              AcroClip keeps logs on this computer. They hold settings, device names and window titles, never clips, and only leave when you
+                              share them.
+                           </p>
+                           <Field icon={Bug} label="Report a bug" detail="Saves your logs to Downloads and opens a bug report on GitHub.">
+                              <Button busy={exporting === "report"} disabled={!!exporting} onClick={() => exportLogs("report")}>
+                                 Report a bug
+                              </Button>
+                           </Field>
+                           <Field icon={FileArchive} label="Export logs" detail="Save logs and system details as a zip.">
+                              <Button busy={exporting === "export"} disabled={!!exporting} onClick={() => exportLogs("export")}>
+                                 Export logs
+                              </Button>
                            </Field>
                         </section>
                      </>

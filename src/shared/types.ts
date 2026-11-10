@@ -1,6 +1,8 @@
 import type { AudioFilter } from "./audio-filters";
 import type { ShortcutBindings } from "./shortcuts";
 import type { ViewEvent } from "./stats";
+import type { StatsSummary } from "./stats-summary";
+import type { RendererError } from "./diagnostics";
 export type SourceKind = "screen" | "app" | "auto";
 export interface ApplicationArtwork {
    id: string;
@@ -118,7 +120,7 @@ export interface Preferences {
    notificationResumeBanner: boolean;
    notificationErrorBanner: true;
    notificationErrorSound: boolean;
-   // Keep a local history of views, saves and shares for statistics. It never leaves the collection.
+   // Keep a local history of app use, captures, saves, views and shares for statistics. It never leaves the collection.
    stats: boolean;
    // What a save does when its footage overlaps the previous clip.
    overlapClips: OverlapClips;
@@ -318,6 +320,14 @@ export interface DesktopAPI {
    recordView(event: ViewEvent): Promise<void>;
    /** Deletes the open collection's statistics history. */
    clearStats(): Promise<void>;
+   /** Usage figures for the open collection, from `from` onwards when given. */
+   statsSummary(from?: number): Promise<StatsSummary>;
+   /** Forwards a renderer error to the app log. */
+   reportError(error: RendererError): Promise<void>;
+   /** Asks where to save a log archive, then shows it. Null when cancelled. */
+   exportLogs(): Promise<string | null>;
+   /** Saves a log archive to Downloads, shows it, and opens a prefilled bug report. */
+   reportBug(): Promise<string>;
    openInAttaCut(id: string): Promise<void>;
    attaCutAvailable(): Promise<boolean>;
    dragFile(path: string): void;
