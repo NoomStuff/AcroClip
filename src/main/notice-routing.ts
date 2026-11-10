@@ -23,10 +23,11 @@ const notificationAction: Record<NoticeKind, NotificationAction> = {
    "recording-starting": "startRecording",
    "recording-progress": "startRecording",
    "recording-started": "startRecording",
-   // A new source and the same one coming back after a pause are both "Now capturing".
-   "recording-source": "captureSource",
-   "recording-resumed": "captureSource",
+   "game-found": "gameFound",
+   "game-lost": "gameLost",
+   // Losing the chosen application or screen, and finding it again, share one switch.
    "recording-paused": "capturePaused",
+   "recording-resumed": "capturePaused",
    "recording-stopped": "stopRecording",
    "critical-error": "error",
 };

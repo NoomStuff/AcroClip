@@ -112,7 +112,8 @@ export interface Preferences {
    notificationStopSound: boolean;
    notificationSaveBanner: boolean;
    notificationSaveSound: boolean;
-   notificationSourceBanner: boolean;
+   notificationGameBanner: boolean;
+   notificationGameLostBanner: boolean;
    notificationPauseBanner: boolean;
    notificationErrorBanner: true;
    notificationErrorSound: boolean;

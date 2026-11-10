@@ -2,14 +2,15 @@ import type { Preferences } from "./types";
 
 /**
  * Each action has a Banner choice and, when it makes a sound, a Sound choice.
- * Source changes and pauses can happen mid-game, so they never play one.
+ * Finding or losing a game or source can happen mid-game, so those never play one.
  */
 export const notificationActions = {
    startRecording: { banner: "notificationStartBanner", sound: "notificationStartSound", defaultBanner: true },
    stopRecording: { banner: "notificationStopBanner", sound: "notificationStopSound", defaultBanner: true },
    saveClip: { banner: "notificationSaveBanner", sound: "notificationSaveSound", defaultBanner: true },
-   captureSource: { banner: "notificationSourceBanner", defaultBanner: true },
-   capturePaused: { banner: "notificationPauseBanner", defaultBanner: false },
+   gameFound: { banner: "notificationGameBanner", defaultBanner: true },
+   gameLost: { banner: "notificationGameLostBanner", defaultBanner: false },
+   capturePaused: { banner: "notificationPauseBanner", defaultBanner: true },
    error: { banner: "notificationErrorBanner", sound: "notificationErrorSound", defaultBanner: true },
 } as const;
 

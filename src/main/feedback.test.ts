@@ -141,7 +141,7 @@ it("uses recording status graphics instead of thumbnail placeholders", () => {
    const message: unknown = JSON.parse(String(child.stdin.read()).trim());
    expect(message).toMatchObject({ recordingStatus: "starting", artwork: "", replay: false, saving: true });
 });
-it("ships exactly the routed sounds as trimmed 16-bit PCM", async () => {
+it("ships exactly the routed sounds as trimmed PCM that every platform plays", async () => {
    const folder = new URL("../../resources/feedback/", import.meta.url);
    expect((await readdir(folder)).filter((file) => file.endsWith(".wav")).sort()).toEqual([...feedbackSoundFiles].sort());
    const sounds = await Promise.all(feedbackSoundFiles.map((file) => readFile(new URL(file, folder))));
@@ -158,21 +158,31 @@ it("ships exactly the routed sounds as trimmed 16-bit PCM", async () => {
       const format = chunks.get("fmt ");
       const data = chunks.get("data");
       expect(format?.length).toBeGreaterThanOrEqual(16);
-      // PlaySound needs WAVE_FORMAT_EXTENSIBLE above 16 bits, so every platform gets plain 16-bit PCM.
-      expect(format!.readUInt16LE(0)).toBe(1);
-      expect(format!.readUInt16LE(14)).toBe(16);
+      // The sounds keep their original depth. PlaySound needs WAVE_FORMAT_EXTENSIBLE above 16 bits.
+      const bits = format!.readUInt16LE(14);
+      const tag = format!.readUInt16LE(0);
+      if (bits === 16) expect(tag).toBe(1);
+      else {
+         expect(bits).toBe(24);
+         expect(tag).toBe(0xfffe);
+         // The extensible header's sub-format GUID starts with the PCM tag.
+         expect(format!.readUInt16LE(24)).toBe(1);
+      }
+      const width = bits / 8;
+      const sample = (at: number) => (width === 2 ? data!.readInt16LE(at) / 32768 : data!.readIntLE(at, 3) / 8388608);
       const channels = format!.readUInt16LE(2);
       const rate = format!.readUInt32LE(4);
       expect(data?.length).toBeGreaterThan(0);
       // A sound must end where it fades out. Dead air past that delays the next cue on some players.
       let quietFrames = 0;
-      for (let frame = data!.length / (2 * channels) - 1; frame >= 0; frame--) {
+      for (let frame = data!.length / (width * channels) - 1; frame >= 0; frame--) {
          let peak = 0;
-         for (let channel = 0; channel < channels; channel++) peak = Math.max(peak, Math.abs(data!.readInt16LE((frame * channels + channel) * 2)));
-         if (peak > 32768 * 10 ** (-70 / 20)) break;
+         for (let channel = 0; channel < channels; channel++) peak = Math.max(peak, Math.abs(sample((frame * channels + channel) * width)));
+         if (peak > 10 ** (-80 / 20)) break;
          quietFrames++;
       }
-      expect((quietFrames / rate) * 1000).toBeLessThan(80);
+      // The cut fades over 80 ms, so only the end of that fade may sit below -80 dBFS.
+      expect((quietFrames / rate) * 1000).toBeLessThan(100);
    }
    expect(new Set(sounds.map((sound) => sound.toString("base64"))).size).toBe(sounds.length);
 });

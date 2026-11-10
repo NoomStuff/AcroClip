@@ -12,7 +12,8 @@ describe("notice surfaces", () => {
          "save-note",
          "recording-starting",
          "recording-progress",
-         "recording-source",
+         "game-found",
+         "game-lost",
          "recording-paused",
          "recording-resumed",
          "recording-started",
@@ -94,20 +95,20 @@ describe("banner requests", () => {
       expect(flags("saved")).toMatchObject({ completed: true, pulse: false });
       expect(flags("recording-started")).toMatchObject({ completed: false, pulse: true, busy: false });
       expect(flags("recording-progress")).toMatchObject({ busy: true, replay: false, pulse: false });
-      for (const kind of ["recording-source", "recording-paused", "recording-resumed"] as const) {
+      for (const kind of ["game-found", "game-lost", "recording-paused", "recording-resumed"] as const) {
          expect(flags(kind)).toMatchObject({ busy: false, pulse: false });
          expect(flags(kind)).not.toHaveProperty("sound");
       }
    });
 
-   it("shows new and returning sources under Now capturing, and pauses under their own banner", () => {
-      for (const kind of ["recording-source", "recording-resumed"] as const)
-         expect(feedbackRequest(false, kind, {}, defaultPreferences, null)).toMatchObject({ action: "captureSource", visual: true });
-      expect(feedbackRequest(false, "recording-paused", {}, defaultPreferences, null)).toMatchObject({ action: "capturePaused", visual: false });
-      expect(feedbackRequest(false, "recording-paused", {}, { ...defaultPreferences, notificationPauseBanner: true }, null)).toMatchObject({ visual: true });
-      expect(feedbackRequest(false, "recording-resumed", {}, { ...defaultPreferences, notificationSourceBanner: false }, null)).toMatchObject({
-         visual: false,
-      });
+   it("gives games and chosen sources their own switches, with only the game-lost banner off by default", () => {
+      expect(feedbackRequest(false, "game-found", {}, defaultPreferences, null)).toMatchObject({ action: "gameFound", visual: true });
+      expect(feedbackRequest(false, "game-lost", {}, defaultPreferences, null)).toMatchObject({ action: "gameLost", visual: false });
+      for (const kind of ["recording-paused", "recording-resumed"] as const)
+         expect(feedbackRequest(false, kind, {}, defaultPreferences, null)).toMatchObject({ action: "capturePaused", visual: true });
+      const quiet = { ...defaultPreferences, notificationPauseBanner: false, notificationGameBanner: false };
+      for (const kind of ["game-found", "recording-paused", "recording-resumed"] as const)
+         expect(feedbackRequest(false, kind, {}, quiet, null).visual).toBe(false);
    });
 
    it("names six distinct sounds", () => {

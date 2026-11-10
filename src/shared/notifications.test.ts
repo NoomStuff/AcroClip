@@ -18,16 +18,17 @@ it.each(actions)("keeps %s banner and sound choices independent", (action) => {
    const bannerOnly = { ...defaultPreferences, [keys.banner]: true, [sound]: false };
    expect(notificationDelivery(bannerOnly, action)).toEqual({ banner: true, sound: false });
 });
-it("never plays a sound for source changes or pauses, and starts with the pause banner off", () => {
-   for (const action of ["captureSource", "capturePaused"] as const) expect(notificationDelivery(defaultPreferences, action).sound).toBe(false);
-   expect(notificationDelivery(defaultPreferences, "captureSource").banner).toBe(true);
-   expect(notificationDelivery(defaultPreferences, "capturePaused").banner).toBe(false);
+it("never plays a sound for finding or losing a source, and starts with only the game-lost banner off", () => {
+   for (const action of ["gameFound", "gameLost", "capturePaused"] as const) expect(notificationDelivery(defaultPreferences, action).sound).toBe(false);
+   expect(notificationDelivery(defaultPreferences, "gameFound").banner).toBe(true);
+   expect(notificationDelivery(defaultPreferences, "gameLost").banner).toBe(false);
+   expect(notificationDelivery(defaultPreferences, "capturePaused").banner).toBe(true);
 });
 it("adds the new banners to existing settings with their own defaults", () => {
    const parsed = preferencesSchema.parse({ ...defaultPreferences, collection: "clips", ...migrateNotificationPreferences({ notificationStartBanner: true }) });
-   expect(parsed).toMatchObject({ notificationSourceBanner: true, notificationPauseBanner: false });
+   expect(parsed).toMatchObject({ notificationGameBanner: true, notificationGameLostBanner: false, notificationPauseBanner: true });
    const muted = preferencesSchema.parse({ ...defaultPreferences, collection: "clips", ...migrateNotificationPreferences({ notifications: "off" }) });
-   expect(muted).toMatchObject({ notificationSourceBanner: false, notificationPauseBanner: false });
+   expect(muted).toMatchObject({ notificationGameBanner: false, notificationGameLostBanner: false, notificationPauseBanner: false });
 });
 it("does not let a disabled save notification suppress error banners", () => {
    const preferences = { ...defaultPreferences, notificationSaveBanner: false, notificationSaveSound: false, notificationErrorSound: false };

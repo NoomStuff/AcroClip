@@ -4,7 +4,8 @@ export type RecordingNoticeKind =
    | "recording-starting"
    | "recording-started"
    | "recording-progress"
-   | "recording-source"
+   | "game-found"
+   | "game-lost"
    | "recording-paused"
    | "recording-resumed"
    | "recording-stopped"
@@ -15,10 +16,12 @@ export interface RecordingNotice {
    detail: string;
    error: boolean;
 }
+/** Auto follows games. App and screen capture follow the one source the user chose. */
+export type CaptureMode = "auto" | "app" | "screen";
 
 /**
- * How long capture must have nothing to keep before it counts as paused. Fullscreen
- * games minimize on alt-tab, and a quick switch away should not be a pause.
+ * How long the captured source must be gone before it counts as lost. Fullscreen
+ * games minimize on alt-tab, and a quick switch away should not be reported.
  */
 export const PAUSE_AFTER_MS = 3000;
 /** How long a new session with nothing selected to capture, like Auto with no game, shows its spinner. */
@@ -37,12 +40,17 @@ export class RecordingNotices {
    private active = false;
    private confirmed = false;
    private stopping = false;
+   /** Starts from AcroClip's own launch stay quiet unless something fails. */
+   private quiet = false;
+   private mode: CaptureMode = "screen";
    private pendingText = "";
    private source = "";
-   /** The source the user was last told about. Empty while armed without one. */
-   private announced = "";
+   /** What the user was last told is being captured: a game in Auto, the chosen source otherwise. Empty while it is missing. */
+   private held = "";
+   /** The chosen source has been captured at least once this session. */
+   private seen = false;
    private idleSince: number | undefined;
-   private pauseReported = false;
+   private lostSince: number | undefined;
    private readonly reportedErrors = new Set<string>();
    private readonly publish: (notice: RecordingNotice) => void;
    private readonly now: () => number;
@@ -51,13 +59,16 @@ export class RecordingNotices {
       this.now = now;
    }
 
-   starting(source: string): void {
+   starting(source: string, options: { mode: CaptureMode; quiet?: boolean }): void {
       this.active = true;
-      this.confirmed = this.stopping = this.pauseReported = false;
-      this.idleSince = undefined;
+      this.confirmed = this.stopping = false;
+      this.quiet = options.quiet === true;
+      this.mode = options.mode;
+      this.idleSince = this.lostSince = undefined;
       this.pendingText = source;
       this.source = source;
-      this.announced = "";
+      this.held = "";
+      this.seen = false;
       this.reportedErrors.clear();
       this.emit("recording-starting", "Starting capture...");
    }
@@ -111,46 +122,58 @@ export class RecordingNotices {
       const footage = current.state === "recording" && current.availableSeconds > 0 && !idle(current) && name !== "";
       if (footage) this.source = name;
       if (this.stopping) return;
-      if (idle(current)) {
-         this.idleSince ??= this.now();
-         this.idleFor(this.now() - this.idleSince, current.message || "Waiting for game", current.sourceKind === "waiting" ? ARMED_AFTER_MS : SOURCE_READY_MS);
-         return;
-      }
-      this.idleSince = undefined;
-      if (!this.confirmed) {
-         if (current.state === "starting") this.progress(current.message && current.message !== "Starting capture" ? current.message : "Preparing capture");
-         else if (current.state === "recording" && current.availableSeconds <= 0) this.progress("Waiting for source");
-         else if (footage) {
-            this.confirmed = true;
-            this.announced = name;
-            this.emit("recording-started", "Capture started");
-         }
-         return;
-      }
-      if (!footage) return;
-      const resumed = this.pauseReported;
-      this.pauseReported = false;
-      if (name !== this.announced) {
-         this.announced = name;
-         this.emit("recording-source", "Now capturing", name);
-      } else if (resumed) this.emit("recording-resumed", "Now capturing", name);
+      // A game in Auto, or the chosen source otherwise. Auto's screen fallback is not a game.
+      const target = idle(current) ? "" : this.mode === "auto" ? (footage && current.sourceKind === "app" ? name : "") : footage ? name : this.held;
+      if (!this.confirmed) this.beforeConfirmed(current, footage, target);
+      else this.follow(target);
    }
 
-   private idleFor(elapsed: number, reason: string, armedAfter: number): void {
-      if (!this.confirmed) {
-         if (elapsed < armedAfter) {
+   private beforeConfirmed(current: RecorderState, footage: boolean, target: string): void {
+      if (idle(current)) {
+         this.idleSince ??= this.now();
+         const reason = current.message || "Waiting for game";
+         if (this.now() - this.idleSince < (current.sourceKind === "waiting" ? ARMED_AFTER_MS : SOURCE_READY_MS)) {
             this.progress(reason);
             return;
          }
-         // The hotkey is answered. Capture is on and will keep footage once a source appears,
-         // which "Now capturing" announces. The user already knows it is waiting, so no pause follows.
-         this.confirmed = this.pauseReported = true;
+         // The hotkey is answered: capture is on and keeps footage once a source appears.
+         this.confirmed = true;
          this.emit("recording-started", "Capture started", reason);
          return;
       }
-      if (this.pauseReported || elapsed < PAUSE_AFTER_MS) return;
-      this.pauseReported = true;
-      this.emit("recording-paused", "Capture paused", reason);
+      this.idleSince = undefined;
+      if (current.state === "starting") this.progress(current.message && current.message !== "Starting capture" ? current.message : "Preparing capture");
+      else if (current.state === "recording" && current.availableSeconds <= 0) this.progress("Waiting for source");
+      else if (footage) {
+         this.confirmed = true;
+         // A game already running when capture starts is part of "Capture started", not a separate find.
+         this.held = target;
+         this.seen = target !== "";
+         this.emit("recording-started", "Capture started");
+      }
+   }
+
+   private follow(target: string): void {
+      if (target === this.held) {
+         this.lostSince = undefined;
+         return;
+      }
+      if (target === "") {
+         this.lostSince ??= this.now();
+         if (this.now() - this.lostSince < PAUSE_AFTER_MS) return;
+         const lost = this.held;
+         this.held = "";
+         this.lostSince = undefined;
+         if (this.mode === "auto") this.emit("game-lost", "Stopped capturing game", lost);
+         else this.emit("recording-paused", "Capture paused", `Lost ${lost}. Capture resumes when it's back.`);
+         return;
+      }
+      this.lostSince = undefined;
+      this.held = target;
+      const again = this.seen;
+      this.seen = true;
+      if (this.mode === "auto") this.emit("game-found", "Now capturing", target);
+      else this.emit("recording-resumed", "Capture resumed", again ? `${target} was found again.` : `${target} was found.`);
    }
 
    private fail(message: string): void {
@@ -161,6 +184,7 @@ export class RecordingNotices {
    }
 
    private emit(kind: RecordingNoticeKind, message: string, detail = this.source): void {
+      if (this.quiet && (kind === "recording-starting" || kind === "recording-progress" || kind === "recording-started")) return;
       this.publish({ kind, message, detail, error: kind === "critical-error" });
    }
 }

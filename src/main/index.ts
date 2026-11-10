@@ -172,12 +172,18 @@ const recordingStatus: Record<RecordingNoticeKind, NonNullable<FeedbackDetails["
    "recording-starting": "starting",
    "recording-progress": "starting",
    "recording-started": "recording",
-   "recording-source": "recording",
+   "game-found": "recording",
+   "game-lost": "paused",
    "recording-paused": "paused",
    "recording-resumed": "recording",
    "recording-stopped": "stopped",
    "critical-error": "error",
 };
+/** Finding a game or application shows its own icon. Without one, it falls back to the capture graphic. */
+function capturedArtwork(kind: RecordingNoticeKind): FeedbackDetails {
+   const icon = kind === "game-found" || kind === "recording-resumed" ? lastRecordingArtwork?.application.icon : undefined;
+   return icon ? { artwork: icon } : { recordingStatus: recordingStatus[kind] };
+}
 const recordingNotices = new RecordingNotices((entry) => {
    // A new attempt retires the previous capture error waiting in the status bar.
    if (entry.kind === "recording-starting") send({ type: "notice-clear", key: "capture" });
@@ -187,7 +193,7 @@ const recordingNotices = new RecordingNotices((entry) => {
       entry.kind,
       "background",
       { key: "capture", ...(entry.detail ? { detail: entry.detail } : {}) },
-      { recordingStatus: recordingStatus[entry.kind], ...(entry.error ? { errorTitle: entry.message } : {}) }
+      { ...capturedArtwork(entry.kind), ...(entry.error ? { errorTitle: entry.message } : {}) }
    );
 });
 // The status bar shows low storage as a condition, so the app side stays quiet here.
@@ -550,12 +556,16 @@ async function ensureMicrophoneAccess(value: Preferences): Promise<void> {
          throw new Error("Allow microphone access in System Settings, or mute microphone sources.");
    }
 }
-async function startRecording() {
+/** `quiet` is for starts AcroClip makes itself, like capturing on launch. Only failures speak up. */
+async function startRecording(options: { quiet?: boolean } = {}) {
    if (!preferences.setupComplete) throw new Error("Finish setup before capturing.");
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to record.");
    if (captureActive()) throw new Error("Capture is already running.");
    lastRecordingArtwork = undefined;
-   recordingNotices.starting(preferences.sourceKind === "auto" ? "Automatic game detection" : recordingSourceLabel(preferences, captureSources.cached));
+   recordingNotices.starting(preferences.sourceKind === "auto" ? "Automatic game detection" : recordingSourceLabel(preferences, captureSources.cached), {
+      mode: preferences.sourceKind,
+      quiet: options.quiet === true,
+   });
    startingCapture = (async () => {
       await preferenceWrites.catch(() => undefined);
       await ensureMicrophoneAccess(preferences);
@@ -750,7 +760,7 @@ function recoverUpdateExit() {
    if (!mainWindow || mainWindow.isDestroyed()) createWindow();
    else mainWindow.show();
    if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
-      void startRecording().catch((e) => notice(errorMessage(e), true));
+      void startRecording({ quiet: true }).catch(captureActionError);
 }
 function releaseServices() {
    libraryRefresh.close();
@@ -1346,7 +1356,8 @@ else {
          }
          installShortcuts(preferences, true);
          if (process.argv.includes("--clip")) void saveClip().catch(captureActionError);
-         if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1") void startRecording().catch(captureActionError);
+         if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
+            void startRecording({ quiet: true }).catch(captureActionError);
          // Detection only refreshed the catalogue while it ran, so a machine that never detected a
          // game kept the built-in stand-in. Fetch it once at launch; it then refreshes weekly.
          if (process.env["ACROCLIP_TEST"] !== "1") setTimeout(() => void recorder.gameCatalog().catch(() => undefined), 5000).unref();
