@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { createReadStream, existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, readdir, rename, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
@@ -594,7 +595,7 @@ export async function validateKit(kit: SourceKit, kitDirectory: string, project:
          ? (JSON.parse(await readFile(provenanceFile, "utf8")) as { controlledWasapi?: unknown }).controlledWasapi
          : undefined;
       if (existsSync(path.join(project, "native/windows/wasapi/CMakeLists.txt")) || runtimeRecord || kit.controlledWasapi) {
-         if (!runtimeRecord || !kit.controlledWasapi || JSON.stringify(runtimeRecord) !== JSON.stringify(kit.controlledWasapi))
+         if (!runtimeRecord || !kit.controlledWasapi || !isDeepStrictEqual(runtimeRecord, kit.controlledWasapi))
             throw new Error("Controlled WASAPI kit record differs from actual native build provenance");
          const upstream = kit.sources.find((item) => item.repository === "obsproject/obs-studio" && item.commit === kit.controlledWasapi!.upstreamCommit);
          if (!upstream) throw new Error("Controlled WASAPI pinned OBS archive is absent");
