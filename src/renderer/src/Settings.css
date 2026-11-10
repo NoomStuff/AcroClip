@@ -603,5 +603,5 @@ fieldset.settings-group:disabled {
 
 /* Maintenance can't be undone, so its rows read as warnings before anything is clicked. */
 .settings-danger .settings-row-icon {
-   color: var(--red);
+   color: var(--danger);
 }

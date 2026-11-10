@@ -88,12 +88,12 @@
 
 .button.destructive {
    color: #181818;
-   background: var(--red);
+   background: var(--danger);
    font-weight: 600;
 }
 
 .button.destructive:hover:not(:disabled) {
-   background: var(--red-hover);
+   background: var(--danger-hover);
 }
 
 .button.wide {
@@ -622,7 +622,7 @@
    width: 16px;
    height: 16px;
    margin: 2px 0 0;
-   accent-color: var(--red);
+   accent-color: var(--danger);
    cursor: pointer;
 }
 
