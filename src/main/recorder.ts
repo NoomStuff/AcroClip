@@ -46,6 +46,10 @@ interface RecorderOptions {
    onError: (message: string, context: RecorderErrorContext) => void;
    onAudioMonitorError?: (message: string, listeningError?: string) => void;
    onAudioLevels?: (levels: AudioLevels) => void;
+   /** The helper's own log (OBS's), for the local recorder log. Never shown to the user. */
+   onOutput?: (text: string) => void;
+   /** The helper started or ended, for the app log. */
+   onLifecycle?: (event: { kind: "started"; executable: string } | { kind: "closed"; code: number | null; signal: string | null; expected: boolean }) => void;
 }
 interface NativeMessage {
    event: string;
@@ -402,6 +406,7 @@ export class Recorder {
          env: process.platform === "linux" ? linuxRecorderEnvironment(root) : process.env,
       });
       this.process = child;
+      this.options.onLifecycle?.({ kind: "started", executable });
       this.ready = new Promise<void>((resolve, reject) => {
          this.readyResolve = resolve;
          this.readyReject = reject;
@@ -428,6 +433,7 @@ export class Recorder {
       // Diagnostic text remains local and is never forwarded as user-facing errors.
       let testDiagnostics = "";
       child.stderr.on("data", (data: Buffer) => {
+         this.options.onOutput?.(data.toString("utf8"));
          if (process.env["ACROCLIP_TEST"] === "1") testDiagnostics = (testDiagnostics + data.toString("utf8")).slice(-16000);
          if (process.env["ACROCLIP_TEST"] === "1" && this.expectedExit) console.log(`Test shutdown: native ${data.toString("utf8").slice(-8000)}`);
       });
@@ -441,6 +447,7 @@ export class Recorder {
       const closed = new Promise<void>((resolve) =>
          child.once("close", (code, signal) => {
             if (process.env["ACROCLIP_TEST"] === "1") console.log(`Test native: closed with code ${code}, signal ${signal}\n${testDiagnostics}`);
+            this.options.onLifecycle?.({ kind: "closed", code, signal, expected: this.expectedExit });
             this.readyReject?.(new Error("Capture couldn't start. Try again, or restart AcroClip."));
             this.readyResolve = null;
             this.readyReject = null;

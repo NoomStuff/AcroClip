@@ -22,6 +22,10 @@ import {
    Scissors,
    History,
    Trash2,
+   Bug,
+   FileArchive,
+   RotateCcw,
+   Eraser,
 } from "lucide-react";
 import type { AppState, OverlapClips, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
@@ -33,7 +37,8 @@ import { PresetNumberInput } from "./PresetNumberInput";
 import { Field, Toggle } from "./SettingsControls";
 import { NotificationSettings } from "./NotificationSettings";
 import { api, reportFeedback } from "./desktop";
-import type { Ask } from "./Dialog";
+import type { Ask, DialogRequest } from "./Dialog";
+import { defaultResetParts, preferenceResetCopy, resetPartCopy, resetParts } from "../../shared/maintenance";
 import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
 import { shortcutRegistry, shortcutGroup, bindingFor, shortcutClashes, shortcutConflict, formatBinding } from "../../shared/shortcuts";
@@ -205,7 +210,7 @@ export function Settings({
          reducedMotion.removeEventListener("change", reduce);
       };
    }, [section, direction]);
-   const { draft, write, status, error: saveError, retry } = useSettingsAutosave(state.preferences);
+   const { draft, write, status, error: saveError, retry, flush } = useSettingsAutosave(state.preferences);
    const recording = ["recording", "waiting", "starting"].includes(state.recorder.state);
    const captureSettings = section === "recording";
    const collectionSettings = section === "collection";
@@ -248,6 +253,100 @@ export function Settings({
          if (path) change("collection", path);
       });
    };
+   const [exporting, setExporting] = useState<"report" | "export" | null>(null);
+   const exportLogs = (kind: "report" | "export") =>
+      void run(async () => {
+         setExporting(kind);
+         try {
+            if (kind === "report") {
+               await api.reportBug();
+               reportFeedback({ kind: "notice", message: "Logs saved to Downloads. Attach the zip to your report.", error: false, tone: "success" });
+            } else if (await api.exportLogs()) reportFeedback({ kind: "notice", message: "Logs exported", error: false, tone: "success" });
+         } finally {
+            setExporting(null);
+         }
+      });
+   const [maintaining, setMaintaining] = useState<"settings" | "cache" | "history" | "factory" | null>(null);
+   /** Every maintenance action confirms first. A checklist answers with the ticked IDs. */
+   const maintain = (task: NonNullable<typeof maintaining>, request: Omit<DialogRequest, "resolve" | "danger">, act: (ticked: string[]) => Promise<void>) =>
+      void run(async () => {
+         const answer = await ask({ ...request, danger: true });
+         if (!answer) return;
+         setMaintaining(task);
+         try {
+            await act(Array.isArray(answer) ? answer : []);
+         } finally {
+            setMaintaining(null);
+         }
+      });
+   const resetSettings = () =>
+      maintain(
+         "settings",
+         {
+            title: "Reset settings?",
+            detail: "Your clip folder, clips, tags and stats stay. This can't be undone.",
+            confirm: "Reset",
+            choices: [
+               { id: "settings", ...preferenceResetCopy.settings, checked: true },
+               { id: "setup", ...preferenceResetCopy.setup, checked: false },
+            ],
+         },
+         async (ticked) => {
+            const parts = { settings: ticked.includes("settings"), setup: ticked.includes("setup") };
+            // A change still waiting to save would land on top of the defaults.
+            await flush();
+            await api.resetPreferences(parts);
+            const reset = parts.settings && parts.setup ? "Settings and recording setup" : parts.settings ? "Settings" : "Recording setup";
+            reportFeedback({ kind: "notice", message: `${reset} reset`, error: false, tone: "success" });
+         }
+      );
+   const clearCache = () =>
+      maintain(
+         "cache",
+         {
+            title: "Clear the cache?",
+            detail:
+               "Removes this collection's thumbnails, hover previews and playback copies. They rebuild in the background, which keeps the computer busy for a while on a big library. Clips, tags and shareables stay.",
+            confirm: "Clear cache",
+         },
+         async () => {
+            await api.clearCache();
+            reportFeedback({ kind: "notice", message: "Cache cleared. Thumbnails are rebuilding.", error: false, tone: "success" });
+         }
+      );
+   const clearHistory = () =>
+      maintain(
+         "history",
+         {
+            title: "Clear usage history?",
+            detail: "This can't be undone.",
+            confirm: "Clear",
+            choices: [
+               { id: "logs", ...resetPartCopy.logs, checked: true },
+               { id: "stats", ...resetPartCopy.stats, checked: false },
+            ],
+         },
+         async (ticked) => {
+            const parts = { logs: ticked.includes("logs"), stats: ticked.includes("stats") };
+            await api.clearHistory(parts);
+            const cleared = parts.logs && parts.stats ? "Logs and usage stats" : parts.logs ? "Logs" : "Usage stats";
+            reportFeedback({ kind: "notice", message: `${cleared} cleared`, error: false, tone: "success" });
+         }
+      );
+   const factoryReset = () =>
+      maintain(
+         "factory",
+         {
+            title: "Factory reset",
+            detail: "Choose what to remove. AcroClip asks once more, then restarts. Your clips, tags and shareables stay where they are.",
+            confirm: "Factory reset",
+            choices: resetParts.map((id) => ({ id, ...resetPartCopy[id], checked: defaultResetParts.includes(id) })),
+         },
+         async (ticked) => {
+            await flush();
+            await api.factoryReset(resetParts.filter((part) => ticked.includes(part)));
+         }
+      );
    const update = updateAction(state.update);
    const downloading = updateDownloading(state.update);
    const title = sections.find((item) => item.id === section)?.label;
@@ -502,32 +601,6 @@ export function Settings({
                            />
                         </section>
                         <section className="settings-group">
-                           <h2>History</h2>
-                           <p className="section-description">
-                              Views, saves, shares and capture time, kept in the collection's .acroclip folder for statistics. It never leaves your computer.
-                           </p>
-                           <Toggle icon={History} label="Keep a usage history" checked={draft.stats} onChange={(value) => change("stats", value)} />
-                           <Field icon={Trash2} label="Clear history" detail="Removes this collection's history. Clips, tags and shareables stay.">
-                              <Button
-                                 onClick={() =>
-                                    void run(async () => {
-                                       const confirmed = await ask({
-                                          title: "Clear usage history?",
-                                          detail: "Statistics for this collection start over. This can't be undone.",
-                                          confirm: "Clear history",
-                                          danger: true,
-                                       });
-                                       if (!confirmed) return;
-                                       await api.clearStats();
-                                       reportFeedback({ kind: "notice", message: "Usage history cleared", error: false });
-                                    })
-                                 }
-                              >
-                                 Clear
-                              </Button>
-                           </Field>
-                        </section>
-                        <section className="settings-group">
                            <h2>Updates</h2>
                            <Toggle
                               icon={RefreshCw}
@@ -563,6 +636,44 @@ export function Settings({
                                     {downloading ? updateDownloadLabel(state.update) : "Check for updates"}
                                  </Button>
                               )}
+                           </Field>
+                        </section>
+                        <section className="settings-group">
+                           <h2>Troubleshooting</h2>
+                           <p className="section-description">AcroClip keeps local logs. You can export them to help diagnose problems.</p>
+                           <Field icon={Bug} label="Report a bug" detail="Saves your logs to Downloads and opens a bug report on GitHub.">
+                              <Button busy={exporting === "report"} disabled={!!exporting} onClick={() => exportLogs("report")}>
+                                 Report a bug
+                              </Button>
+                           </Field>
+                           <Field icon={FileArchive} label="Export logs" detail="Save logs and system details as a zip.">
+                              <Button busy={exporting === "export"} disabled={!!exporting} onClick={() => exportLogs("export")}>
+                                 Export logs
+                              </Button>
+                           </Field>
+                        </section>
+                        <section className="settings-group settings-danger">
+                           <h2>Maintenance</h2>
+                           <p className="section-description">Clean up your installation and reset settings. Your files are untouched.</p>
+                           <Field icon={RotateCcw} label="Reset settings & setup" detail="Reset settings, recording setup or both.">
+                              <Button className="destructive" busy={maintaining === "settings"} disabled={!!maintaining} onClick={resetSettings}>
+                                 Reset settings
+                              </Button>
+                           </Field>
+                           <Field icon={Eraser} label="Clear cache" detail="Thumbnails and playback copies rebuild in the background.">
+                              <Button className="destructive" busy={maintaining === "cache"} disabled={!!maintaining} onClick={clearCache}>
+                                 Clear cache
+                              </Button>
+                           </Field>
+                           <Field icon={History} label="Clear usage history" detail="Remove logs, usage stats or both.">
+                              <Button className="destructive" busy={maintaining === "history"} disabled={!!maintaining} onClick={clearHistory}>
+                                 Clear history
+                              </Button>
+                           </Field>
+                           <Field icon={Trash2} label="Factory reset" detail="Choose what to remove, then AcroClip restarts.">
+                              <Button className="destructive" busy={maintaining === "factory"} disabled={!!maintaining} onClick={factoryReset}>
+                                 Factory reset
+                              </Button>
                            </Field>
                         </section>
                      </>

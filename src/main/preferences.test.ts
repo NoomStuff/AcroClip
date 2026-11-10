@@ -106,6 +106,20 @@ describe("overlapping clip choice", () => {
          await rm(root, { recursive: true, force: true });
       }
    });
+   it("drops the retired usage history switch, whichever way it was set", async () => {
+      const root = await mkdtemp(join(tmpdir(), "acroclip-retired-preferences-"));
+      try {
+         const file = join(root, "preferences.json");
+         for (const stats of [true, false]) {
+            await writeFile(file, JSON.stringify({ ...defaultPreferences, collection: root, clipSeconds: 45, stats }));
+            const value = await readPreferences(file, root);
+            expect(value).not.toHaveProperty("stats");
+            expect(value.clipSeconds).toBe(45);
+         }
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
 });
 describe("preference persistence recovery", () => {
    it("migrates and backs up old global notification choices without resetting the collection", async () => {

@@ -32,9 +32,18 @@ export function migrateOverlapPreference(stored: Record<string, unknown>): Parti
    if (rest["overlapClips"] !== undefined) return rest as Partial<Preferences>;
    return { ...rest, overlapClips: avoidOverlap === true ? "trim" : "keep" } as Partial<Preferences>;
 }
+/**
+ * The usage history became part of the app rather than a choice. It stays on this computer and
+ * Settings can clear it, so an old "off" is dropped with the setting.
+ */
+export function dropRetiredPreferences(stored: Partial<Preferences>): Partial<Preferences> {
+   const rest: Partial<Preferences> & { stats?: unknown } = { ...stored };
+   delete rest.stats;
+   return rest;
+}
 /** Every rename of a stored setting, applied before the schema sees the file. */
 function migrateStoredPreferences(stored: unknown): Partial<Preferences> {
-   return migrateOverlapPreference(migrateNotificationPreferences(stored));
+   return dropRetiredPreferences(migrateOverlapPreference(migrateNotificationPreferences(stored)));
 }
 export async function readPreferences(path: string, collection: string): Promise<Preferences> {
    for (const candidate of [path, `${path}.bak`]) {

@@ -600,3 +600,8 @@ fieldset.settings-group:disabled {
       gap: 12px;
    }
 }
+
+/* Maintenance can't be undone, so its rows read as warnings before anything is clicked. */
+.settings-danger .settings-row-icon {
+   color: var(--danger);
+}

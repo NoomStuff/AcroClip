@@ -397,6 +397,26 @@ export class CollectionService {
       return join(this.root, ".acroclip", "collection.json");
    }
 
+   /**
+    * Removes the thumbnails, hover strips and playback copies AcroClip made, then opens the
+    * collection again so they rebuild. Clips, tags and shareables are untouched.
+    */
+   async clearCache(): Promise<void> {
+      const root = this.root;
+      if (!root) return;
+      if (this.pendingJobs.length) throw new Error("Finish or cancel shareable creation before clearing the cache.");
+      await this.fileChanges;
+      if (this.refreshRunning) await this.refreshRunning.catch(() => undefined);
+      if (this.scanRunning) await this.scanRunning.catch(() => undefined);
+      if (root !== this.root) throw new Error("The collection changed before the cache was cleared.");
+      this.playbackLifetime.abort();
+      this.playbackLifetime = new AbortController();
+      this.playbackCache.cancelAll();
+      this.stripFailed.clear();
+      for (const folder of ["thumbnails", "playback"]) await rm(join(root, ".acroclip", folder), { recursive: true, force: true });
+      await this.open(root);
+   }
+
    async open(root: string): Promise<void> {
       this.opening = true;
       try {

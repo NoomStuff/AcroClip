@@ -17,6 +17,26 @@ const seconds = z
 const time = z.number().int().min(0);
 const label = z.string().max(256);
 
+/** How a save was asked for. */
+export const saveTriggers = ["shortcut", "tray", "app", "command"] as const;
+export type SaveTrigger = (typeof saveTriggers)[number];
+/** Library and app actions worth counting. Clip-specific ones name the clip. */
+export const statsActions = [
+   "rename",
+   "tag",
+   "untag",
+   "move",
+   "reveal",
+   "attacut",
+   "folder-create",
+   "folder-rename",
+   "folder-move",
+   "folder-delete",
+   "tag-create",
+   "tag-delete",
+] as const;
+export type StatsAction = (typeof statsActions)[number];
+
 /** What the renderer may report. Main stamps the version and time. */
 export const viewEventSchema = z
    .object({
@@ -44,6 +64,9 @@ export const statsEventSchema = z.discriminatedUnion("type", [
          into: id.optional(),
          application: label.optional(),
          source: label.optional(),
+         trigger: z.enum(saveTriggers).optional(),
+         // The clip length setting at the time, to compare with what clips end up as.
+         bufferSeconds: seconds.optional(),
       })
       .strict(),
    z
@@ -54,6 +77,8 @@ export const statsEventSchema = z.discriminatedUnion("type", [
          sourceKind: z.enum(["screen", "app"]).optional(),
          application: label.optional(),
          source: label.optional(),
+         // Why capture ended: stopped by the user, an error, AcroClip exiting, or a collection switch.
+         ended: z.enum(["stopped", "error", "exit", "collection"]).optional(),
       })
       .strict(),
    z
@@ -84,6 +109,39 @@ export const statsEventSchema = z.discriminatedUnion("type", [
          duration: seconds,
          watched: z.boolean(),
          application: label.optional(),
+      })
+      .strict(),
+   z
+      .object({
+         type: z.literal("launch"),
+         version: z.string().max(100),
+         // Set on the first launch after the version changed.
+         previousVersion: z.string().max(100).optional(),
+         // The previous run never closed cleanly: a crash, a kill or a power loss.
+         unclean: z.boolean(),
+         // Started by a clip command, such as a desktop shortcut running --clip.
+         command: z.boolean(),
+      })
+      .strict(),
+   z
+      .object({
+         // One stretch of the window being on screen, recorded when it hides.
+         type: z.literal("window"),
+         seconds,
+      })
+      .strict(),
+   z
+      .object({
+         type: z.literal("action"),
+         action: z.enum(statsActions),
+         clipId: id.optional(),
+      })
+      .strict(),
+   z
+      .object({
+         // Which settings changed, never their values.
+         type: z.literal("settings"),
+         keys: z.array(z.string().max(64)).min(1).max(80),
       })
       .strict(),
 ]);

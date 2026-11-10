@@ -1,6 +1,9 @@
 import type { AudioFilter } from "./audio-filters";
 import type { ShortcutBindings } from "./shortcuts";
 import type { ViewEvent } from "./stats";
+import type { StatsSummary } from "./stats-summary";
+import type { RendererError } from "./diagnostics";
+import type { HistoryParts, PreferenceResetParts, ResetPart } from "./maintenance";
 export type SourceKind = "screen" | "app" | "auto";
 export interface ApplicationArtwork {
    id: string;
@@ -118,8 +121,6 @@ export interface Preferences {
    notificationResumeBanner: boolean;
    notificationErrorBanner: true;
    notificationErrorSound: boolean;
-   // Keep a local history of views, saves and shares for statistics. It never leaves the collection.
-   stats: boolean;
    // What a save does when its footage overlaps the previous clip.
    overlapClips: OverlapClips;
    folderLayout: "flat" | "application";
@@ -316,8 +317,22 @@ export interface DesktopAPI {
    keyframes(clipId: string): Promise<{ url: string; frames: number; columns: number } | null>;
    /** One playback session of a clip, for local statistics. */
    recordView(event: ViewEvent): Promise<void>;
-   /** Deletes the open collection's statistics history. */
-   clearStats(): Promise<void>;
+   /** The chosen groups go back to their defaults, apart from the collection folder. Resetting the recording setup opens setup. */
+   resetPreferences(parts: PreferenceResetParts): Promise<AppState>;
+   /** Removes thumbnails, hover previews and playback copies, which then rebuild. */
+   clearCache(): Promise<void>;
+   /** Deletes the app logs, the open collection's usage stats, or both. */
+   clearHistory(parts: HistoryParts): Promise<void>;
+   /** Confirms natively, removes the chosen parts and restarts. False when the user backs out. */
+   factoryReset(parts: ResetPart[]): Promise<boolean>;
+   /** Usage figures for the open collection, from `from` onwards when given. */
+   statsSummary(from?: number): Promise<StatsSummary>;
+   /** Forwards a renderer error to the app log. */
+   reportError(error: RendererError): Promise<void>;
+   /** Asks where to save a log archive, then shows it. Null when cancelled. */
+   exportLogs(): Promise<string | null>;
+   /** Saves a log archive to Downloads, shows it, and opens a prefilled bug report. */
+   reportBug(): Promise<string>;
    openInAttaCut(id: string): Promise<void>;
    attaCutAvailable(): Promise<boolean>;
    dragFile(path: string): void;

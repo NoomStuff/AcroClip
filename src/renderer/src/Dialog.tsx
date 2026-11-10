@@ -2,28 +2,47 @@ import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, X } from "lucide-react";
-import { Button, IconButton } from "./ui";
+import { Button, Checkbox, IconButton } from "./ui";
 
-export type Ask = (request: Omit<DialogRequest, "resolve">) => Promise<string | boolean | null>;
+export type DialogAnswer = string | boolean | string[] | null;
+export type Ask = (request: Omit<DialogRequest, "resolve">) => Promise<DialogAnswer>;
+export interface DialogChoice {
+   id: string;
+   label: string;
+   detail?: string;
+   checked: boolean;
+}
 export interface DialogRequest {
    title: string;
    detail?: string;
    confirm: string;
    initial?: string;
+   /** Tickboxes under the detail. The answer is the ticked IDs, and confirming needs one. */
+   choices?: DialogChoice[];
    danger?: boolean;
-   resolve: (value: string | boolean | null) => void;
+   resolve: (value: DialogAnswer) => void;
 }
 export function Dialog({ request, close }: { request: DialogRequest; close: () => void }) {
    const [value, setValue] = useState(request.initial ?? "");
+   const [ticked, setTicked] = useState(() => new Set(request.choices?.filter((choice) => choice.checked).map((choice) => choice.id)));
+   const blocked = (request.initial !== undefined && !value.trim()) || (request.choices !== undefined && !ticked.size);
    const cancel = () => {
       request.resolve(null);
       close();
    };
    const submit = () => {
-      if (request.initial !== undefined && !value.trim()) return;
-      request.resolve(request.initial === undefined ? true : value.trim());
+      if (blocked) return;
+      if (request.choices) request.resolve(request.choices.filter((choice) => ticked.has(choice.id)).map((choice) => choice.id));
+      else request.resolve(request.initial === undefined ? true : value.trim());
       close();
    };
+   const tick = (id: string, checked: boolean) =>
+      setTicked((current) => {
+         const next = new Set(current);
+         if (checked) next.add(id);
+         else next.delete(id);
+         return next;
+      });
    return (
       <DialogPanel title={request.title} close={cancel} className="" closeLabel="Close" initialFocus="[data-dialog-initial]">
          {request.detail && <p>{request.detail}</p>}
@@ -46,14 +65,33 @@ export function Dialog({ request, close }: { request: DialogRequest; close: () =
             {request.initial !== undefined && (
                <input data-dialog-initial="" aria-label={request.title} value={value} onChange={(event) => setValue(event.target.value)} maxLength={150} />
             )}
+            {request.choices && (
+               <fieldset className="dialog-choices">
+                  <legend className="visually-hidden">{request.title}</legend>
+                  {request.choices.map((choice, index) => (
+                     <label key={choice.id} className="dialog-choice">
+                        <Checkbox
+                           data-dialog-initial={index === 0 ? "" : undefined}
+                           danger={request.danger === true}
+                           checked={ticked.has(choice.id)}
+                           onChange={(checked) => tick(choice.id, checked)}
+                        />
+                        <span>
+                           <span className="field-label">{choice.label}</span>
+                           {choice.detail && <span className="field-detail">{choice.detail}</span>}
+                        </span>
+                     </label>
+                  ))}
+               </fieldset>
+            )}
             <div className="dialog-actions">
                <Button type="button" onClick={cancel}>
                   Cancel
                </Button>
                <Button
-                  data-dialog-initial={request.initial === undefined ? "" : undefined}
+                  data-dialog-initial={request.initial === undefined && !request.choices ? "" : undefined}
                   className={request.danger ? "destructive" : "primary"}
-                  disabled={request.initial !== undefined && !value.trim()}
+                  disabled={blocked}
                >
                   <Check size={16} />
                   {request.confirm}
