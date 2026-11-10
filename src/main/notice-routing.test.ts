@@ -100,13 +100,14 @@ describe("banner requests", () => {
       }
    });
 
-   it("follows the source and pause banners, and only announces a return after a pause the user saw", () => {
-      expect(feedbackRequest(false, "recording-source", {}, defaultPreferences, null)).toMatchObject({ action: "captureSource", visual: true });
+   it("shows new and returning sources under Now capturing, and pauses under their own banner", () => {
+      for (const kind of ["recording-source", "recording-resumed"] as const)
+         expect(feedbackRequest(false, kind, {}, defaultPreferences, null)).toMatchObject({ action: "captureSource", visual: true });
       expect(feedbackRequest(false, "recording-paused", {}, defaultPreferences, null)).toMatchObject({ action: "capturePaused", visual: false });
-      expect(feedbackRequest(false, "recording-resumed", {}, defaultPreferences, null)).toMatchObject({ visual: false });
-      const paused = { ...defaultPreferences, notificationPauseBanner: true };
-      expect(feedbackRequest(false, "recording-paused", {}, paused, null)).toMatchObject({ visual: true });
-      expect(feedbackRequest(false, "recording-resumed", {}, paused, "capturePaused")).toMatchObject({ visual: true });
+      expect(feedbackRequest(false, "recording-paused", {}, { ...defaultPreferences, notificationPauseBanner: true }, null)).toMatchObject({ visual: true });
+      expect(feedbackRequest(false, "recording-resumed", {}, { ...defaultPreferences, notificationSourceBanner: false }, null)).toMatchObject({
+         visual: false,
+      });
    });
 
    it("names six distinct sounds", () => {

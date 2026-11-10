@@ -6,8 +6,8 @@ import { Toggle } from "./ui";
 const rows = [
    { action: "startRecording", label: "Start capture", detail: "When capture starts.", icon: CircleDot },
    { action: "stopRecording", label: "Stop capture", detail: "When capture stops.", icon: CircleStop },
-   { action: "captureSource", label: "Now capturing", detail: "When capture picks up a new game or application.", icon: Gamepad2 },
-   { action: "capturePaused", label: "Capture paused", detail: "When there's nothing to capture for a few seconds, and when it resumes.", icon: CirclePause },
+   { action: "captureSource", label: "Now capturing", detail: "When capture picks up a game or application, or resumes after a pause.", icon: Gamepad2 },
+   { action: "capturePaused", label: "Capture paused", detail: "When there's nothing to capture for a few seconds.", icon: CirclePause },
    { action: "saveClip", label: "Save clip", detail: "When saving begins and finishes.", icon: Clapperboard },
    { action: "error", label: "Error", detail: "Capture and save failures.", icon: TriangleAlert },
 ] as const;

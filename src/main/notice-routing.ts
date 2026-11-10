@@ -23,10 +23,10 @@ const notificationAction: Record<NoticeKind, NotificationAction> = {
    "recording-starting": "startRecording",
    "recording-progress": "startRecording",
    "recording-started": "startRecording",
+   // A new source and the same one coming back after a pause are both "Now capturing".
    "recording-source": "captureSource",
-   // Coming back after a pause the user was told about. Without that banner, an alt-tab would announce every return.
+   "recording-resumed": "captureSource",
    "recording-paused": "capturePaused",
-   "recording-resumed": "capturePaused",
    "recording-stopped": "stopRecording",
    "critical-error": "error",
 };
