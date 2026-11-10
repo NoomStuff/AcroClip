@@ -200,8 +200,16 @@ const recordingNotices = new RecordingNotices((entry) => {
       { ...capturedArtwork(entry.kind), ...(entry.error ? { errorTitle: entry.message } : {}) }
    );
 });
+// The banner's second line says what to do. Without one it would only repeat the app's name.
+const storageAdvice: Record<string, string> = {
+   "Low storage in clip folder": "Free up space so new clips can save.",
+   "Free storage could not be checked": "AcroClip will check again shortly.",
+};
 // The status bar shows low storage as a condition, so the app side stays quiet here.
-const storage = new StorageMonitor({ onChange: () => emitState(), onWarning: (message) => notice(message, false, "info", "native", { tone: "warning" }) });
+const storage = new StorageMonitor({
+   onChange: () => emitState(),
+   onWarning: (message) => notice(message, false, "info", "native", { tone: "warning", ...(storageAdvice[message] ? { detail: storageAdvice[message] } : {}) }),
+});
 const recorder = new Recorder({
    gameCatalogPath: join(app.getPath("userData"), "game-catalog.json"),
    onCatalogWarning: (message) => void log(message),
