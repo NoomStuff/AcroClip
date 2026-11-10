@@ -636,8 +636,7 @@ export function Settings({
                         <section className="settings-group">
                            <h2>Troubleshooting</h2>
                            <p className="section-description">
-                              AcroClip keeps logs on this computer. They hold settings, device names and window titles, never clips, and only leave when you
-                              share them.
+                              AcroClip keeps local logs. You can export them to help diagnose problems.
                            </p>
                            <Field icon={Bug} label="Report a bug" detail="Saves your logs to Downloads and opens a bug report on GitHub.">
                               <Button busy={exporting === "report"} disabled={!!exporting} onClick={() => exportLogs("report")}>
@@ -652,8 +651,8 @@ export function Settings({
                         </section>
                         <section className="settings-group settings-danger">
                            <h2>Maintenance</h2>
-                           <p className="section-description">None of these touch your clips.</p>
-                           <Field icon={RotateCcw} label="Reset settings" detail="Every setting goes back to its default and setup opens again.">
+                           <p className="section-description">Clean up your installation and reset settings. Your files are untouched.</p>
+                           <Field icon={RotateCcw} label="Reset settings & setup" detail="Reset settings, recording setup or both, then AcroClip restarts.">
                               <Button className="destructive" busy={maintaining === "settings"} disabled={!!maintaining} onClick={resetSettings}>
                                  Reset settings
                               </Button>
