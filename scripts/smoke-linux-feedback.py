@@ -26,8 +26,10 @@ def run(desktop):
         for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE', 'DBUS_SESSION_BUS_ADDRESS']:
             env.pop(key, None)
         config = private / 'config'
-        config.write_text('hl.monitor({output="",mode="1280x720@60",position="auto",scale=1})\nhl.layer_rule({name="test-no-anim",match={namespace="^acroclip-feedback$"},no_anim=true})\n' if desktop == 'Hyprland' else
-                          'output HEADLESS-1 mode 1280x720@60Hz\nseat seat0 fallback true\n')
+        config.write_text('hl.monitor({output="",mode="1280x720@60",position="auto",scale=1})\nhl.layer_rule({name="test-no-anim",match={namespace="^acroclip-feedback$"},no_anim=true})\n'
+                          # A nested Xwayland can take the parent's display number and remove its socket on exit.
+                          'hl.config({xwayland={enabled=false}})\n' if desktop == 'Hyprland' else
+                          'output HEADLESS-1 mode 1280x720@60Hz\nseat seat0 fallback true\nxwayland disable\n')
         log = open(proof / (desktop + '.log'), 'w')
         outer = None
         if desktop == 'Hyprland':
@@ -64,14 +66,14 @@ def run(desktop):
                             return value
                 raise AssertionError('Missing event ' + identity + ' ' + name)
 
-            send(dict(id='starting', message='Starting recording...', detail='Waiting for source', recordingStatus='starting', saving=True))
+            send(dict(id='starting', message='Starting capture...', detail='Waiting for source', recordingStatus='starting', saving=True))
             assert event('starting', 'shown')['visible']
-            send(dict(id='ready', message='Recording started', detail='Private fixture', recordingStatus='recording', pulse=True))
+            send(dict(id='ready', message='Capture started', detail='Private fixture', recordingStatus='recording', pulse=True))
             event('ready', 'shown')
             time.sleep(.7)
             subprocess.run(['grim', str(proof / (desktop + '.png'))], env=env, check=True)
             if desktop == 'Hyprland':
-                send(dict(id='capture-proof', message='Starting recording...', detail='Private capture fixture', saving=True, recordingStatus='starting'))
+                send(dict(id='capture-proof', message='Starting capture...', detail='Private capture fixture', saving=True, recordingStatus='starting'))
                 event('capture-proof', 'shown')
                 from PIL import Image, ImageChops
                 excluded = proof / 'Hyprland-excluded.png'
@@ -115,13 +117,14 @@ def run(desktop):
             send(dict(id='critical', message="Couldn't save clip", detail='Private test', error=True))
             event('critical', 'shown')
             send(dict(id='muted', visual=False, preserveBanner=True))
-            event('critical', 'hidden', 7)
+            event('critical', 'hidden', 9)
             send(dict(id='invalid-art', message='Saved', artwork='invalid'))
-            event('invalid-art', 'failed')
+            # Unreadable artwork leaves an empty tile, like the Windows banner, instead of losing it.
+            event('invalid-art', 'shown')
             send(dict(action='exit'))
             helper.wait(timeout=5)
             assert helper.returncode == 0
-            print(desktop + ': shown, recording transition, preserved error, hidden, rendering failure passed')
+            print(desktop + ': shown, recording transition, preserved error, hidden, unreadable artwork passed')
         finally:
             if helper and helper.poll() is None:
                 helper.terminate()

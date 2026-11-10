@@ -6,7 +6,9 @@ import { join, resolve } from "node:path";
 import sharp from "sharp";
 
 // File-only native drawing. --render-proof creates no window and plays no sound.
-if (process.platform !== "win32") throw new Error("The GDI+ thumbnail regression check requires Windows.");
+// Windows draws with GDI+, Linux with the GTK helper's Cairo code. macOS has no helper.
+if (process.platform !== "win32" && process.platform !== "linux") throw new Error("The thumbnail regression check needs the Windows or Linux helper.");
+const helper = resolve(process.argv[2] ?? (process.platform === "win32" ? "resources/recorder/acroclip-notifier.exe" : "native/notifications/linux.py"));
 const directory = await mkdtemp(join(tmpdir(), "acroclip-feedback-render-"));
 const frames = [1, 1.25, 1.5, 2].flatMap((scale) =>
    [0, 25, 55, 100, 170, 250, 340].map((age) => ({ scale, age, path: join(directory, `${scale}-${age}.png`) }))
@@ -19,7 +21,7 @@ try {
       .composite([{ input: marker, left: 96, top: 96 }])
       .png()
       .toBuffer();
-   const result = spawnSync(resolve(process.argv[2] ?? "resources/recorder/acroclip-notifier.exe"), ["--render-proof"], {
+   const result = spawnSync(helper, ["--render-proof"], {
       windowsHide: true,
       encoding: "utf8",
       input:

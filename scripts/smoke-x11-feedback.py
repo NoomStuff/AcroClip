@@ -61,18 +61,19 @@ with tempfile.TemporaryDirectory(prefix='acroclip-feedback-x11-') as temporary:
                     if data.get('id') == identity and data['event'] == expected:
                         return data
             raise AssertionError(f'Missing {identity} {expected}')
-        send(dict(id='start', message='Starting recording...', saving=True, recordingStatus='starting'))
+        send(dict(id='start', message='Starting capture...', saving=True, recordingStatus='starting'))
         assert event('start', 'shown')['visible']
         send(dict(id='critical', message="Couldn't save clip", error=True))
         event('critical', 'shown')
         send(dict(id='muted', visual=False, preserveBanner=True))
-        event('critical', 'hidden', 7)
+        event('critical', 'hidden', 9)
         send(dict(id='bad-art', message='Saved', artwork='invalid'))
-        event('bad-art', 'failed')
+        # Unreadable artwork leaves an empty tile, like the Windows banner, instead of losing it.
+        event('bad-art', 'shown')
         send(dict(action='exit'))
         helper.wait(timeout=5)
         assert helper.returncode == 0
-        print('Staged X11 helper: composited drawing, unsupported desktop, preserved error, expiry and rendering failure passed')
+        print('Staged X11 helper: composited drawing, unsupported desktop, preserved error, expiry and unreadable artwork passed')
     finally:
         for child in reversed(processes):
             if child.poll() is None:
