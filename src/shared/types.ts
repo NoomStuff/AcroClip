@@ -3,7 +3,7 @@ import type { ShortcutBindings } from "./shortcuts";
 import type { ViewEvent } from "./stats";
 import type { StatsSummary } from "./stats-summary";
 import type { RendererError } from "./diagnostics";
-import type { HistoryParts, ResetPart } from "./maintenance";
+import type { HistoryParts, PreferenceResetParts, ResetPart } from "./maintenance";
 export type SourceKind = "screen" | "app" | "auto";
 export interface ApplicationArtwork {
    id: string;
@@ -317,8 +317,8 @@ export interface DesktopAPI {
    keyframes(clipId: string): Promise<{ url: string; frames: number; columns: number } | null>;
    /** One playback session of a clip, for local statistics. */
    recordView(event: ViewEvent): Promise<void>;
-   /** Settings go back to their defaults, apart from the collection folder, and setup opens again. */
-   resetPreferences(): Promise<AppState>;
+   /** The chosen groups go back to their defaults, apart from the collection folder. Resetting the recording setup opens setup. */
+   resetPreferences(parts: PreferenceResetParts): Promise<AppState>;
    /** Removes thumbnails, hover previews and playback copies, which then rebuild. */
    clearCache(): Promise<void>;
    /** Deletes the app logs, the open collection's usage stats, or both. */

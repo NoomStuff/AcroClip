@@ -22,6 +22,7 @@ test("maintenance clears what each action names and leaves the clips alone", asy
          collection,
          setupComplete: true,
          clipSeconds: 45,
+         notificationStopSound: false,
          audioSources: [],
          audioSourcesVersion: undefined,
          shortcuts: { toggleRecording: "" },
@@ -84,9 +85,26 @@ test("maintenance clears what each action names and leaves the clips alone", asy
       );
       expect(JSON.parse(await readFile(preferencesFile, "utf8"))).toMatchObject({ clipSeconds: 45 });
 
-      // Resetting settings keeps the collection and opens setup.
+      // Resetting settings defaults to plain settings: the recording setup and the collection stay.
       await page.getByRole("button", { name: "Reset settings", exact: true }).click();
-      await dialog.getByRole("button", { name: "Reset settings", exact: true }).click();
+      await expect(dialog.getByRole("checkbox", { name: /^Settings/ })).toBeChecked();
+      await expect(dialog.getByRole("checkbox", { name: /^Recording setup/ })).not.toBeChecked();
+      await dialog.getByRole("button", { name: "Reset", exact: true }).click();
+      await expect
+         .poll(async () => JSON.parse(await readFile(preferencesFile, "utf8")) as Record<string, unknown>)
+         .toMatchObject({
+            notificationStopSound: true,
+            clipSeconds: 45,
+            collection,
+            setupComplete: true,
+         });
+      await expect(page.locator("#setup-heading")).toHaveCount(0);
+
+      // The recording setup on its own goes back to defaults and opens setup.
+      await page.getByRole("button", { name: "Reset settings", exact: true }).click();
+      await dialog.getByRole("checkbox", { name: /^Settings/ }).uncheck();
+      await dialog.getByRole("checkbox", { name: /^Recording setup/ }).check();
+      await dialog.getByRole("button", { name: "Reset", exact: true }).click();
       await expect(page.locator("#setup-heading")).toBeVisible();
       const reset = JSON.parse(await readFile(preferencesFile, "utf8")) as Record<string, unknown>;
       expect(reset).toMatchObject({ clipSeconds: defaultPreferences.clipSeconds, collection, setupComplete: false });

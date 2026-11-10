@@ -32,9 +32,8 @@ import type { LogLevel, SessionRecord } from "./diagnostics";
 import { buildSystemReport } from "./system-report";
 import { createZip } from "./zip";
 import { bugReportUrl, describeSystem, logArchiveName, rendererErrorSchema } from "../shared/diagnostics";
-import { factoryResetDetail, historyPartsSchema, resetPartsSchema } from "../shared/maintenance";
+import { factoryResetDetail, historyPartsSchema, preferenceResetSchema, resetPartsSchema, resetPreferenceGroups } from "../shared/maintenance";
 import type { ResetPart } from "../shared/maintenance";
-import { defaultPreferences } from "../shared/defaults";
 import { loudnessEnvelope, probe } from "./media";
 import { BACKGROUND_CHECK_INTERVAL, Updates } from "./updates";
 import { testUpdateServer } from "./update-manager";
@@ -1276,14 +1275,15 @@ function registerIPC() {
    handle("preferences", (value, changedKeys) =>
       applyPreferences(() => synchronizeLegacyAudio(preferences, mergePreferenceChanges(preferences, value, changedKeys)))
    );
-   // The collection stays: the clips are the user's, and setup opens on it again.
-   handle("preferences-reset", () =>
-      applyPreferences(() => {
-         if (captureActive() || recorder.status.pendingSaves) throw new Error("Stop capturing before resetting settings.");
-         log("maintenance: settings reset", "warn");
-         return mergePreferenceChanges(preferences, { ...structuredClone(defaultPreferences), collection: preferences.collection }, undefined);
-      })
-   );
+   // Applies live like any other change, so nothing needs a restart.
+   handle("preferences-reset", (value) => {
+      const parts = preferenceResetSchema.parse(value);
+      return applyPreferences(() => {
+         if (parts.setup && (captureActive() || recorder.status.pendingSaves)) throw new Error("Stop capturing before resetting the recording setup.");
+         log(`maintenance: reset ${[parts.settings ? "settings" : "", parts.setup ? "recording setup" : ""].filter(Boolean).join(" and ")}`, "warn");
+         return mergePreferenceChanges(preferences, resetPreferenceGroups(preferences, parts), undefined);
+      });
+   });
    handle("record-start", () => startRecording());
    handle("record-stop", () => stopRecording());
    handle("record-save", () => saveClip("app"));

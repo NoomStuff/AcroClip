@@ -38,7 +38,7 @@ import { Field, Toggle } from "./SettingsControls";
 import { NotificationSettings } from "./NotificationSettings";
 import { api, reportFeedback } from "./desktop";
 import type { Ask, DialogRequest } from "./Dialog";
-import { defaultResetParts, resetPartCopy, resetParts } from "../../shared/maintenance";
+import { defaultResetParts, preferenceResetCopy, resetPartCopy, resetParts } from "../../shared/maintenance";
 import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
 import { shortcutRegistry, shortcutGroup, bindingFor, shortcutClashes, shortcutConflict, formatBinding } from "../../shared/shortcuts";
@@ -284,15 +284,20 @@ export function Settings({
          "settings",
          {
             title: "Reset settings?",
-            detail:
-               "Capture, audio, shortcuts, notifications, shareables and startup go back to their defaults, and setup opens so you can pick your capture source again. Your clip folder, clips, tags and stats stay.",
-            confirm: "Reset settings",
+            detail: "Your clip folder, clips, tags and stats stay. This can't be undone.",
+            confirm: "Reset",
+            choices: [
+               { id: "settings", ...preferenceResetCopy.settings, checked: true },
+               { id: "setup", ...preferenceResetCopy.setup, checked: false },
+            ],
          },
-         async () => {
+         async (ticked) => {
+            const parts = { settings: ticked.includes("settings"), setup: ticked.includes("setup") };
             // A change still waiting to save would land on top of the defaults.
             await flush();
-            await api.resetPreferences();
-            reportFeedback({ kind: "notice", message: "Settings reset", error: false, tone: "success" });
+            await api.resetPreferences(parts);
+            const reset = parts.settings && parts.setup ? "Settings and recording setup" : parts.settings ? "Settings" : "Recording setup";
+            reportFeedback({ kind: "notice", message: `${reset} reset`, error: false, tone: "success" });
          }
       );
    const clearCache = () =>
@@ -635,9 +640,7 @@ export function Settings({
                         </section>
                         <section className="settings-group">
                            <h2>Troubleshooting</h2>
-                           <p className="section-description">
-                              AcroClip keeps local logs. You can export them to help diagnose problems.
-                           </p>
+                           <p className="section-description">AcroClip keeps local logs. You can export them to help diagnose problems.</p>
                            <Field icon={Bug} label="Report a bug" detail="Saves your logs to Downloads and opens a bug report on GitHub.">
                               <Button busy={exporting === "report"} disabled={!!exporting} onClick={() => exportLogs("report")}>
                                  Report a bug
@@ -652,7 +655,7 @@ export function Settings({
                         <section className="settings-group settings-danger">
                            <h2>Maintenance</h2>
                            <p className="section-description">Clean up your installation and reset settings. Your files are untouched.</p>
-                           <Field icon={RotateCcw} label="Reset settings & setup" detail="Reset settings, recording setup or both, then AcroClip restarts.">
+                           <Field icon={RotateCcw} label="Reset settings & setup" detail="Reset settings, recording setup or both.">
                               <Button className="destructive" busy={maintaining === "settings"} disabled={!!maintaining} onClick={resetSettings}>
                                  Reset settings
                               </Button>

@@ -87,12 +87,13 @@
 }
 
 .button.destructive {
-   background: #d65f70;
-   color: white;
+   color: #181818;
+   background: var(--red);
+   font-weight: 600;
 }
 
 .button.destructive:hover:not(:disabled) {
-   background: #e57685;
+   background: var(--red-hover);
 }
 
 .button.wide {
@@ -682,7 +683,8 @@
    }
 }
 
-.button.primary:disabled {
+.button.primary:disabled,
+.button.destructive:disabled {
    background: var(--raised);
    color: var(--muted);
 }

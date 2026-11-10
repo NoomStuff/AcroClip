@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { defaultPreferences } from "./defaults";
+import type { Preferences } from "./types";
 
 /**
  * What a factory reset can remove. The renderer's checklist and the native confirmation both
@@ -44,6 +46,74 @@ export const resetPartsSchema = z
    .min(1)
    .max(resetParts.length)
    .transform((parts) => resetParts.filter((part) => parts.includes(part)));
+
+/**
+ * What setup chooses: the capture source, quality, clip length and audio. Resetting these opens
+ * setup again. Every other setting, apart from the collection folder, is a plain setting, so a
+ * new preference lands there unless it is added here.
+ */
+export const recordingSetupKeys = [
+   "sourceKind",
+   "sourceId",
+   "desktopFallback",
+   "clipSeconds",
+   "recordingPresetVersion",
+   "recordingSizeVersion",
+   "resolutionLimit",
+   "quality",
+   "customWidth",
+   "customHeight",
+   "customFPS",
+   "customCQ",
+   "allowSoftwareEncoder",
+   "replayMemoryMB",
+   "microphone",
+   "microphoneDevice",
+   "captureAudio",
+   "captureVolume",
+   "captureMuted",
+   "microphoneVolume",
+   "microphoneMuted",
+   "audioSourcesVersion",
+   "audioSources",
+] as const satisfies ReadonlyArray<keyof Preferences>;
+
+/** Never reset in place: the clips live there, and setup offers to change it. */
+const keptKeys: ReadonlyArray<keyof Preferences> = ["collection", "setupComplete"];
+
+export interface PreferenceResetParts {
+   settings: boolean;
+   setup: boolean;
+}
+
+export const preferenceResetSchema = z
+   .object({ settings: z.boolean(), setup: z.boolean() })
+   .strict()
+   .refine((parts) => parts.settings || parts.setup, "Choose what to reset.");
+
+export const preferenceResetCopy: Record<keyof PreferenceResetParts, ResetPartCopy> = {
+   settings: {
+      label: "Settings",
+      detail: "Shortcuts, notifications, shareables, games, file names and startup go back to their defaults.",
+   },
+   setup: {
+      label: "Recording setup",
+      detail: "Capture source, quality, clip length and audio go back to their defaults, and setup opens so you can choose them again.",
+   },
+};
+
+/** The current preferences with the chosen groups back at their defaults. */
+export function resetPreferenceGroups(current: Preferences, parts: PreferenceResetParts): Preferences {
+   const defaults = structuredClone(defaultPreferences);
+   const next = { ...current };
+   const setup: ReadonlyArray<keyof Preferences> = recordingSetupKeys;
+   for (const key of Object.keys(defaults) as Array<keyof Preferences>) {
+      if (keptKeys.includes(key)) continue;
+      if (setup.includes(key) ? parts.setup : parts.settings) Object.assign(next, { [key]: defaults[key] });
+   }
+   if (parts.setup) next.setupComplete = false;
+   return next;
+}
 
 export interface HistoryParts {
    logs: boolean;
