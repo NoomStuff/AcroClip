@@ -135,6 +135,17 @@ it("uses request artwork with an app icon fallback", () => {
    const messages = vi.mocked(child.stdin.write).mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
    expect(messages).toMatchObject([{ artwork: "data:image/png;base64,game", detail: "HASTE" }, { artwork: "data:image/png;base64,fallback" }]);
 });
+it("insets icons, including AcroClip's own, but lets clip thumbnails fill the tile", () => {
+   const { feedback, child } = helper();
+   feedback.show("Clip saved", false, false, { artwork: "data:image/png;base64,thumbnail" });
+   feedback.show("Now capturing", false, false, { artwork: "data:image/png;base64,game", artworkIcon: true });
+   feedback.show("Saved", false, false);
+   const messages = String(child.stdin.read())
+      .trim()
+      .split("\n")
+      .map((line): unknown => JSON.parse(line));
+   expect(messages).toMatchObject([{ artworkIcon: false }, { artworkIcon: true }, { artwork: "data:image/png;base64,fallback", artworkIcon: true }]);
+});
 it("uses recording status graphics instead of thumbnail placeholders", () => {
    const { feedback, child } = helper();
    feedback.show("Starting capture...", false, true, { recordingStatus: "starting", replay: false });

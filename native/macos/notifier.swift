@@ -33,6 +33,8 @@ final class FeedbackView: NSView {
     var confirmationAge: Double?
     var imageFromScale = 1.0
     var artworkData = ""
+    /// An application icon sits inside the tile at the size of the other banner graphics. A clip thumbnail fills it.
+    var artworkIcon = false
     var recordingStatus = ""
     var recordPulseAge: Double?
     var previousMessage = "", previousDetail = ""
@@ -105,7 +107,11 @@ final class FeedbackView: NSView {
             NSColor(srgbRed: 40.0 / 255, green: 37.0 / 255, blue: 47.0 / 255, alpha: 1).setFill()
             tile.fill()
             NSGraphicsContext.current?.imageInterpolation = .high
-            if let image = artwork, image.size.width > 0, image.size.height > 0 {
+            if let image = artwork, image.size.width > 0, image.size.height > 0, artworkIcon {
+                let fit = imageSide * 0.62 / max(image.size.width, image.size.height)
+                let size = NSSize(width: image.size.width * fit, height: image.size.height * fit)
+                image.draw(in: NSRect(x: tile.midX - size.width / 2, y: tile.midY - size.height / 2, width: size.width, height: size.height), from: .zero, operation: .sourceOver, fraction: 1)
+            } else if let image = artwork, image.size.width > 0, image.size.height > 0 {
                 let side = min(image.size.width, image.size.height)
                 image.draw(in: tile, from: NSRect(x: (image.size.width - side) / 2, y: (image.size.height - side) / 2, width: side, height: side), operation: .sourceOver, fraction: 1)
             }
@@ -263,6 +269,7 @@ final class Feedback {
         let subtitle = nextFailure && data["errorTitle"] == nil ? String(text.prefix(4000)) : String((data["detail"] as? String ?? "AcroClip").prefix(4000))
         view.changeText(title, subtitle, nextFailure, visible: wasVisible, now: now)
         view.recordingStatus = data["recordingStatus"] as? String ?? ""
+        view.artworkIcon = data["artworkIcon"] as? Bool ?? false
         let artworkData = view.recordingStatus.isEmpty ? data["artwork"] as? String ?? "" : ""
         if artworkData != view.artworkData {
             view.artworkData = artworkData; view.artwork = nil

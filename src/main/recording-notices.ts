@@ -49,6 +49,10 @@ export class RecordingNotices {
    private held = "";
    /** The chosen source has been captured at least once this session. */
    private seen = false;
+   /** After the user switches source, the first thing it settles on is the new baseline, not news. */
+   private adopting = false;
+   /** A switch is in flight, so status may still describe the old source. */
+   private switchingSource = false;
    private idleSince: number | undefined;
    private lostSince: number | undefined;
    private readonly reportedErrors = new Set<string>();
@@ -68,9 +72,26 @@ export class RecordingNotices {
       this.pendingText = source;
       this.source = source;
       this.held = "";
-      this.seen = false;
+      this.seen = this.adopting = false;
       this.reportedErrors.clear();
       this.emit("recording-starting", "Starting capture...");
+   }
+
+   /** The user chose another source while capturing. Nothing was found or lost; capture moved. */
+   switching(mode: CaptureMode): void {
+      if (!this.active) return;
+      this.mode = mode;
+      this.switchingSource = true;
+   }
+
+   /** The switch finished or failed. Whatever capture reports from here on is the new baseline. */
+   switched(): void {
+      if (!this.switchingSource) return;
+      this.switchingSource = false;
+      this.held = "";
+      this.seen = false;
+      this.adopting = true;
+      this.idleSince = this.lostSince = undefined;
    }
 
    get startingDetail(): string | undefined {
@@ -121,10 +142,11 @@ export class RecordingNotices {
       const name = current.sourceName ?? "";
       const footage = current.state === "recording" && current.availableSeconds > 0 && !idle(current) && name !== "";
       if (footage) this.source = name;
-      if (this.stopping) return;
+      if (this.stopping || this.switchingSource) return;
       // A game in Auto, or the chosen source otherwise. Auto's screen fallback is not a game.
       const target = idle(current) ? "" : this.mode === "auto" ? (footage && current.sourceKind === "app" ? name : "") : footage ? name : this.held;
       if (!this.confirmed) this.beforeConfirmed(current, footage, target);
+      else if (this.adopting) this.adopt(current, target);
       else this.follow(target);
    }
 
@@ -151,6 +173,20 @@ export class RecordingNotices {
          this.seen = target !== "";
          this.emit("recording-started", "Capture started");
       }
+   }
+
+   private adopt(current: RecorderState, target: string): void {
+      if (target !== "" || !idle(current)) {
+         this.held = target;
+         this.seen = target !== "";
+         this.adopting = false;
+         return;
+      }
+      // Nothing to capture yet, like Auto with no game. Once that settles, a later find is news again.
+      this.idleSince ??= this.now();
+      if (this.now() - this.idleSince < (current.sourceKind === "waiting" ? ARMED_AFTER_MS : SOURCE_READY_MS)) return;
+      this.idleSince = undefined;
+      this.adopting = false;
    }
 
    private follow(target: string): void {

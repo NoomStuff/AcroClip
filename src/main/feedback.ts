@@ -11,6 +11,8 @@ export interface FeedbackDetails {
    errorTitle?: string;
    detail?: string;
    artwork?: string;
+   /** The artwork is an application icon, drawn inside the tile instead of filling it like a clip thumbnail. */
+   artworkIcon?: boolean;
    sound?: string;
    visual?: boolean;
    preserveBanner?: boolean;
@@ -82,7 +84,7 @@ export class Feedback {
                this.visible = null;
             }
             child.stdin.write(
-               `${JSON.stringify({ id, message: message.slice(0, 4000), error, saving, ...details, sound: process.platform === "linux" ? undefined : details.sound, artwork: details.recordingStatus ? "" : details.artwork || this.artwork })}\n`
+               `${JSON.stringify({ id, message: message.slice(0, 4000), error, saving, ...details, sound: process.platform === "linux" ? undefined : details.sound, artwork: details.recordingStatus ? "" : details.artwork || this.artwork, artworkIcon: details.artworkIcon === true || !details.artwork })}\n`
             );
             return;
          } catch (failure) {

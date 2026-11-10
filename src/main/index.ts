@@ -179,10 +179,14 @@ const recordingStatus: Record<RecordingNoticeKind, NonNullable<FeedbackDetails["
    "recording-stopped": "stopped",
    "critical-error": "error",
 };
+/** A clip or source thumbnail fills the banner tile. Without one, the application icon sits inside it. */
+function bannerArtwork(thumbnail: string | undefined, icon: string | undefined): FeedbackDetails {
+   return thumbnail ? { artwork: thumbnail } : { artwork: icon ?? "", artworkIcon: true };
+}
 /** Finding a game or application shows its own icon. Without one, it falls back to the capture graphic. */
 function capturedArtwork(kind: RecordingNoticeKind): FeedbackDetails {
    const icon = kind === "game-found" || kind === "recording-resumed" ? lastRecordingArtwork?.application.icon : undefined;
-   return icon ? { artwork: icon } : { recordingStatus: recordingStatus[kind] };
+   return icon ? { artwork: icon, artworkIcon: true } : { recordingStatus: recordingStatus[kind] };
 }
 const recordingNotices = new RecordingNotices((entry) => {
    // A new attempt retires the previous capture error waiting in the status bar.
@@ -261,7 +265,7 @@ const recorder = new Recorder({
          previousUntouched: !!previous && collections.untouched(previous.clipId),
       });
       // The merge keeps the newer clip's path, so its name and thumbnail describe either outcome.
-      const banner: FeedbackDetails = { detail: basename(path), artwork: feedbackThumbnail(clip.thumbnail) || capture.application?.icon || "" };
+      const banner: FeedbackDetails = { detail: basename(path), ...bannerArtwork(feedbackThumbnail(clip.thumbnail), capture.application?.icon) };
       if (!candidate.merge || !previous) {
          previousSave = footage;
          record("saved");
@@ -586,6 +590,15 @@ async function startRecording(options: { quiet?: boolean } = {}) {
       updateTray();
    }
 }
+/** A source the user picks mid-capture is a move, not a find or a loss, so notices start over from it. */
+async function switchCaptureSource(value: Preferences, sources: CaptureSource[]) {
+   recordingNotices.switching(value.sourceKind);
+   try {
+      await recorder.switchSource(value, sources);
+   } finally {
+      recordingNotices.switched();
+   }
+}
 async function stopRecording() {
    if (!startingCapture && !["starting", "recording", "waiting"].includes(recorder.status.state)) return;
    recordingNotices.stoppingRequested();
@@ -638,7 +651,7 @@ async function saveClip() {
          "saving",
          "native",
          { detail: applicationName },
-         { artwork: captureSources.cached.find((source) => source.id === footage.id)?.thumbnail || lastRecordingArtwork?.application.icon || "" }
+         bannerArtwork(captureSources.cached.find((source) => source.id === footage.id)?.thumbnail, lastRecordingArtwork?.application.icon)
       );
    } catch (error) {
       throw new SaveFailure(errorMessage(error), { cause: error });
@@ -995,7 +1008,7 @@ function registerIPC() {
                   await stats.flush();
                   await collections.open(next.collection);
                }
-               if (capturing() && sourceChanged) await recorder.switchSource(next, await captureSources.list());
+               if (capturing() && sourceChanged) await switchCaptureSource(next, await captureSources.list());
                if (next.startWithOS !== preferences.startWithOS) await applyStartup(next.startWithOS);
                if (capturing())
                   for (const source of next.audioSources.filter((source) => source.enabled))
@@ -1005,7 +1018,7 @@ function registerIPC() {
                rollbackShortcuts();
                if (next.collection !== preferences.collection && collections.root !== resolve(preferences.collection))
                   await collections.open(preferences.collection).catch(reportRollback);
-               if (capturing() && sourceChanged) await recorder.switchSource(preferences, captureSources.cached).catch(reportRollback);
+               if (capturing() && sourceChanged) await switchCaptureSource(preferences, captureSources.cached).catch(reportRollback);
                if (next.startWithOS !== preferences.startWithOS) await applyStartup(preferences.startWithOS).catch(reportRollback);
                if (capturing())
                   for (const source of preferences.audioSources.filter((source) => source.enabled))

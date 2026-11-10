@@ -309,7 +309,13 @@ class Banner:
                 cr.save()
                 thumbnail_path(cr)
                 cr.clip()
-                image_scale = max(60 / self.image.get_width(), 60 / self.image.get_height())
+                if self.data.get('artworkIcon'):
+                    # An application icon sits inside the tile at the size of the other banner graphics.
+                    cr.set_source_rgb(40 / 255, 37 / 255, 47 / 255)
+                    cr.paint()
+                image_scale = (min if self.data.get('artworkIcon') else max)(60 / self.image.get_width(), 60 / self.image.get_height())
+                if self.data.get('artworkIcon'):
+                    image_scale *= .62
                 cr.scale(image_scale, image_scale)
                 Gdk.cairo_set_source_pixbuf(cr, self.image, -self.image.get_width() / 2, -self.image.get_height() / 2)
                 cr.paint()

@@ -163,6 +163,57 @@ it("treats a crash while paused as a stopped capture, not a failed start", () =>
    expect(notices.at(-1)).toMatchObject({ kind: "critical-error", message: "Capture stopped unexpectedly" });
 });
 
+it("treats switching source as a move, not a find or a loss", () => {
+   const { feedback, notices, after, kinds, start } = fixture();
+   start("HASTE", "app");
+   after(0, capturing);
+   feedback.switching("app");
+   // Status during the switch still describes the old source, or nothing at all.
+   after(1000, capturing);
+   after(PAUSE_AFTER_MS, lostApp);
+   feedback.switched();
+   after(1000, { ...capturing, sourceName: "Other app" });
+   after(1000, { ...capturing, sourceName: "Other app" });
+   expect(kinds()).toEqual(["recording-starting", "recording-started"]);
+   after(1000, { ...lostApp, sourceName: "Other app" });
+   after(PAUSE_AFTER_MS, { ...lostApp, sourceName: "Other app" });
+   expect(notices.at(-1)).toMatchObject({ kind: "recording-paused", detail: "Lost Other app. Capture resumes when it's back." });
+});
+it("does not announce the game that is running when switching to Auto", () => {
+   const { feedback, after, kinds, start } = fixture();
+   start("Screen 1", "screen");
+   after(0, { ...capturing, sourceKind: "screen", sourceName: "Screen 1" });
+   feedback.switching("auto");
+   feedback.switched();
+   after(1000, capturing);
+   after(1000, capturing);
+   expect(kinds()).toEqual(["recording-starting", "recording-started"]);
+});
+it("announces a game found after switching to Auto with none running", () => {
+   const { feedback, notices, after, start } = fixture();
+   start("Screen 1", "screen");
+   after(0, { ...capturing, sourceKind: "screen", sourceName: "Screen 1" });
+   feedback.switching("auto");
+   feedback.switched();
+   after(0, noGame);
+   after(ARMED_AFTER_MS, noGame);
+   after(5000, noGame);
+   expect(notices.at(-1)?.kind).toBe("recording-started");
+   after(1000, capturing);
+   expect(notices.at(-1)).toMatchObject({ kind: "game-found", detail: "HASTE" });
+});
+it("keeps notices working after a switch fails", () => {
+   const { feedback, notices, after, start } = fixture();
+   start("HASTE", "app");
+   after(0, capturing);
+   feedback.switching("app");
+   feedback.switched();
+   after(1000, capturing);
+   after(1000, lostApp);
+   after(PAUSE_AFTER_MS, lostApp);
+   expect(notices.at(-1)?.kind).toBe("recording-paused");
+});
+
 it("confirms intentional stops only after the recorder stops", () => {
    const { feedback, notices, state, start } = fixture();
    start("HASTE");

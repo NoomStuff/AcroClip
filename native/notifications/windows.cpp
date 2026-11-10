@@ -31,6 +31,8 @@ float textFromOpacity = 1, imageFromScale = 1, refreshFrom = 0;
 float currentBackground = 0, currentContent = 0, returnBackground = 0, returnContent = 0;
 std::unique_ptr<Bitmap> artwork, thumbnailLayer;
 float cachedImageScale = -1, cachedFlash = -1;
+// An application icon sits inside the tile at the size of the other banner graphics. A clip thumbnail fills it.
+bool artworkIcon = false, cachedArtworkIcon = false;
 int cachedSampling = 0;
 IStream *artworkStream = nullptr;
 ULONGLONG entered = 0;
@@ -161,7 +163,7 @@ void drawRecordingStatus(Graphics &g) {
 void drawThumbnail(Graphics &target, float imageScale, float flash) {
   const int sampling = int(std::ceil(scale * 4));
   const int size = 72 * sampling;
-  if (!thumbnailLayer || cachedImageScale != imageScale || cachedFlash != flash || cachedSampling != sampling) {
+  if (!thumbnailLayer || cachedImageScale != imageScale || cachedFlash != flash || cachedSampling != sampling || cachedArtworkIcon != artworkIcon) {
     thumbnailLayer = std::make_unique<Bitmap>(size, size, PixelFormat32bppPARGB);
     Graphics image(thumbnailLayer.get());
     image.Clear(Color(0, 0, 0, 0));
@@ -177,7 +179,12 @@ void drawThumbnail(Graphics &target, float imageScale, float flash) {
     SolidBrush background(Color(255, 40, 37, 47));
     image.FillPath(&background, &tile);
     image.SetClip(&tile);
-    if (artwork) {
+    if (artwork && artworkIcon) {
+      const float width = float(artwork->GetWidth()), height = float(artwork->GetHeight());
+      const float fit = side * .62f / max(width, height);
+      const RectF box(inset + (side - width * fit) / 2, inset + (side - height * fit) / 2, width * fit, height * fit);
+      image.DrawImage(artwork.get(), box, 0.f, 0.f, width, height, UnitPixel);
+    } else if (artwork) {
       const float sourceSide = float(min(artwork->GetWidth(), artwork->GetHeight()));
       ImageAttributes edges; edges.SetWrapMode(WrapModeTileFlipXY);
       image.DrawImage(artwork.get(), Rect(inset, inset, side, side),
@@ -188,7 +195,7 @@ void drawThumbnail(Graphics &target, float imageScale, float flash) {
       SolidBrush white(Color(BYTE(255 * flash), 255, 255, 255));
       image.FillPath(&white, &tile);
     }
-    cachedImageScale = imageScale; cachedFlash = flash; cachedSampling = sampling;
+    cachedImageScale = imageScale; cachedFlash = flash; cachedSampling = sampling; cachedArtworkIcon = artworkIcon;
   }
   const auto saved = target.Save();
   target.SetInterpolationMode(InterpolationModeHighQualityBicubic);
@@ -399,6 +406,7 @@ LRESULT CALLBACK events(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
     }
     changeText(nextText, nextDetail, nextError, wasVisible, now);
     recordingStatus = input->value("recordingStatus", "");
+    artworkIcon = input->value("artworkIcon", false);
     loadArtwork(recordingStatus.empty() ? input->value("artwork", "") : "");
     error = input->value("error", false);
     saving = input->value("saving", false);
@@ -473,6 +481,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
         previousText = wide(value.value("previousMessage", "")); previousDetail = wide(value.value("previousDetail", ""));
         textChangedAt = animationTime() - value.value("textAgeMs", 1000);
         recordingStatus = value.value("recordingStatus", "");
+        artworkIcon = value.value("artworkIcon", false);
         loadArtwork(recordingStatus.empty() ? value.value("artwork", "") : "");
         proofPath = wide(value.at("proofPath").get<std::string>());
         paint();
