@@ -1,8 +1,8 @@
 import { shareableTargetAllowed } from "../../shared/shareable-target";
 import { useDirectionalContent } from "./useDirectionalContent";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, Film, LibraryBig, FolderOpen, LoaderCircle, MoreHorizontal, Share2, X } from "lucide-react";
-import type { RefObject } from "react";
+import { Check, ChevronDown, Copy, CopyPlus, Film, FolderOpen, LibraryBig, LoaderCircle, MoreHorizontal, Save, Scissors, Share2, X } from "lucide-react";
+import type { ReactNode, RefObject } from "react";
 import type { AppState, Clip } from "../../shared/types";
 import { api, describeError, fileDragProps, reportFeedback } from "./desktop";
 import { clipFiles, copiedMessage } from "./clip-files";
@@ -26,6 +26,9 @@ import { restartThreshold } from "./play-queue";
 import type { QueuePosition } from "./play-queue";
 import { startWatch, watchEvent, watchSeek, watchTick } from "./view-stats";
 import type { WatchSession } from "./view-stats";
+import { lastKeptTime, trims } from "./trim-range";
+import { SeekQueue } from "./seek-queue";
+import type { TrimEdge, TrimRange } from "./trim-range";
 
 const autoAdvanceKey = "acroclip.player.autoAdvance";
 function readAutoAdvance(): boolean {
@@ -46,6 +49,8 @@ export function Viewer({
    run,
    openLibrary,
    ask,
+   trimRequest,
+   showClip,
 }: {
    state: Pick<AppState, "applicationIcons" | "jobs" | "preferences" | "categories">;
    clip: Clip | undefined;
@@ -56,6 +61,10 @@ export function Viewer({
    run: Run;
    openLibrary: () => void;
    ask: Ask;
+   // Asks the player to start trimming this clip, such as from a library card's menu.
+   trimRequest: { clipId: string; at: number } | null;
+   // Shows another clip in the player, such as a trimmed copy just saved.
+   showClip: (id: string) => void;
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const sidebar = usePaneSize(layout, { key: "viewer.sidebar", initial: 300, min: 230, max: 420, reserve: 440, axis: "x" });
@@ -90,11 +99,22 @@ export function Viewer({
    const mixDelay = useRef<number | undefined>(undefined);
    useEffect(() => () => window.clearTimeout(mixDelay.current), []);
    const [speed, setSpeed] = useState(1);
+   // The part to keep while trimming, and whether saving makes a copy or replaces the clip.
+   const [trim, setTrim] = useState<TrimRange | null>(null);
+   const [trimMode, setTrimMode] = useState<"copy" | "replace">("copy");
+   const trimRef = useRef(trim);
+   useLayoutEffect(() => {
+      trimRef.current = trim;
+   }, [trim]);
+   // A trim that replaced the file keeps its path, so the player reloads it by revision.
+   const [revision, setRevision] = useState(0);
    const [target, setTarget] = useState(state.preferences.shareSizeMB);
    const [override, setOverride] = useState(false);
    const createRow = useRef<HTMLDivElement>(null);
    const [mediaError, setMediaError] = useState("");
    const video = useRef<HTMLVideoElement>(null);
+   // Seeks from the player's controls wait for the previous one to show, so dragging never freezes the picture.
+   const [seeker] = useState(() => new SeekQueue());
    const player = useRef<HTMLDivElement>(null);
    const seek = useRef(0);
    const switching = useRef(false);
@@ -115,30 +135,34 @@ export function Viewer({
       }
    }, []);
    // Previous restarts a clip that has been playing for a moment, like a music player.
+   // While trimming, the queue stays put: previous restarts at the start handle and next does nothing.
    const stepBack = useCallback(() => {
       const media = video.current;
-      if (media && (media.currentTime > restartThreshold || !queue?.previous)) {
-         media.currentTime = 0;
-         seek.current = 0;
-         setTime(0);
+      const range = trimRef.current;
+      if (media && (range || media.currentTime > restartThreshold || !queue?.previous)) {
+         const start = range?.start ?? 0;
+         seeker.seek(start);
+         seek.current = start;
+         setTime(start);
          return;
       }
       if (queue?.previous) stepClip(queue.previous, !!media && !media.paused);
-   }, [queue?.previous, stepClip]);
+   }, [queue?.previous, stepClip, seeker]);
    const stepForward = useCallback(() => {
-      if (queue?.next) stepClip(queue.next, !!video.current && !video.current.paused);
+      if (queue?.next && !trimRef.current) stepClip(queue.next, !!video.current && !video.current.paused);
    }, [queue?.next, stepClip]);
+   const trimming = !!trim;
    // Media keys step through the queue too, while this player has the media session.
    useEffect(() => {
       if (!visible || !("mediaSession" in navigator)) return;
       const session = navigator.mediaSession;
       session.setActionHandler("previoustrack", stepBack);
-      session.setActionHandler("nexttrack", queue?.next ? stepForward : null);
+      session.setActionHandler("nexttrack", queue?.next && !trimming ? stepForward : null);
       return () => {
          session.setActionHandler("previoustrack", null);
          session.setActionHandler("nexttrack", null);
       };
-   }, [visible, stepBack, stepForward, queue?.next]);
+   }, [visible, stepBack, stepForward, queue?.next, trimming]);
    // One watch session per clip while the player shows it, recorded when it ends.
    const watch = useRef<WatchSession | null>(null);
    const watchedClip = clip?.id;
@@ -184,7 +208,7 @@ export function Viewer({
    const singleTrack = !mixTracks;
    const selectedTracks = track ?? clip?.tracks.slice(0, 1).map((item) => item.index) ?? [];
    const masterSelected = !track || (track.length === 1 && track[0] === clip?.tracks[0]?.index);
-   const playbackIdentity = JSON.stringify([clip?.id, path, version, requestedTrack, compatible]);
+   const playbackIdentity = JSON.stringify([clip?.id, path, version, requestedTrack, compatible, revision]);
    const currentPlayback = useRef({ identity: playbackIdentity, generation: urlGeneration });
    useLayoutEffect(() => {
       currentPlayback.current = { identity: playbackIdentity, generation: urlGeneration };
@@ -192,22 +216,24 @@ export function Viewer({
    const ownsMedia = (media: HTMLVideoElement) =>
       visible && urlOwner === currentPlayback.current.identity && urlGeneration === currentPlayback.current.generation && media.currentSrc === url;
    // The envelope describes the original's first track, which every version shares in shape.
-   const [loudness, setLoudness] = useState<{ path: string; levels: number[] } | null>(null);
+   const [loudness, setLoudness] = useState<{ path: string; revision: number; levels: number[] } | null>(null);
    const clipPath = clip?.originalMissing ? undefined : clip?.path;
+   const loudnessCurrent = !!loudness && loudness.path === clipPath && loudness.revision === revision;
    useEffect(() => {
-      if (!clipPath || !visible || loudness?.path === clipPath) return;
+      if (!clipPath || !visible || loudnessCurrent) return;
       let current = true;
       void api.loudness(clipPath).then(
-         (levels) => current && setLoudness({ path: clipPath, levels }),
-         () => current && setLoudness({ path: clipPath, levels: [] })
+         (levels) => current && setLoudness({ path: clipPath, revision, levels }),
+         () => current && setLoudness({ path: clipPath, revision, levels: [] })
       );
       return () => {
          current = false;
       };
-   }, [clipPath, visible, loudness?.path]);
+   }, [clipPath, visible, loudnessCurrent, revision]);
    const fade = usePlaybackFade(video, playbackIdentity, url, urlOwner === playbackIdentity, visible, urlGeneration);
    const targetAllowed = shareableTargetAllowed(clip?.size ?? 0, override ? target : state.preferences.shareSizeMB);
    const job = state.jobs.find((item) => item.clipId === clip?.id && item.kind === "shareable" && ["queued", "running"].includes(item.state));
+   const trimJob = state.jobs.find((item) => item.clipId === clip?.id && item.kind === "trim" && ["queued", "running"].includes(item.state));
    useEffect(() => {
       if (previousClip.current !== clip?.id) {
          previousClip.current = clip?.id;
@@ -220,6 +246,7 @@ export function Viewer({
          setTrack(undefined);
          setShownTrack(undefined);
          setShareId("");
+         setTrim(null);
          setOverride(false);
          setTarget(state.preferences.shareSizeMB);
       }
@@ -252,7 +279,9 @@ export function Viewer({
       setMediaError("");
       void (async () => {
          try {
-            const result = await api.playback(path, requestedTrack, requestId, compatible ? { compatible: true } : undefined);
+            const prepared = await api.playback(path, requestedTrack, requestId, compatible ? { compatible: true } : undefined);
+            // The same file path after a trim replaced it. A new address keeps the old footage from being reused.
+            const result = revision ? `${prepared}?revision=${revision}` : prepared;
             if (!disposed) {
                setMediaError("");
                if (currentUrl.current === result) {
@@ -278,7 +307,7 @@ export function Viewer({
          disposed = true;
          void api.cancelPlayback(requestId).catch(() => undefined);
       };
-   }, [path, requestedTrack, compatible, visible, playbackIdentity]);
+   }, [path, requestedTrack, compatible, visible, playbackIdentity, revision]);
    // Track changes apply to the playing element without reloading it.
    useEffect(() => {
       const media = video.current;
@@ -319,11 +348,146 @@ export function Viewer({
       if (value.length > 1 || !nativeTrackSelection) mixDelay.current = window.setTimeout(apply, 350);
       else apply();
    };
+   // While trimming, playback stays between the handles. Playing from the end starts over at the start handle.
+   const play = useCallback(
+      (media: HTMLVideoElement) => {
+         const range = trimRef.current;
+         if (range && (media.currentTime >= lastKeptTime(range) - 0.01 || media.currentTime < range.start)) seeker.seek(range.start);
+         return media.play();
+      },
+      [seeker]
+   );
+   const seekTo = useCallback(
+      (value: number) => {
+         const range = trimRef.current;
+         const next = range ? Math.min(lastKeptTime(range), Math.max(range.start, value)) : value;
+         seeker.seek(next);
+         seek.current = next;
+         setTime(next);
+      },
+      [seeker]
+   );
+   useEffect(() => {
+      const media = video.current;
+      return media ? seeker.attach(media) : undefined;
+   }, [seeker, url]);
    const toggle = () => {
-      if (!video.current) return;
-      if (video.current.paused) void run(() => video.current!.play());
-      else video.current.pause();
+      const media = video.current;
+      if (!media) return;
+      if (media.paused) void run(() => play(media));
+      else media.pause();
    };
+   useEffect(() => {
+      const media = video.current;
+      if (!trim || !media || !playing) return;
+      let frame = 0;
+      const watch = () => {
+         if (media.currentTime >= trim.end - 0.001) {
+            media.pause();
+            media.currentTime = lastKeptTime(trim);
+         } else frame = requestAnimationFrame(watch);
+      };
+      frame = requestAnimationFrame(watch);
+      return () => cancelAnimationFrame(frame);
+   }, [trim, playing, url]);
+   const clipDuration = duration || clip?.duration || 0;
+   // One export per clip at a time, so a clip making a shareable can't be trimmed, and the other way round.
+   const trimAvailable = !!clip && !clip.originalMissing && clipDuration > 0 && !trimJob && !job;
+   // The sidebar's buttons rise in from the bottom when trimming starts or ends.
+   const trimLayer = !!trim || !!trimJob;
+   const bottomLayer = useRef<HTMLDivElement>(null);
+   const shownLayer = useRef({ trimLayer, clip: clip?.id });
+   useLayoutEffect(() => {
+      const before = shownLayer.current;
+      shownLayer.current = { trimLayer, clip: clip?.id };
+      const node = bottomLayer.current;
+      if (!node || !visible || before.trimLayer === trimLayer || before.clip !== clip?.id || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const animation = node.animate(
+         [
+            { opacity: 0, transform: "translateY(18px)" },
+            { opacity: 1, transform: "translateY(0)" },
+         ],
+         { duration: 300, easing: "cubic-bezier(.22,.8,.3,1)" }
+      );
+      return () => animation.cancel();
+   }, [trimLayer, clip?.id, visible]);
+   const startTrim = useCallback(() => {
+      if (!clip || clip.originalMissing) return;
+      rememberPlayback();
+      setVersion("original");
+      setTrim({ start: 0, end: video.current && version === "original" && Number.isFinite(video.current.duration) ? video.current.duration : clip.duration });
+      // rememberPlayback reads refs only. The trim always starts from the whole original.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [clip, version]);
+   const stopTrim = () => setTrim(null);
+   // A request from a library card arrives with the clip it names. Each request starts trimming once.
+   const handledTrimRequest = useRef<number | undefined>(undefined);
+   useEffect(() => {
+      if (!visible || !trimRequest || handledTrimRequest.current === trimRequest.at || clip?.id !== trimRequest.clipId) return;
+      handledTrimRequest.current = trimRequest.at;
+      startTrim();
+   }, [visible, trimRequest, clip?.id, startTrim]);
+   const changeTrimRange = (next: TrimRange, edge: TrimEdge) => {
+      setTrim(next);
+      const media = video.current;
+      if (!media) return;
+      // The player shows the frame under the handle being dragged.
+      media.pause();
+      const shown = edge === "start" ? next.start : lastKeptTime(next);
+      seeker.seek(shown);
+      seek.current = shown;
+      setTime(shown);
+   };
+   const currentClip = useRef(clip?.id);
+   useLayoutEffect(() => {
+      currentClip.current = clip?.id;
+   }, [clip?.id]);
+   const saveTrim = () => {
+      if (!clip || !trim || trimJob || !trims(trim, clipDuration, clip.frameRate)) return;
+      const clipId = clip.id,
+         range = trim,
+         mode = trimMode;
+      void run(async () => {
+         if (mode === "replace") video.current?.pause();
+         const result = await api.trimClip(clipId, range.start, range.end, mode);
+         // A failed or cancelled trim keeps the handles, and main reports why.
+         if (!result || currentClip.current !== clipId) return;
+         setTrim(null);
+         if (mode === "copy") showClip(result);
+         else {
+            seek.current = 0;
+            setTime(0);
+            setRevision((value) => value + 1);
+            reportFeedback({ kind: "notice", message: "Clip trimmed. The original is in the trash.", error: false });
+         }
+      });
+   };
+   // Copies the file on show: the clip, or the chosen shareable. The shortcut reports it in a notice,
+   // the button with its own checkmark. Resolves to whether the file was copied.
+   const copyShown = useCallback(
+      (notify: boolean): Promise<boolean> => {
+         if (!clip) return Promise.resolve(false);
+         const files = clipFiles(clip);
+         const file = version === "shareable" && shareable ? files.shareables[clip.shareables.indexOf(shareable)] : files.original;
+         if (!file?.available) return Promise.resolve(false);
+         return run(async () => {
+            await api.copyFile(file.path);
+            if (notify) reportFeedback({ kind: "notice", message: copiedMessage(file), error: false });
+         });
+      },
+      [clip, version, shareable, run]
+   );
+   // Escape stops trimming, unless it closes a menu or dialog first.
+   useEffect(() => {
+      if (!visible || !trim || trimJob) return;
+      const key = (event: KeyboardEvent) => {
+         if (event.key !== "Escape" || event.defaultPrevented || document.querySelector(".select-menu,.floating-menu,[role=dialog]")) return;
+         if (document.fullscreenElement) return;
+         setTrim(null);
+      };
+      window.addEventListener("keydown", key);
+      return () => window.removeEventListener("keydown", key);
+   }, [visible, trim, trimJob]);
    useEffect(() => {
       if (!visible) return;
       const command = (event: Event) => {
@@ -331,31 +495,23 @@ export function Viewer({
             node = video.current;
          if (!clip || !node) return;
          if (id === "playPause") {
-            if (node.paused) void run(() => node.play());
+            if (node.paused) void run(() => play(node));
             else node.pause();
-         } else if (id === "seekBack") node.currentTime = Math.max(0, node.currentTime - 5);
-         else if (id === "seekForward" && Number.isFinite(node.duration)) node.currentTime = Math.min(node.duration, node.currentTime + 5);
+         } else if (id === "seekBack") seekTo(Math.max(0, node.currentTime - 5));
+         else if (id === "seekForward" && Number.isFinite(node.duration)) seekTo(Math.min(node.duration, node.currentTime + 5));
          else if (id === "mutePlayback") toggleMute();
          else if (id === "previousClip") stepBack();
          else if (id === "nextClip") stepForward();
          else if (id === "fullscreen" && player.current)
             void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()));
-         else if (id === "createShareable" && targetAllowed && !clip.originalMissing && !job)
+         else if (id === "createShareable" && targetAllowed && !clip.originalMissing && !job && !trimJob && !trimRef.current)
             void run(() => api.createShareable(clip.id, override ? target : undefined));
          else if (id === "showFile" && path) void run(() => api.reveal(path));
-         else if (id === "copyFile" && path && !window.getSelection()?.toString()) {
-            const files = clipFiles(clip);
-            const file = version === "shareable" && shareable ? files.shareables[clip.shareables.indexOf(shareable)] : files.original;
-            if (file)
-               void run(async () => {
-                  await api.copyFile(file.path);
-                  reportFeedback({ kind: "notice", message: copiedMessage(file), error: false });
-               });
-         }
+         else if (id === "copyFile" && path && !window.getSelection()?.toString()) void copyShown(true);
       };
       window.addEventListener("acroclip-shortcut", command);
       return () => window.removeEventListener("acroclip-shortcut", command);
-   }, [visible, clip, override, target, path, run, targetAllowed, job, toggleMute, version, shareable, stepBack, stepForward]);
+   }, [visible, clip, override, target, path, run, targetAllowed, job, trimJob, toggleMute, stepBack, stepForward, play, seekTo, copyShown]);
    // A clip counts as viewed once it is on screen, which keeps a later save from merging it away.
    const clipId = clip?.id;
    useEffect(() => {
@@ -402,7 +558,8 @@ export function Viewer({
       return () => clearTimeout(controlsTimer.current);
    }, [wakeControls]);
    const create = () => {
-      if (clip && targetAllowed && !clip.originalMissing && !job) void run(() => api.createShareable(clip.id, override ? target : undefined));
+      if (clip && targetAllowed && !clip.originalMissing && !job && !trimJob && !trim)
+         void run(() => api.createShareable(clip.id, override ? target : undefined));
    };
    const remove = async (shareableId?: string, scope?: "shareables") => {
       if (!clip) return;
@@ -440,12 +597,13 @@ export function Viewer({
                            createTag={() => setCreatingTag(true)}
                            clip={clip}
                            categories={state.categories}
-                           busy={!!job}
-                           canCreate={targetAllowed}
+                           busy={!!job || !!trimJob}
+                           canCreate={targetAllowed && !trim}
                            attaCutAvailable={attaCutAvailable}
                            ask={ask}
                            run={run}
                            create={create}
+                           trim={trimAvailable && !trim ? startTrim : undefined}
                            remove={(shareableId, scope) => void remove(shareableId, scope)}
                         />
                      </Menu>
@@ -471,7 +629,7 @@ export function Viewer({
                      onChange={changeVersion}
                      values={[
                         { value: "original", label: "Clip", disabled: !!clip.originalMissing },
-                        { value: "shareable", label: "Shareable" },
+                        { value: "shareable", label: "Shareable", disabled: !!trim },
                      ]}
                   />
                   {clip.originalMissing && (
@@ -557,58 +715,87 @@ export function Viewer({
                </section>
             </div>
             <div className="viewer-sidebar-bottom" ref={versionActions}>
-               {path && (
-                  <div className="reveal-row">
-                     <Button className="wide" onClick={() => void run(() => api.reveal(path))}>
-                        <FolderOpen size={16} />
-                        {version === "shareable" ? "Show shareable in folder" : "Show clip in folder"}
-                     </Button>
-                  </div>
-               )}
-               <div className="viewer-create-row" ref={createRow}>
-                  <div className="viewer-create-main">
-                     <Button
-                        className="primary wide"
-                        onClick={create}
-                        disabled={!!clip.originalMissing || !targetAllowed}
-                        data-tooltip={!targetAllowed ? "Choose a size target no larger than the clip" : undefined}
-                        busy={!!job}
-                        busyIndicator="content"
-                        {...(job ? { progress: job.progress } : {})}
-                        aria-label={
-                           job
-                              ? `${job.state === "queued" ? "Waiting to create shareable" : "Creating shareable"}, ${Math.round(job.progress * 100)} percent`
-                              : undefined
-                        }
-                     >
-                        {job ? (
-                           <>
-                              <LoaderCircle size={17} className="spin" />
-                              <span role="status">{Math.round(job.progress * 100)}%</span>
-                           </>
-                        ) : (
-                           <>
-                              <Share2 size={17} />
-                              Create shareable
-                              {override && <span className="viewer-create-size">({target} MB)</span>}
-                           </>
-                        )}
-                     </Button>
-                     {job && (
-                        <IconButton className="viewer-cancel-export" label="Cancel shareable" onClick={() => void run(() => api.cancelJob(job.id))}>
-                           <X size={15} />
-                        </IconButton>
-                     )}
-                  </div>
-                  <ShareSizePicker
-                     defaultTarget={state.preferences.shareSizeMB}
-                     target={target}
-                     override={override}
-                     disabled={!!clip.originalMissing || !!job}
-                     onOverride={setOverride}
-                     onTarget={setTarget}
-                     anchor={createRow}
-                  />
+               {/* A trim keeps showing its progress after the player moved away from it and back. */}
+               <div className="viewer-bottom-layer" ref={bottomLayer}>
+                  {trimLayer ? (
+                     <TrimActions
+                        trimmed={!trim || trims(trim, clipDuration, clip.frameRate)}
+                        mode={trimMode}
+                        onMode={setTrimMode}
+                        job={trimJob}
+                        onSave={saveTrim}
+                        onCancel={stopTrim}
+                        onCancelJob={(id) => void run(() => api.cancelJob(id))}
+                     />
+                  ) : (
+                     <>
+                        <div className="reveal-row">
+                           <ConfirmButton
+                              label={version === "shareable" ? "Show shareable in folder" : "Show clip in folder"}
+                              icon={<FolderOpen size={16} />}
+                              disabled={!path}
+                              action={() => (path ? run(() => api.reveal(path)) : Promise.resolve(false))}
+                           />
+                           <ConfirmButton
+                              label={version === "shareable" ? "Copy shareable" : "Copy clip"}
+                              icon={<Copy size={16} />}
+                              disabled={!path}
+                              action={() => copyShown(false)}
+                           />
+                        </div>
+                        <div className="reveal-row">
+                           <Button className="wide" onClick={startTrim} disabled={!trimAvailable}>
+                              <Scissors size={16} />
+                              Trim clip
+                           </Button>
+                        </div>
+                        <div className="viewer-create-row" ref={createRow}>
+                           <div className="viewer-create-main">
+                              <Button
+                                 className="primary wide"
+                                 onClick={create}
+                                 disabled={!!clip.originalMissing || !targetAllowed}
+                                 data-tooltip={!targetAllowed ? "Choose a size target no larger than the clip" : undefined}
+                                 busy={!!job}
+                                 busyIndicator="content"
+                                 {...(job ? { progress: job.progress } : {})}
+                                 aria-label={
+                                    job
+                                       ? `${job.state === "queued" ? "Waiting to create shareable" : "Creating shareable"}, ${Math.round(job.progress * 100)} percent`
+                                       : undefined
+                                 }
+                              >
+                                 {job ? (
+                                    <>
+                                       <LoaderCircle size={17} className="spin" />
+                                       <span role="status">{Math.round(job.progress * 100)}%</span>
+                                    </>
+                                 ) : (
+                                    <>
+                                       <Share2 size={17} />
+                                       Create shareable
+                                       {override && <span className="viewer-create-size">({target} MB)</span>}
+                                    </>
+                                 )}
+                              </Button>
+                              {job && (
+                                 <IconButton className="viewer-cancel-export" label="Cancel shareable" onClick={() => void run(() => api.cancelJob(job.id))}>
+                                    <X size={15} />
+                                 </IconButton>
+                              )}
+                           </div>
+                           <ShareSizePicker
+                              defaultTarget={state.preferences.shareSizeMB}
+                              target={target}
+                              override={override}
+                              disabled={!!clip.originalMissing || !!job}
+                              onOverride={setOverride}
+                              onTarget={setTarget}
+                              anchor={createRow}
+                           />
+                        </div>
+                     </>
+                  )}
                </div>
             </div>
          </aside>
@@ -681,7 +868,8 @@ export function Viewer({
                         if (watch.current) watchTick(watch.current, event.currentTarget.currentTime);
                         resume.current = false;
                         setPlaying(false);
-                        if (autoAdvance && queue?.next) stepClip(queue.next, true);
+                        // Trimming keeps this clip open, even with autoplay on.
+                        if (autoAdvance && queue?.next && !trimRef.current) stepClip(queue.next, true);
                      }}
                      onError={(event) => {
                         if (!ownsMedia(event.currentTarget)) return;
@@ -738,20 +926,18 @@ export function Viewer({
                disabled={!url || loading}
                fullscreen={fullscreen}
                onToggle={toggle}
-               previousTitle={queue?.previous?.name}
-               nextTitle={queue?.next?.name}
+               // While trimming, previous restarts at the start handle and next is off.
+               previousTitle={trim ? undefined : queue?.previous?.name}
+               nextTitle={trim ? undefined : queue?.next?.name}
                queueLabel={queue && queue.total > 1 ? `${queue.label} · ${queue.index + 1} of ${queue.total}` : ""}
                autoAdvance={autoAdvance}
                onAutoAdvance={changeAutoAdvance}
                onPrevious={stepBack}
                onNext={stepForward}
-               loudness={loudness && loudness.path === clipPath ? loudness.levels : undefined}
+               loudness={loudnessCurrent ? loudness.levels : undefined}
                preview={clip}
-               onSeek={(next) => {
-                  if (video.current) video.current.currentTime = next;
-                  setTime(next);
-                  seek.current = next;
-               }}
+               onSeek={seekTo}
+               seeker={seeker}
                onVolume={(next, restore) => {
                   setVolume(next === 0 ? (restore > 0 ? restore : 1) : next);
                   setMuted(next === 0);
@@ -759,6 +945,7 @@ export function Viewer({
                onMute={toggleMute}
                onTrack={changeTrack}
                onFullscreen={() => void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()))}
+               trim={trim ? { range: trim, frameRate: clip.frameRate, disabled: !!trimJob, onRange: changeTrimRange } : undefined}
             />
          </div>
          {creatingTag && <CategoryEditor close={() => setCreatingTag(false)} run={run} />}
@@ -884,5 +1071,115 @@ function ShareSizePicker({
             </p>
          </Popover>
       </div>
+   );
+}
+
+/** Saving a trim takes the place of creating a shareable: one split button, with Cancel above it. */
+function TrimActions({
+   trimmed,
+   mode,
+   onMode,
+   job,
+   onSave,
+   onCancel,
+   onCancelJob,
+}: {
+   trimmed: boolean;
+   mode: "copy" | "replace";
+   onMode: (mode: "copy" | "replace") => void;
+   job: AppState["jobs"][number] | undefined;
+   onSave: () => void;
+   onCancel: () => void;
+   onCancelJob: (id: string) => void;
+}) {
+   const percent = job ? Math.round(job.progress * 100) : 0;
+   return (
+      <>
+         <div className="reveal-row">
+            <Button className="wide" onClick={onCancel} disabled={!!job}>
+               <X size={16} />
+               Cancel trim
+            </Button>
+         </div>
+         <div className="viewer-create-row">
+            <div className="viewer-create-main">
+               <Button
+                  className="primary wide"
+                  onClick={onSave}
+                  disabled={!trimmed}
+                  busy={!!job}
+                  busyIndicator="content"
+                  {...(job ? { progress: job.progress } : {})}
+                  aria-label={job ? `${job.state === "queued" ? "Waiting to trim" : "Trimming"}, ${percent} percent` : undefined}
+               >
+                  {job ? (
+                     <>
+                        <LoaderCircle size={17} className="spin" />
+                        <span role="status">{percent}%</span>
+                     </>
+                  ) : mode === "copy" ? (
+                     <>
+                        <CopyPlus size={17} />
+                        Save as copy
+                     </>
+                  ) : (
+                     <>
+                        <Save size={17} />
+                        Save
+                     </>
+                  )}
+               </Button>
+               {job && (
+                  <IconButton className="viewer-cancel-export" label="Cancel trim" onClick={() => onCancelJob(job.id)}>
+                     <X size={15} />
+                  </IconButton>
+               )}
+            </div>
+            <div className="viewer-size-picker">
+               <DropdownSelect
+                  label={mode === "copy" ? "Save options: Save as copy" : "Save options: Save"}
+                  disabled={!!job}
+                  iconOnly
+                  placement="up"
+                  className="viewer-size-select"
+                  triggerContent={<ChevronDown size={16} />}
+                  value={mode}
+                  options={[
+                     { value: "copy", label: "Save as copy" },
+                     { value: "replace", label: "Save" },
+                  ]}
+                  onChange={(value) => onMode(value === "replace" ? "replace" : "copy")}
+               />
+            </div>
+         </div>
+      </>
+   );
+}
+
+/** An icon button that answers a finished action with a checkmark, then its own icon, each bouncing in. */
+function ConfirmButton({ label, icon, disabled, action }: { label: string; icon: ReactNode; disabled: boolean; action: () => Promise<boolean> }) {
+   // Each change of icon remounts it, which plays the bounce. The first icon shows without one.
+   const [phase, setPhase] = useState<"rest" | "done" | "back">("rest");
+   const timer = useRef<number | undefined>(undefined);
+   useEffect(() => () => window.clearTimeout(timer.current), []);
+   return (
+      <Button
+         className="wide confirm-button"
+         aria-label={label}
+         data-tooltip={label}
+         disabled={disabled}
+         onClick={() =>
+            void action().then((done) => {
+               if (!done) return;
+               window.clearTimeout(timer.current);
+               setPhase("done");
+               timer.current = window.setTimeout(() => setPhase("back"), 1100);
+            })
+         }
+      >
+         <span key={phase} className="confirm-icon" data-bounce={phase === "rest" ? undefined : true} aria-hidden="true">
+            {phase === "done" ? <Check size={16} /> : icon}
+         </span>
+      </Button>
    );
 }

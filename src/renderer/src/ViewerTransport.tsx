@@ -9,6 +9,11 @@ import { DropdownSelect } from "./DropdownSelect";
 import { formatTime } from "./format";
 import { IconButton } from "./ui";
 import { ViewerVolume } from "./ViewerVolume";
+import { TrimHandles } from "./TrimHandles";
+import type { SeekQueue } from "./seek-queue";
+import { pointerSmoothingMs, useSmoothValue } from "./useSmoothValue";
+import type { TrimControls } from "./TrimHandles";
+import type { TrimEdge } from "./trim-range";
 export function ViewerTransport({
    time: initialTime,
    video,
@@ -38,6 +43,8 @@ export function ViewerTransport({
    onMute,
    onTrack,
    onFullscreen,
+   trim,
+   seeker,
 }: {
    time: number;
    video: RefObject<HTMLVideoElement | null>;
@@ -62,13 +69,17 @@ export function ViewerTransport({
    onNext: () => void;
    loudness: number[] | undefined;
    // The clip whose keyframes preview a position while the seek bar is hovered.
-   preview: Pick<Clip, "id" | "thumbnail" | "width" | "height">;
+   preview: Pick<Clip, "id" | "thumbnail" | "width" | "height" | "frameRate">;
    onSeek: (value: number) => void;
    onToggle: () => void;
    onVolume: (value: number, restore: number) => void;
    onMute: () => void;
    onTrack: (value: number[]) => void;
    onFullscreen: () => void;
+   // While trimming, a handle on each end of the part to keep sits on the seek bar.
+   trim: TrimControls | undefined;
+   // Where a seek on its way is heading, so the playhead doesn't fall back while the video catches up.
+   seeker: SeekQueue;
 }) {
    // The playback clock only redraws transport controls. Sidebar, menus and
    // export controls do not need to reconcile on every video frame.
@@ -77,7 +88,7 @@ export function ViewerTransport({
       const media = video.current;
       if (!media || !visible || disabled) return;
       let frame = 0;
-      const update = () => setTime(media.currentTime);
+      const update = () => setTime(seeker.pendingTime() ?? media.currentTime);
       const tick = () => {
          update();
          frame = requestAnimationFrame(tick);
@@ -91,15 +102,37 @@ export function ViewerTransport({
          media.removeEventListener("timeupdate", update);
          media.removeEventListener("seeked", update);
       };
-   }, [video, visible, playing, initialTime, disabled]);
-   const seekTo = (next: number) => {
+   }, [video, visible, playing, initialTime, disabled, seeker]);
+   const seekTo = (value: number) => {
+      // While trimming, the playhead stays between the handles.
+      const next = trim ? Math.min(trim.range.end, Math.max(trim.range.start, value)) : value;
       // Keep the controlled range at the requested position during the input
       // event, before the media element emits its asynchronous seek events.
       setTime(next);
       onSeek(next);
    };
    const curve = useMemo(() => (loudness ? loudnessCurve(loudness) : null), [loudness]);
-   const fraction = duration > 0 ? Math.min(1, Math.max(0, time / duration)) : 0;
+   // The playhead moves like AttaCut's: exactly with playback, closely behind a dragging pointer,
+   // and gliding into a click or keyboard seek. Steps of a frame or so land at once.
+   const [scrubbing, setScrubbing] = useState(false);
+   useEffect(() => {
+      if (!scrubbing) return;
+      const release = () => setScrubbing(false);
+      window.addEventListener("pointerup", release);
+      window.addEventListener("pointercancel", release);
+      return () => {
+         window.removeEventListener("pointerup", release);
+         window.removeEventListener("pointercancel", release);
+      };
+   }, [scrubbing]);
+   // While trimming, dragging the playhead follows like scrubbing, and dragging a handle moves it exactly.
+   const [trimDrag, setTrimDrag] = useState<TrimEdge | "playhead" | null>(null);
+   const frameStep = 1 / (preview.frameRate && preview.frameRate > 0 ? preview.frameRate : 30);
+   const drawnTime = useSmoothValue(time, {
+      ...(scrubbing || trimDrag === "playhead" ? { follow: pointerSmoothingMs } : { duration: 170, jump: Math.max(frameStep * 1.5, 0.05) }),
+      snap: () => playing || trimDrag === "start" || trimDrag === "end",
+   });
+   const fraction = duration > 0 ? Math.min(1, Math.max(0, drawnTime / duration)) : 0;
    const scrub = useKeyframeScrub(preview, visible && !disabled && duration > 0, { eager: true });
    const [bar, setBar] = useState(0);
    const gradient = useId();
@@ -108,6 +141,14 @@ export function ViewerTransport({
       preview.height > preview.width
          ? { width: Math.round((150 * preview.width) / preview.height), height: 150 }
          : { width: 176, height: Math.round((176 * preview.height) / Math.max(1, preview.width)) };
+   // Kept inside the bar so the preview never hangs off the player's edge.
+   const previewLeft = Math.min(Math.max((scrub.position ?? 0) * bar, previewSize.width / 2), Math.max(previewSize.width / 2, bar - previewSize.width / 2));
+   // While trimming, the preview's time fades where it would sit on the playhead's dot.
+   const previewCovered =
+      !!trim &&
+      scrub.position !== null &&
+      duration > 0 &&
+      Math.abs(previewLeft - (Math.min(trim.range.end, Math.max(trim.range.start, time)) / duration) * bar) < 30;
    const audioLabel = !tracks.length
       ? "None"
       : track.length === tracks.length
@@ -119,8 +160,17 @@ export function ViewerTransport({
       <div className="player-controls">
          <label
             className="player-progress"
-            style={{ "--played": `${fraction * 100}%`, "--hovered": `${(scrub.position ?? 0) * 100}%` } as CSSProperties}
+            style={
+               {
+                  "--played": `${fraction * 100}%`,
+                  "--hovered": `${(scrub.position ?? 0) * 100}%`,
+                  ...(trim && duration > 0
+                     ? { "--trim-start": `${(trim.range.start / duration) * 100}%`, "--trim-end": `${(trim.range.end / duration) * 100}%` }
+                     : {}),
+               } as CSSProperties
+            }
             data-hovering={scrub.position !== null || undefined}
+            data-trimming={trim ? true : undefined}
             onPointerMove={(event) => {
                if (event.pointerType === "touch") return;
                const bounds = event.currentTarget.getBoundingClientRect();
@@ -158,20 +208,27 @@ export function ViewerTransport({
                   aria-hidden="true"
                   data-ready={scrub.shown || undefined}
                   style={{
-                     // Kept inside the bar so the preview never hangs off the player's edge.
-                     left: `${Math.min(Math.max(scrub.position * bar, previewSize.width / 2), Math.max(previewSize.width / 2, bar - previewSize.width / 2))}px`,
+                     left: `${previewLeft}px`,
                   }}
                >
                   <span className="player-preview-frame" style={{ width: previewSize.width, height: previewSize.height }}>
                      <canvas ref={scrub.canvas} />
                   </span>
-                  <time className="tabular">{formatTime(scrub.position * duration)}</time>
+                  <time className="tabular" data-covered={previewCovered || undefined}>
+                     {formatTime(scrub.position * duration)}
+                  </time>
                </span>
             )}
             <span className="player-progress-track" />
             <span className="player-progress-hover" />
             <span className="player-progress-fill" />
             <i aria-hidden="true" />
+            {trim && (
+               <>
+                  <span className="player-trim-range" aria-hidden="true" />
+                  <TrimHandles {...trim} duration={duration} time={time} shownTime={drawnTime} onSeek={seekTo} onDrag={setTrimDrag} />
+               </>
+            )}
             <input
                type="range"
                aria-label="Playback position"
@@ -180,6 +237,7 @@ export function ViewerTransport({
                step={0.01}
                value={Math.min(time, duration || 0)}
                disabled={disabled}
+               onPointerDown={(event) => event.button === 0 && setScrubbing(true)}
                onChange={(event) => seekTo(Number(event.target.value))}
                onKeyDown={(event) => {
                   if (event.altKey || event.ctrlKey || event.metaKey) return;

@@ -28,6 +28,7 @@ export const statsActions = [
    "move",
    "reveal",
    "attacut",
+   "trim",
    "folder-create",
    "folder-rename",
    "folder-move",

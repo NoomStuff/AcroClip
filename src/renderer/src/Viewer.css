@@ -671,3 +671,168 @@
       transition: none;
    }
 }
+
+/* While trimming, the kept part is a solid line between two handles, and the playhead stands above the bar.
+   The bar narrows by a handle's width on each side, so the handles fit outside the kept part. */
+.player-progress {
+   --trim-handle: 16px;
+   transition: margin 200ms var(--ease);
+}
+.player-progress[data-trimming] {
+   margin-inline: var(--trim-handle);
+}
+.player-progress[data-trimming] :is(.player-progress-fill, .player-progress-hover, .player-loudness),
+.player-progress[data-trimming] > i {
+   display: none;
+}
+/* The preview's time steps aside for the trim playhead's dot instead of covering it. */
+.player-preview time {
+   transition: opacity 120ms var(--ease);
+}
+.player-preview time[data-covered] {
+   opacity: 0;
+}
+.player-trim-range {
+   position: absolute;
+   top: var(--track-inset);
+   bottom: var(--track-inset);
+   left: var(--trim-start);
+   width: calc(var(--trim-end) - var(--trim-start));
+   background: var(--accent);
+   pointer-events: none;
+   transition:
+      top 160ms var(--ease),
+      bottom 160ms var(--ease);
+}
+/* The handles and playhead grab before the bar, with hit areas larger than they look. */
+.trim-handle,
+.trim-playhead {
+   position: absolute;
+   z-index: 3;
+   touch-action: none;
+}
+.trim-handle::before,
+.trim-playhead::after {
+   content: "";
+   position: absolute;
+}
+.trim-handle {
+   top: 50%;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   width: var(--trim-handle);
+   height: 30px;
+   padding: 0;
+   border: 0;
+   background: var(--accent);
+   cursor: ew-resize;
+   transition:
+      background 150ms var(--ease),
+      scale 420ms cubic-bezier(0.25, 2.4, 0.4, 1);
+}
+.trim-handle[data-edge="start"] {
+   translate: -100% -50%;
+   border-radius: 7px 3px 3px 7px;
+}
+.trim-handle[data-edge="end"] {
+   translate: 0 -50%;
+   border-radius: 3px 7px 7px 3px;
+}
+/* Reaching further away from the kept part than into it, which is where the playhead is grabbed. */
+.trim-handle[data-edge="start"]::before {
+   inset: -10px 0 -10px -12px;
+}
+.trim-handle[data-edge="end"]::before {
+   inset: -10px -12px -10px 0;
+}
+/* The grip, like a pill handle's notch. */
+.trim-handle::after {
+   content: "";
+   width: 2px;
+   height: 12px;
+   border-radius: 1px;
+   background: #181818;
+   opacity: 0.7;
+}
+.trim-handle:hover:not(:disabled),
+:root[data-keyboard] .trim-handle:focus-visible {
+   background: var(--accent-hover);
+   scale: 1.08;
+}
+.trim-handle[data-active] {
+   background: var(--accent-hover);
+   scale: 0.94;
+}
+.trim-handle:disabled {
+   cursor: default;
+   opacity: 0.6;
+}
+.trim-playhead {
+   left: 0;
+   bottom: 50%;
+   width: 2px;
+   height: 26px;
+   translate: -50% 0;
+   border-radius: 1px;
+   background: var(--accent);
+   cursor: grab;
+}
+.trim-playhead[data-active] {
+   cursor: grabbing;
+}
+.trim-playhead[data-disabled] {
+   cursor: default;
+   pointer-events: none;
+}
+.trim-playhead::before {
+   content: "";
+   position: absolute;
+   top: -11px;
+   left: 50%;
+   width: 12px;
+   height: 12px;
+   translate: -50% 0;
+   border-radius: 50%;
+   background: var(--accent);
+   transition: scale 420ms cubic-bezier(0.25, 2.4, 0.4, 1);
+}
+.trim-playhead::after {
+   inset: -16px -9px 0;
+}
+.trim-playhead:hover::before,
+:root[data-keyboard] .trim-playhead:focus-visible::before {
+   scale: 1.2;
+}
+.trim-playhead[data-active]::before {
+   scale: 0.92;
+}
+:root[data-keyboard] :is(.trim-handle, .trim-playhead):focus-visible {
+   outline: 2px solid var(--focus);
+   outline-offset: 2px;
+}
+/* Trimming swaps the sidebar's buttons as one layer, with the same spacing. */
+.viewer-bottom-layer {
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+}
+.confirm-icon {
+   display: inline-flex;
+}
+.confirm-icon[data-bounce] {
+   animation: confirm-bounce 460ms cubic-bezier(0.25, 2.4, 0.4, 1);
+}
+.confirm-button .confirm-icon:has(.lucide-check) {
+   color: var(--green);
+}
+@keyframes confirm-bounce {
+   from {
+      scale: 0.4;
+   }
+}
+@media (prefers-reduced-motion: reduce) {
+   .confirm-icon[data-bounce] {
+      animation: none;
+   }
+}

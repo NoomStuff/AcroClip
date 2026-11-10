@@ -154,6 +154,8 @@ export interface Clip {
    duration: number;
    width: number;
    height: number;
+   // Frames per second, once the file has been read.
+   frameRate?: number;
    createdAt: number;
    thumbnail: string;
    playbackUrl: string;
@@ -174,7 +176,7 @@ export interface Category {
 export interface Job {
    id: string;
    clipId: string;
-   kind: "shareable" | "save";
+   kind: "shareable" | "save" | "trim";
    state: "queued" | "running" | "complete" | "failed" | "cancelled";
    progress: number;
    message: string;
@@ -333,6 +335,8 @@ export interface DesktopAPI {
    exportLogs(): Promise<string | null>;
    /** Saves a log archive to Downloads, shows it, and opens a prefilled bug report. */
    reportBug(): Promise<string>;
+   /** Keeps `start` to `end` seconds of a clip, as a new clip or in place of it. Resolves to the trimmed clip, or null when the trim failed or was cancelled. */
+   trimClip(clipId: string, start: number, end: number, mode: "copy" | "replace"): Promise<string | null>;
    openInAttaCut(id: string): Promise<void>;
    attaCutAvailable(): Promise<boolean>;
    dragFile(path: string): void;

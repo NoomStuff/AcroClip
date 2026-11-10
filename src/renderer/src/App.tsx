@@ -220,15 +220,22 @@ export function App() {
       // clip once it exists, just as when choosing an existing clip from the rail.
       if (page === "viewer" && selected === null && clip) setSelected(clip.id);
    }, [page, selected, clip]);
+   // A request the player answers by trimming the clip it names, once.
+   const [trimRequest, setTrimRequest] = useState<{ clipId: string; at: number } | null>(null);
    const openClip = useCallback(
-      (value: Clip, from?: PlayQueue) => {
+      (value: Clip, from?: PlayQueue, options?: { trim: true }) => {
          setSelected(value.id);
          setQueue(from ?? null);
          setAutoplay(null);
+         if (options?.trim) setTrimRequest({ clipId: value.id, at: Date.now() });
          setPage("viewer");
       },
       [setPage]
    );
+   const showClip = useCallback((id: string) => {
+      setSelected(id);
+      setAutoplay(null);
+   }, []);
    const clips = state?.clips,
       folders = state?.folders,
       applicationIcons = state?.applicationIcons,
@@ -360,6 +367,8 @@ export function App() {
                               visible={page === "viewer" && windowVisible}
                               run={run}
                               openLibrary={openLibrary}
+                              trimRequest={trimRequest}
+                              showClip={showClip}
                            />
                         </Suspense>
                      )}

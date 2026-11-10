@@ -16,6 +16,7 @@ import { PlaybackCache } from "./playback";
 import { mapConcurrent } from "./concurrent";
 import { mergeClips } from "./clip-merge";
 import type { MergeResult } from "./clip-merge";
+import { packetsAround, planTrim, probeTrimSource, writeTrim } from "./trim";
 
 const categorySchema = z.object({ id: z.string(), name: z.string(), color: z.string(), icon: z.string().max(80).optional() });
 /** A grid of evenly spaced frames, read left to right, then top to bottom. */
@@ -114,7 +115,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 function clipRecord(
    stored: StoredClip,
    files: Pick<Clip, "path" | "relativePath" | "size" | "thumbnail" | "playbackUrl" | "shareables"> & Partial<Pick<Clip, "availability" | "originalMissing">>,
-   info: Pick<MediaInfo, "duration" | "width" | "height" | "tracks"> | undefined,
+   info: Pick<MediaInfo, "duration" | "width" | "height" | "frameRate" | "tracks"> | undefined,
    viewsTrackedSince: number | undefined
 ): Clip {
    return {
@@ -126,6 +127,7 @@ function clipRecord(
       duration: info?.duration ?? 0,
       width: info?.width ?? 0,
       height: info?.height ?? 0,
+      ...(info?.frameRate ? { frameRate: info.frameRate } : {}),
       tracks: info?.tracks ?? [],
       categories: [...stored.categories],
       ...(stored.mergedFrom ? { mergedFrom: stored.mergedFrom } : {}),
@@ -135,7 +137,8 @@ function clipRecord(
 }
 
 export type MergeOutcome = { merged: true; clip: Clip; duration: number; previousKept: boolean } | { merged: false; reason: string };
-const mergeTemporary = /^\.acroclip-merge-[\da-f-]{36}\.(mp4|mkv)$/i;
+// Merges and trims write their result beside the clip before publishing it.
+const outputTemporary = /^\.acroclip-(merge|trim)-[\da-f-]{36}\.(mp4|mkv|mov|m4v|webm)$/i;
 const fileStamp = (value: BigIntStats) => `${value.dev}:${value.ino}:${value.size}:${value.mtimeNs}:${value.ctimeNs}:${value.birthtimeNs}`;
 
 async function publishWithoutOverwrite(source: string, destination: string): Promise<void> {
@@ -220,7 +223,7 @@ export class CollectionService {
    private stripFill: ReturnType<typeof setTimeout> | undefined;
    // Failed strips aren't retried by the background fill until the app restarts. A hover still tries.
    private stripFailed = new Set<string>();
-   private activeMerges = new Set<string>();
+   private activeOutputs = new Set<string>();
    constructor(options: CollectionOptions = {}) {
       this.options = options;
    }
@@ -856,9 +859,9 @@ export class CollectionService {
          for (const entry of entries) {
             if (entry.isSymbolicLink() || entry.name === ".acroclip") continue;
             const path = join(directory, entry.name);
-            // A merge interrupted by a crash or shutdown leaves its unpublished copy behind.
-            if (entry.isFile() && mergeTemporary.test(entry.name)) {
-               if (!this.activeMerges.has(normal(path))) await rm(path, { force: true }).catch(() => undefined);
+            // A merge or trim interrupted by a crash or shutdown leaves its unpublished copy behind.
+            if (entry.isFile() && outputTemporary.test(entry.name)) {
+               if (!this.activeOutputs.has(normal(path))) await rm(path, { force: true }).catch(() => undefined);
                continue;
             }
             if (entry.isDirectory()) {
@@ -1202,7 +1205,7 @@ export class CollectionService {
       )
          throw new Error("That name contains characters reserved for files. Choose another name.");
       if (!this.metadataWritable) throw new Error("Renaming clips is locked while collection info is damaged.");
-      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's shareable before renaming it.");
+      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's export before renaming it.");
       const stored = this.stored(id);
       const original = await this.resolveFile(stored);
       if (!original) throw new Error("The original video moved or changed. Try again after the library updates.");
@@ -1354,7 +1357,7 @@ export class CollectionService {
    }
 
    async filesForDeletion(id: string, shareableId?: string, scope?: "shareables"): Promise<string[]> {
-      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's shareable before deleting it.");
+      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's export before deleting it.");
       const stored = this.stored(id);
       const files: StoredFile[] = shareableId
          ? stored.shareables.filter((share) => share.id === shareableId)
@@ -1390,6 +1393,8 @@ export class CollectionService {
       if (!this.metadataWritable) throw new Error("Creating shareables is locked while collection info is damaged.");
       const clip = this.visible(id);
       if (clip.originalMissing) throw new Error("The original is missing. Existing shareables are still available.");
+      // A shareable made during a trim could come from either version of the clip.
+      if (this.pendingJobs.some((job) => job.clipId === id && job.kind === "trim")) throw new Error("Wait for the trim to finish before creating a shareable.");
       const job: Job = { id: randomUUID(), clipId: id, kind: "shareable", state: "queued", progress: 0, message: "Waiting to create shareable" };
       if (automatic) this.automaticJobs.add(job.id);
       else {
@@ -1483,6 +1488,155 @@ export class CollectionService {
       this.queue = operation;
       await operation;
    }
+   /**
+    * Keep `start` to `end` of a clip, as a new clip beside it or in place of its file. The trim is
+    * written and verified beside the clip first. Replacing moves the original to the trash, and a
+    * clip that can't go to the trash stays where it is. Resolves to the trimmed clip's id, or null
+    * when the trim failed or was cancelled, which the job reports.
+    */
+   async trimClip(id: string, start: number, end: number, mode: "copy" | "replace", trash: (path: string) => Promise<void>): Promise<string | null> {
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) throw new Error("Choose a part of the clip to keep.");
+      if (!this.metadataWritable) throw new Error("Trimming is locked while collection info is damaged.");
+      const clip = this.visible(id);
+      if (clip.originalMissing) throw new Error("The original is missing. Existing shareables are still available.");
+      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's export before trimming it.");
+      const job: Job = { id: randomUUID(), clipId: id, kind: "trim", state: "queued", progress: 0, message: "Waiting to trim" };
+      this.stored(id).editedAt ??= Date.now();
+      await this.writeMetadata();
+      const controller = new AbortController();
+      this.controllers.set(job.id, controller);
+      this.jobs.push(job);
+      this.jobUpdate(job, {});
+      let trimmed: string | null = null;
+      const operation = this.queue
+         .catch(() => undefined)
+         .then(async () => {
+            const work = join(this.root, ".acroclip", `trim-${job.id}`);
+            let temporary: string | undefined;
+            const { signal } = controller;
+            try {
+               signal.throwIfAborted();
+               this.jobUpdate(job, { state: "running", message: "Trimming clip" });
+               const stored = this.stored(id);
+               const original = await this.resolveFile(stored);
+               if (!original) throw new Error("The clip moved or changed. Try again after the library updates.");
+               const identity = stored.identity;
+               const source = await probeTrimSource(original, signal);
+               const [startPackets, endPackets] = await Promise.all([packetsAround(source, start, signal), packetsAround(source, end, signal)]);
+               const plan = planTrim(source, start, end, startPackets, endPackets);
+               if (plan.kind === "unsupported") throw new Error(plan.reason);
+               const needed = BigInt(Math.ceil((clip.size * (plan.end - plan.start)) / Math.max(source.duration, 0.001))) + 128n * 1024n * 1024n;
+               const space = await statfs(dirname(original), { bigint: true })
+                  .then((value) => value.bavail * value.bsize)
+                  .catch(() => undefined);
+               if (space !== undefined && space < needed) throw new Error("Not enough free storage to trim this clip.");
+               await this.safeDirectory(join(this.root, ".acroclip"));
+               await mkdir(work, { recursive: true });
+               temporary = join(dirname(original), `.acroclip-trim-${job.id}${extname(original)}`);
+               this.activeOutputs.add(normal(temporary));
+               await writeTrim(source, plan, temporary, work, {
+                  signal,
+                  onProgress: (progress) => this.jobUpdate(job, { progress, message: progress >= 0.92 ? "Checking trim" : "Trimming clip" }),
+               });
+               signal.throwIfAborted();
+               const output = temporary;
+               trimmed = await this.changeFiles(async () => {
+                  const current = await this.resolveFile(this.stored(id));
+                  if (!current || normal(current) !== normal(original) || this.stored(id).identity !== identity)
+                     throw new Error("The clip changed while trimming. It was kept as it is.");
+                  return mode === "replace" ? this.replaceWithTrim(id, original, output, trash) : this.publishTrimCopy(id, original, output);
+               });
+               this.jobUpdate(job, { state: "complete", progress: 1, message: mode === "replace" ? "Clip trimmed" : "Trimmed copy saved" });
+            } catch (error) {
+               this.jobUpdate(job, {
+                  state: signal.aborted ? "cancelled" : "failed",
+                  message: signal.aborted ? "Trim cancelled. The clip is unchanged." : message(error),
+               });
+            } finally {
+               if (temporary) {
+                  await rm(temporary, { force: true }).catch(() => undefined);
+                  this.activeOutputs.delete(normal(temporary));
+               }
+               await rm(work, { recursive: true, force: true }).catch(() => undefined);
+               this.controllers.delete(job.id);
+            }
+         });
+      this.queue = operation;
+      await operation;
+      return trimmed;
+   }
+   /** Publishes a trim beside the original as "name (Trim)", numbered when that name is taken. */
+   private async publishTrimBeside(original: string, output: string): Promise<{ destination: string; name: string }> {
+      const stem = basename(original, extname(original));
+      for (let attempt = 1; attempt <= 99; attempt++) {
+         const name = `${stem} (Trim${attempt > 1 ? ` ${attempt}` : ""})`;
+         const destination = join(dirname(original), `${name}${extname(original)}`);
+         try {
+            await publishWithoutOverwrite(output, destination);
+            return { destination, name };
+         } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+         }
+      }
+      throw new Error("Too many trimmed copies of this clip share a name. Rename one and try again.");
+   }
+   /** A new clip next to the original, with the original's source and tags. */
+   private async publishTrimCopy(id: string, original: string, output: string): Promise<string> {
+      const stored = this.stored(id);
+      const { destination, name } = await this.publishTrimBeside(original, output);
+      const now = Date.now();
+      const copy: StoredClip = {
+         id: randomUUID(),
+         relativePath: relative(this.root, destination),
+         absolutePath: destination,
+         identity: await fileIdentity(destination),
+         name,
+         source: stored.source,
+         ...(stored.application ? { application: { ...stored.application } } : {}),
+         // The same moment, so the copy sorts beside its original.
+         createdAt: stored.createdAt,
+         categories: [...stored.categories],
+         shareables: [],
+         // Made and opened by hand, so a later save never merges it away.
+         viewedAt: now,
+         editedAt: now,
+      };
+      this.metadata.clips.push(copy);
+      return copy.id;
+   }
+   /** The trim takes the original's place and record. The original goes to the trash. */
+   private async replaceWithTrim(id: string, original: string, output: string, trash: (path: string) => Promise<void>): Promise<string> {
+      const stored = this.stored(id);
+      try {
+         await trash(original);
+      } catch (error) {
+         throw new Error("The original couldn't be moved to the trash, so it was kept. Save the trim as a copy instead.", { cause: error });
+      }
+      let destination = original;
+      // A just-written file is often held for a moment by antivirus or indexing on Windows.
+      for (let attempt = 0; ; attempt++) {
+         try {
+            await rename(output, original);
+            break;
+         } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code ?? "";
+            if (attempt >= 4 || !["EPERM", "EBUSY", "EACCES"].includes(code)) {
+               // The original is already in the trash. Keep the trim visible under its own name instead.
+               const published = await this.publishTrimBeside(original, output);
+               destination = published.destination;
+               stored.name = published.name;
+               break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 250));
+         }
+      }
+      stored.relativePath = relative(this.root, destination);
+      stored.absolutePath = destination;
+      stored.identity = await fileIdentity(destination);
+      stored.preview = undefined;
+      stored.previewUnavailable = undefined;
+      return id;
+   }
    /** A job from "Create shareables automatically". Known until the job's final update has been reported. */
    automaticJob(jobId: string): boolean {
       return this.automaticJobs.has(jobId);
@@ -1559,7 +1713,7 @@ export class CollectionService {
       if (space !== undefined && space < needed) return refuse("Not enough free storage to merge.");
       const id = randomUUID();
       const temporary = join(dirname(newerPath), `.acroclip-merge-${id}${extname(newerPath)}`);
-      this.activeMerges.add(normal(temporary));
+      this.activeOutputs.add(normal(temporary));
       try {
          let result: MergeResult;
          try {
@@ -1618,7 +1772,7 @@ export class CollectionService {
          const clip = this.visible(newerId);
          return { merged: true, clip, duration: clip.duration || result.duration, previousKept: outcome.previousKept };
       } finally {
-         this.activeMerges.delete(normal(temporary));
+         this.activeOutputs.delete(normal(temporary));
          await rm(temporary, { force: true }).catch(() => undefined);
       }
    }

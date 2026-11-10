@@ -31,6 +31,7 @@ export const ClipCard = memo(function ClipCard({
    requestMenu,
    closeMenu,
    openClip,
+   trimClip,
    categories,
    createTag,
    moveClip,
@@ -50,6 +51,7 @@ export const ClipCard = memo(function ClipCard({
    requestMenu: (clipId: string, element: HTMLElement, left: number, top: number) => void;
    closeMenu: (clipId: string) => void;
    openClip: (clip: Clip) => void;
+   trimClip: (clip: Clip) => void;
    categories: Category[];
    createTag: () => void;
    moveClip: (id: string) => void;
@@ -137,7 +139,7 @@ export const ClipCard = memo(function ClipCard({
                   {job ? (
                      <>
                         <LoaderCircle size={12} className="spin" />
-                        <span>{job.state === "queued" ? "Queued" : "Creating shareable"}</span>
+                        <span>{job.state === "queued" ? "Queued" : job.kind === "trim" ? "Trimming" : "Creating shareable"}</span>
                         <span className="tabular">{Math.round(job.progress * 100)}%</span>
                      </>
                   ) : (
@@ -187,12 +189,17 @@ export const ClipCard = memo(function ClipCard({
                   ask={ask}
                   run={run}
                   create={() => void run(() => api.createShareable(clip.id))}
+                  trim={() => trimClip(clip)}
                   move={() => moveClip(clip.id)}
                />
             </Menu>
          </div>
          {job && (
-            <IconButton className="card-job-cancel" label="Cancel shareable" onClick={() => void run(() => api.cancelJob(job.id))}>
+            <IconButton
+               className="card-job-cancel"
+               label={job.kind === "trim" ? "Cancel trim" : "Cancel shareable"}
+               onClick={() => void run(() => api.cancelJob(job.id))}
+            >
                <X size={12} />
             </IconButton>
          )}

@@ -80,7 +80,7 @@ export function Library({
    visible?: boolean;
    run: Run;
    ask: Ask;
-   openClip: (clip: Clip, queue?: PlayQueue) => void;
+   openClip: (clip: Clip, queue?: PlayQueue, options?: { trim: true }) => void;
    openSettings: () => void;
    openGames: () => void;
 }) {
@@ -198,7 +198,7 @@ export function Library({
    const activeJobs = useMemo(() => {
       const result = new Map<string, AppState["jobs"][number]>();
       for (const job of state.jobs)
-         if (job.kind === "shareable" && ["running", "queued"].includes(job.state) && !result.has(job.clipId)) result.set(job.clipId, job);
+         if (job.kind !== "save" && ["running", "queued"].includes(job.state) && !result.has(job.clipId)) result.set(job.clipId, job);
       return result;
    }, [state.jobs]);
    const [filter, setFilter] = useState(() => initialLocation("library", "all"));
@@ -434,6 +434,7 @@ export function Library({
    // Opening a clip hands the player this view as its queue: the same filter, search, sort and folds.
    const playQueue = useRef<PlayQueue>({ ids: [], label: "" });
    const openFromView = useCallback((clip: Clip) => openClip(clip, playQueue.current), [openClip]);
+   const trimFromView = useCallback((clip: Clip) => openClip(clip, playQueue.current, { trim: true }), [openClip]);
    const renderClip = (clip: Clip) => (
       <ClipCard
          createTag={createCategory}
@@ -451,6 +452,7 @@ export function Library({
          requestMenu={requestMenu}
          closeMenu={closeMenu}
          openClip={openFromView}
+         trimClip={trimFromView}
          categories={state.categories}
          moveClip={moveClip}
          run={run}

@@ -23,6 +23,8 @@ export async function windowsDevExecutable(root: string): Promise<string | undef
    const iconPath = join(root, "build", "icon.ico");
    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { version: string; author: string };
    const signature = createHash("sha256")
+      // The branding steps themselves. A change here builds a fresh copy at a new path.
+      .update("brand-before-rename")
       .update(original)
       .update(await readFile(original))
       .update(await readFile(iconPath))
@@ -34,9 +36,10 @@ export async function windowsDevExecutable(root: string): Promise<string | undef
    if (!existsSync(receipt)) {
       await mkdir(folder, { recursive: true });
       await cp(dirname(original), folder, { recursive: true });
-      await rename(join(folder, "electron.exe"), executable);
+      // Brand before the rename: Explorer caches an executable's icon by path, so AcroClip.exe
+      // must never exist without its icon, or the taskbar keeps a blank one.
       await editWindowsResources({
-         file: executable,
+         file: join(folder, "electron.exe"),
          iconPath,
          fileVersion: pkg.version,
          productVersion: pkg.version,
@@ -50,6 +53,7 @@ export async function windowsDevExecutable(root: string): Promise<string | undef
             LegalTrademarks: "",
          },
       });
+      await rename(join(folder, "electron.exe"), executable);
       await writeFile(receipt, signature);
    }
    return executable;

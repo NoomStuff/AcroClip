@@ -1358,7 +1358,7 @@ function registerIPC() {
       const clipId = idSchema.parse(id);
       const shareableId = shareId === undefined ? undefined : idSchema.parse(shareId);
       const selection = scope === undefined ? undefined : z.literal("shareables").parse(scope);
-      if (collections.pendingJobs.some((j) => j.clipId === clipId)) throw new Error("Cancel the shareable export before removing this clip.");
+      if (collections.pendingJobs.some((j) => j.clipId === clipId)) throw new Error("Finish or cancel this clip's export before removing it.");
       const result = await dialog.showMessageBox({
          type: "warning",
          message: shareableId
@@ -1526,6 +1526,13 @@ function registerIPC() {
          searchPath: process.env["PATH"] ?? "",
          programFiles: [process.env["ProgramFiles"], process.env["ProgramFiles(x86)"]].filter((directory): directory is string => !!directory),
       });
+   handle("trim", async (id, start, end, mode) => {
+      const clipId = idSchema.parse(id);
+      const range = z.object({ start: z.number().finite().min(0), end: z.number().finite().positive() }).parse({ start, end });
+      const result = await collections.trimClip(clipId, range.start, range.end, z.enum(["copy", "replace"]).parse(mode), (path) => shell.trashItem(path));
+      if (result) action("trim", clipId);
+      return result;
+   });
    handle("attacut-available", async () => !!(await detectAttaCut()));
    handle("attacut", async (id) => {
       const clip = collections.clips.find((c) => c.id === idSchema.parse(id));

@@ -821,8 +821,141 @@ try {
    const mergeReopened = new CollectionService();
    await mergeReopened.open(mergeRoot);
    assert.equal(mergeReopened.clips.find((entry) => entry.id === newerId)?.mergedFrom, 2, "merge details survive reopening");
+
+   // Trimming keeps one range: copied between keyframes, encoded only at the cuts, checked before publishing.
+   const trimRoot = join(workspace, "trim-collection");
+   const trimTrash = join(workspace, "trim-trash");
+   await mkdir(trimRoot);
+   await mkdir(trimTrash);
+   const recorderClip = join(trimRoot, "Game moment.mp4");
+   await saveFromSession(sessionVideo, 0, 10, recorderClip);
+   // Imported footage: B-frames and a keyframe every three seconds, so both cuts need encoding.
+   const importedClip = join(trimRoot, "Imported.mp4");
+   await runMedia("ffmpeg", [
+      ...ffmpegBase,
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=320x180:rate=30",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=330:sample_rate=48000",
+      "-t",
+      "10",
+      "-map",
+      "0",
+      "-map",
+      "1",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-bf",
+      "2",
+      "-g",
+      "90",
+      "-sc_threshold",
+      "0",
+      "-c:a",
+      "aac",
+      "-metadata:s:a:0",
+      "title=Game",
+      importedClip,
+   ]);
+   const trimLeftover = join(trimRoot, ".acroclip-trim-00000000-0000-4000-8000-000000000000.mp4");
+   await writeFile(trimLeftover, "interrupted trim");
+   const trimming = new CollectionService();
+   await trimming.open(trimRoot);
+   await assert.rejects(stat(trimLeftover), { code: "ENOENT" }, "an interrupted trim's copy is cleaned up");
+   const trimmedId = (path: string) => {
+      const found = trimming.clips.find((entry) => entry.path === path);
+      assert.ok(found, `${path} is in the collection`);
+      return found.id;
+   };
+   const trimToTrash = async (path: string) => rename(path, join(trimTrash, `${Date.now()}-${path.split(/[\\/]/).at(-1)}`));
+   // The same frame in two files, hashed after decoding the way the trim verifies its joins.
+   const frameHash = async (path: string, time: number) => {
+      const output = await runMedia("ffmpeg", [
+         "-v",
+         "error",
+         "-ss",
+         String(time),
+         "-i",
+         path,
+         "-frames:v",
+         "1",
+         "-map",
+         "0:v:0",
+         "-c:v",
+         "png",
+         "-pix_fmt",
+         "rgb48be",
+         "-f",
+         "framemd5",
+         "-",
+      ]);
+      return output.trim().split("\n").at(-1)?.split(",").at(-1)?.trim();
+   };
+   await trimming.createCategory("Highlights");
+   const highlight = trimming.categories.find((category) => category.name === "Highlights")!.id;
+   const momentId = trimmedId(recorderClip);
+   await trimming.assignCategories(momentId, [highlight]);
+   const momentBefore = await fileIdentity(recorderClip);
+   const copyId = await trimming.trimClip(momentId, 2.5, 7.25, "copy", trimToTrash);
+   assert.ok(copyId && copyId !== momentId, `a trim saves a new clip: ${trimming.jobs.at(-1)?.message}`);
+   const copy = trimming.clips.find((entry) => entry.id === copyId);
+   assert.equal(copy?.path, join(trimRoot, "Game moment (Trim).mp4"), "the copy sits beside the original");
+   assert.deepEqual(copy.categories, [highlight], "the copy keeps the original's tags");
+   assert.equal(await fileIdentity(recorderClip), momentBefore, "saving a copy leaves the original untouched");
+   const copyInfo = await probe(copy.path);
+   assert.ok(Math.abs(copyInfo.duration - 4.75) < 0.05, `the copy keeps the chosen 4.75 s, got ${copyInfo.duration}`);
+   assert.deepEqual(
+      copyInfo.tracks.map((track) => track.title),
+      ["Master", "Microphone"],
+      "the copy keeps every audio track and its name"
+   );
+   await runMedia("ffmpeg", ["-v", "error", "-xerror", "-i", copy.path, "-map", "0", "-f", "null", "-"]);
+   assert.equal(await frameHash(copy.path, 1.5), await frameHash(recorderClip, 4), "frames between keyframes are copied unchanged");
+   const secondCopy = await trimming.trimClip(momentId, 0, 5, "copy", trimToTrash);
+   assert.equal(trimming.clips.find((entry) => entry.id === secondCopy)?.path, join(trimRoot, "Game moment (Trim 2).mp4"), "a second copy gets its own name");
+
+   const importedId = trimmedId(importedClip);
+   const importedBytes = await readFile(importedClip);
+   const replacedId = await trimming.trimClip(importedId, 1.3, 8.6, "replace", trimToTrash);
+   assert.equal(replacedId, importedId, `replacing keeps the clip: ${trimming.jobs.at(-1)?.message}`);
+   const replacedInfo = await probe(importedClip);
+   assert.ok(Math.abs(replacedInfo.duration - 7.3) < 0.05, `the replaced clip keeps the chosen 7.3 s, got ${replacedInfo.duration}`);
+   assert.deepEqual(
+      replacedInfo.tracks.map((track) => track.title),
+      ["Game"]
+   );
+   await runMedia("ffmpeg", ["-v", "error", "-xerror", "-i", importedClip, "-map", "0", "-f", "null", "-"]);
+   const trimTrashed = await readdir(trimTrash);
+   assert.equal(trimTrashed.length, 1);
+   assert.deepEqual(await readFile(join(trimTrash, trimTrashed[0]!)), importedBytes, "the trash holds the untrimmed original");
+   assert.equal(trimming.clips.find((entry) => entry.id === importedId)?.path, importedClip);
+
+   const momentNow = await fileIdentity(recorderClip);
+   assert.equal(
+      await trimming.trimClip(momentId, 1, 9, "replace", () => Promise.reject(new Error("No trash on this drive"))),
+      null,
+      "a clip that can't go to the trash isn't replaced"
+   );
+   assert.match(trimming.jobs.at(-1)?.message ?? "", /trash/);
+   assert.equal(await fileIdentity(recorderClip), momentNow, "a refused replace leaves the clip untouched");
+
+   const cancelled = trimming.trimClip(momentId, 1, 9, "copy", trimToTrash);
+   while (!trimming.pendingJobs.some((job) => job.kind === "trim")) await delay(5);
+   trimming.cancelJob(trimming.pendingJobs.find((job) => job.kind === "trim")!.id);
+   assert.equal(await cancelled, null, "a cancelled trim saves nothing");
+   assert.equal(trimming.jobs.at(-1)?.state, "cancelled");
+   assert.equal((await readdir(trimRoot)).filter((name) => name.startsWith(".acroclip-trim-")).length, 0, "no trim copies remain");
+   assert.equal((await readdir(join(trimRoot, ".acroclip"))).filter((name) => name.startsWith("trim-")).length, 0, "no trim work remains");
+   assert.equal(trimming.clips.filter((entry) => entry.path.includes("(Trim")).length, 2);
    console.log(
-      "Media verification passed: last-keyframe thumbnails and cache migration, keyframe hover strips, loudness envelopes, real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, deletion boundaries, and lossless merging of overlapping saves."
+      "Media verification passed: last-keyframe thumbnails and cache migration, keyframe hover strips, loudness envelopes, real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, deletion boundaries, lossless merging of overlapping saves, and trimming as a copy or in place."
    );
 } finally {
    assert.ok(withinRoot(await realpath(tmpdir()), workspace), "test cleanup stays within isolated temporary workspace");

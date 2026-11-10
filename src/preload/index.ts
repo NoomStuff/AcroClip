@@ -39,6 +39,7 @@ const api: DesktopAPI = {
    reportError: (error) => ipcRenderer.invoke("diagnostics-error", error),
    exportLogs: () => ipcRenderer.invoke("logs-export"),
    reportBug: () => ipcRenderer.invoke("bug-report"),
+   trimClip: (id, start, end, mode) => ipcRenderer.invoke("trim", id, start, end, mode),
    openInAttaCut: (id) => ipcRenderer.invoke("attacut", id),
    attaCutAvailable: () => ipcRenderer.invoke("attacut-available"),
    reorderCategory: (id, beforeId) => ipcRenderer.invoke("category-reorder", id, beforeId),

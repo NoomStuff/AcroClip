@@ -19,6 +19,7 @@ export function ClipActions({
    run,
    create,
    createTag,
+   trim,
    move,
    remove,
    children,
@@ -32,6 +33,8 @@ export function ClipActions({
    run: Run;
    create: () => void;
    createTag: () => void;
+   // Starts trimming in the player. Missing where the clip can't be trimmed right now.
+   trim?: (() => void) | undefined;
    move?: (() => void) | undefined;
    // Deletes the clip, one shareable, or all of its shareables. Each asks first.
    remove?: ((shareableId?: string, scope?: "shareables") => void) | undefined;
@@ -95,6 +98,12 @@ export function ClipActions({
          </MenuSubmenu>
          <div className="menu-separator" role="separator" />
          <FileChoice clip={clip} label="Show in folder" icon={<FolderOpen size={15} />} choose={(file) => void run(() => api.reveal(file.path))} />
+         {trim && (
+            <MenuItem disabled={busy || !!clip.originalMissing} onClick={trim}>
+               <Scissors size={15} />
+               Trim clip
+            </MenuItem>
+         )}
          {attaCutAvailable && !clip.originalMissing && (
             <MenuItem onClick={() => void run(() => api.openInAttaCut(clip.id))}>
                <Scissors size={15} />
