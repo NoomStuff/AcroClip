@@ -232,6 +232,8 @@ export function ViewerTransport({
             <input
                type="range"
                aria-label="Playback position"
+               // While trimming, the trim playhead is the position control. The bar only takes clicks.
+               {...(trim ? { tabIndex: -1, "aria-hidden": true } : {})}
                min={0}
                max={duration || 1}
                step={0.01}
