@@ -15,7 +15,7 @@ export function portalSources(capabilities: RecordingCapabilities, candidates: G
    if (capabilities.applicationBackend === "xwayland" && capabilities.sourceKinds.includes("app"))
       for (const candidate of candidates)
          if (/^window:[1-9]\d*:0$/.test(candidate.id) && candidate.pid > 0 && candidate.name.trim())
-            sources.push({ id: candidate.id, name: candidate.name, kind: "app", thumbnail: "" });
+            sources.push({ id: candidate.id, name: candidate.name, kind: "app", thumbnail: "", processId: candidate.pid });
    return sources;
 }
 export function sourceChoices(

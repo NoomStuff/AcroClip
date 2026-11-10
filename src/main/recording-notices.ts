@@ -58,9 +58,15 @@ export class RecordingNotices {
    private readonly reportedErrors = new Set<string>();
    private readonly publish: (notice: RecordingNotice) => void;
    private readonly now: () => number;
-   constructor(publish: (notice: RecordingNotice) => void, now: () => number = Date.now) {
+   private readonly sourceClosed: () => boolean;
+   /**
+    * `sourceClosed` reports that the chosen application exited for good. Linux capture follows one
+    * window of one process, so a reopened application has to be chosen again rather than resuming.
+    */
+   constructor(publish: (notice: RecordingNotice) => void, now: () => number = Date.now, sourceClosed: () => boolean = () => false) {
       this.publish = publish;
       this.now = now;
+      this.sourceClosed = sourceClosed;
    }
 
    starting(source: string, options: { mode: CaptureMode; quiet?: boolean }): void {
@@ -153,7 +159,7 @@ export class RecordingNotices {
    private beforeConfirmed(current: RecorderState, footage: boolean, target: string): void {
       if (idle(current)) {
          this.idleSince ??= this.now();
-         const reason = current.message || "Waiting for game";
+         const reason = current.message || (this.mode === "auto" ? "Waiting for game" : this.mode === "app" ? "Waiting for application" : "Waiting for source");
          if (this.now() - this.idleSince < (current.sourceKind === "waiting" ? ARMED_AFTER_MS : SOURCE_READY_MS)) {
             this.progress(reason);
             return;
@@ -176,15 +182,18 @@ export class RecordingNotices {
    }
 
    private adopt(current: RecorderState, target: string): void {
-      if (target !== "" || !idle(current)) {
+      if (target !== "") {
          this.held = target;
-         this.seen = target !== "";
+         this.seen = true;
          this.adopting = false;
+         this.idleSince = undefined;
          return;
       }
-      // Nothing to capture yet, like Auto with no game. Once that settles, a later find is news again.
+      // The new source can report waiting, then running without footage, before its first frames.
+      // Neither is news. Only nothing to capture at all, like Auto with no game, settles early,
+      // so a later find is announced.
       this.idleSince ??= this.now();
-      if (this.now() - this.idleSince < (current.sourceKind === "waiting" ? ARMED_AFTER_MS : SOURCE_READY_MS)) return;
+      if (this.now() - this.idleSince < (idle(current) && current.sourceKind === "waiting" ? ARMED_AFTER_MS : SOURCE_READY_MS)) return;
       this.idleSince = undefined;
       this.adopting = false;
    }
@@ -201,6 +210,7 @@ export class RecordingNotices {
          this.held = "";
          this.lostSince = undefined;
          if (this.mode === "auto") this.emit("game-lost", "Stopped capturing game", lost);
+         else if (this.mode === "app" && this.sourceClosed()) this.emit("recording-paused", "Capture paused", `${lost} closed. Reopen it and choose it again.`);
          else this.emit("recording-paused", "Capture paused", `Lost ${lost}. Capture resumes when it's back.`);
          return;
       }
@@ -216,7 +226,8 @@ export class RecordingNotices {
       this.active = false;
       this.reportedErrors.add(message);
       const title = this.confirmed ? "Capture stopped unexpectedly" : "Couldn't start capture";
-      this.emit("critical-error", title, withoutTitle(message, title));
+      // A message that only restates the title still needs a second line that says what to do.
+      this.emit("critical-error", title, withoutTitle(message, title) || (this.confirmed ? "Start capturing again." : "Try again."));
    }
 
    private emit(kind: RecordingNoticeKind, message: string, detail = this.source): void {

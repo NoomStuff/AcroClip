@@ -618,7 +618,10 @@ export class Recorder {
                ? {
                     state: value.waiting ? ("waiting" as const) : ("recording" as const),
                     message: value.waiting
-                       ? value.message || this.autoFailure || (this.autoPreferences ? "Waiting for game" : "Waiting for application")
+                       ? // The helper's default waiting text names a game, which is wrong for a chosen application.
+                         (value.message && (this.autoPreferences || value.message !== "Waiting for game") ? value.message : "") ||
+                         this.autoFailure ||
+                         (this.autoPreferences ? "Waiting for game" : "Waiting for application")
                        : this.autoFailure
                          ? `Capturing current source. ${this.autoFailure}`
                          : value.sourceKind === "screen" && this.autoPreferences

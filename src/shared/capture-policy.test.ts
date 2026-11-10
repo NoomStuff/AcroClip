@@ -57,6 +57,8 @@ describe("system picker capture policy", () => {
       ];
       const sources = portalSources(capability, candidates)!;
       expect(sources.map((source) => source.id)).toEqual([portalScreenId, "window:123:0"]);
+      // The process lets a pause tell a closed application from a hidden window.
+      expect(sources[1]?.processId).toBe(42);
       expect(sourceChoices(sources, capability).every((choice) => !choice.disabled)).toBe(true);
       expect(portalSources(ready, candidates)!.map((source) => source.id)).toEqual([portalScreenId]);
       expect(portalSources({ ...capability, sourceKinds: ["screen"] }, candidates)!.length).toBe(1);

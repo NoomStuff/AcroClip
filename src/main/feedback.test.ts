@@ -5,13 +5,16 @@ import { readdir, readFile } from "node:fs/promises";
 import { Feedback } from "./feedback";
 import { feedbackSoundFiles } from "./notice-routing";
 
-const mocks = vi.hoisted(() => ({ spawn: vi.fn(), exists: vi.fn(() => true), supported: vi.fn(() => true), show: vi.fn() }));
+const mocks = vi.hoisted(() => ({ spawn: vi.fn(), exists: vi.fn(() => true), supported: vi.fn(() => true), show: vi.fn(), created: vi.fn() }));
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn }));
 vi.mock("node:fs", () => ({ existsSync: mocks.exists }));
 vi.mock("electron", () => ({
    nativeImage: { createFromPath: () => ({ resize: () => ({ toDataURL: () => "data:image/png;base64,fallback" }) }) },
    Notification: class {
       static isSupported = mocks.supported;
+      constructor(options: unknown) {
+         mocks.created(options);
+      }
       on = vi.fn();
       close = vi.fn();
       show = mocks.show;
@@ -140,11 +143,14 @@ it("insets icons, including AcroClip's own, but lets clip thumbnails fill the ti
    feedback.show("Clip saved", false, false, { artwork: "data:image/png;base64,thumbnail" });
    feedback.show("Now capturing", false, false, { artwork: "data:image/png;base64,game", artworkIcon: true });
    feedback.show("Saved", false, false);
-   const messages = String(child.stdin.read())
-      .trim()
-      .split("\n")
-      .map((line): unknown => JSON.parse(line));
+   const messages = vi.mocked(child.stdin.write).mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
    expect(messages).toMatchObject([{ artworkIcon: false }, { artworkIcon: true }, { artwork: "data:image/png;base64,fallback", artworkIcon: true }]);
+});
+it("uses the app icon when a source thumbnail is empty", () => {
+   const { feedback, child } = helper();
+   feedback.show("Saving clip…", false, true, { artwork: "data:image/png;base64," });
+   const messages = vi.mocked(child.stdin.write).mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
+   expect(messages).toMatchObject([{ artwork: "data:image/png;base64,fallback", artworkIcon: true }]);
 });
 it("uses recording status graphics instead of thumbnail placeholders", () => {
    const { feedback, child } = helper();
@@ -212,4 +218,18 @@ it("falls back when spawning the helper throws synchronously", () => {
    });
    feedback.show("Saved");
    expect(mocks.show).toHaveBeenCalledOnce();
+});
+
+it("shows the banner's title and detail in a system notification, without reposting busy progress", () => {
+   const { feedback } = helper();
+   mocks.exists.mockReturnValue(false);
+   feedback.show("Starting capture...", false, true, { detail: "Preparing capture" });
+   feedback.show("Starting capture...", false, true, { detail: "Waiting for source" });
+   feedback.show("Capture started", false, false, { detail: "Starfall" });
+   feedback.show("Capture stopped unexpectedly", true, false, { errorTitle: "Capture stopped unexpectedly", detail: "Start capturing again." });
+   expect(mocks.created.mock.calls.map(([options]) => options as { title: string; body: string })).toMatchObject([
+      { title: "Starting capture...", body: "Preparing capture" },
+      { title: "Capture started", body: "Starfall" },
+      { title: "Capture stopped unexpectedly", body: "Start capturing again." },
+   ]);
 });

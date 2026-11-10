@@ -188,18 +188,35 @@ function capturedArtwork(kind: RecordingNoticeKind): FeedbackDetails {
    const icon = kind === "game-found" || kind === "recording-resumed" ? lastRecordingArtwork?.application.icon : undefined;
    return icon ? { artwork: icon, artworkIcon: true } : { recordingStatus: recordingStatus[kind] };
 }
-const recordingNotices = new RecordingNotices((entry) => {
-   // A new attempt retires the previous capture error waiting in the status bar.
-   if (entry.kind === "recording-starting") send({ type: "notice-clear", key: "capture" });
-   notice(
-      entry.message,
-      entry.error,
-      entry.kind,
-      "background",
-      { key: "capture", ...(entry.detail ? { detail: entry.detail } : {}) },
-      { ...capturedArtwork(entry.kind), ...(entry.error ? { errorTitle: entry.message } : {}) }
-   );
-});
+/** Linux capture follows the chosen window's process, which cannot come back once it exits. */
+function chosenApplicationClosed(): boolean {
+   if (process.platform !== "linux" || preferences.sourceKind !== "app") return false;
+   const pid = captureSources.processOf(preferences.sourceId);
+   if (!pid) return false;
+   try {
+      process.kill(pid, 0);
+      return false;
+   } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ESRCH";
+   }
+}
+const recordingNotices = new RecordingNotices(
+   (entry) => {
+      // A new attempt retires the previous capture error waiting in the status bar.
+      if (entry.kind === "recording-starting") send({ type: "notice-clear", key: "capture" });
+      notice(
+         entry.message,
+         entry.error,
+         entry.kind,
+         "background",
+         { key: "capture", ...(entry.detail ? { detail: entry.detail } : {}) },
+         { ...capturedArtwork(entry.kind), ...(entry.error ? { errorTitle: entry.message } : {}) }
+      );
+   },
+   Date.now,
+   chosenApplicationClosed
+);
+
 // The banner's second line says what to do. Without one it would only repeat the app's name.
 const storageAdvice: Record<string, string> = {
    "Low storage in clip folder": "Free up space so new clips can save.",
@@ -387,7 +404,8 @@ let visibleNotificationAction: NotificationAction | null = null;
 function criticalFailure(title: string, detail: string, key: "capture" | "save" = "capture"): void {
    notice(title, true, "critical-error", "background", { key, ...(detail ? { detail } : {}) }, { errorTitle: title, recordingStatus: "error" });
 }
-function captureActionError(error: unknown): void {
+/** `surface` only applies to refusals like "already running". Capture and save failures always reach the banner. */
+function captureActionError(error: unknown, surface: NoticeSurface = "background"): void {
    const message = errorMessage(error);
    const save = error instanceof SaveFailure;
    const report = captureErrorReport(
@@ -397,7 +415,7 @@ function captureActionError(error: unknown): void {
    );
    if (report.type === "log") void log(message);
    else if (report.type === "critical") criticalFailure(report.title, report.detail, report.key);
-   else if (report.type === "notice") notice(message, true);
+   else if (report.type === "notice") notice(message, true, "info", surface);
 }
 function notice(
    message: string,
@@ -874,7 +892,7 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown) {
          return await fn(...args);
       } catch (e) {
          // Capture errors reach the banner even from a click, and the renderer leaves them to main.
-         if (channel === "record-start" || channel === "record-stop" || channel === "record-save") captureActionError(e);
+         if (channel === "record-start" || channel === "record-stop" || channel === "record-save") captureActionError(e, "action");
          else if (locallyReported.has(channel)) void log(`${channel}: ${errorMessage(e)}`);
          else notice(errorMessage(e), true, "info", "action");
          throw e;

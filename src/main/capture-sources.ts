@@ -11,7 +11,28 @@ import { applicationLabel, executableLabel } from "./application-identity";
 type SourceRecorder = Pick<Recorder, "capabilities" | "applicationCandidates" | "capturableApplications">;
 
 export class CaptureSources {
-   cached: CaptureSource[] = [];
+   private sources: CaptureSource[] = [];
+   /** The process last seen behind each application window, kept after the window disappears. */
+   private readonly processes = new Map<string, number>();
+   get cached(): CaptureSource[] {
+      return this.sources;
+   }
+   set cached(value: CaptureSource[]) {
+      this.sources = value;
+      for (const source of value)
+         if (source.kind === "app" && source.processId) {
+            // Re-inserting keeps recently seen windows last, so the oldest go first.
+            this.processes.delete(source.id);
+            this.processes.set(source.id, source.processId);
+         }
+      for (const id of this.processes.keys()) {
+         if (this.processes.size <= 256) break;
+         this.processes.delete(id);
+      }
+   }
+   processOf(id: string): number | undefined {
+      return this.processes.get(id);
+   }
    private previewSources = new Map<string, DesktopCapturerSource>();
    private previewPids = new Map<string, number>();
    private query: Promise<CaptureSource[]> | null = null;

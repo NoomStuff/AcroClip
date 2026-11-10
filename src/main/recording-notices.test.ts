@@ -3,12 +3,13 @@ import { stoppedRecorder } from "../shared/defaults";
 import { ARMED_AFTER_MS, PAUSE_AFTER_MS, RecordingNotices, SOURCE_READY_MS, type CaptureMode, type RecordingNotice } from "./recording-notices";
 import type { RecorderState } from "../shared/types";
 
-function fixture() {
+function fixture(sourceClosed = () => false) {
    const notices: RecordingNotice[] = [];
    let clock = 0;
    const feedback = new RecordingNotices(
       (notice) => notices.push(notice),
-      () => clock
+      () => clock,
+      sourceClosed
    );
    const state = (changes: Partial<RecorderState>) => feedback.state({ ...stoppedRecorder, ...changes });
    /** Status arrives about once a second, so time passes between polls. */
@@ -178,6 +179,48 @@ it("treats switching source as a move, not a find or a loss", () => {
    after(1000, { ...lostApp, sourceName: "Other app" });
    after(PAUSE_AFTER_MS, { ...lostApp, sourceName: "Other app" });
    expect(notices.at(-1)).toMatchObject({ kind: "recording-paused", detail: "Lost Other app. Capture resumes when it's back." });
+});
+it("adopts a switched application through its waiting and empty-buffer statuses", () => {
+   // The status sequence a Linux XWayland switch reports, recorded live on Hyprland.
+   const { feedback, notices, after, kinds, start } = fixture();
+   start("Starfall", "app");
+   after(0, { ...capturing, sourceName: "Starfall" });
+   feedback.switching("app");
+   after(1000, { ...capturing, sourceName: "Starfall", availableSeconds: 5 });
+   feedback.switched();
+   after(100, { ...lostApp, sourceName: "Moonrise" });
+   after(600, { ...capturing, sourceName: "Moonrise", availableSeconds: 0 });
+   after(800, { ...capturing, sourceName: "Moonrise", availableSeconds: 0 });
+   after(200, { ...capturing, sourceName: "Moonrise", availableSeconds: 0.04 });
+   after(5000, { ...capturing, sourceName: "Moonrise", availableSeconds: 5 });
+   expect(kinds()).toEqual(["recording-starting", "recording-started"]);
+   after(1000, { ...lostApp, sourceName: "Moonrise" });
+   after(PAUSE_AFTER_MS, { ...lostApp, sourceName: "Moonrise" });
+   expect(notices.at(-1)).toMatchObject({ kind: "recording-paused", detail: "Lost Moonrise. Capture resumes when it's back." });
+});
+it("never repeats the title as the error detail", () => {
+   const { notices, after, start } = fixture();
+   start("Starfall", "app");
+   after(0, { ...capturing, sourceName: "Starfall" });
+   after(1000, { state: "error", message: "Capture stopped unexpectedly" });
+   expect(notices.at(-1)).toEqual({ kind: "critical-error", message: "Capture stopped unexpectedly", detail: "Start capturing again.", error: true });
+   start("Starfall", "app");
+   after(0, { state: "error", message: "Couldn't start capture." });
+   expect(notices.at(-1)).toEqual({ kind: "critical-error", message: "Couldn't start capture", detail: "Try again.", error: true });
+});
+it("says to choose a closed application again where capture cannot follow it", () => {
+   let closed = false;
+   const { notices, after, start } = fixture(() => closed);
+   start("Starfall", "app");
+   after(0, { ...capturing, sourceName: "Starfall" });
+   after(1000, { ...lostApp, sourceName: "Starfall" });
+   after(PAUSE_AFTER_MS, { ...lostApp, sourceName: "Starfall" });
+   expect(notices.at(-1)).toMatchObject({ kind: "recording-paused", detail: "Lost Starfall. Capture resumes when it's back." });
+   after(1000, { ...capturing, sourceName: "Starfall" });
+   closed = true;
+   after(1000, { ...lostApp, sourceName: "Starfall" });
+   after(PAUSE_AFTER_MS, { ...lostApp, sourceName: "Starfall" });
+   expect(notices.at(-1)).toMatchObject({ kind: "recording-paused", detail: "Starfall closed. Reopen it and choose it again." });
 });
 it("does not announce the game that is running when switching to Auto", () => {
    const { feedback, after, kinds, start } = fixture();

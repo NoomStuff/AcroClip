@@ -1,57 +1,64 @@
 # Linux notification verification
 
-PR #9 remains draft. Final commissioned sounds are still required. No audio from the reference video was added. No version, release or tag was created for this work.
+What was verified on Linux for 0.20.0's capture banners and sounds, and what wasn't.
 
-## Implementation
+## How the Linux banner works
 
-The optional helper uses host Python 3, PyGObject, Pycairo, Pango and GTK. Wayland requires GTK 4 and gtk4-layer-shell with its introspection typelib. X11 uses GTK 3 and requires an active compositing manager. Capability checks do not inspect distribution names. Missing dependencies and unsupported displays terminate the helper and activate system notification fallback. Linux sound playback uses `paplay` independently of banner startup. Linux native builds stage the executable script, and the local staged-helper smoke compares its bytes against source before exercising it.
+`native/notifications/linux.py` is an optional helper that runs on the host's Python 3, PyGObject, Pycairo, Pango and GTK. It ports the Windows banner in `native/notifications/windows.cpp`: the same geometry, motion, glyphs, colors, text transitions, lifetimes and error wording. On Wayland it needs GTK 4 with gtk4-layer-shell and its typelib. On X11 it needs GTK 3 and a running compositing manager. It checks capabilities, not distribution names. If a dependency is missing, the display isn't supported, the helper crashes or the pipe breaks, or a correlated display acknowledgement doesn't arrive within two seconds, `Feedback` switches to system notifications.
 
-When a compositor IPC connection is available, the helper probes Hyprland's Lua layer-rule API for `no_screen_share` and `no_anim`. An unsupported API leaves the banner usable without exclusion. It scopes the rule to `acroclip-feedback`, without modifying a configuration file. Layer-shell alone has no capture-exclusion flag. Other compositors and X11 do not gain exclusion from this rule.
+The system fallback shows the banner's title and detail. It doesn't post again while a busy notice like "Starting capture..." only changes its detail. Unreadable artwork leaves an empty tile instead of failing the banner, as on Windows. Clicks pass through the banner, and it never takes keyboard focus.
 
-Motion uses separate background and clipped content positions. Repeated entrances start at the current content position. Text changes fade between the previous and current labels. Completion keeps the thumbnail center in place, compresses and rebounds it, flashes white and expands a purple outline. Recording uses dedicated red graphics. Loading spinners do not pulse. GTK's animation preference disables these transitions.
+Sounds play through `paplay`, which AcroClip starts directly, independently of the banner helper. `paplay` plays all six commissioned files, including the five 24-bit WAVE_FORMAT_EXTENSIBLE ones.
 
-## Verified
+On Hyprland, the helper sets a scoped Lua `hl.layer_rule` with `no_screen_share` for the `acroclip-feedback` namespace. The first banner waits for the rule. Later checks run off the GTK thread. Hyprland covers an excluded surface with black in screencopy output, so a screen share shows a black rectangle where the banner is, not the content behind it. Other compositors and X11 have no exclusion.
 
-- `bun run verify` and real-media checks passed. Windows CI passed verification, media and regular UI checks at `7d97f6a`. The optional interactive job was skipped.
-- Hyprland 0.57.0 ran inside a private nested instance on the active Hyprland session. The initial attempt under an older Sway parent failed due to incompatible protocol versions. A compatible parent resolved that failure.
-- Run the Hyprland smoke with `ACROCLIP_TEST_PARENT_WAYLAND=/run/user/1000/wayland-1 python3 scripts/smoke-linux-feedback.py Hyprland`. It creates a private compositor, profile and collection directory. It does not record the parent desktop or open a real collection.
-- Actual GTK rendering, recording transitions, thumbnail loading from an encoded video, multiple requests in one pipe write, correlated string acknowledgements, muted events preserving a critical error, expiry and correlated rendering failure passed on private Hyprland and headless Sway.
-- Hyprland `no_screen_share` changed the banner region to black in real screencopy output. It hides banner contents but does not reveal the background beneath them. The smoke captures actual frames with exclusion off and on, then encodes those frames into `.cache/linux-feedback/Hyprland-capture-exclusion.mp4`. Visible and excluded PNGs are alongside it. This is evidence for the screencopy route, not a claim about every portal or capture implementation.
-- `python3 scripts/smoke-x11-feedback.py` passed on private Xvfb/Openbox/xcompmgr. The same desktop without a compositor rejected custom banners. Recording display, preserved critical errors, expiry and rendering failure passed. The smoke can run against `resources/recorder/acroclip-notifier` to check the staged copy.
-- Feedback unit tests cover missing executables, synchronous startup failures, process errors, crashes, broken pipes, rendering failures, stale acknowledgements, the two-second display timeout, muted requests, preserved errors and intentional shutdown. System permissions still determine whether fallback can appear.
-- Actual Cairo frame checks verify the thumbnail center during compression and rebound, including the overshoot, and verify that replay starts at the current content position. These checks passed locally.
-- The tag-order UI test passed three consecutive runs using private X11 and private PipeWire audio after fixing a stale keyboard preview. Checkbox hit testing and the viewer feedback test also passed in Windows CI.
+## Verified on 2026-11-10
 
-## Release candidate and limits
+Everything ran on one Arch machine: an Intel i5 8th gen with Hyprland 0.57.2, Sway 1.12, niri, GTK 4.24.1, gtk4-layer-shell 1.3.0 and PipeWire. Each desktop ran privately in its own user, mount and network namespaces, with a private `/tmp`, D-Bus, PipeWire, profile and collection. Nested compositors ran on the parent Wayland socket. The app was a development build of this branch. The native recorder came from the published 0.19.0 AppImage, and its source is unchanged since 0.16.0.
 
-The Release workflow supports `verify_candidate=true` with an exact `candidate_sha`. This builds and independently verifies Windows x64, Linux x64/arm64 and macOS x64/arm64. Preflight sets `publish=false`, and the publication job requires `publish=true`. Candidate artifacts stay in Actions. No version bump is needed.
+Real app, real capture, private nested Hyprland with XWayland and xdg-desktop-portal-hyprland:
 
-The current candidate run is tracked in the PR description. Extra workflow steps for staged-helper drawing and live X11 checks could not be pushed because the connected credential lacks workflow scope. Their patch is retained locally at `.cache/hypr-feedback/release-checks.patch`; the existing five-target candidate workflow runs unchanged. Until it completes, packaged behavior in the pinned Ubuntu environment and macOS verification remain pending. `bun run verify:release` locally runs verification and media checks, then stops at the interactive guard rather than touching the real collection.
+- Auto with a game already running shows "Capture started" with the game's name and no "Now capturing". The start banner appears on the start request and keeps its title while the detail changes.
+- Closing the game shows "Stopped capturing game" 3.1 s later, with the banner turned on. Reopening it shows "Now capturing".
+- A focused window opening and closing in under 2 s shows nothing.
+- App mode: hiding the chosen window shows "Capture paused" after 3 s, and showing it again shows "Capture resumed" ("was found again"). Hiding it for 1 s shows nothing.
+- App mode: closing the chosen application shows "Starfall closed. Reopen it and choose it again." Linux capture follows one window of one process, so a reopened application can't resume on its own.
+- A source switch in the settings mid-capture shows no found, lost or resumed banner.
+- Capture on launch, outside test mode with a game running, showed no banner.
+- Saves: "Saving clip…", then "Clip saved" with the clip's own thumbnail. A save in the extend window shows "Clip extended to 0:12" and "Added 0:05 to the previous clip". Opening the clips while the merge runs shows "Saved as a separate clip" without a second chime.
+- Failures: a locked collection folder shows "Couldn't save clip" with the recorder's reason. Killing the recorder shows "Capture stopped unexpectedly" and "Start capturing again.". Stopping shows "Capture stopped".
+- Low storage, from a collection on a filesystem with under 1 GiB free, shows "Low storage in clip folder" and "Free up space so new clips can save." with no sound.
+- Hyprland's `no_screen_share` rule hid every banner from screencopy as a black rectangle, and the banners appeared when the rule was off.
 
-Live GNOME/KDE fallback, older Hyprland rule APIs, actual OBS/PipeWire capture exclusion on Hyprland, and final sounds remain unverified. Sway monitor screenshots include the banner. Do not describe Linux capture exclusion as universal, or infer all-desktop support from these tests.
+Other desktops:
 
-## Candidate result and follow-up
+- Composited X11 (Xvfb, Openbox, xcompmgr): the same Auto, save, extension, correction and crash banners, drawn by the GTK 3 path.
+- X11 without a compositor: the helper exits with "X11 desktop has no compositing manager". Every notice then reached a private `org.freedesktop.Notifications` server with the banner's title and detail. "Starting capture..." posted once.
+- Sway and niri, nested with no ScreenCast portal: the layer-shell banner displayed and was acknowledged. The capability error appeared as "Capture needs attention" or "Couldn't start capture" with "The system portal cannot share a screen".
+- Helper smokes, `scripts/smoke-linux-feedback.py` and `scripts/smoke-x11-feedback.py`, passed on Hyprland, Sway and X11. They cover display acknowledgements, recording transitions, several requests in one pipe write, muted requests keeping a visible error, expiry and unreadable artwork.
+- `scripts/check-feedback-render.ts` now also runs against the Linux helper's `--render-proof`. Across 28 frames at 100%, 125%, 150% and 200% scale, the thumbnail center stayed fixed through compression and rebound.
+- Every banner state was rendered to PNG and compared against the Windows demo.
 
-Candidate run 41369896434 finished in about 33 minutes. Windows x64, Linux arm64 and both macOS targets passed independent verification. Linux x64 failed the tag-order UI test, where a still-pending keyboard save masked an unrelated external reorder. The hook now recognizes intermediate orders from its own keyboard sequence and lets unrelated authoritative orders replace the preview. The Wine smoke prefix also moved out of the uploaded evidence tree so its `Z:` symlink cannot lead artifact collection into the host filesystem.
+Fixes from these runs:
 
-The PR watch reported the regular checks but did not deliver this manually dispatched candidate failure. Treat candidate status as separate from the regular PR checks; a green PR check notification is not evidence that the release candidate passed.
+- The Linux helper was drawing an older design. It now matches Windows, including the paused glyph and the inset application icon.
+- A settings switch announced the new source as found.
+- App mode briefly said "Waiting for game".
+- A crash whose message only repeated the title showed the title twice.
+- An empty window thumbnail turned off the Linux banner for the rest of the session.
+- The system fallback spammed "Starting capture..." with no detail.
+- A refused Start clicked in the window raised the desktop error banner.
 
-The corrected tag-order UI test passed ten consecutive isolated X11 runs before the candidate retry. The Wine-prefix change was syntax-checked locally; its full native verification remains part of the candidate run.
+## Not verified
 
-## Main synchronization
+- Banner exclusion inside an actual AcroClip screen recording on Hyprland. In this setup the 0.19.0 recorder segfaults in OBS's PipeWire portal connect (`obs_pipewire_connect_fd`, `pw_thread_loop_get_loop`) before the first frame, with both software and hardware GL. This is native capture code that this branch doesn't change. App-mode capture over XWayland never includes the banner, because it records one window.
+- The 10 s game-hook allowance against real games. Linux capture doesn't hook games, so that allowance never applies here.
+- A real Steam game. Fixture windows (ffplay, GTK) stood in, and Auto matched them as a custom game.
+- GNOME, KDE and other desktops without layer-shell or a compositor on Wayland. The X11 fallback path is the closest live check.
+- Hyprland before the Lua rule API. There the banner works without exclusion.
 
-Candidate run 41528695913, attempt 2, passed the final gate and independent verification for all five targets at `c079bfa`. Publication was skipped. The successful retry does not establish a cause for the first attempt's missing audio fixture.
+Don't describe Linux capture exclusion as universal. It applies on Hyprland with the Lua rule API, and there it shows as black.
 
-Main advanced to `1dfd034` with capture and library changes and version `0.9.0`. The notification branch merges those changes, preserving the notification save-failure tests, immediate starting feedback, main's audio-warning handling and candidate retry tests, and the external tag-order fix. The version comes from main; this PR does not add another bump. The merged tree requires a new candidate run before its release validation is considered complete.
+## Reproducing
 
-## Merged candidate meter check
-
-Candidate run 41731470641 passed four target verifications. Linux arm64 failed the meter-routing UI check: after the test enabled the microphone and sent one sample, its displayed level stayed at silence. The test now waits for the enabled microphone meter and publishes a stream until both expected levels arrive. It retains the original thresholds and checks that partial updates preserve the microphone level and muting another source does not affect it. This addresses the single-sample startup race without changing application audio behavior.
-
-## Integration with main at 948e524
-
-The notification branch incorporates the latest CI changes without restoring duplicate UI suites or adding workflow steps. Completed banners already use the thumbnail returned by `registerRecording`; a real-media assertion now checks that this returned image is the library's near-end blue frame, rather than the earlier red frame.
-
-Desktop audio routing excludes AcroClip's process tree. Windows and macOS feedback helpers are children of the app; Linux sound playback starts paplay as an app child. A new case in the existing Linux application-audio smoke test plays the shipped `clip-success.wav` repeatedly from a descendant process. With exclusion disabled it records about -23 dB in both Master and Desktop. With the owner PID excluded both tracks measure -91 dB, the silence floor. The proof records the WAV's SHA-256 and decodes the actual saved videos. It measures whatever WAV ships, so a future sound swap is covered without changing the test.
-
-The local test used private Xvfb and PipeWire services and the native recorder from the published 0.9.0 AppImage. Its recorder source hash matches this branch. The packaged Ubuntu Wayland client prevented the host's newer Mesa EGL vendor from loading because it lacks `wl_fixes_interface`. Removing that client from the temporary test runtime fixed graphics initialization. Linux staging now leaves `libwayland-client` to the host, like its GPU drivers, so it cannot override the version Mesa requires. The next candidate build verifies the newly staged package rather than treating the temporary test-runtime change as package verification.
+Never run a nested compositor with Xwayland unless it's isolated. A nested Hyprland can take the host's `:0` and remove `/tmp/.X11-unix/X0` when it exits. The banner smoke turns Xwayland off for that reason. For runs of the full app, wrap the harness in `unshare --user --map-root-user --mount --net`, mount a tmpfs over `/tmp`, bring up `lo`, then run it under `unshare --user --map-user=1000 --map-group=1000`.
