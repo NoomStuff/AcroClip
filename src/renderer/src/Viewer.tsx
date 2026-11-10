@@ -352,7 +352,7 @@ export function Viewer({
    const play = useCallback(
       (media: HTMLVideoElement) => {
          const range = trimRef.current;
-         if (range && (media.currentTime >= lastKeptTime(range) - 0.01 || media.currentTime < range.start)) seeker.seek(range.start);
+         if (range && (media.currentTime >= lastKeptTime(range) - 0.01 || media.currentTime < range.start)) seeker.seekNow(range.start);
          return media.play();
       },
       [seeker]

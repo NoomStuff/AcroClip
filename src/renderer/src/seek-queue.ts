@@ -43,6 +43,14 @@ export class SeekQueue {
       this.target = time;
       this.flush();
    }
+   /** Drop stale drag requests and seek now when playback must restart from a boundary. */
+   seekNow(time: number): void {
+      const video = this.video;
+      this.cancelScheduled();
+      this.requested = null;
+      this.target = time;
+      if (video && Math.abs(video.currentTime - time) > 0.00001) video.currentTime = time;
+   }
    /** Where the player is heading while a seek is still on its way, so the playhead doesn't jump back. */
    pendingTime(): number | null {
       return this.requested !== null || this.scheduled !== 0 || this.video?.seeking ? this.target : null;
