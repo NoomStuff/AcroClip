@@ -17,12 +17,12 @@ test("notification choices save independently and error banners cannot be disabl
       const page = await app.firstWindow();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page.locator(".settings-sidebar").getByRole("button", { name: "Notifications", exact: true }).click();
-      await expect(page.locator(".notification-settings-row")).toHaveCount(7);
+      await expect(page.locator(".notification-settings-row")).toHaveCount(8);
       const banner = page.getByRole("checkbox", { name: "Error banner", exact: true });
       await expect(banner).toBeChecked();
       await expect(banner).toBeDisabled();
-      await page.getByRole("checkbox", { name: "Start capture banner", exact: true }).uncheck();
-      await page.getByRole("checkbox", { name: "Stop capture sound", exact: true }).uncheck();
+      await page.getByRole("checkbox", { name: "Capture started banner", exact: true }).uncheck();
+      await page.getByRole("checkbox", { name: "Capture stopped sound", exact: true }).uncheck();
       await page.getByRole("checkbox", { name: "Error sound", exact: true }).uncheck();
       await expect
          .poll(async () => {

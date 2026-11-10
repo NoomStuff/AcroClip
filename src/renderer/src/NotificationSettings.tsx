@@ -1,15 +1,16 @@
-import { CircleDot, CirclePause, CircleStop, Clapperboard, Gamepad2, PanelTop, TriangleAlert, Volume2 } from "lucide-react";
+import { CircleDot, CirclePause, CirclePlay, CircleStop, Clapperboard, Gamepad2, PanelTop, TriangleAlert, Volume2 } from "lucide-react";
 import { notificationActions } from "../../shared/notifications";
 import type { NotificationEditableKey, NotificationPreferenceKey, NotificationPreferences } from "../../shared/notifications";
 import { Toggle } from "./ui";
 
 const rows = [
-   { action: "startRecording", label: "Start capture", detail: "When capture starts.", icon: CircleDot },
-   { action: "stopRecording", label: "Stop capture", detail: "When capture stops.", icon: CircleStop },
+   { action: "startRecording", label: "Capture started", detail: "When capture starts.", icon: CircleDot },
+   { action: "stopRecording", label: "Capture stopped", detail: "When capture stops.", icon: CircleStop },
+   { action: "saveClip", label: "Save clip", detail: "When saving begins and finishes.", icon: Clapperboard },
    { action: "gameFound", label: "Now capturing", detail: "When Auto finds a game after capture started.", icon: Gamepad2 },
    { action: "gameLost", label: "Stopped capturing game", detail: "When the game Auto was capturing closes.", icon: Gamepad2 },
-   { action: "capturePaused", label: "Capture paused", detail: "When the chosen application or screen is lost, and when it's back.", icon: CirclePause },
-   { action: "saveClip", label: "Save clip", detail: "When saving begins and finishes.", icon: Clapperboard },
+   { action: "capturePaused", label: "Capture paused", detail: "When the chosen application or screen is lost.", icon: CirclePause },
+   { action: "captureResumed", label: "Capture resumed", detail: "When the lost application or screen is back.", icon: CirclePlay },
    { action: "error", label: "Error", detail: "Capture and save failures.", icon: TriangleAlert },
 ] as const;
 
@@ -45,7 +46,7 @@ export function NotificationSettings({
                      <span className="field-label">{label}</span>
                      <p className="field-detail">{detail}</p>
                   </div>
-                  <div className="notification-switch" title={locked ? "Error banners are always on" : `${label} banner`}>
+                  <div className="notification-switch" {...(locked ? { "data-tooltip": "Error banners are always on" } : {})}>
                      <Toggle
                         label={`${label} banner`}
                         checked={locked || value[banner]}

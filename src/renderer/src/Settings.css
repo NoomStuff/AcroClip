@@ -231,6 +231,10 @@
 .settings-group {
    margin-bottom: 24px;
 }
+/* The body's padding ends the page. A trailing margin on top of it only adds empty scroll. */
+.settings-body > :last-child {
+   margin-bottom: 0;
+}
 .settings-group > h2 {
    margin: 0 0 10px;
    font-size: 13px;
@@ -557,7 +561,11 @@ fieldset.settings-group:disabled {
    z-index: 1;
    cursor: pointer;
 }
+/* Disabled controls get no pointer events, so the wrapper carries the tooltip and cursor. */
 .notification-switch .toggle-row input:disabled {
+   pointer-events: none;
+}
+.notification-switch:has(input:disabled) {
    cursor: not-allowed;
 }
 .notification-switch .toggle-row > span:first-child {

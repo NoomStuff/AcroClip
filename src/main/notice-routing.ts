@@ -25,9 +25,8 @@ const notificationAction: Record<NoticeKind, NotificationAction> = {
    "recording-started": "startRecording",
    "game-found": "gameFound",
    "game-lost": "gameLost",
-   // Losing the chosen application or screen, and finding it again, share one switch.
    "recording-paused": "capturePaused",
-   "recording-resumed": "capturePaused",
+   "recording-resumed": "captureResumed",
    "recording-stopped": "stopRecording",
    "critical-error": "error",
 };

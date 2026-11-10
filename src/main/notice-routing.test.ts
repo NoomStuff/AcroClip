@@ -104,9 +104,10 @@ describe("banner requests", () => {
    it("gives games and chosen sources their own switches, with only the game-lost banner off by default", () => {
       expect(feedbackRequest(false, "game-found", {}, defaultPreferences, null)).toMatchObject({ action: "gameFound", visual: true });
       expect(feedbackRequest(false, "game-lost", {}, defaultPreferences, null)).toMatchObject({ action: "gameLost", visual: false });
-      for (const kind of ["recording-paused", "recording-resumed"] as const)
-         expect(feedbackRequest(false, kind, {}, defaultPreferences, null)).toMatchObject({ action: "capturePaused", visual: true });
-      const quiet = { ...defaultPreferences, notificationPauseBanner: false, notificationGameBanner: false };
+      expect(feedbackRequest(false, "recording-paused", {}, defaultPreferences, null)).toMatchObject({ action: "capturePaused", visual: true });
+      expect(feedbackRequest(false, "recording-resumed", {}, defaultPreferences, null)).toMatchObject({ action: "captureResumed", visual: true });
+      expect(feedbackRequest(false, "recording-resumed", {}, { ...defaultPreferences, notificationPauseBanner: false }, null).visual).toBe(true);
+      const quiet = { ...defaultPreferences, notificationPauseBanner: false, notificationResumeBanner: false, notificationGameBanner: false };
       for (const kind of ["game-found", "recording-paused", "recording-resumed"] as const)
          expect(feedbackRequest(false, kind, {}, quiet, null).visual).toBe(false);
    });

@@ -11,6 +11,7 @@ export const notificationActions = {
    gameFound: { banner: "notificationGameBanner", defaultBanner: true },
    gameLost: { banner: "notificationGameLostBanner", defaultBanner: false },
    capturePaused: { banner: "notificationPauseBanner", defaultBanner: true },
+   captureResumed: { banner: "notificationResumeBanner", defaultBanner: true },
    error: { banner: "notificationErrorBanner", sound: "notificationErrorSound", defaultBanner: true },
 } as const;
 

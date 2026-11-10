@@ -42,6 +42,7 @@ export const defaultPreferences: Preferences = {
    notificationGameBanner: true,
    notificationGameLostBanner: false,
    notificationPauseBanner: true,
+   notificationResumeBanner: true,
    notificationErrorBanner: true,
    notificationErrorSound: true,
    stats: true,
