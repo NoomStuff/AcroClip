@@ -2,7 +2,7 @@ import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, X } from "lucide-react";
-import { Button, IconButton } from "./ui";
+import { Button, Checkbox, IconButton } from "./ui";
 
 export type DialogAnswer = string | boolean | string[] | null;
 export type Ask = (request: Omit<DialogRequest, "resolve">) => Promise<DialogAnswer>;
@@ -70,11 +70,11 @@ export function Dialog({ request, close }: { request: DialogRequest; close: () =
                   <legend className="visually-hidden">{request.title}</legend>
                   {request.choices.map((choice, index) => (
                      <label key={choice.id} className="dialog-choice">
-                        <input
-                           type="checkbox"
+                        <Checkbox
                            data-dialog-initial={index === 0 ? "" : undefined}
+                           danger={request.danger === true}
                            checked={ticked.has(choice.id)}
-                           onChange={(event) => tick(choice.id, event.target.checked)}
+                           onChange={(checked) => tick(choice.id, checked)}
                         />
                         <span>
                            <span className="field-label">{choice.label}</span>

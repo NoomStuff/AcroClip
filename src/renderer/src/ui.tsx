@@ -1,8 +1,8 @@
 import { FieldDescription } from "./field-accessibility";
 import { Children, Fragment, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { LoaderCircle } from "lucide-react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import { Check, LoaderCircle } from "lucide-react";
 
 import { SelectionIndicator } from "./SelectionIndicator";
 import { DropdownSelect } from "./DropdownSelect";
@@ -153,6 +153,27 @@ export function Toggle({
             <span className="switch-thumb" />
          </span>
       </label>
+   );
+}
+/** A tickbox drawn like the switches: a dark slot that fills with the accent. Place it inside its label. */
+export function Checkbox({
+   checked,
+   onChange,
+   danger = false,
+   ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "checked" | "onChange"> & {
+   checked: boolean;
+   onChange: (checked: boolean) => void;
+   /** Ticking marks something for removal, so it fills red. */
+   danger?: boolean;
+}) {
+   return (
+      <>
+         <input {...props} type="checkbox" className="checkbox-input" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+         <span className={`checkbox${danger ? " danger" : ""}`} aria-hidden="true">
+            <Check size={13} strokeWidth={3.2} />
+         </span>
+      </>
    );
 }
 export function Field({ label, detail, children, stacked = false }: { label: string; detail?: string; children: ReactNode; stacked?: boolean }) {
