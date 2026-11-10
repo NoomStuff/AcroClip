@@ -349,10 +349,12 @@ export function Viewer({
       else apply();
    };
    // While trimming, playback stays between the handles. Playing from the end starts over at the start handle.
+   // A pending seek may still be catching up when play is pressed, so judge by where the playhead is headed.
    const play = useCallback(
       (media: HTMLVideoElement) => {
          const range = trimRef.current;
-         if (range && (media.currentTime >= lastKeptTime(range) - 0.01 || media.currentTime < range.start)) seeker.seekNow(range.start);
+         const position = seeker.pendingTime() ?? media.currentTime;
+         if (range && (position >= lastKeptTime(range) - 0.01 || position < range.start)) seeker.seekNow(range.start);
          return media.play();
       },
       [seeker]
