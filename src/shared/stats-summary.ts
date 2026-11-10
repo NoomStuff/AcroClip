@@ -95,16 +95,25 @@ export interface StatsSummary {
    sharing: {
       shareables: number;
       automatic: number;
+      /** Total size of the shareables made, before any were deleted. */
+      bytes: number;
       bytesSaved: number;
       encodeSeconds: number;
       copies: { clipboard: number; drag: number; clip: number; shareable: number };
    };
    cleanup: {
+      /** Every delete: clips plus shareables. */
+      deleted: number;
       deletedClips: number;
       deletedShareables: number;
       deletedUnwatched: number;
       /** How long deleted clips were kept, on average. */
       averageAgeDays: number | null;
+      /**
+       * Share of clips still in the library, against those deleted, split by whether they had
+       * been watched. With a range, only clips created inside it count. Null without any clips.
+       */
+      keepRate: { all: number | null; watched: number | null; unwatched: number | null };
    };
    actions: Record<StatsAction, number>;
    days: DayStats[];
@@ -123,6 +132,8 @@ export interface StatsSummary {
       unwatched: number;
       tagged: number;
       withShareables: number;
+      /** Size of the shareables in the library now. */
+      shareableBytes: number;
       merged: number;
       oldest: number | null;
       newest: number | null;
@@ -241,8 +252,15 @@ export function summarizeStats(events: StatsEvent[], clips: Clip[], options: Sum
          bufferUse: null,
       },
       watching: { views: 0, seconds: 0, completions: 0, clipsViewed: 0, topClips: [] },
-      sharing: { shareables: 0, automatic: 0, bytesSaved: 0, encodeSeconds: 0, copies: { clipboard: 0, drag: 0, clip: 0, shareable: 0 } },
-      cleanup: { deletedClips: 0, deletedShareables: 0, deletedUnwatched: 0, averageAgeDays: null },
+      sharing: { shareables: 0, automatic: 0, bytes: 0, bytesSaved: 0, encodeSeconds: 0, copies: { clipboard: 0, drag: 0, clip: 0, shareable: 0 } },
+      cleanup: {
+         deleted: 0,
+         deletedClips: 0,
+         deletedShareables: 0,
+         deletedUnwatched: 0,
+         averageAgeDays: null,
+         keepRate: { all: null, watched: null, unwatched: null },
+      },
       actions: countBy(statsActions),
       days: [],
       activeDays: 0,
@@ -256,6 +274,7 @@ export function summarizeStats(events: StatsEvent[], clips: Clip[], options: Sum
    const latencies: number[] = [];
    const settings = new Map<string, number>();
    const deletedAges: number[] = [];
+   const deletedForKeepRate = { watched: 0, unwatched: 0 };
    let bufferSeconds = 0;
    let bufferedSaves = 0;
    for (const event of inRange) {
@@ -338,6 +357,7 @@ export function summarizeStats(events: StatsEvent[], clips: Clip[], options: Sum
          case "shareable":
             summary.sharing.shareables++;
             if (event.automatic) summary.sharing.automatic++;
+            summary.sharing.bytes += event.bytes;
             summary.sharing.bytesSaved += Math.max(0, event.sourceBytes - event.bytes);
             summary.sharing.encodeSeconds += event.encodeSeconds;
             day(event.at).shareables++;
@@ -349,9 +369,11 @@ export function summarizeStats(events: StatsEvent[], clips: Clip[], options: Sum
             day(event.at).copies++;
             break;
          case "delete":
+            summary.cleanup.deleted++;
             if (event.scope === "clip") {
                summary.cleanup.deletedClips++;
                if (!event.watched) summary.cleanup.deletedUnwatched++;
+               if (from === undefined || event.clipCreatedAt >= from) deletedForKeepRate[event.watched ? "watched" : "unwatched"]++;
                if (event.clipCreatedAt) deletedAges.push((event.at - event.clipCreatedAt) / 86_400_000);
             } else summary.cleanup.deletedShareables++;
             break;
@@ -372,6 +394,14 @@ export function summarizeStats(events: StatsEvent[], clips: Clip[], options: Sum
    }
    if (summary.capture.seconds >= 60) summary.saves.perCaptureHour = round(summary.saves.moments / (summary.capture.seconds / 3600), 2);
    if (bufferedSaves) summary.saves.bufferUse = round(bufferSeconds / bufferedSaves, 3);
+   const kept = { watched: 0, unwatched: 0 };
+   for (const clip of clips) if (from === undefined || clip.createdAt >= from) kept[clip.watched ? "watched" : "unwatched"]++;
+   const keepRate = (keptClips: number, deletedClips: number) => (keptClips + deletedClips ? round(keptClips / (keptClips + deletedClips), 3) : null);
+   summary.cleanup.keepRate = {
+      all: keepRate(kept.watched + kept.unwatched, deletedForKeepRate.watched + deletedForKeepRate.unwatched),
+      watched: keepRate(kept.watched, deletedForKeepRate.watched),
+      unwatched: keepRate(kept.unwatched, deletedForKeepRate.unwatched),
+   };
    if (deletedAges.length) summary.cleanup.averageAgeDays = round(deletedAges.reduce((sum, age) => sum + age, 0) / deletedAges.length);
 
    const clipsSeen = [...clipStats.values()];
@@ -485,6 +515,7 @@ function librarySummary(clips: Clip[]): StatsSummary["library"] {
       unwatched: clips.filter((clip) => !clip.watched).length,
       tagged: clips.filter((clip) => clip.categories.length > 0).length,
       withShareables: clips.filter((clip) => clip.shareables.length > 0).length,
+      shareableBytes: clips.reduce((sum, clip) => sum + clip.shareables.reduce((total, shareable) => total + shareable.size, 0), 0),
       merged: clips.filter((clip) => (clip.mergedFrom ?? 0) > 1).length,
       oldest,
       newest,

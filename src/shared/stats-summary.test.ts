@@ -133,9 +133,39 @@ describe("summarizeStats", () => {
          event(at(5, 13), { type: "shareable", clipId: "c", targetMB: 10, bytes: 10, sourceBytes: 110, encodeSeconds: 4, automatic: true }),
          event(at(5, 14), { type: "copy", clipId: "c", file: "shareable", method: "drag" }),
       ];
-      const summary = summarizeStats(events, [], { now: at(6, 0) });
-      expect(summary.cleanup).toEqual({ deletedClips: 1, deletedShareables: 1, deletedUnwatched: 1, averageAgeDays: 4 });
-      expect(summary.sharing).toMatchObject({ shareables: 1, automatic: 1, bytesSaved: 100, copies: { drag: 1, clipboard: 0, shareable: 1, clip: 0 } });
+      const shareable = { id: "s", path: "/clips/s.mp4", relativePath: "s.mp4", size: 7, targetMB: 10, createdAt: at(5, 13) };
+      const summary = summarizeStats(events, [clip("c", { shareables: [shareable] })], { now: at(6, 0) });
+      expect(summary.cleanup).toEqual({
+         deleted: 2,
+         deletedClips: 1,
+         deletedShareables: 1,
+         deletedUnwatched: 1,
+         averageAgeDays: 4,
+         keepRate: { all: 0.5, watched: null, unwatched: 0.5 },
+      });
+      expect(summary.sharing).toMatchObject({
+         shareables: 1,
+         automatic: 1,
+         bytes: 10,
+         bytesSaved: 100,
+         copies: { drag: 1, clipboard: 0, shareable: 1, clip: 0 },
+      });
+      expect(summary.library.shareableBytes).toBe(7);
+   });
+
+   it("splits the keep rate by watched clips and limits it to clips made in the range", () => {
+      const deleted = (clipId: string, created: number, watched: boolean) =>
+         event(at(8, 12), { type: "delete", clipId, scope: "clip", clipCreatedAt: created, duration: 30, watched });
+      const events = [deleted("old", at(1, 12), true), deleted("w", at(7, 12), true), deleted("u1", at(7, 12), false), deleted("u2", at(7, 12), false)];
+      const library = [
+         clip("a", { createdAt: at(7, 13), watched: true }),
+         clip("b", { createdAt: at(7, 14), watched: true }),
+         clip("c", { createdAt: at(7, 15) }),
+         clip("before", { createdAt: at(1, 12), watched: true }),
+      ];
+      expect(summarizeStats(events, library, { now: at(9, 0), from: at(7, 0) }).cleanup.keepRate).toEqual({ all: 0.5, watched: 0.667, unwatched: 0.333 });
+      // Without a range, the clip made before it and the one deleted from then count too.
+      expect(summarizeStats(events, library, { now: at(9, 0) }).cleanup.keepRate).toEqual({ all: 0.5, watched: 0.6, unwatched: 0.333 });
    });
 
    it("returns empty figures without history", () => {

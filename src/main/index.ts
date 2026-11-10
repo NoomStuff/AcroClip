@@ -4,7 +4,7 @@ import { normalizeApplicationLabel } from "./application-identity";
 import { isPackagedApp, registerWindowsIdentity, windowsAppId } from "./identity";
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, nativeImage, protocol, shell, Tray, session, systemPreferences, screen } from "electron";
 import { mkdirSync, realpathSync } from "node:fs";
-import { mkdir, realpath, stat, statfs, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { arch, cpus, freemem, homedir, release, totalmem, version as kernelVersion } from "node:os";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
@@ -32,6 +32,9 @@ import type { LogLevel, SessionRecord } from "./diagnostics";
 import { buildSystemReport } from "./system-report";
 import { createZip } from "./zip";
 import { bugReportUrl, describeSystem, logArchiveName, rendererErrorSchema } from "../shared/diagnostics";
+import { factoryResetDetail, historyPartsSchema, resetPartsSchema } from "../shared/maintenance";
+import type { ResetPart } from "../shared/maintenance";
+import { defaultPreferences } from "../shared/defaults";
 import { loudnessEnvelope, probe } from "./media";
 import { BACKGROUND_CHECK_INTERVAL, Updates } from "./updates";
 import { testUpdateServer } from "./update-manager";
@@ -148,7 +151,7 @@ const stats = new StatsLog({
    root: () => collections.root,
    directory: (root) => collections.statsDirectory(root),
    // Preferences load after the services exist; nothing records before then.
-   enabled: () => (preferences as Preferences | undefined)?.stats === true,
+   enabled: () => (preferences as Preferences | undefined) !== undefined,
    onError: (message) => log(message),
 });
 /** The clip a collection file belongs to, and whether it is the clip itself or a shareable. */
@@ -966,6 +969,35 @@ function recoverUpdateExit() {
    if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
       void startRecording({ quiet: true }).catch(captureActionError);
 }
+function clearBrowserCache() {
+   return Promise.all([session.defaultSession.clearCache(), session.defaultSession.clearCodeCaches({})]);
+}
+/** Runs once the app is ready to quit: capture is closed and nothing else writes these files. */
+async function factoryReset(parts: readonly ResetPart[]) {
+   const root = collections.root;
+   const steps: Record<ResetPart, () => Promise<unknown>> = {
+      stats: async () => root && (await stats.clear(root)),
+      cache: async () => {
+         await clearBrowserCache();
+         if (root) for (const folder of ["thumbnails", "playback"]) await rm(join(root, ".acroclip", folder), { recursive: true, force: true });
+      },
+      layout: () => session.defaultSession.clearStorageData({ storages: ["localstorage"] }),
+      settings: async () => {
+         if (preferences.startWithOS) await applyStartup(false);
+         // Without a file, the next launch starts from the defaults and runs setup.
+         for (const path of [preferencePath, `${preferencePath}.bak`]) await rm(path, { force: true });
+      },
+      logs: () => diagnostics.clear(),
+   };
+   // Logs go last, so a failure in another step is cleared with them rather than left behind.
+   for (const part of [...parts.filter((part) => part !== "logs"), ...parts.filter((part) => part === "logs")]) {
+      try {
+         await steps[part]();
+      } catch (error) {
+         log(`maintenance: factory reset of ${part} failed: ${errorMessage(error)}`, "error");
+      }
+   }
+}
 function releaseServices() {
    diagnostics.end();
    libraryRefresh.close();
@@ -1024,6 +1056,8 @@ const collectionIndependent = new Set([
    "diagnostics-error",
    "logs-export",
    "bug-report",
+   "history-clear",
+   "factory-reset",
 ]);
 /** Changes refused once exiting has begun. */
 const changesWhileExiting = new Set([
@@ -1169,12 +1203,13 @@ function registerIPC() {
       const picked = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"], defaultPath: preferences.collection });
       return picked.canceled ? null : (picked.filePaths[0] ?? null);
    });
-   handle("preferences", async (value, changedKeys) => {
+   /** Every settings change goes through here, one at a time, and rolls back as a whole. */
+   function applyPreferences(build: () => Preferences): Promise<AppState> {
       const operation = preferenceWrites
          .catch(() => undefined)
          .then(async () => {
             if (startingCapture) throw new Error("Capture is starting. Wait before applying settings.");
-            const next = synchronizeLegacyAudio(preferences, mergePreferenceChanges(preferences, value, changedKeys));
+            const next = build();
             if (audioTopology(next) !== audioTopology(preferences) || next.sourceKind !== preferences.sourceKind || next.sourceId !== preferences.sourceId)
                assertDistinctAudioSources(next, captureSources.cached);
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
@@ -1237,7 +1272,18 @@ function registerIPC() {
          });
       preferenceWrites = operation;
       return operation;
-   });
+   }
+   handle("preferences", (value, changedKeys) =>
+      applyPreferences(() => synchronizeLegacyAudio(preferences, mergePreferenceChanges(preferences, value, changedKeys)))
+   );
+   // The collection stays: the clips are the user's, and setup opens on it again.
+   handle("preferences-reset", () =>
+      applyPreferences(() => {
+         if (captureActive() || recorder.status.pendingSaves) throw new Error("Stop capturing before resetting settings.");
+         log("maintenance: settings reset", "warn");
+         return mergePreferenceChanges(preferences, { ...structuredClone(defaultPreferences), collection: preferences.collection }, undefined);
+      })
+   );
    handle("record-start", () => startRecording());
    handle("record-stop", () => stopRecording());
    handle("record-save", () => saveClip("app"));
@@ -1390,8 +1436,44 @@ function registerIPC() {
       const event = viewEventSchema.parse(value);
       if (collections.clips.some((clip) => clip.id === event.clipId)) stats.record(event);
    });
-   handle("stats-clear", async () => {
-      if (collections.root) await stats.clear(collections.root);
+   handle("cache-clear", async () => {
+      // Rebuilding every thumbnail runs the media tools hard, which must not compete with a game.
+      if (captureActive()) throw new Error("Stop capturing before clearing the cache.");
+      await clearBrowserCache();
+      await collections.clearCache();
+      log("maintenance: cache cleared");
+   });
+   handle("history-clear", async (value) => {
+      const parts = historyPartsSchema.parse(value);
+      if (parts.stats && collections.root) await stats.clear(collections.root);
+      if (parts.logs) await diagnostics.clear();
+      log(`maintenance: cleared ${[parts.logs ? "logs" : "", parts.stats ? "usage stats" : ""].filter(Boolean).join(" and ")}`, "warn");
+   });
+   handle("factory-reset", async (value) => {
+      const parts = resetPartsSchema.parse(value);
+      const options = {
+         type: "warning" as const,
+         title: "Factory reset",
+         message: "Reset AcroClip?",
+         detail: factoryResetDetail(parts),
+         buttons: ["Cancel", "Reset and restart"],
+         defaultId: 0,
+         cancelId: 0,
+      };
+      const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+      const { response } = await (window ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options));
+      if (response !== 1 || !(await prepareExit())) return false;
+      endCaptureSession("exit");
+      trackWindow(false);
+      await stats.flush();
+      quitting = true;
+      log(`maintenance: factory reset of ${parts.join(", ")}`, "warn");
+      await factoryReset(parts);
+      releaseServices();
+      // Tests check what the reset left behind. A relaunch would start a second app under them.
+      if (process.env["ACROCLIP_TEST"] !== "1") app.relaunch();
+      app.quit();
+      return true;
    });
    handle("stats-summary", async (from) => {
       const since = z.number().int().min(0).optional().parse(from);

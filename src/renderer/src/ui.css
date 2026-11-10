@@ -595,6 +595,41 @@
    width: 100%;
 }
 
+.dialog-choices {
+   display: grid;
+   gap: 2px;
+   margin: 0 -10px;
+   padding: 0;
+   border: 0;
+}
+
+.dialog-choice {
+   display: grid;
+   grid-template-columns: auto 1fr;
+   align-items: start;
+   gap: 12px;
+   padding: 9px 10px;
+   border-radius: var(--radius-control);
+   cursor: pointer;
+}
+
+.dialog-choice:hover {
+   background: #ffffff08;
+}
+
+.dialog .dialog-choice input {
+   width: 16px;
+   height: 16px;
+   margin: 2px 0 0;
+   accent-color: var(--red);
+   cursor: pointer;
+}
+
+.dialog-choice .field-detail {
+   display: block;
+   margin-top: 3px;
+}
+
 .dialog-actions {
    display: flex;
    gap: 8px;

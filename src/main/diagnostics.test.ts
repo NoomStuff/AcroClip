@@ -59,6 +59,27 @@ describe("Diagnostics", () => {
       ]);
    });
 
+   it("clears logs and past runs but keeps this run's marker", async () => {
+      const directory = await folder();
+      await new Diagnostics({ directory, version: "0.20.0", pid: 1 }).begin();
+      const diagnostics = new Diagnostics({ directory, version: "0.21.0", pid: 2, appLogBytes: 10 });
+      await diagnostics.begin();
+      diagnostics.log("first long line");
+      await diagnostics.flush();
+      diagnostics.log("second");
+      diagnostics.recorderOutput("obs line\n");
+      await diagnostics.flush();
+      diagnostics.log("queued");
+      await diagnostics.clear();
+      expect(await diagnostics.history()).toEqual([]);
+      expect(await diagnostics.entries((text) => text)).toEqual([]);
+      expect(readSession(directory)).toMatchObject({ version: "0.21.0", clean: false });
+      diagnostics.log("after");
+      await diagnostics.flush();
+      expect(await readFile(join(directory, "app.log"), "utf8")).toMatch(/INFO {2}after\n$/);
+      expect(await readFile(join(directory, "app.log"), "utf8")).not.toContain("queued");
+   });
+
    it("ignores a damaged session marker", async () => {
       const directory = await folder();
       await writeFile(join(directory, "session.json"), "{not json");

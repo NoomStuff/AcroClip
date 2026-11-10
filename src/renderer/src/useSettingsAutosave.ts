@@ -78,5 +78,6 @@ export function useSettingsAutosave(preferences: Preferences) {
          void flushRef.current();
       };
    }, []);
-   return { draft, write, status, error, retry: () => void flush() };
+   // Saves a waiting change now, so an action that replaces every setting goes last.
+   return { draft, write, status, error, retry: () => void flush(), flush: () => flushRef.current() };
 }

@@ -86,6 +86,28 @@ describe("collection folder operations", () => {
          await rm(root, { recursive: true, force: true });
       }
    });
+   it("clears thumbnails and playback copies, then makes thumbnails again", async () => {
+      const root = await temporaryDirectory("acroclip-clear-cache-");
+      try {
+         const video = join(root, "Moment.mp4");
+         await writeFile(video, "isolated video");
+         const collection = new CollectionService();
+         await collection.open(root);
+         const id = collection.clips[0]!.id;
+         const thumbnail = fileURLToPath(collection.clips[0]!.thumbnail);
+         await writeFile(thumbnail, "stale preview");
+         await mkdir(join(root, ".acroclip", "playback"), { recursive: true });
+         await writeFile(join(root, ".acroclip", "playback", "copy.mp4"), "converted");
+         await collection.clearCache();
+         await expect(stat(join(root, ".acroclip", "playback"))).rejects.toMatchObject({ code: "ENOENT" });
+         expect(await readFile(fileURLToPath(collection.clips[0]!.thumbnail), "utf8")).toBe("fixture thumbnail");
+         // The collection info stays, so the clip keeps its ID, tags and shareables.
+         expect(collection.clips[0]!.id).toBe(id);
+         expect(await readFile(video, "utf8")).toBe("isolated video");
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
    it("keeps a legacy thumbnail when regeneration fails", async () => {
       const root = await temporaryDirectory("acroclip-thumbnail-recovery-");
       try {

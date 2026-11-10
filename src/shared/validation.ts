@@ -109,7 +109,6 @@ export const preferencesSchema = z
       notificationResumeBanner: z.boolean().default(true),
       notificationErrorBanner: z.literal(true).default(true),
       notificationErrorSound: z.boolean().default(true),
-      stats: z.boolean().default(true),
       overlapClips: z.enum(["keep", "trim", "merge"]),
       folderLayout: z.enum(["flat", "application"]),
       filenamePreset: z.enum(["source-date", "date-source", "custom"]),

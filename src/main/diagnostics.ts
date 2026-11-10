@@ -65,6 +65,20 @@ export class LogFile {
       }
    }
 
+   /** Drops queued lines and both files. Writes after this start a fresh file. */
+   clear(): Promise<void> {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+      this.pending = [];
+      this.writing = this.writing
+         .then(async () => {
+            await rm(this.path, { force: true });
+            await rm(this.previousPath, { force: true });
+         })
+         .catch(() => undefined);
+      return this.writing;
+   }
+
    private async append(text: string) {
       if (!this.ready) {
          await mkdir(join(this.path, ".."), { recursive: true });
@@ -186,6 +200,15 @@ export class Diagnostics {
       } catch {
          /* The next run reports this one as unclean, which is the safe mistake. */
       }
+   }
+
+   /**
+    * Removes the logs and the record of past runs. The marker for this run stays, so the next
+    * launch still knows whether this one closed cleanly.
+    */
+   async clear(): Promise<void> {
+      this.recorderPartial = "";
+      await Promise.all([this.app.clear(), this.recorder.clear(), rm(this.historyPath, { force: true })]);
    }
 
    /** The process is going down with this error. Keep it with the run, and get the logs on disk. */
