@@ -25,6 +25,12 @@ import type { AudioFilter } from "../shared/audio-filters";
 import { resolveAudioSources } from "./audio-sources";
 import { resolveReplayMemoryMB } from "../shared/replay-memory";
 
+export type RecorderErrorContext = "capture" | "save" | "saved-clip";
+/** The helper never answered. Unlike a refusal, the request may still complete. */
+export class CaptureTimeout extends Error {
+   override readonly name = "CaptureTimeout";
+}
+
 interface RecorderOptions {
    nativePath?: string;
    gameCatalogPath?: string;
@@ -37,7 +43,7 @@ interface RecorderOptions {
       requestId: string,
       capture: { previousFootage: boolean; secondsSinceCapture: number; application?: ApplicationArtwork }
    ) => void | Promise<void>;
-   onError: (message: string) => void;
+   onError: (message: string, context: RecorderErrorContext) => void;
    onAudioMonitorError?: (message: string, listeningError?: string) => void;
    onAudioLevels?: (levels: AudioLevels) => void;
 }
@@ -355,8 +361,8 @@ export class Recorder {
       this.current = { ...this.current, ...value };
       this.options.onState(this.status);
    }
-   private error(message: string): void {
-      this.options.onError(message);
+   private error(message: string, context: RecorderErrorContext = "capture"): void {
+      this.options.onError(message, context);
    }
    private send(value: Record<string, unknown>): void {
       if (!this.process?.stdin.writable) throw new Error("Capture isn't running. Start capturing and try again.");
@@ -367,7 +373,7 @@ export class Recorder {
       return new Promise((resolve, reject) => {
          const timeout = setTimeout(() => {
             this.commands.delete(id);
-            reject(new Error("Capture didn't respond in time."));
+            reject(new CaptureTimeout("Capture didn't respond in time."));
          }, 20_000);
          this.commands.set(id, { resolve, reject, timeout, onNotAccepted });
          try {
@@ -612,7 +618,10 @@ export class Recorder {
                ? {
                     state: value.waiting ? ("waiting" as const) : ("recording" as const),
                     message: value.waiting
-                       ? value.message || this.autoFailure || (this.autoPreferences ? "Waiting for game" : "Waiting for application")
+                       ? // The helper's default waiting text names a game, which is wrong for a chosen application.
+                         (value.message && (this.autoPreferences || value.message !== "Waiting for game") ? value.message : "") ||
+                         this.autoFailure ||
+                         (this.autoPreferences ? "Waiting for game" : "Waiting for application")
                        : this.autoFailure
                          ? `Capturing current source. ${this.autoFailure}`
                          : value.sourceKind === "screen" && this.autoPreferences
@@ -633,8 +642,9 @@ export class Recorder {
          });
       }
       if (value.event === "saved" && value.path) {
-         Promise.resolve(
-            this.options.onSaved(value.path, value.source ?? this.source, value.requestId ?? "", {
+         const savedPath = value.path;
+         void (async () => {
+            await this.options.onSaved(savedPath, value.source ?? this.source, value.requestId ?? "", {
                previousFootage: value.previousFootage ?? false,
                secondsSinceCapture: value.secondsSinceCapture ?? 0,
                ...(value.requestId &&
@@ -642,9 +652,9 @@ export class Recorder {
                (value.sourceId === undefined || value.sourceId === this.requestArtwork.get(value.requestId)!.sourceId)
                   ? { application: this.requestArtwork.get(value.requestId)!.application }
                   : {}),
-            })
-         )
-            .catch((error: unknown) => this.error(error instanceof Error ? error.message : "The saved clip could not be added to the library"))
+            });
+         })()
+            .catch((error: unknown) => this.error(error instanceof Error ? error.message : "The saved clip could not be added to the library", "saved-clip"))
             .finally(() => {
                if (value.requestId) {
                   this.requests.delete(value.requestId);
@@ -659,7 +669,7 @@ export class Recorder {
             this.requestArtwork.delete(value.requestId);
          } else if (this.current.state === "starting") this.update({ state: "error", startedAt: null, message: value.message ?? "Capture could not start" });
          this.update({ pendingSaves: this.requests.size });
-         this.error(value.message ?? "Capture failed");
+         this.error(value.message ?? "Capture failed", value.requestId ? "save" : "capture");
       }
       if (value.event === "fatal") {
          this.update({ state: "error", message: value.message ?? "Capture stopped unexpectedly" });

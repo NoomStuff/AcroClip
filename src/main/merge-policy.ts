@@ -28,12 +28,12 @@ export function mergeCandidate(
    previous: SavedFootage | undefined,
    next: SavedFootage,
    options: { mode: OverlapClips; clipSeconds: number; previousUntouched: boolean }
-): { merge: true; seconds: number } | { merge: false } {
+): { merge: true; seconds: number; added: number } | { merge: false } {
    if (options.mode !== "merge" || !previous || !options.previousUntouched) return { merge: false };
    if (previous.clipId === next.clipId || previous.session !== next.session || !next.session) return { merge: false };
    if (!(next.start < previous.end) || !(next.end > previous.end)) return { merge: false };
    if (next.end - previous.end > extendWindowSeconds(options.clipSeconds) * 1000) return { merge: false };
    const seconds = (next.end - previous.start) / 1000;
    if (seconds > mergeLimitSeconds(options.clipSeconds)) return { merge: false };
-   return { merge: true, seconds };
+   return { merge: true, seconds, added: (next.end - previous.end) / 1000 };
 }

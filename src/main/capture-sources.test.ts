@@ -315,3 +315,22 @@ describe.skipIf(process.platform !== "linux")("Linux scaled display coordinates"
       expect(screen.pixelSize).toEqual({ width: 1366, height: 768 });
    });
 });
+
+describe("application processes", () => {
+   it("remembers the process behind a window after the window leaves the list", () => {
+      const sources = new CaptureSources(recorder(), () => "999");
+      sources.cached = [
+         { id: "screen:0:0", name: "Screen 1", kind: "screen", thumbnail: "" },
+         { id: "window:42:0", name: "Starfall", kind: "app", thumbnail: "", processId: 88 },
+      ];
+      sources.cached = [];
+      expect(sources.processOf("window:42:0")).toBe(88);
+      expect(sources.processOf("screen:0:0")).toBeUndefined();
+   });
+   it("keeps only the most recently seen windows", () => {
+      const sources = new CaptureSources(recorder(), () => "999");
+      for (let index = 1; index <= 300; index++) sources.cached = [{ id: `window:${index}:0`, name: "App", kind: "app", thumbnail: "", processId: index }];
+      expect(sources.processOf("window:1:0")).toBeUndefined();
+      expect(sources.processOf("window:300:0")).toBe(300);
+   });
+});

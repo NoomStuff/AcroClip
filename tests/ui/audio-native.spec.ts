@@ -27,7 +27,10 @@ test("extra audio rows persist, obey recording boundaries and produce named isol
          customFPS: 24,
          clipSeconds: 5,
          captureAudio: false,
-         sound: false,
+         notificationStartSound: false,
+         notificationStopSound: false,
+         notificationSaveSound: false,
+         notificationErrorSound: false,
       })
    );
    const audioTitle = `Isolated audio ${Date.now()}`;

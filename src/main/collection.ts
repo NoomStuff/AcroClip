@@ -1463,6 +1463,10 @@ export class CollectionService {
       this.queue = operation;
       await operation;
    }
+   /** A job from "Create shareables automatically". Known until the job's final update has been reported. */
+   automaticJob(jobId: string): boolean {
+      return this.automaticJobs.has(jobId);
+   }
    /** Made by "Create shareables automatically" rather than on request. */
    automaticShareable(clipId: string, shareableId: string): boolean {
       return !!this.metadata.clips.find((clip) => clip.id === clipId)?.shareables.find((share) => share.id === shareableId)?.automatic;

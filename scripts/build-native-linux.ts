@@ -1,4 +1,4 @@
-import { copyFile, cp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -25,6 +25,9 @@ const waylandProvenance: unknown = JSON.parse(await readFile(path.join(root, ".c
 run("cmake", ["-S", path.join(root, "native"), "-B", output, "-DCMAKE_BUILD_TYPE=Release"]);
 run("cmake", ["--build", output, "--clean-first", "-j2"]);
 await rm(runtime, { recursive: true, force: true });
+await mkdir(runtime, { recursive: true });
+await copyFile("native/notifications/linux.py", path.join(runtime, "acroclip-notifier"));
+await chmod(path.join(runtime, "acroclip-notifier"), 0o755);
 await mkdir(path.join(runtime, "lib"), { recursive: true });
 await mkdir(path.join(runtime, "obs-plugins"), { recursive: true });
 await copyFile(path.join(output, "acroclip-recorder"), path.join(runtime, "acroclip-recorder"));
@@ -54,8 +57,10 @@ for (const input of initialFiles) {
    for (const line of result.split("\n")) {
       const match = /^\s*(\S+) => (\/\S+)/.exec(line);
       if (!match?.[1] || !match[2]) continue;
-      // The loader, C runtime, and host GPU drivers belong to the target OS.
-      if (/^(?:libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|libGL|libEGL|libOpenGL|libcuda|libnvidia)/.test(match[1])) continue;
+      // The loader, C runtime, and host GPU/display dependencies belong to the OS.
+      // Mesa can require newer Wayland client symbols than the build distro has.
+      // Bundling an older client breaks even X11 EGL when Mesa loads its vendor.
+      if (/^(?:libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|libGL|libEGL|libOpenGL|libcuda|libnvidia|libwayland-client\.so)/.test(match[1])) continue;
       if (libraries.has(match[1])) continue;
       libraries.add(match[1]);
       await copyFile(match[2], path.join(runtime, "lib", match[1]));
@@ -72,6 +77,7 @@ for (const input of initialFiles) {
    }
 }
 const sourceFiles = [
+   "native/notifications/linux.py",
    "native/recorder.cpp",
    "native/clip-writer.cpp",
    "native/clip-writer.hpp",

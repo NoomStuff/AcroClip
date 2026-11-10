@@ -99,12 +99,13 @@ export function App() {
    const [dialog, setDialog] = useState<DialogRequest | null>(null);
    const [shortcutSheet, setShortcutSheet] = useState(false);
    const [clipPulse, setClipPulse] = useState(0);
-   const run: Run = useCallback(async (action) => {
+   const run: Run = useCallback(async (action, options) => {
       try {
          await action();
          return true;
       } catch (error) {
-         notify({ message: describeError(error), tone: "error", chip: true });
+         // Capture actions answer through main, which shows the banner and leaves a chip here.
+         if (options?.feedback !== "external") notify({ message: describeError(error), tone: "error", chip: true });
          return false;
       }
    }, []);

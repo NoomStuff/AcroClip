@@ -106,8 +106,18 @@ export interface Preferences {
    updateCheck: boolean;
    startWithOS: boolean;
    autoRecord: boolean;
-   notifications: "everywhere" | "outside-fullscreen" | "off";
-   sound: boolean;
+   notificationStartBanner: boolean;
+   notificationStartSound: boolean;
+   notificationStopBanner: boolean;
+   notificationStopSound: boolean;
+   notificationSaveBanner: boolean;
+   notificationSaveSound: boolean;
+   notificationGameBanner: boolean;
+   notificationGameLostBanner: boolean;
+   notificationPauseBanner: boolean;
+   notificationResumeBanner: boolean;
+   notificationErrorBanner: true;
+   notificationErrorSound: boolean;
    // Keep a local history of views, saves and shares for statistics. It never leaves the collection.
    stats: boolean;
    // What a save does when its footage overlaps the previous clip.
@@ -172,6 +182,7 @@ export interface RecorderState {
    state: "stopped" | "starting" | "recording" | "waiting" | "error";
    startedAt: number | null;
    availableSeconds: number;
+   startingDetail?: string;
    message: string;
    backend: string;
    supported: boolean;

@@ -66,6 +66,26 @@ describe("recording buffer status", () => {
       expect(html).toContain("Saving");
       expect(html).not.toContain("2:05");
    });
+   it("shows startup progress beside the headline until footage flows", () => {
+      const html = renderToStaticMarkup(
+         createElement(RecordingStatus, {
+            state: { ...state, recorder: { ...state.recorder, state: "recording", availableSeconds: 0, startingDetail: "Preparing capture" } },
+            visible: true,
+         })
+      );
+      expect(html).toContain(">Starting capture</span>");
+      expect(html).toContain('data-tooltip="Preparing capture"');
+      expect(html).not.toContain("available</span>");
+   });
+   it("shows a pause with its reason, not as an error", () => {
+      const html = renderToStaticMarkup(
+         createElement(RecordingStatus, { state: { ...state, recorder: { ...state.recorder, state: "waiting", message: "Waiting for game" } }, visible: true })
+      );
+      expect(html).toContain(">Capture paused</span>");
+      expect(html).toContain('data-tooltip="Waiting for game"');
+      expect(html).not.toContain("spin");
+      expect(html).not.toContain("available</span>");
+   });
    it.each(["stopped", "starting", "waiting", "error"] as const)("hides available time while %s", (phase) => {
       const html = renderToStaticMarkup(createElement(RecordingStatus, { state: { ...state, recorder: { ...state.recorder, state: phase } }, visible: true }));
       expect(html).not.toContain("available</span>");

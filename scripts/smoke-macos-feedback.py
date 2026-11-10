@@ -155,26 +155,28 @@ def start_capture(identity, kind):
 
 
 def motion_evidence(request, identity, reduced, leaving=False):
-    # A delayed timer can report its final shown/hidden state outside the short
-    # animation-sampling interval. That real native endpoint still counts.
-    # Exit also starts at the actual stable shown state. Its first timer sample
-    # can arrive halfway through the fade, so it is not the phase's endpoint.
-    endpoints = ("shown", "hidden") if leaving and not reduced else ("hidden",) if leaving else ("entry", "shown")
+    endpoints = ("shown", "hidden") if leaving else ("entry", "shown")
     samples = [event for event in events["notifier"] if event.get("id") == request and
                (event["event"] in endpoints or event["event"] == "animation" and
-                (event["elapsed"] >= 2.4 if leaving else event["elapsed"] <= 0.25))]
-    assert len(samples) >= 3, samples
+                (event["elapsed"] >= 3.2 if leaving else event["elapsed"] <= 0.48))]
+    assert len(samples) >= 2, samples
     assert all(not event["active"] and not event["key"] and not event["main"] and
                event["foregroundPID"] == identity["pid"] and event["reducedMotion"] == reduced for event in samples), samples
-    alpha_range = max(event["alpha"] for event in samples) - min(event["alpha"] for event in samples)
-    y_range = max(event["y"] for event in samples) - min(event["y"] for event in samples)
+    assert len({(event["x"], event["y"]) for event in samples}) == 1, "The panel must stay attached to the display edge"
+    background_range = max(event["backgroundOffset"] for event in samples) - min(event["backgroundOffset"] for event in samples)
+    content_range = max(event["contentOffset"] for event in samples) - min(event["contentOffset"] for event in samples)
     if reduced:
-        assert y_range == 0, samples
-        assert all(event["alpha"] == (0 if leaving else 1) for event in samples), samples
+        assert all(event["backgroundOffset"] == 0 and event["contentOffset"] == 0 for event in samples), samples
+    elif not leaving and samples[0]["continuing"]:
+        assert all(event["backgroundOffset"] == 0 and -2 <= event["contentOffset"] <= 96 for event in samples), samples
     else:
-        assert alpha_range > 0.4 and y_range > 3, samples
-        assert any(event["event"] == "animation" and 0 < event["alpha"] < 1 for event in samples), "No actual intermediate motion sample"
-    return dict(samples=len(samples), alphaRange=alpha_range, verticalTravel=y_range, reducedMotion=reduced)
+        assert background_range > 300 and 90 < content_range < 110, samples
+        assert any(event["event"] == "animation" and
+                   event["backgroundOffset"] - event["contentOffset"] > 30 for event in samples), "No intermediate clipped reveal sample"
+    if leaving and not reduced:
+        assert all(abs(event["contentOffset"] / 96 - event["backgroundOffset"] / 408) < 0.001
+                   for event in samples), "Content and background must share the exit easing"
+    return dict(samples=len(samples), backgroundTravel=background_range, contentTravel=content_range, reducedMotion=reduced)
 
 
 def notice(identity, label, saving=True, expected_motion=None):
@@ -231,7 +233,7 @@ def capture_evidence(output, identity, shown):
     offset_x = (width - screen["width"] * scale) / 2
     offset_y = (height - screen["height"] * scale) / 2
     x = int(offset_x + (shown["x"] + 180 - screen["x"]) * scale)
-    y = int(offset_y + (screen["y"] + screen["height"] - shown["y"] - 14) * scale)
+    y = int(offset_y + (screen["y"] + screen["height"] - shown["y"] - 32) * scale)
     sampled = pixels(output, x, y)
     dark = sum(all(abs(pixel[index] - value) <= 18 for index, value in enumerate((25, 23, 31))) for pixel in sampled)
     middle = pixels(output, width // 2, height // 2)

@@ -10,7 +10,7 @@ export function updateTray(
    const active = status.state === "recording" || status.state === "waiting";
    const detail =
       status.state === "waiting"
-         ? status.message || "Waiting for capture"
+         ? `Capture paused${status.message ? ` · ${status.message}` : ""}`
          : status.state === "error"
            ? status.message || "Capture stopped"
            : active

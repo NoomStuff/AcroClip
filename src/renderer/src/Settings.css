@@ -231,6 +231,10 @@
 .settings-group {
    margin-bottom: 24px;
 }
+/* The body's padding ends the page. A trailing margin on top of it only adds empty scroll. */
+.settings-body > :last-child {
+   margin-bottom: 0;
+}
 .settings-group > h2 {
    margin: 0 0 10px;
    font-size: 13px;
@@ -503,4 +507,96 @@ fieldset.settings-group:disabled {
 
 .settings-row.shortcut-clash .field-detail {
    color: var(--red);
+}
+
+.notification-columns {
+   display: grid;
+   grid-template-columns: minmax(0, 1fr) 72px 72px;
+   align-items: center;
+   gap: 18px;
+   padding: 0 20px 8px 0;
+   text-align: center;
+   color: var(--subtle);
+   font-size: 12px;
+}
+.notification-columns h2 {
+   margin: 0;
+   text-align: left;
+   color: var(--text);
+   font-size: 13px;
+   font-weight: 600;
+   line-height: 1.4;
+}
+.notification-column-label {
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   gap: 6px;
+}
+.settings-body .notification-settings-row {
+   display: grid;
+   grid-template-columns: 21px minmax(0, 1fr) 72px 72px;
+}
+.notification-switch {
+   display: flex;
+   justify-content: center;
+   min-width: 0;
+}
+.settings-body .notification-switch .toggle-row {
+   min-height: 44px;
+   padding: 8px 0;
+   gap: 0;
+}
+/* The checkbox covers the switch it draws, so a click on the switch lands on the control itself. */
+.notification-switch .toggle-row {
+   position: relative;
+}
+.notification-switch .toggle-row input {
+   top: 50%;
+   right: 0;
+   translate: 0 -50%;
+   width: 42px;
+   height: 26px;
+   margin: 0;
+   z-index: 1;
+   cursor: pointer;
+}
+/* Disabled controls get no pointer events, so the wrapper carries the tooltip and cursor. */
+.notification-switch .toggle-row input:disabled {
+   pointer-events: none;
+}
+.notification-switch:has(input:disabled) {
+   cursor: not-allowed;
+}
+.notification-switch .toggle-row > span:first-child {
+   position: absolute;
+   width: 1px;
+   height: 1px;
+   overflow: hidden;
+   clip-path: inset(50%);
+   white-space: nowrap;
+}
+.notification-switch .toggle-row.disabled {
+   opacity: 1;
+   cursor: not-allowed;
+}
+/* Error banners are always on. The switch reads as on, dimmed so it is clearly not editable. */
+.notification-switch .toggle-row input:disabled:checked + .switch {
+   background: color-mix(in srgb, var(--accent) 42%, transparent);
+}
+.notification-switch .toggle-row input:disabled:checked + .switch .switch-thumb {
+   background: #17161a;
+   box-shadow: none;
+}
+@container (max-width: 460px) {
+   .notification-columns {
+      grid-template-columns: minmax(0, 1fr) 56px 56px;
+      padding-inline: 0 16px;
+      gap: 12px;
+   }
+   .settings-body .notification-settings-row {
+      grid-template-columns: 21px minmax(0, 1fr) 56px 56px;
+      padding-inline: 16px;
+      gap: 12px;
+   }
 }
