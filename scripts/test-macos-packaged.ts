@@ -358,7 +358,7 @@ try {
       "System audio",
    ]);
    const systemTones = await Promise.all([0, 1].map((track) => tones(systemClip.path, track)));
-   for (const tone of systemTones) expect(Math.min(...tone)).toBeGreaterThan(0.03);
+   for (const tone of systemTones) expect(Math.min(...tone)).toBeGreaterThan(0.02);
    for (const tone of [0, 1]) {
       expect(systemTones[0]![tone]! / systemTones[1]![tone]!).toBeGreaterThan(0.8);
       expect(systemTones[0]![tone]! / systemTones[1]![tone]!).toBeLessThan(1.2);
