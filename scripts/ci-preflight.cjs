@@ -41,8 +41,14 @@ module.exports = async function prepare({ github, context, core }) {
    // every capture, media and UI suite on identical code.
    let fast = false;
    if (release) {
-      const files = execFileSync("git", ["diff", "--name-only", "HEAD^", "HEAD"], { encoding: "utf8" });
-      const patch = execFileSync("git", ["diff", "--unified=0", "HEAD^", "HEAD", "--", "package.json"], { encoding: "utf8" });
+      let files = "";
+      let patch = "";
+      try {
+         files = execFileSync("git", ["diff", "--name-only", "HEAD^", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+         patch = execFileSync("git", ["diff", "--unified=0", "HEAD^", "HEAD", "--", "package.json"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      } catch {
+         // Without the parent in the checkout, this cannot be shown to be version-only.
+      }
       if (module.exports.versionOnly(files, patch)) {
          const parent = execFileSync("git", ["rev-parse", "HEAD^"], { encoding: "utf8" }).trim();
          const statuses = await github.paginate(github.rest.repos.listCommitStatusesForRef, { ...context.repo, ref: parent, per_page: 100 });
