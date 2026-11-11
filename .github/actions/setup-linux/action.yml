@@ -3,12 +3,32 @@ description: Install matching build and verification dependencies
 runs:
    using: composite
    steps:
+      # The pinned OBS packages come from a PPA or backports that drop old builds and go
+      # down for hours. Keep the exact .deb files, so a cache hit never needs Launchpad.
+      - name: Restore pinned OBS packages
+        id: pins
+        uses: actions/cache/restore@v6.1.0
+        with:
+           path: .cache/apt-pins
+           key: apt-pins-${{ runner.arch }}-${{ runner.arch == 'ARM64' && 'obs-30.2.3+dfsg-3~bpo24.04.1' || 'obs-32.2.0-0obsproject1~noble' }}
       - name: Install matching OBS headers and runtime
+        env:
+           PINS_CACHED: ${{ steps.pins.outputs.cache-hit }}
         run: |
-           # Launchpad and the Ubuntu archives sometimes stop resolving for a minute or two.
-           # Retry each network step with backoff so an outage there doesn't fail the release.
+           # APT's mirror transport tries the next server for each file that fails.
+           # Short timeouts move on before an unreachable server stalls the job.
+           mirrors=/etc/apt/acroclip-mirrors.txt
+           if [ "$(uname -m)" = aarch64 ]; then
+              printf '%s\n' http://ports.ubuntu.com/ubuntu-ports https://mirrors.ocf.berkeley.edu/ubuntu-ports https://ftp.tsukuba.wide.ad.jp/Linux/ubuntu-ports | sudo tee "$mirrors" > /dev/null
+              pattern='https?://ports\.ubuntu\.com/ubuntu-ports/?'
+           else
+              printf '%s\n' http://azure.archive.ubuntu.com/ubuntu https://archive.ubuntu.com/ubuntu https://mirrors.edge.kernel.org/ubuntu | sudo tee "$mirrors" > /dev/null
+              pattern='https?://(([^/]+\.)?archive|security)\.ubuntu\.com/ubuntu/?'
+           fi
+           sudo find /etc/apt -maxdepth 2 -type f \( -name '*.list' -o -name '*.sources' \) -exec sudo sed -i -E "s#$pattern#mirror+file:$mirrors#g" {} +
+           printf '%s\n' 'Acquire::http::Timeout "15";' 'Acquire::https::Timeout "15";' 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80-acroclip-mirrors > /dev/null
            retry() {
-              for wait in 15 45 90 180; do
+              for wait in 15 45 90; do
                  "$@" && return 0
                  echo "::warning::Failed: $*. Retrying in ${wait}s."
                  sleep "$wait"
@@ -16,15 +36,27 @@ runs:
               "$@"
            }
            if [ "$(uname -m)" = aarch64 ]; then
-              echo 'deb http://ports.ubuntu.com/ubuntu-ports noble-backports main universe' | sudo tee /etc/apt/sources.list.d/acroclip-backports.list
+              pins="obs-studio=30.2.3+dfsg-3~bpo24.04.1 libobs-dev=30.2.3+dfsg-3~bpo24.04.1 libobs0t64=30.2.3+dfsg-3~bpo24.04.1 obs-plugins=30.2.3+dfsg-3~bpo24.04.1"
+              extra=""
+              # Backports stays enabled: the pinned packages depend on each other's backported versions.
+              echo "deb mirror+file:$mirrors noble-backports main universe" | sudo tee /etc/apt/sources.list.d/acroclip-backports.list > /dev/null
            else
-              retry sudo add-apt-repository -n -y ppa:obsproject/obs-studio
+              pins="obs-studio=32.2.0-0obsproject1~noble"
+              extra="gcc-mingw-w64-x86-64 wine64"
+              [ "$PINS_CACHED" = true ] || retry sudo add-apt-repository -n -y ppa:obsproject/obs-studio
            fi
-           retry sudo apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update
-           if [ "$(uname -m)" = aarch64 ]; then
-              retry sudo apt-get -o Acquire::Retries=3 install -y obs-studio=30.2.3+dfsg-3~bpo24.04.1 libobs-dev=30.2.3+dfsg-3~bpo24.04.1 libobs0t64=30.2.3+dfsg-3~bpo24.04.1 obs-plugins=30.2.3+dfsg-3~bpo24.04.1
-           else
-              retry sudo apt-get -o Acquire::Retries=3 install -y obs-studio=32.2.0-0obsproject1~noble gcc-mingw-w64-x86-64 wine64
+           retry sudo apt-get -o APT::Update::Error-Mode=any update
+           if [ "$PINS_CACHED" != true ]; then
+              mkdir -p .cache/apt-pins
+              (cd .cache/apt-pins && retry apt-get download $pins)
            fi
-           retry sudo apt-get -o Acquire::Retries=3 install -y cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev xvfb openbox x11-apps x11-utils x11-xserver-utils ffmpeg pulseaudio pulseaudio-utils sway xwayland pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-wlr meson ninja-build libsystemd-dev libinih-dev wayland-protocols p7zip-full unzip
+           # Installing the kept files resolves only their dependencies from the Ubuntu mirrors.
+           retry sudo apt-get install -y ./.cache/apt-pins/*.deb $extra
+           retry sudo apt-get install -y cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev xvfb openbox x11-apps x11-utils x11-xserver-utils ffmpeg pulseaudio pulseaudio-utils sway xwayland pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-wlr meson ninja-build libsystemd-dev libinih-dev wayland-protocols p7zip-full unzip
         shell: bash
+      - name: Keep pinned OBS packages
+        if: steps.pins.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+           path: .cache/apt-pins
+           key: ${{ steps.pins.outputs.cache-primary-key }}
