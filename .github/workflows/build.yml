@@ -15,9 +15,11 @@ name: Release
             default: false
 permissions:
    contents: read
+# A newer main commit supersedes the older run, which could never publish anyway.
+# Publication is safe to interrupt: it keeps the release a private draft until done.
 concurrency:
    group: release-${{ github.event_name == 'workflow_dispatch' && (inputs.verify_candidate || inputs.candidate_sha != '') && github.run_id || 'main' }}
-   cancel-in-progress: false
+   cancel-in-progress: ${{ github.event_name == 'push' }}
 jobs:
    prepare:
       permissions:
@@ -32,6 +34,7 @@ jobs:
          native_macos: ${{ steps.prepare.outputs.native_macos }}
          build: ${{ steps.prepare.outputs.build }}
          publish: ${{ steps.prepare.outputs.publish }}
+         fast: ${{ steps.prepare.outputs.fast }}
          tag: ${{ steps.prepare.outputs.tag }}
       steps:
          - uses: actions/checkout@v7
@@ -71,6 +74,8 @@ jobs:
          - prepare
          - checks
          - media
+      # A version-only release reuses the app checks its parent candidate passed.
+      if: needs.prepare.outputs.fast != 'true'
       uses: ./.github/workflows/app-checks.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
@@ -100,6 +105,7 @@ jobs:
       uses: ./.github/workflows/candidate-verify.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         smoke: ${{ needs.prepare.outputs.fast == 'true' }}
          targets: '[{"target":"win-x64","os":"windows-2025"}]'
       if: needs.prepare.outputs.build == 'true'
    # Each target verifies as soon as its own package exists, instead of waiting
@@ -111,6 +117,7 @@ jobs:
       uses: ./.github/workflows/candidate-verify.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         smoke: ${{ needs.prepare.outputs.fast == 'true' }}
          targets: '[{"target":"linux-x64","os":"ubuntu-24.04"}]'
       if: needs.prepare.outputs.build == 'true'
    verify-linux-arm64:
@@ -120,6 +127,7 @@ jobs:
       uses: ./.github/workflows/candidate-verify.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         smoke: ${{ needs.prepare.outputs.fast == 'true' }}
          targets: '[{"target":"linux-arm64","os":"ubuntu-24.04-arm"}]'
       if: needs.prepare.outputs.build == 'true'
    verify-mac-x64:
@@ -129,6 +137,7 @@ jobs:
       uses: ./.github/workflows/candidate-verify.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         smoke: ${{ needs.prepare.outputs.fast == 'true' }}
          targets: '[{"target":"mac-x64","os":"macos-15-intel"}]'
       if: needs.prepare.outputs.build == 'true'
    verify-mac-arm64:
@@ -138,6 +147,7 @@ jobs:
       uses: ./.github/workflows/candidate-verify.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+         smoke: ${{ needs.prepare.outputs.fast == 'true' }}
          targets: '[{"target":"mac-arm64","os":"macos-15"}]'
       if: needs.prepare.outputs.build == 'true'
    check:
@@ -176,7 +186,8 @@ jobs:
                  const candidate = jobs.prepare.outputs.build === 'true';
                  const native = !candidate && (jobs.prepare.outputs.native_linux === 'true' || jobs.prepare.outputs.native_macos === 'true');
                  for (const [name, job] of Object.entries(jobs)) {
-                   const expected = name === 'build' || /^(build|verify)-(windows|linux|mac)/.test(name) ? candidate : name === 'native-checks' ? native : true;
+                   const fast = jobs.prepare.outputs.fast === 'true';
+                   const expected = name === 'build' || /^(build|verify)-(windows|linux|mac)/.test(name) ? candidate : name === 'native-checks' ? native : name === 'app-checks' ? !fast : true;
                    if (job.result !== (expected ? 'success' : 'skipped')) throw Error(`${name}: ${job.result}`);
                  }
          - uses: actions/checkout@v7

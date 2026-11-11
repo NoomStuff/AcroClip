@@ -8,6 +8,10 @@ name: Verify retained candidates
          targets:
             type: string
             required: true
+         smoke:
+            description: Verify package bytes and sources only. Version-only releases set this because their parent ran every suite.
+            type: boolean
+            default: false
 permissions:
    contents: read
 jobs:
@@ -45,8 +49,8 @@ jobs:
               bun scripts/ci-candidate.ts restore "${{ matrix.target }}" work/ci/candidate .
               bun scripts/ci-stage.ts check
               bun scripts/ci-stage.ts sources "${{ matrix.target }}"
-         - name: Verify Linux native capture and final AppImage
-           if: runner.os == 'Linux'
+         - name: Verify Linux native capture
+           if: runner.os == 'Linux' && !inputs.smoke
            run: |-
               cmake -S native/tests -B .cache/native-tests-linux -DCMAKE_BUILD_TYPE=Release
               cmake --build .cache/native-tests-linux -j2
@@ -62,12 +66,17 @@ jobs:
                 python3 scripts/smoke-wine.py resources/recorder
                 ACROCLIP_XWAYLAND_ADAPTER_TEST=1 python3 scripts/smoke-xwayland.py resources/recorder
               fi
+         - name: Verify the final AppImage and its sources
+           if: runner.os == 'Linux'
+           env:
+              SMOKE: ${{ inputs.smoke }}
+           run: |-
               taskSource=$(find work -maxdepth 1 -name "AcroClip-*-sources-*.zip" -type f)
               taskImage=$(find release -maxdepth 1 -name "AcroClip-*.AppImage" -type f)
               bun scripts/verify-linux-release.ts "$PWD" "$PWD" "$taskSource" "$taskImage" work/linux-release-sources
-              bun run test:packaged:linux "$taskImage"
+              if [ "$SMOKE" != true ]; then bun run test:packaged:linux "$taskImage"; fi
          - name: Verify macOS native capture and packaged application
-           if: runner.os == 'macOS'
+           if: runner.os == 'macOS' && !inputs.smoke
            run: |-
               caffeinate -di python3 scripts/smoke-macos.py
               python3 scripts/macos_fixture_health.test.py
@@ -76,6 +85,11 @@ jobs:
 
               caffeinate -di python3 scripts/smoke-macos-feedback.py --ci-motion-matrix
               caffeinate -di bun scripts/test-macos-packaged.ts
+           env:
+              CSC_IDENTITY_AUTO_DISCOVERY: "false"
+         - name: Verify the macOS application and its sources
+           if: runner.os == 'macOS'
+           run: |-
               taskSource=$(find work -maxdepth 1 -name "AcroClip-*-sources-*.zip" -type f)
               taskApp=$(find release -maxdepth 1 -name "AcroClip-*-mac-*.zip" -type f)
               bun scripts/verify-macos-release.ts work/macos-release-sources "$taskSource" "$taskApp"
@@ -94,17 +108,17 @@ jobs:
            env:
               ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
            run: pwsh -File scripts/setup-windows-runner-audio.ps1
-           if: runner.os == 'Windows'
+           if: runner.os == 'Windows' && !inputs.smoke
          - run: bun run test:packaged
-           if: runner.os == 'Windows'
+           if: runner.os == 'Windows' && !inputs.smoke
          - run: bun run test:portable
-           if: runner.os == 'Windows'
+           if: runner.os == 'Windows' && !inputs.smoke
          - name: Verify installed upgrade in an isolated installer identity
            run: pwsh -File scripts/test-installer-upgrade.ps1
-           if: runner.os == 'Windows'
+           if: runner.os == 'Windows' && !inputs.smoke
          - name: Verify the in-app update restarts silently and quickly
            run: bun run test:update
-           if: runner.os == 'Windows'
+           if: runner.os == 'Windows' && !inputs.smoke
          - name: Stop the private tone producer
            if: always() && runner.os == 'Windows'
            shell: pwsh

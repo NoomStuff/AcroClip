@@ -36,6 +36,21 @@ module.exports = async function prepare({ github, context, core }) {
          // Unknown history must run checks, never skip them.
       }
    }
+   // A commit that only changes the version, on top of a commit whose full candidate
+   // passed, ships after building and verifying package bytes. The parent already ran
+   // every capture, media and UI suite on identical code.
+   let fast = false;
+   if (release) {
+      const files = execFileSync("git", ["diff", "--name-only", "HEAD^", "HEAD"], { encoding: "utf8" });
+      const patch = execFileSync("git", ["diff", "--unified=0", "HEAD^", "HEAD", "--", "package.json"], { encoding: "utf8" });
+      if (module.exports.versionOnly(files, patch)) {
+         const parent = execFileSync("git", ["rev-parse", "HEAD^"], { encoding: "utf8" }).trim();
+         const statuses = await github.paginate(github.rest.repos.listCommitStatusesForRef, { ...context.repo, ref: parent, per_page: 100 });
+         // Statuses list newest first. Only the latest candidate result counts.
+         fast = statuses.find((status) => status.context === "Release candidate")?.state === "success";
+         if (!fast) core.notice(`${parent.slice(0, 7)} has no passing candidate, so this release runs every suite.`);
+      }
+   }
    const native = (platform) =>
       !changed ||
       changed.some(
@@ -48,8 +63,10 @@ module.exports = async function prepare({ github, context, core }) {
       candidate_sha: commit,
       version,
       tag: `v${version}`,
-      build: candidate || release,
+      // Every current main commit becomes a full private candidate, so releases land on proven code.
+      build: candidate || main === commit,
       publish: release,
+      fast,
       native_linux: native("linux"),
       native_macos: native("mac"),
    }))
@@ -59,10 +76,19 @@ module.exports = async function prepare({ github, context, core }) {
          candidate
             ? `Private candidate ${commit}. Publication is disabled.`
             : release
-              ? `Verify and publish v${version} at ${commit}.`
+              ? fast
+                 ? `Version-only release of v${version} on a verified candidate. Build, verify package bytes and publish.`
+                 : `Verify and publish v${version} at ${commit} with every suite.`
               : main !== commit
-                ? "Superseded commit. Run app checks without publication."
-                : `v${version} is already published. Run app checks without packaging.`
+                ? "Superseded commit. Run app checks without packaging."
+                : `Verify ${commit} as a private candidate. v${version} is already published.`
       )
       .write();
+};
+
+/** True when a commit's diff changes nothing but the package.json version line. */
+module.exports.versionOnly = function versionOnly(files, patch) {
+   const changed = files.trim().split("\n");
+   const lines = patch.split("\n").filter((line) => /^[+-](?![+-])/.test(line));
+   return changed.length === 1 && changed[0] === "package.json" && lines.length === 2 && lines.every((line) => /^[+-]\s*"version": "[^"]+",$/.test(line));
 };

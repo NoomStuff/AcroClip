@@ -34,6 +34,7 @@
       "build:native": "bun scripts/build-native.ts",
       "dist": "bun scripts/package.ts dist",
       "package": "bun scripts/package.ts dir",
+      "release": "bun scripts/release.ts",
       "test:portable": "bun scripts/run-interactive-tests.ts portable",
       "test:ui:linux": "python3 scripts/run-linux-ui.py bun run test:ui",
       "test:ui:native:linux": "ACROCLIP_NATIVE_UI=1 python3 scripts/run-linux-ui.py bun x playwright test linux-native linux-desktop"
