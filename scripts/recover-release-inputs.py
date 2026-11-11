@@ -30,40 +30,34 @@ if args.release == "latest":
     if current.get("draft") or current.get("prerelease") or not re.fullmatch(r"v\d+\.\d+\.\d+", current.get("tag_name", "")):
         raise ValueError("Recover inputs only from a published stable release")
     args.release = current["tag_name"]
-release = None
-tags = [args.release + "-sources", args.release]
-# New releases record their commit-specific source tag in the updater provenance.
-request = urllib.request.Request(
-    "https://raw.githubusercontent.com/NoomStuff/AcroClip/updates/releases/" + args.release + ".json", headers=headers)
-try:
+
+
+def api(path):
+    request = urllib.request.Request("https://api.github.com/repos/NoomStuff/AcroClip/" + path, headers=headers)
     with urllib.request.urlopen(request, timeout=60) as response:
-        provenance = json.load(response)
-    prefix = "https://github.com/NoomStuff/AcroClip/releases/tag/"
-    source_url = provenance["sourceRelease"]
-    if not source_url.startswith(prefix):
-        raise ValueError("Corresponding sources must be hosted in the app repository")
-    tags.insert(0, source_url[len(prefix):])
-except urllib.error.HTTPError as error:
-    if error.code != 404:
-        raise
-for tag in tags:
-    request = urllib.request.Request("https://api.github.com/repos/NoomStuff/AcroClip/releases/tags/" + tag, headers=headers)
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            release = json.load(response)
+        return json.load(response)
+
+
+# Since 0.23.0 sources ship on the app release itself. Earlier versions kept them
+# in a "<tag>-sources" or "<tag>-sources-<key>" prerelease of the same commit.
+public_name = "AcroClip-sources-" + args.platform.replace("darwin-", "macos-") + ".zip"
+releases = []
+for page in range(1, 11):
+    batch = api("releases?per_page=100&page=" + str(page))
+    releases += batch
+    if len(batch) < 100:
         break
-    except urllib.error.HTTPError as error:
-        if error.code != 404:
-            raise
-if release is None:
-    raise ValueError("No corresponding source release was found")
-assets = [asset for asset in release["assets"] if "-" + args.platform + "-sources-" in asset["name"] and asset["name"].endswith(".zip")]
+candidates = [item for item in releases if not item.get("draft") and (
+    item["tag_name"] == args.release or item["tag_name"] == args.release + "-sources" or item["tag_name"].startswith(args.release + "-sources-"))]
+assets = [asset for item in candidates for asset in item["assets"] if asset["name"] == public_name or (
+    item["tag_name"] != args.release and "-" + args.platform + "-sources-" in asset["name"] and asset["name"].endswith(".zip"))]
 if len(assets) != 1 or not assets[0].get("digest", "").startswith("sha256:"):
     raise ValueError("Published source packet has no unique verified digest")
 asset = assets[0]
 cache = Path(".cache/release-inputs")
 cache.mkdir(parents=True, exist_ok=True)
-archive = cache / Path(asset["name"]).name
+# Public source names carry no version, so the cache key adds the release tag.
+archive = cache / (args.release + "-" + Path(asset["name"]).name)
 if not archive.exists():
     with urllib.request.urlopen(asset["browser_download_url"], timeout=120) as response, archive.open("wb") as target:
         shutil.copyfileobj(response, target)

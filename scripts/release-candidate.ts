@@ -2,7 +2,7 @@ import { copyFile, mkdir, readFile, readdir, stat, unlink, writeFile } from "nod
 import path from "node:path";
 import { z } from "zod";
 import { hashFile } from "./release-sources";
-import { appDownloadNames, prepareDownloads } from "./release-downloads";
+import { appDownloadNames, prepareDownloads, publishedDownloads, publishedSourceName, type SourcePlatform } from "./release-downloads";
 import { prepareUpdateFeed } from "./prepare-update-feed";
 
 const record = z.object({ path: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/), size: z.number().int().nonnegative() });
@@ -31,6 +31,7 @@ function platformReport(value: unknown, platform: string, version: string): z.in
       asset: parsed.asset,
    };
 }
+const maxAssetBytes = 2 * 1024 ** 3 - 64 * 1024 ** 2;
 const manifestSchema = z.object({
    version: z.string().regex(/^\d+\.\d+\.\d+$/),
    commit: z.string().regex(/^[a-f0-9]{40}$/),
@@ -60,8 +61,13 @@ export async function verifyCandidate(root: string): Promise<z.infer<typeof mani
       .filter((file) => file.path.startsWith("downloads/"))
       .map((file) => path.posix.basename(file.path))
       .sort();
-   if (JSON.stringify(downloads) !== JSON.stringify(appDownloadNames(manifest.version, ["x64", "arm64"], ["x64", "arm64"]).sort()))
-      throw new Error("Candidate does not contain exactly eight app downloads.");
+   const expected = publishedDownloads(manifest.version)
+      .map((file) => file.name)
+      .sort();
+   if (JSON.stringify(downloads) !== JSON.stringify(expected)) throw new Error("Candidate does not contain exactly the published app downloads.");
+   // GitHub rejects release assets of 2 GiB or more. Fail here, long before upload.
+   const oversized = manifest.files.find((file) => file.size >= maxAssetBytes);
+   if (oversized) throw new Error(`${oversized.path} is too large for a GitHub release asset.`);
    return manifest;
 }
 
@@ -92,7 +98,7 @@ export async function sealCandidate(input: string, output: string): Promise<void
    for (const [name, source] of indexed) await copyFile(path.join(input, source), path.join(flat, name));
    const covered = new Set<string>();
    const sources: string[] = [];
-   for (const platform of ["windows-x64", "linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64"]) {
+   for (const platform of ["windows-x64", "linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64"] as const satisfies readonly SourcePlatform[]) {
       const filename =
          platform === "windows-x64"
             ? `AcroClip-${version}-windows-x64-release.json`
@@ -105,7 +111,7 @@ export async function sealCandidate(input: string, output: string): Promise<void
          throw new Error(`Wrong source packet: ${filename}`);
       await check(flat, proof.source);
       await mkdir(path.join(output, "sources"), { recursive: true });
-      await copyFile(path.join(flat, proof.source.path), path.join(output, "sources", proof.source.path));
+      await copyFile(path.join(flat, proof.source.path), path.join(output, "sources", publishedSourceName(platform)));
       sources.push(proof.source.path);
       for (const asset of [...(proof.assets ?? []), ...(proof.asset ? [proof.asset] : [])]) {
          await check(flat, asset);
@@ -127,11 +133,14 @@ export async function sealCandidate(input: string, output: string): Promise<void
       covered.add(name);
    }
    if (names.some((name) => !covered.has(name))) throw new Error("App download lacks exact-byte verification.");
-   await prepareDownloads(flat, path.join(output, "downloads"), names);
+   // The blockmap only steers differential downloads. electron-updater still checks
+   // the complete installer against the feed's verified SHA-512.
+   const downloads = publishedDownloads(version);
+   await prepareDownloads(flat, path.join(output, "downloads"), downloads);
    for (const channel of ["latest.yml", "latest-linux.yml", "latest-linux-arm64.yml"])
       await prepareUpdateFeed(flat, path.join(output, "feeds"), `v${version}`, channel);
    // Keep each large package once in the sealed artifact.
-   for (const name of [...names, ...sources]) await unlink(path.join(flat, name));
+   for (const name of new Set([...names, ...downloads.map((file) => file.source), ...sources])) await unlink(path.join(flat, name));
    const records = await Promise.all(
       (await files(output)).map(async (file) => ({
          path: file,

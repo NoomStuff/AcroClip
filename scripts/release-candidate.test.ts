@@ -28,6 +28,7 @@ async function fixture() {
    }
    const names = appDownloadNames(version, ["x64", "arm64"], ["x64", "arm64"]);
    const assets = await Promise.all(names.map((name) => file(name)));
+   await file(`AcroClip-${version}-win-x64-Installer.exe.blockmap`);
    const macReports: {
       name: string;
       value: {
@@ -79,15 +80,35 @@ async function fixture() {
    return { input, output, names, file, macReports };
 }
 
-it("seals exact verified packages and source packets under a commit/run identity", async () => {
-   const { input, output, names } = await fixture();
+it("seals exact verified packages and source packets under versionless public names", async () => {
+   const { input, output } = await fixture();
    await sealCandidate(input, output);
    const sealed = await verifyCandidate(output);
    expect(sealed).toMatchObject({ commit, run: "123" });
    expect(sealed).not.toHaveProperty("attempt");
-   expect(sealed.files.filter((file) => file.path.startsWith("downloads/"))).toHaveLength(8);
-   expect(sealed.files.filter((file) => file.path.startsWith("sources/"))).toHaveLength(5);
-   await writeFile(path.join(output, "downloads", names[0]!), "tampered");
+   const published = (prefix: string) =>
+      sealed.files
+         .filter((file) => file.path.startsWith(prefix))
+         .map((file) => file.path)
+         .sort();
+   expect(published("downloads/")).toEqual(
+      [
+         "AcroClip-linux-arm64.AppImage",
+         "AcroClip-linux-x64.AppImage",
+         "AcroClip-macos-arm64.dmg",
+         "AcroClip-macos-x64.dmg",
+         "AcroClip-windows-x64-portable.exe",
+         "AcroClip-windows-x64-setup.exe",
+         "AcroClip-windows-x64-setup.exe.blockmap",
+      ].map((name) => `downloads/${name}`)
+   );
+   expect(published("sources/")).toEqual(
+      ["linux-arm64", "linux-x64", "macos-arm64", "macos-x64", "windows-x64"].map((platform) => `sources/AcroClip-sources-${platform}.zip`)
+   );
+   expect(sealed.files.some((file) => file.path.endsWith(".zip") && file.path.includes("-mac-"))).toBe(false);
+   const feed = await readFile(path.join(output, "feeds", "latest.yml"), "utf8");
+   expect(feed).toContain(`releases/download/v${sealed.version}/AcroClip-windows-x64-setup.exe`);
+   await writeFile(path.join(output, "downloads", "AcroClip-windows-x64-setup.exe"), "tampered");
    await expect(verifyCandidate(output)).rejects.toThrow("Candidate bytes differ");
 });
 

@@ -17,7 +17,7 @@ test("verified portable update lifecycle shares state with Settings", async () =
    await mkdir(downloads);
    const bytes = Buffer.from("A verified fixture package. This is test data, not an executable."),
       digest = createHash("sha256").update(bytes).digest("hex");
-   await writeFile(join(downloads, `AcroClip-99.0.0-win-${process.arch}.exe`), "Keep previous download");
+   await writeFile(join(downloads, `AcroClip-99.0.0-windows-${process.arch}-portable.exe`), "Keep previous download");
    await writeFile(
       join(profile, "preferences.json"),
       JSON.stringify({
@@ -70,7 +70,7 @@ test("verified portable update lifecycle shares state with Settings", async () =
                   return Response.json({
                      assets: [
                         {
-                           name: `AcroClip-${state.version}-win-${process.arch}.exe`,
+                           name: `AcroClip-windows-${process.arch}-portable.exe`,
                            browser_download_url: "https://example.invalid/payload",
                            digest: `sha256:${digest}`,
                         },
@@ -121,7 +121,7 @@ test("verified portable update lifecycle shares state with Settings", async () =
       await expect(chip).toHaveAttribute("aria-label", "Show in Downloads");
       const downloaded = (await page.evaluate(() => window.acroClip.state())).update.path!;
       expect(await readFile(downloaded)).toEqual(bytes);
-      expect(await readFile(join(downloads, `AcroClip-99.0.0-win-${process.arch}.exe`), "utf8")).toBe("Keep previous download");
+      expect(await readFile(join(downloads, `AcroClip-99.0.0-windows-${process.arch}-portable.exe`), "utf8")).toBe("Keep previous download");
       await chip.click();
       expect(await app.evaluate(() => (globalThis as typeof globalThis & { updateFixture: { revealed?: string } }).updateFixture.revealed)).toBe(downloaded);
       await app.evaluate(() => {

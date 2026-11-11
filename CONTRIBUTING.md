@@ -58,7 +58,7 @@ Release builds use FFmpeg compiled from source:
 
 Releases are cut from `main` by bumping the version in `package.json`. Not every change needs a new version.
 
-When a new version lands on `main`, the Release workflow builds and tests Windows x64, Linux x64 and arm64, and macOS x64 and Apple Silicon. It also assembles and verifies the corresponding-source kits for the bundled GPL components. If every check passes, it publishes the release, tags it, and publishes the sources separately from the app downloads.
+When a new version lands on `main`, the Release workflow builds and tests Windows x64, Linux x64 and arm64, and macOS x64 and Apple Silicon. It also assembles and verifies the corresponding-source kits for the bundled GPL components. If every check passes, it publishes one release with the app downloads, the updater feeds, and an `AcroClip-sources-<platform>.zip` per platform, and tags it.
 
 If a release fails before it's published, fix the problem and push again with the same version. Published releases and tags can't be changed, so any later fix needs a new version.
 

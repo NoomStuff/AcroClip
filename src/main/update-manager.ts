@@ -112,7 +112,13 @@ export class UpdateManager {
          const updater = module.autoUpdater ?? module.default.autoUpdater;
          this.updater = updater;
          const server = testUpdateServer();
-         updater.setFeedURL({ provider: "generic", url: server ? `${server}/feed/` : "https://raw.githubusercontent.com/NoomStuff/AcroClip/updates/" });
+         // The newest release's feed, resolved through GitHub's latest-release redirect. GitHub's
+         // download host does not answer multi-range requests, so ranges are fetched one by one.
+         updater.setFeedURL({
+            provider: "generic",
+            url: server ? `${server}/feed/` : "https://github.com/NoomStuff/AcroClip/releases/latest/download/",
+            useMultipleRangeRequest: false,
+         });
          // Install failures are otherwise invisible: electron-updater falls back to
          // elevation or an interactive installer without telling the app why.
          updater.logger = {
@@ -122,9 +128,6 @@ export class UpdateManager {
          };
          updater.autoDownload = true;
          updater.autoInstallOnAppQuit = false;
-         // Only app packages appear on GitHub Releases; NSIS must download the
-         // full installer because its separate blockmap is not published.
-         if (process.platform === "win32") updater.disableDifferentialDownload = true;
          // electron-updater exposes a module singleton: wiring the listeners once keeps
          // repeated update offers from stacking duplicate progress and error handlers.
          if (!this.automaticWired) {
@@ -222,7 +225,7 @@ export class UpdateManager {
             );
          });
       try {
-         const name = `AcroClip-${version}-win-${process.arch}.exe`;
+         const name = `AcroClip-windows-${process.arch}-portable.exe`;
          const releaseResponse = await guarded(
             net.fetch(`https://api.github.com/repos/NoomStuff/AcroClip/releases/tags/v${version}`, {
                headers: { Accept: "application/vnd.github+json", "User-Agent": `AcroClip/${app.getVersion()}` },
@@ -238,8 +241,8 @@ export class UpdateManager {
          const expectedHash = asset.digest?.startsWith("sha256:") ? asset.digest.slice(7) : null;
          if (!expectedHash || !/^[0-9a-f]{64}$/i.test(expectedHash)) throw new Error("The download could not be verified.");
          const directory = app.getPath("downloads");
-         const stem = name.slice(0, -4);
-         let destination = join(directory, name);
+         const stem = `AcroClip-${version}-windows-${process.arch}-portable`;
+         let destination = join(directory, `${stem}.exe`);
          for (let index = 2; existsSync(destination) || existsSync(`${destination}.part`); index++) destination = join(directory, `${stem} (${index}).exe`);
          temporary = `${destination}.part`;
          const response = await guarded(net.fetch(asset.browser_download_url, { signal: abort.signal }));

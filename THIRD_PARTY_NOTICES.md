@@ -64,6 +64,8 @@ The build depends on the selected FFmpeg distribution. GPL builds require corres
 
 Source and build instructions: https://ffmpeg.org/ and https://github.com/BtbN/FFmpeg-Builds
 
+Each release carries the complete corresponding source for its bundled FFmpeg, OBS and other GPL and LGPL components as `AcroClip-sources-<platform>.zip`.
+
 ## Application dependencies
 
 Electron, React, electron-updater, Lucide, Zod, and the development toolchain retain their upstream licenses. The lockfile identifies the exact dependency versions. Lucide icons are ISC licensed. Electron includes Chromium and Node.js and their notices.

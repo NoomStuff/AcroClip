@@ -58,8 +58,10 @@ it.skipIf(process.platform === "darwin")("handles automatic progress, readiness,
    await vi.waitFor(() => expect(automatic.checkForUpdates).toHaveBeenCalled());
    expect(automatic.setFeedURL).toHaveBeenCalledWith({
       provider: "generic",
-      url: "https://raw.githubusercontent.com/NoomStuff/AcroClip/updates/",
+      url: "https://github.com/NoomStuff/AcroClip/releases/latest/download/",
+      useMultipleRangeRequest: false,
    });
+   expect(Reflect.get(automatic, "disableDifferentialDownload")).toBeUndefined();
    automatic.emit("download-progress", { percent: 42.3 });
    expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ phase: "downloading", percent: 42 }));
    automatic.emit("error", new Error("network lost"));
@@ -108,7 +110,7 @@ it.skipIf(process.platform !== "win32").each(["headers", "release body", "downlo
    const folder = await mkdtemp(join(tmpdir(), "attacut-update-"));
    folders.push(folder);
    vi.mocked(app.getPath).mockReturnValue(folder);
-   const name = `AcroClip-${release.version}-win-${process.arch}.exe`;
+   const name = `AcroClip-windows-${process.arch}-portable.exe`;
    const response =
       stage === "release body"
          ? new Response(new ReadableStream())
@@ -138,8 +140,9 @@ it.skipIf(process.platform !== "win32").each(["checksum", "interrupted", "http",
    folders.push(folder);
    vi.mocked(app.getPath).mockReturnValue(folder);
    const bytes = Buffer.from("verified executable");
-   const name = `AcroClip-0.15.0-win-${process.arch}.exe`;
-   await writeFile(join(folder, name), "existing download");
+   const name = `AcroClip-windows-${process.arch}-portable.exe`;
+   const local = `AcroClip-${release.version}-windows-${process.arch}-portable.exe`;
+   await writeFile(join(folder, local), "existing download");
    vi.mocked(net.fetch).mockResolvedValueOnce(
       scenario === "http"
          ? new Response("", { status: 500 })
@@ -174,7 +177,7 @@ it.skipIf(process.platform !== "win32").each(["checksum", "interrupted", "http",
       expect(updates.downloadedPath).toBeNull();
       expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ phase: "error" }));
    }
-   expect(await readFile(join(folder, name), "utf8")).toBe("existing download");
+   expect(await readFile(join(folder, local), "utf8")).toBe("existing download");
    expect((await readdir(folder)).some((file) => file.endsWith(".part"))).toBe(false);
 });
 
@@ -308,13 +311,14 @@ it.skipIf(process.platform !== "win32").each(["destination", "temporary"])("keep
    const folder = await mkdtemp(join(tmpdir(), "acroclip-update-race-"));
    folders.push(folder);
    vi.mocked(app.getPath).mockReturnValue(folder);
-   const name = `AcroClip-${release.version}-win-${process.arch}.exe`,
+   const name = `AcroClip-windows-${process.arch}-portable.exe`,
+      local = `AcroClip-${release.version}-windows-${process.arch}-portable.exe`,
       bytes = Buffer.from("verified package"),
       digest = createHash("sha256").update(bytes).digest("hex");
    vi.mocked(net.fetch).mockResolvedValueOnce(
       Response.json({ assets: [{ name, browser_download_url: "https://example.com/app", digest: `sha256:${digest}` }] })
    );
-   const other = join(folder, name + (scope === "temporary" ? ".part" : ""));
+   const other = join(folder, local + (scope === "temporary" ? ".part" : ""));
    vi.mocked(net.fetch).mockImplementationOnce(async () => {
       await writeFile(other, "Another download owns this");
       return new Response(bytes);

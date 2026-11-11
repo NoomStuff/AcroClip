@@ -10,7 +10,7 @@ import { createReadStream, existsSync, realpathSync } from "node:fs";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { defaultPreferences } from "../src/shared/defaults";
 
 // Exercises the update path users take: an installed build downloads a newer
@@ -254,9 +254,24 @@ async function verify({ scope }: Variant): Promise<void> {
       runInstaller(first, ["/S", scope === "user" ? "/currentuser" : "/allusers", `/D=${install}`]);
       assert.equal(installedVersion(product), "0.0.1", "The first fixture must be installed");
       const size = (await stat(second)).size;
+      const requested: string[] = [];
       server = createServer((request, response) => {
          const path = decodeURIComponent(new URL(request.url ?? "/", "http://127.0.0.1").pathname);
-         if (path === "/releases/latest") {
+         requested.push(path);
+         // Differential updates fetch changed blocks one range at a time, like GitHub's download host.
+         const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers.range ?? "");
+         if (path === `/feed/${secondName}` && range) {
+            const [start, end] = [Number(range[1]), Number(range[2])];
+            response.writeHead(206, {
+               "content-type": "application/octet-stream",
+               "content-length": String(end - start + 1),
+               "content-range": `bytes ${start}-${end}/${size}`,
+            });
+            createReadStream(second, { start, end }).pipe(response);
+         } else if (path.startsWith("/feed/") && path.endsWith(".blockmap") && existsSync(join(output, basename(path)))) {
+            response.writeHead(200, { "content-type": "application/octet-stream" });
+            createReadStream(join(output, basename(path))).pipe(response);
+         } else if (path === "/releases/latest") {
             response.writeHead(200, { "content-type": "application/json" });
             response.end(
                JSON.stringify({ tag_name: "v0.0.2", name: "Update fixture", html_url: "https://example.invalid/release", draft: false, prerelease: false })
@@ -321,6 +336,9 @@ async function verify({ scope }: Variant): Promise<void> {
          .toBeGreaterThanOrEqual(4);
       await page.evaluate(() => window.acroClip.checkUpdate());
       await expect.poll(() => page.evaluate(async () => (await window.acroClip.state()).update.state), { timeout: 120_000 }).toBe("ready");
+      // The installed version's blockmap is found by swapping the version in the new package URL.
+      for (const blockmap of [`/feed/${basename(first)}.blockmap`, `/feed/${secondName}.blockmap`])
+         assert(requested.includes(blockmap), `The update did not request ${blockmap}, so it cannot download differentially`);
       watcher = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-File", watcherScript, windowsLog, stopWatcher, executable], {
          windowsHide: true,
          stdio: "ignore",
@@ -359,6 +377,7 @@ async function verify({ scope }: Variant): Promise<void> {
       assert.deepEqual([kept.collection, kept.shortcut], [collection, "Control+Alt+Shift+F11"], "User settings must survive the update");
       const log = await readFile(join(profile, "logs", "app.log"), "utf8").catch(() => "");
       const lines = log.split("\n").filter((line) => line.includes("update"));
+      assert(!log.includes("fallback to full download"), "The differential download failed and fell back to the full installer");
       assert(closeMs <= maximumCloseMs, `Closing for the update took ${closeMs} ms`);
       results.push({ scope, closeMs, relaunchMs, clips: clips.length });
       console.log(`${scope}: closed ${closeMs} ms after the click, relaunched after ${relaunchMs} ms, no installer windows.`);
