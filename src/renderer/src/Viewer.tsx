@@ -354,18 +354,8 @@ export function Viewer({
       (media: HTMLVideoElement) => {
          const range = trimRef.current;
          const position = seeker.pendingTime() ?? media.currentTime;
-         if (range && (position >= lastKeptTime(range) - 0.01 || position < range.start)) {
-            return new Promise<void>((resolve, reject) => {
-               const ready = () => {
-                  if (Math.abs(media.currentTime - range.start) > 0.01) return;
-                  media.removeEventListener("seeked", ready);
-                  media.play().then(resolve, reject);
-               };
-               media.addEventListener("seeked", ready);
-               seeker.seekNow(range.start);
-               if (Math.abs(media.currentTime - range.start) <= 0.01 && !media.seeking) ready();
-            });
-         }
+         // Playing right after setting currentTime plays from the new position, so there's no seek to wait for.
+         if (range && (position >= lastKeptTime(range) - 0.01 || position < range.start)) seeker.seekNow(range.start);
          return media.play();
       },
       [seeker]
