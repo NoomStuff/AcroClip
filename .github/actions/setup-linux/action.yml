@@ -15,18 +15,9 @@ runs:
         env:
            PINS_CACHED: ${{ steps.pins.outputs.cache-hit }}
         run: |
-           # APT's mirror transport tries the next server for each file that fails.
-           # Short timeouts move on before an unreachable server stalls the job.
-           mirrors=/etc/apt/acroclip-mirrors.txt
-           if [ "$(uname -m)" = aarch64 ]; then
-              printf '%s\n' http://ports.ubuntu.com/ubuntu-ports https://mirrors.ocf.berkeley.edu/ubuntu-ports https://ftp.tsukuba.wide.ad.jp/Linux/ubuntu-ports | sudo tee "$mirrors" > /dev/null
-              pattern='https?://ports\.ubuntu\.com/ubuntu-ports/?'
-           else
-              printf '%s\n' http://azure.archive.ubuntu.com/ubuntu https://archive.ubuntu.com/ubuntu https://mirrors.edge.kernel.org/ubuntu | sudo tee "$mirrors" > /dev/null
-              pattern='https?://(([^/]+\.)?archive|security)\.ubuntu\.com/ubuntu/?'
-           fi
-           sudo find /etc/apt -maxdepth 2 -type f \( -name '*.list' -o -name '*.sources' \) -exec sudo sed -i -E "s#$pattern#mirror+file:$mirrors#g" {} +
-           printf '%s\n' 'Acquire::http::Timeout "15";' 'Acquire::https::Timeout "15";' 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80-acroclip-mirrors > /dev/null
+           # Ubuntu's own archive only: a second mirror can lag behind it, and APT's per-file
+           # fallback then mixes package indexes from different days into broken dependencies.
+           echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80-acroclip-retries > /dev/null
            retry() {
               for wait in 15 45 90; do
                  "$@" && return 0
@@ -38,8 +29,8 @@ runs:
            if [ "$(uname -m)" = aarch64 ]; then
               pins="obs-studio=30.2.3+dfsg-3~bpo24.04.1 libobs-dev=30.2.3+dfsg-3~bpo24.04.1 libobs0t64=30.2.3+dfsg-3~bpo24.04.1 obs-plugins=30.2.3+dfsg-3~bpo24.04.1"
               extra=""
-              # Backports stays enabled: the pinned packages depend on each other's backported versions.
-              echo "deb mirror+file:$mirrors noble-backports main universe" | sudo tee /etc/apt/sources.list.d/acroclip-backports.list > /dev/null
+              # The pinned packages come from noble-backports, which older runner images did not list.
+              echo 'deb http://ports.ubuntu.com/ubuntu-ports noble-backports main universe' | sudo tee /etc/apt/sources.list.d/acroclip-backports.list > /dev/null
            else
               pins="obs-studio=32.2.0-0obsproject1~noble"
               extra="gcc-mingw-w64-x86-64 wine64"
@@ -50,7 +41,7 @@ runs:
               mkdir -p .cache/apt-pins
               (cd .cache/apt-pins && retry apt-get download $pins)
            fi
-           # Installing the kept files resolves only their dependencies from the Ubuntu mirrors.
+           # Installing the kept files resolves only their dependencies from the Ubuntu archive.
            retry sudo apt-get install -y ./.cache/apt-pins/*.deb $extra
            retry sudo apt-get install -y cmake g++ make pkg-config patch python3 libx11-dev libxcb-composite0-dev libpulse-dev libsimde-dev libwayland-dev libglib2.0-dev libpipewire-0.3-dev libdrm-dev xvfb openbox x11-apps x11-utils x11-xserver-utils ffmpeg pulseaudio pulseaudio-utils sway xwayland pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-wlr meson ninja-build libsystemd-dev libinih-dev wayland-protocols p7zip-full unzip
         shell: bash
