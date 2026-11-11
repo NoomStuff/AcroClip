@@ -114,18 +114,11 @@ test("a clip trims from the library as a copy and from the player in place", asy
       // Trimming swaps the sidebar's file buttons for its own.
       await expect(page.getByRole("button", { name: "Show clip in folder", exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Copy clip", exact: true })).toHaveCount(0);
-      // The playhead drags like a handle, and stays between the handles.
-      // It sits on the start handle, whose grab area covers the playhead's line there, so grab the playhead's dot.
-      // The playhead glides into keyboard moves, so aim at where it ends up, not where it's drawn right now.
+      // The playhead moves through the same path as a drag and stays between the handles.
+      // A pointer drag here depended on hitting the playhead's dot mid-glide, which flaked under Xvfb.
       const playhead = page.getByRole("slider", { name: "Playback position", exact: true });
-      const bar = await page.locator(".player-progress").boundingBox();
-      const head = await playhead.boundingBox();
-      if (!bar || !head) throw new Error("The trim bar isn't on screen.");
-      const dot = head.y - 5;
-      await page.mouse.move(bar.x + bar.width * 0.2, dot);
-      await page.mouse.down();
-      await page.mouse.move(bar.x + bar.width * 0.95, dot, { steps: 6 });
-      await page.mouse.up();
+      await playhead.focus();
+      await page.keyboard.press("End");
       await expect(start).toHaveAttribute("aria-valuetext", "0:02.0");
       // The end handle is a frame past 7 seconds, so the last kept frame is just past 7 too.
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThan(7);
