@@ -26,7 +26,7 @@ afterEach(async () => {
    automatic.removeAllListeners();
    for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true });
 });
-const release = { version: "0.15.0", name: "next", url: "https://example.com/release", mode: "releases" as const };
+const release = { version: "0.15.0", name: "next", url: "https://github.com/NoomStuff/AcroClip/releases/tag/v0.15.0", mode: "releases" as const };
 function manager() {
    const send = vi.fn();
    return { manager: new UpdateManager((status) => send("update:status", status)), send };
@@ -303,7 +303,7 @@ it.skipIf(process.platform !== "win32")("refuses to open the installer interacti
 it("only serves updates from a local server during tests", async () => {
    expect(testUpdateServer({ ACROCLIP_UPDATE_SERVER: "http://127.0.0.1:4000/" })).toBeNull();
    expect(testUpdateServer({ ACROCLIP_TEST: "1", ACROCLIP_UPDATE_SERVER: "http://127.0.0.1:4000/" })).toBe("http://127.0.0.1:4000");
-   expect(() => testUpdateServer({ ACROCLIP_TEST: "1", ACROCLIP_UPDATE_SERVER: "https://example.com/" })).toThrow("local");
+   expect(testUpdateServer({ ACROCLIP_TEST: "1", ACROCLIP_UPDATE_SERVER: "https://example.com/" })).toBeNull();
 });
 
 it.skipIf(process.platform !== "win32").each(["destination", "temporary"])("keeps another download's %s created in flight", async (scope) => {
@@ -352,7 +352,13 @@ it("checks release metadata in branded development without a download or install
    Object.defineProperty(process, "defaultApp", { configurable: true, value: true });
    try {
       vi.mocked(net.fetch).mockResolvedValueOnce(
-         Response.json({ tag_name: "v99.0.0", name: "AcroClip 99.0.0", html_url: "https://example.com/releases/v99.0.0", draft: false, prerelease: false })
+         Response.json({
+            tag_name: "v99.0.0",
+            name: "AcroClip 99.0.0",
+            html_url: "https://github.com/NoomStuff/AcroClip/releases/tag/v99.0.0",
+            draft: false,
+            prerelease: false,
+         })
       );
       const updates = new Updates(() => {});
       await updates.check();
@@ -373,4 +379,15 @@ it("checks release metadata in branded development without a download or install
       if (original) Object.defineProperty(process, "defaultApp", original);
       else Reflect.deleteProperty(process, "defaultApp");
    }
+});
+
+it("rejects release links outside this project's releases", async () => {
+   for (const html_url of [
+      "https://example.com/releases/v99.0.0",
+      "http://github.com/NoomStuff/AcroClip/releases/tag/v99.0.0",
+      "https://github.com/NoomStuff/Other/releases/tag/v99.0.0",
+   ])
+      await expect(
+         fetchAvailableUpdate("0.14.1", async () => Response.json({ tag_name: "v99.0.0", name: null, html_url, draft: false, prerelease: false }))
+      ).rejects.toThrow("unexpected release URL");
 });

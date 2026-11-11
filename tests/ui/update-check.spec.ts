@@ -31,7 +31,7 @@ test("development checks fetch release metadata and offer only a release link", 
             return Response.json({
                tag_name: "v99.0.0",
                name: "AcroClip 99.0.0",
-               html_url: "https://example.com/releases/v99.0.0",
+               html_url: "https://github.com/NoomStuff/AcroClip/releases/tag/v99.0.0",
                draft: false,
                prerelease: false,
             });
@@ -49,7 +49,7 @@ test("development checks fetch release metadata and offer only a release link", 
       await page.locator(".update-panel").getByRole("button", { name: "View release", exact: true }).click();
       expect(await app.evaluate(() => (globalThis as typeof globalThis & { metadataChecks: number }).metadataChecks)).toBe(1);
       expect(await app.evaluate(() => (globalThis as typeof globalThis & { openedRelease: string }).openedRelease)).toBe(
-         "https://example.com/releases/v99.0.0"
+         "https://github.com/NoomStuff/AcroClip/releases/tag/v99.0.0"
       );
       expect((await page.evaluate(() => window.acroClip.state())).update).toMatchObject({
          state: "available",

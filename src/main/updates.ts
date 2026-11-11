@@ -67,7 +67,7 @@ export class Updates {
             return;
          }
          this.available = update;
-         const offered = await this.manager.offer(update);
+         const offered = this.manager.offer(update);
          this.available = offered;
          if (previous.version === offered.version && ((previous.state === "ready" && this.manager.isReady) || previous.state === "downloaded")) {
             this.set({ ...previous, mode: offered.mode, url: offered.url });
