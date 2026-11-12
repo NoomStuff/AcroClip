@@ -14,12 +14,10 @@ function QualityPicker({
    value,
    onChange,
    recommended,
-   customSummary,
 }: {
    value: Preferences["quality"];
    onChange: (value: Preferences["quality"]) => void;
    recommended?: "low" | "standard";
-   customSummary: string;
 }) {
    return (
       <div className="quality-options">
@@ -28,7 +26,8 @@ function QualityPicker({
                { value: "low", title: "Low", detail: "720p · 30 fps" },
                { value: "standard", title: "Standard", detail: "1080p · 60 fps" },
                { value: "high", title: "High", detail: "Source · 60 fps" },
-               { value: "custom", title: "Custom", detail: customSummary },
+               // Custom is whatever the settings below hold, so it has no summary of its own.
+               { value: "custom", title: "Custom", detail: "" },
             ] as const
          ).map((item) => (
             <button
@@ -201,7 +200,6 @@ export function RecordingPresets({ value, onChange, compact = false }: { value: 
       <>
          <QualityPicker
             value={value.quality}
-            customSummary={`${value.resolutionLimit === 0 ? "Source" : value.resolutionLimit === 2160 ? "4K" : `${value.resolutionLimit}p`} · ${value.customFPS} fps`}
             {...(capabilities?.supported ? { recommended: capabilities.recommended } : {})}
             onChange={(quality) => onChange(applyRecordingPreset(value, quality))}
          />

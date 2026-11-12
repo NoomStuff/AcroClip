@@ -804,7 +804,11 @@ async function stopRecording() {
 async function saveClip(trigger: SaveTrigger) {
    const requestedAt = Date.now();
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to save another clip.");
-   if (!capturing()) throw new Error("Start capturing before saving a clip.");
+   // Saving while nothing is recording does nothing, by design. That is not an error.
+   if (!capturing()) {
+      log(`save: ignored from ${trigger} because capture is off`);
+      return;
+   }
    if (!collections.root) throw new Error("The collection folder is still opening. Try saving again when it is available.");
    try {
       send({ type: "clip-action" });
