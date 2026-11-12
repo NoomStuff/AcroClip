@@ -165,7 +165,7 @@
    color: var(--text);
    font-size: 15px;
    line-height: 1.4;
-   font-weight: 600;
+   font-weight: 650;
 }
 .settings-body > h2:first-child,
 .settings-group:first-child > h2 {
@@ -188,12 +188,12 @@
 }
 .settings-body .filename-heading > label {
    font-size: 13px;
-   font-weight: 400;
+   font-weight: 450;
 }
 
 .settings-body .field-label {
    font-size: 13px;
-   font-weight: 400;
+   font-weight: 450;
 }
 
 .settings-body .field:has(.field-detail),
@@ -238,7 +238,7 @@
 .settings-group > h2 {
    margin: 0 0 10px;
    font-size: 13px;
-   font-weight: 600;
+   font-weight: 650;
 }
 .settings-group + .settings-group {
    margin-top: 24px;
@@ -524,7 +524,7 @@ fieldset.settings-group:disabled {
    text-align: left;
    color: var(--text);
    font-size: 13px;
-   font-weight: 600;
+   font-weight: 650;
    line-height: 1.4;
 }
 .notification-column-label {

@@ -29,7 +29,7 @@
 
 .audio-filters-heading .context-header-title {
    font-size: 15px;
-   font-weight: 600;
+   font-weight: 650;
 }
 
 .audio-filters-list .motion-list {
@@ -56,7 +56,7 @@
    border-radius: 4px;
    background: #ffffff0d;
    font-size: 10px;
-   font-weight: 600;
+   font-weight: 650;
    letter-spacing: 0.04em;
    text-transform: uppercase;
    color: var(--subtle);
@@ -124,7 +124,7 @@
    min-width: 0;
    margin: 0;
    font-size: 15px;
-   font-weight: 600;
+   font-weight: 650;
    overflow: hidden;
    text-overflow: ellipsis;
    white-space: nowrap;

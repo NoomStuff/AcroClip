@@ -80,7 +80,7 @@
    color: var(--muted);
 }
 .version-info strong {
-   font-weight: 500;
+   font-weight: 550;
    color: var(--text);
    text-align: right;
    font-variant-numeric: tabular-nums;
@@ -127,7 +127,7 @@
    border-radius: 10px 4px 4px 10px;
 }
 .viewer-create-size {
-   font-weight: 500;
+   font-weight: 550;
    opacity: 0.72;
 }
 .viewer-size-picker {
@@ -425,7 +425,7 @@
    background: #090909e6;
    color: var(--text);
    font-size: 12px;
-   font-weight: 600;
+   font-weight: 650;
 }
 @keyframes player-preview-in {
    from {
@@ -650,7 +650,7 @@
 }
 .player-volume-controls .select-trigger b {
    font-size: 10px;
-   font-weight: 500;
+   font-weight: 550;
    font-variant-numeric: tabular-nums;
 }
 .player-volume-controls .select-trigger[aria-expanded="true"] {

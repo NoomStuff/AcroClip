@@ -81,7 +81,7 @@
    justify-content: space-between;
    color: var(--subtle);
    font-size: 11px;
-   font-weight: 600;
+   font-weight: 650;
 }
 
 .sidebar-group-title .icon-button {
@@ -319,7 +319,7 @@
    margin: 14px 2px -8px;
    color: var(--subtle);
    font-size: 11px;
-   font-weight: 600;
+   font-weight: 650;
 }
 .clip-grid > .clip-group-header:first-child {
    margin-top: 0;
@@ -360,7 +360,7 @@
    opacity: 1;
 }
 .clip-group-count {
-   font-weight: 400;
+   font-weight: 450;
 }
 @media (prefers-reduced-motion: reduce) {
    .clip-group-control,
@@ -691,7 +691,7 @@
 
 .clip-card h3 {
    font-size: 14px;
-   font-weight: 600;
+   font-weight: 650;
    color: var(--text);
    line-height: 1.4;
    overflow: hidden;

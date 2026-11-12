@@ -46,7 +46,7 @@
    align-items: center;
    gap: 6px;
    font-size: 14px;
-   font-weight: 600;
+   font-weight: 650;
    padding-right: 20px;
 }
 
@@ -183,7 +183,7 @@
 }
 .compression-scale > strong {
    color: var(--accent);
-   font-weight: 600;
+   font-weight: 650;
 }
 .compression-scale > span:last-child {
    text-align: right;

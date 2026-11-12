@@ -136,6 +136,7 @@
       ]
    },
    "dependencies": {
+      "@fontsource-variable/manrope": "^5.3.0",
       "electron-updater": "^6.8.11",
       "lucide-react": "^1.72.0",
       "react": "^19.3.1",

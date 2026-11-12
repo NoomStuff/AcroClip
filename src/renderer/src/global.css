@@ -11,8 +11,7 @@
    --focus: #b197fce6;
    --row-press: #222126;
    font-family:
-      "Segoe UI Variable Text",
-      "Segoe UI Variable",
+      "Manrope Variable",
       "Segoe UI",
       -apple-system,
       BlinkMacSystemFont,
@@ -22,6 +21,8 @@
    color: var(--text);
    background: var(--base);
    font-size: 14px;
+   /* Manrope has finer strokes than Segoe, so each weight sits 50 above the usual step. */
+   font-weight: 450;
    font-synthesis: none;
    line-height: 1.45;
    --text: #eeeeee;
@@ -183,19 +184,20 @@ p {
 
 h1 {
    font-size: 24px;
-   font-weight: 600;
-   letter-spacing: -0.3px;
+   font-weight: 650;
+   /* Manrope runs wide at display sizes. Scales with each heading size. */
+   letter-spacing: -0.02em;
 }
 
 h2 {
    font-size: 14px;
-   font-weight: 600;
+   font-weight: 650;
    letter-spacing: 0;
 }
 
 h3 {
    font-size: 13px;
-   font-weight: 600;
+   font-weight: 650;
 }
 
 p {
