@@ -1,8 +1,6 @@
-import { z } from "zod";
-
 // OBS Studio's audio filters, run by the recorder. Defaults are OBS's own.
 // Ranges are the useful part of OBS's, which native/audio-filters.cpp accepts in full.
-export interface AudioFilterParameter {
+interface AudioFilterParameter {
    key: string;
    label: string;
    min: number;
@@ -13,12 +11,12 @@ export interface AudioFilterParameter {
    // OBS reads these settings as whole numbers.
    integer?: boolean;
 }
-export interface AudioFilterChoice {
+interface AudioFilterChoice {
    key: string;
    label: string;
    values: readonly { value: string; label: string }[];
 }
-export interface AudioFilterPreset {
+interface AudioFilterPreset {
    label: string;
    settings: Record<string, number | string>;
 }
@@ -160,40 +158,3 @@ export function defaultAudioFilterSettings(kind: AudioFilterKind): Record<string
 export function createAudioFilter(kind: AudioFilterKind, id: string): AudioFilter {
    return { id, kind, enabled: true, settings: defaultAudioFilterSettings(kind) };
 }
-export const audioFilterSchema = z
-   .object({
-      id: z.string().min(1).max(200),
-      kind: z.enum(audioFilterKinds),
-      enabled: z.boolean(),
-      settings: z.record(z.string(), z.union([z.number(), z.string()])),
-   })
-   .strict()
-   .superRefine((filter, context) => {
-      const definition = audioFilterDefinitions[filter.kind];
-      const known = new Set([...definition.parameters.map((item) => item.key), ...(definition.choices ?? []).map((item) => item.key)]);
-      for (const key of Object.keys(filter.settings))
-         if (!known.has(key)) context.addIssue({ code: "custom", message: `${definition.label} has no ${key} setting` });
-      for (const parameter of definition.parameters) {
-         const value = filter.settings[parameter.key];
-         if (value === undefined) continue;
-         if (
-            typeof value !== "number" ||
-            !Number.isFinite(value) ||
-            value < parameter.min ||
-            value > parameter.max ||
-            (parameter.integer && !Number.isInteger(value))
-         )
-            context.addIssue({ code: "custom", message: `${definition.label} ${parameter.label.toLowerCase()} is out of range` });
-      }
-      for (const choice of definition.choices ?? []) {
-         const value = filter.settings[choice.key];
-         if (value !== undefined && !choice.values.some((item) => item.value === value))
-            context.addIssue({ code: "custom", message: `Choose a ${choice.label.toLowerCase()} for ${definition.label}` });
-      }
-   })
-   // Missing settings take OBS's defaults, so stored chains survive new parameters.
-   .transform((filter): AudioFilter => ({ ...filter, settings: { ...defaultAudioFilterSettings(filter.kind), ...filter.settings } }));
-export const audioFilterChainSchema = z
-   .array(audioFilterSchema)
-   .max(maxAudioFilters, `Each audio source supports up to ${maxAudioFilters} filters`)
-   .refine((items) => new Set(items.map((item) => item.id)).size === items.length, "Audio filter IDs must be unique");

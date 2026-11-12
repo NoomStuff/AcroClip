@@ -44,6 +44,7 @@ const api: DesktopAPI = {
    attaCutAvailable: () => ipcRenderer.invoke("attacut-available"),
    reorderCategory: (id, beforeId) => ipcRenderer.invoke("category-reorder", id, beforeId),
    dragFile: (path) => ipcRenderer.send("drag", path),
+   showMeters: (shown) => ipcRenderer.send("meters", shown),
    playback: (path, track, requestId, options) => ipcRenderer.invoke("playback", path, track, requestId, options),
    cancelPlayback: (requestId) => ipcRenderer.invoke("cancel-playback", requestId),
    loudness: (path) => ipcRenderer.invoke("loudness", path),

@@ -1,4 +1,4 @@
-import type { AppEvent, DesktopAPI, NoticeOptions } from "../../shared/types";
+import type { AppEvent, AudioLevels, DesktopAPI, NoticeOptions } from "../../shared/types";
 import type { DragEvent } from "react";
 import { clipDragType } from "./clip-drag";
 import type { ClipDrag } from "./clip-drag";
@@ -29,6 +29,19 @@ function onEvent(listener: (event: AppEvent) => void): () => void {
    };
 }
 export const api: DesktopAPI = { ...window.acroClip, onEvent };
+
+// Main sends levels about 30 times a second, and only while a meter is there to show them.
+let meters = 0;
+export function onAudioLevels(listener: (levels: AudioLevels) => void): () => void {
+   const unsubscribe = onEvent((event) => {
+      if (event.type === "audio-levels") listener(event.levels);
+   });
+   if (++meters === 1) api.showMeters(true);
+   return () => {
+      unsubscribe();
+      if (--meters === 0) api.showMeters(false);
+   };
+}
 export type Run = (action: () => Promise<unknown>, options?: { feedback: "external" }) => Promise<boolean>;
 export function describeError(error: unknown): string {
    const message =

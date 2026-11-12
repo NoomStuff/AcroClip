@@ -27,7 +27,7 @@ export function mergePreferenceChanges(current: Preferences, value: unknown, cha
  * "Reduce clip overlap" became one of three overlap choices. Existing settings
  * keep their behavior.
  */
-export function migrateOverlapPreference(stored: Record<string, unknown>): Partial<Preferences> {
+function migrateOverlapPreference(stored: Record<string, unknown>): Partial<Preferences> {
    const { avoidOverlap, ...rest } = stored;
    if (rest["overlapClips"] !== undefined) return rest as Partial<Preferences>;
    return { ...rest, overlapClips: avoidOverlap === true ? "trim" : "keep" } as Partial<Preferences>;
@@ -36,7 +36,7 @@ export function migrateOverlapPreference(stored: Record<string, unknown>): Parti
  * The usage history became part of the app rather than a choice. It stays on this computer and
  * Settings can clear it, so an old "off" is dropped with the setting.
  */
-export function dropRetiredPreferences(stored: Partial<Preferences>): Partial<Preferences> {
+function dropRetiredPreferences(stored: Partial<Preferences>): Partial<Preferences> {
    const rest: Partial<Preferences> & { stats?: unknown } = { ...stored };
    delete rest.stats;
    return rest;

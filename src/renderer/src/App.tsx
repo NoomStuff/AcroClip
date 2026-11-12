@@ -390,7 +390,7 @@ export function App() {
                </div>
             )}
          </main>
-         <RecordingStatus state={state} visible={windowVisible} audioMessage={page === "recording" ? audioStatus : ""} />
+         <RecordingStatus state={state} audioMessage={page === "recording" ? audioStatus : ""} />
          <NotificationToast />
          <TooltipLayer />
          {dialog && <Dialog key={dialog.title} request={dialog} close={() => setDialog(null)} />}

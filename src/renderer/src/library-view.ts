@@ -22,7 +22,7 @@ export const groupingOptions: readonly { value: LibraryGrouping; label: string; 
    { value: "shareable", label: "Has shareable", icon: Share2 },
 ];
 
-export const directionLabel = (sort: LibrarySort): string => sortFields.find((field) => field.value === sort.field)!.directions[sort.reversed ? 1 : 0];
+const directionLabel = (sort: LibrarySort): string => sortFields.find((field) => field.value === sort.field)!.directions[sort.reversed ? 1 : 0];
 
 /** The trigger only shows an icon, so its tooltip names both choices. */
 export function viewSummary(sort: LibrarySort, grouping: LibraryGrouping): string {

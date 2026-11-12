@@ -13,16 +13,16 @@ import type { NotificationTone } from "./notifications";
  */
 
 /** Quick, with a small overshoot before it settles. */
-export const SPRING = "cubic-bezier(0.34, 1.36, 0.64, 1)";
+const SPRING = "cubic-bezier(0.34, 1.36, 0.64, 1)";
 const FLIGHT_MS = 340;
 const LEAVE_MS = 160;
 
 /** Each pill lists every id it stands for, space separated. */
-export const chipSelector = (id: number) => `[data-notification-chip~="${id}"]`;
+const chipSelector = (id: number) => `[data-notification-chip~="${id}"]`;
 const toastSelector = (id: number) => `[data-toast-id="${id}"]`;
 const pillSelector = (tone: NotificationTone) => `.notification-area > .notification-pill[data-tone="${tone}"]`;
 
-export const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /**
  * Where each pill ends up after the latest render, measured before its own

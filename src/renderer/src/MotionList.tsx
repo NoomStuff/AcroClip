@@ -2,7 +2,6 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useListReorder } from "./useListReorder";
 import type { ReorderItems } from "./useListReorder";
-import "./MotionList.css";
 
 interface Row<T> {
    key: string;

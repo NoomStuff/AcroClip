@@ -1,5 +1,5 @@
 import { watchedBuckets } from "../../shared/stats";
-import type { ViewEvent } from "../../shared/stats";
+import type { ViewEvent } from "../../shared/stats-log";
 
 /** One stretch of watching a clip, from opening it until leaving it. */
 export interface WatchSession {

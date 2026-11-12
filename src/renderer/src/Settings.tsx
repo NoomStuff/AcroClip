@@ -38,7 +38,7 @@ import { Field, Toggle } from "./SettingsControls";
 import { NotificationSettings } from "./NotificationSettings";
 import { api, reportFeedback } from "./desktop";
 import type { Ask, DialogRequest } from "./Dialog";
-import { defaultResetParts, preferenceResetCopy, resetPartCopy, resetParts } from "../../shared/maintenance";
+import { preferenceResetCopy, resetPartCopy, resetParts } from "../../shared/maintenance";
 import type { Run } from "./desktop";
 import { RecordingPresets, customQualityError } from "./RecordingPresets";
 import { shortcutRegistry, shortcutGroup, bindingFor, shortcutClashes, shortcutConflict, formatBinding } from "../../shared/shortcuts";
@@ -340,7 +340,7 @@ export function Settings({
             title: "Factory reset",
             detail: "Choose what to remove. AcroClip asks once more, then restarts. Your clips, tags and shareables stay where they are.",
             confirm: "Factory reset",
-            choices: resetParts.map((id) => ({ id, ...resetPartCopy[id], checked: defaultResetParts.includes(id) })),
+            choices: resetParts.map((id) => ({ id, ...resetPartCopy[id], checked: true })),
          },
          async (ticked) => {
             await flush();

@@ -4,9 +4,9 @@ import { createPortal } from "react-dom";
 import { Check, X } from "lucide-react";
 import { Button, Checkbox, IconButton } from "./ui";
 
-export type DialogAnswer = string | boolean | string[] | null;
+type DialogAnswer = string | boolean | string[] | null;
 export type Ask = (request: Omit<DialogRequest, "resolve">) => Promise<DialogAnswer>;
-export interface DialogChoice {
+interface DialogChoice {
    id: string;
    label: string;
    detail?: string;

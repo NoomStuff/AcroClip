@@ -1,7 +1,7 @@
 import { watch, type FSWatcher } from "node:fs";
 
 /** How long file events settle before one refresh reads the collection. */
-export const SETTLE_MS = 250;
+const SETTLE_MS = 250;
 /** Network and removable volumes can drop file events, so a slow poll still runs while the library is in view. */
 export const FALLBACK_POLL_MS = 30_000;
 /** Without a working watcher, polling is the only way to notice outside changes. */

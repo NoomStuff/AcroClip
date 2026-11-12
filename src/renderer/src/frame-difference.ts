@@ -5,7 +5,7 @@ export const signatureSize = 16;
  * the same picture. Compression noise and small motion stay well under it, a cut or a camera move
  * goes well over.
  */
-export const sameFrameLimit = 15;
+const sameFrameLimit = 15;
 
 /**
  * Which strip frames show the same picture as the thumbnail. The strip is shrunk to a grid of

@@ -2,7 +2,7 @@ import { extname } from "node:path";
 import type { Clip, Preferences, RecorderState, RecordingCapabilities, UpdateState } from "../shared/types";
 import type { SessionRecord } from "./diagnostics";
 
-export interface DisplayInfo {
+interface DisplayInfo {
    width: number;
    height: number;
    scaleFactor: number;
@@ -127,4 +127,3 @@ export function buildSystemReport(input: SystemReportInput) {
       },
    };
 }
-export type SystemReport = ReturnType<typeof buildSystemReport>;

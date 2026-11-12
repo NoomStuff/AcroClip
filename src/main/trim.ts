@@ -54,7 +54,7 @@ export interface PacketPoint {
    key: boolean;
    duration?: number;
 }
-export interface TrimSpan {
+interface TrimSpan {
    start: number;
    end: number;
    encode: boolean;
@@ -151,7 +151,7 @@ export async function probeTrimSource(path: string, signal?: AbortSignal): Promi
       }),
    };
 }
-export function trimVideo(source: TrimSource): TrimStream | undefined {
+function trimVideo(source: TrimSource): TrimStream | undefined {
    return source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture);
 }
 const audioStreams = (source: TrimSource) => source.streams.filter((stream) => stream.type === "audio");

@@ -83,10 +83,6 @@
    text-overflow: ellipsis;
    white-space: nowrap;
 }
-.game-added {
-   font-size: 11px;
-   color: var(--muted);
-}
 .game-empty {
    color: var(--muted);
    font-size: 12px;

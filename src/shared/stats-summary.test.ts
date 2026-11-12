@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { summarizeStats } from "./stats-summary";
 import { statsVersion, watchedBuckets } from "./stats";
-import type { StatsEvent, StatsEventInput } from "./stats";
+import type { StatsEvent, StatsEventInput } from "./stats-log";
 import type { Clip } from "./types";
 
 const at = (day: number, hour: number, minute = 0) => new Date(2026, 10, day, hour, minute).getTime();

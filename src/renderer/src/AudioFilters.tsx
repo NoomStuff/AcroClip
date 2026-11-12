@@ -12,7 +12,6 @@ import { DialogPanel } from "./Dialog";
 import { MotionList } from "./MotionList";
 import { Slider } from "./Slider";
 import { ContextHeader, Menu, MenuItem, Segmented, type ContextMenuRequest } from "./ui";
-import "./AudioFilters.css";
 
 export function filterSummary(filters: readonly AudioFilter[]): string {
    const active = filters.filter((filter) => filter.enabled);

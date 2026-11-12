@@ -29,10 +29,10 @@ const copyableAudio = new Set(["aac", "mp3", "opus", "flac"]);
 const preparedName = /^[a-f0-9]{64}\.mp4$/;
 const temporaryName = /^[a-f0-9]{64}\.mp4\.[a-f0-9-]{36}\.mp4$/;
 /** Prepared copies are disposable. Keep the most recent ones up to this size. */
-export const playbackCacheBytes = 4 * 1024 ** 3;
+const playbackCacheBytes = 4 * 1024 ** 3;
 
 /** Whether the renderer can play the original file and switch its audio tracks itself. */
-export function playsDirectly(path: string, info: MediaInfo): boolean {
+function playsDirectly(path: string, info: MediaInfo): boolean {
    return (
       !info.durationFromPackets &&
       directContainers.has(extname(path).toLowerCase()) &&

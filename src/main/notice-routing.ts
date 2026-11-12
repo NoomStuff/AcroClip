@@ -42,7 +42,7 @@ const feedbackSounds: Partial<Record<NoticeKind, string>> = {
 export const feedbackSoundFiles: readonly string[] = [...new Set(Object.values(feedbackSounds))];
 
 /** Warnings borrow the error banner, which cannot be turned off, but never its sound. */
-export function noticeAction(error: boolean, kind: NoticeKind, options: NoticeOptions): NotificationAction {
+function noticeAction(error: boolean, kind: NoticeKind, options: NoticeOptions): NotificationAction {
    return error || options.tone === "warning" ? "error" : notificationAction[kind];
 }
 

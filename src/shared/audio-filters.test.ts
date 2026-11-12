@@ -1,15 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-   audioFilterChainSchema,
-   audioFilterDefinitions,
-   audioFilterKinds,
-   createAudioFilter,
-   defaultAudioFilterSettings,
-   maxAudioFilters,
-} from "./audio-filters";
+import { audioFilterDefinitions, audioFilterKinds, createAudioFilter, defaultAudioFilterSettings, maxAudioFilters } from "./audio-filters";
 import { audioTopology, nativeAudioPreferences } from "./audio-model";
 import { defaultPreferences } from "./defaults";
-import { preferencesSchema } from "./validation";
+import { audioFilterChainSchema, preferencesSchema } from "./validation";
 
 describe("audio filters", () => {
    it("accepts every filter at OBS's defaults", () => {

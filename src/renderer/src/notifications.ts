@@ -1,11 +1,11 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 /** Most severe first. The status bar orders and colors chips by this. */
-export const notificationTones = ["error", "warning", "success"] as const;
+const notificationTones = ["error", "warning", "success"] as const;
 export type NotificationTone = (typeof notificationTones)[number];
 
 /** `toast` while it counts down in the bottom-right stack, `chip` once it lives in the status bar. */
-export type NotificationPhase = "toast" | "chip";
+type NotificationPhase = "toast" | "chip";
 
 export interface NotificationEntry {
    id: number;
@@ -216,7 +216,7 @@ export function chipGroups(entries: NotificationEntry[]): { tone: NotificationTo
       .filter((group) => group.entries.length > 0);
 }
 
-export function subscribe(listener: () => void): () => void {
+function subscribe(listener: () => void): () => void {
    listeners.add(listener);
    return () => listeners.delete(listener);
 }

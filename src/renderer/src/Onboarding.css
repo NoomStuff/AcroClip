@@ -291,13 +291,6 @@
    font-size: 11px !important;
    color: var(--muted) !important;
 }
-.source-placeholder {
-   min-height: 150px;
-   border-radius: 9px;
-   background: var(--raised);
-   opacity: 0.35;
-   animation: delayed-placeholder 200ms 150ms both;
-}
 @keyframes setup-reveal {
    from {
       opacity: 0;

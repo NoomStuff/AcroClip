@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { defaultPreferences } from "./defaults";
 import type { Preferences } from "./types";
 
@@ -37,15 +36,6 @@ export const resetPartCopy: Record<ResetPart, ResetPartCopy> = {
       detail: "Panel sizes, the library view and its section order.",
    },
 };
-
-/** Ticked when the factory reset checklist opens. */
-export const defaultResetParts: readonly ResetPart[] = resetParts;
-
-export const resetPartsSchema = z
-   .array(z.enum(resetParts))
-   .min(1)
-   .max(resetParts.length)
-   .transform((parts) => resetParts.filter((part) => parts.includes(part)));
 
 /**
  * What setup chooses: the capture source, quality, clip length and audio. Resetting these opens
@@ -86,11 +76,6 @@ export interface PreferenceResetParts {
    setup: boolean;
 }
 
-export const preferenceResetSchema = z
-   .object({ settings: z.boolean(), setup: z.boolean() })
-   .strict()
-   .refine((parts) => parts.settings || parts.setup, "Choose what to reset.");
-
 export const preferenceResetCopy: Record<keyof PreferenceResetParts, ResetPartCopy> = {
    settings: {
       label: "Settings",
@@ -119,11 +104,6 @@ export interface HistoryParts {
    logs: boolean;
    stats: boolean;
 }
-
-export const historyPartsSchema = z
-   .object({ logs: z.boolean(), stats: z.boolean() })
-   .strict()
-   .refine((parts) => parts.logs || parts.stats, "Choose what to clear.");
 
 /** The native confirmation's detail line for a factory reset. */
 export function factoryResetDetail(parts: readonly ResetPart[]): string {

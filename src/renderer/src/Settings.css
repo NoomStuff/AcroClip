@@ -122,9 +122,6 @@
    display: none;
 }
 
-.filename-error {
-   color: var(--red);
-}
 .settings-body:disabled {
    opacity: 0.55;
 }

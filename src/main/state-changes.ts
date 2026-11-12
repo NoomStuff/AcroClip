@@ -1,4 +1,4 @@
-import type { AppEvent, AppState, Clip, ClipChanges } from "../shared/types";
+import type { AppEvent, AppState, Clip, ClipChanges, RecorderState } from "../shared/types";
 
 // These fields are replaced as a whole by their owners. Mutable jobs,
 // categories and recorder status must still be compared by value.
@@ -39,6 +39,20 @@ export class StateChanges {
       if (first) return { type: "state", state };
       if (Object.keys(patch).length || clips) return { type: "state-patch", patch, ...(clips ? { clips } : {}) };
       return undefined;
+   }
+
+   /**
+    * The recorder reports every second, mostly without news. Its own event skips the rest of the
+    * state, and only goes out when the renderer's copy is out of date.
+    */
+   recorder(recorder: RecorderState): Extract<AppEvent, { type: "recorder" }> | undefined {
+      const prior = this.previous.get("recorder");
+      // Before the first snapshot there is nothing to compare with. The renderer replays these onto it.
+      if (!prior) return { type: "recorder", recorder };
+      const json = JSON.stringify(recorder);
+      if (json === prior.json) return undefined;
+      this.previous.set("recorder", { value: recorder, json });
+      return { type: "recorder", recorder };
    }
 
    private clipChanges(clips: Clip[]): ClipChanges | undefined {

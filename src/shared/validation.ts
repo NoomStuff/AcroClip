@@ -2,8 +2,49 @@ import { z } from "zod";
 import { shortcutRegistry } from "./shortcuts";
 import { validFilenameTemplate } from "./filename";
 import { normalizeMicrophone } from "./audio-model";
-import { audioFilterChainSchema } from "./audio-filters";
+import { audioFilterDefinitions, audioFilterKinds, defaultAudioFilterSettings, maxAudioFilters } from "./audio-filters";
+import type { AudioFilter } from "./audio-filters";
+import { resetParts } from "./maintenance";
+import type { RendererError } from "./diagnostics";
 import { replayMemoryBounds } from "./replay-memory";
+// Every schema lives here or in stats-log.ts, so the renderer, which validates nothing, ships without zod.
+const audioFilterSchema = z
+   .object({
+      id: z.string().min(1).max(200),
+      kind: z.enum(audioFilterKinds),
+      enabled: z.boolean(),
+      settings: z.record(z.string(), z.union([z.number(), z.string()])),
+   })
+   .strict()
+   .superRefine((filter, context) => {
+      const definition = audioFilterDefinitions[filter.kind];
+      const known = new Set([...definition.parameters.map((item) => item.key), ...(definition.choices ?? []).map((item) => item.key)]);
+      for (const key of Object.keys(filter.settings))
+         if (!known.has(key)) context.addIssue({ code: "custom", message: `${definition.label} has no ${key} setting` });
+      for (const parameter of definition.parameters) {
+         const value = filter.settings[parameter.key];
+         if (value === undefined) continue;
+         if (
+            typeof value !== "number" ||
+            !Number.isFinite(value) ||
+            value < parameter.min ||
+            value > parameter.max ||
+            (parameter.integer && !Number.isInteger(value))
+         )
+            context.addIssue({ code: "custom", message: `${definition.label} ${parameter.label.toLowerCase()} is out of range` });
+      }
+      for (const choice of definition.choices ?? []) {
+         const value = filter.settings[choice.key];
+         if (value !== undefined && !choice.values.some((item) => item.value === value))
+            context.addIssue({ code: "custom", message: `Choose a ${choice.label.toLowerCase()} for ${definition.label}` });
+      }
+   })
+   // Missing settings take OBS's defaults, so stored chains survive new parameters.
+   .transform((filter): AudioFilter => ({ ...filter, settings: { ...defaultAudioFilterSettings(filter.kind), ...filter.settings } }));
+export const audioFilterChainSchema = z
+   .array(audioFilterSchema)
+   .max(maxAudioFilters, `Each audio source supports up to ${maxAudioFilters} filters`)
+   .refine((items) => new Set(items.map((item) => item.id)).size === items.length, "Audio filter IDs must be unique");
 export const preferencesSchema = z
    .object({
       collection: z.string().trim().min(1).max(4096),
@@ -130,3 +171,24 @@ export const categoryRequest = z
       categoryIds: z.array(z.string().max(200)).max(100).optional(),
    })
    .strict();
+export const rendererErrorSchema = z
+   .object({
+      kind: z.enum(["error", "rejection", "react"]),
+      message: z.string().max(4000),
+      stack: z.string().max(16_000).optional(),
+      source: z.string().max(16_000).optional(),
+   })
+   .strict() satisfies z.ZodType<RendererError>;
+export const resetPartsSchema = z
+   .array(z.enum(resetParts))
+   .min(1)
+   .max(resetParts.length)
+   .transform((parts) => resetParts.filter((part) => parts.includes(part)));
+export const preferenceResetSchema = z
+   .object({ settings: z.boolean(), setup: z.boolean() })
+   .strict()
+   .refine((parts) => parts.settings || parts.setup, "Choose what to reset.");
+export const historyPartsSchema = z
+   .object({ logs: z.boolean(), stats: z.boolean() })
+   .strict()
+   .refine((parts) => parts.logs || parts.stats, "Choose what to clear.");

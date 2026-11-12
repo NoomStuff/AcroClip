@@ -237,7 +237,7 @@ export class RecordingNotices {
 }
 
 /** The banner already states what happened, so a detail that opens with the same sentence keeps only what follows. */
-export function withoutTitle(message: string, title: string): string {
+function withoutTitle(message: string, title: string): string {
    const [first = "", ...rest] = message.split(/(?<=\.)\s+/);
    return first.replace(/\.$/, "").toLowerCase() === title.toLowerCase() ? rest.join(" ") : message;
 }

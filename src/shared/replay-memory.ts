@@ -3,7 +3,7 @@ import type { PixelSize } from "./recording-presets";
 // Keep these in step with historyByteLimit and bitrateCeilingKbps in
 // native/recorder.cpp.
 export const replayMemoryBounds = { min: 256, max: 16384 } as const;
-export const replayMemoryChoices = [512, 1024, 2048, 4096, 8192] as const;
+const replayMemoryChoices = [512, 1024, 2048, 4096, 8192] as const;
 const historyShare = 0.85;
 const audioTrackKbps = 160;
 const floorKbps = 15000;

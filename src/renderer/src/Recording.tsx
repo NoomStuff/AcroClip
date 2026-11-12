@@ -114,7 +114,12 @@ export function Recording({
          try {
             const candidates = await api.games();
             if (!disposed) {
-               setGameScan((current) => (current.scope === gameScope ? { scope: gameScope, games: candidates, loaded: true } : current));
+               // The same answer keeps the same list, so a quiet poll renders nothing.
+               setGameScan((current) =>
+                  current.scope !== gameScope || (current.loaded && JSON.stringify(current.games) === JSON.stringify(candidates))
+                     ? current
+                     : { scope: gameScope, games: candidates, loaded: true }
+               );
             }
          } catch {
             /* The recorder reports connection failures separately. */
@@ -152,7 +157,7 @@ export function Recording({
             const result = await api.sources();
             if (!gone) {
                knownSources.current = result;
-               setSources(result);
+               setSources((current) => (JSON.stringify(current) === JSON.stringify(result) ? current : result));
                setSourcePhase("ready");
             }
          } catch {

@@ -80,7 +80,9 @@ test("cached loading states, enumeration retry, and interrupted library movement
          collectionStatus: { root: collection, phase: "loading", discovery: { videos: 114, byFolder: { "": 114 }, complete: true } },
       });
       await expect(page.getByLabel("Opening collection")).toBeVisible();
-      await expect(page.locator(".clip-placeholder")).toHaveCount(114);
+      // The skeleton shows a screenful of the 114 clips on their way.
+      await expect(page.locator(".clip-placeholder").first()).toBeVisible();
+      expect(await page.locator(".clip-placeholder").count()).toBeLessThan(114);
       await expect(page.getByText(/Loaded 0 of 114 clips/)).toBeVisible();
       await expect(page.getByLabel("Loading clips", { exact: true })).toBeVisible();
       const headingBounds = await page.locator(".library-heading").boundingBox();
@@ -100,7 +102,11 @@ test("cached loading states, enumeration retry, and interrupted library movement
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(1380, 900));
       await send({ ...actual, collectionStatus: { root: collection, phase: "loading", discovery: { videos: 114, byFolder: { "": 114 }, complete: true } } });
       await expect(page.locator(".clip-card")).toHaveCount(6);
-      await expect(page.locator(".clip-placeholder")).toHaveCount(108);
+      // Placeholders hold the place of the other 108, as far as the mounted rows reach.
+      await expect(page.locator(".clip-placeholder").first()).toBeVisible();
+      expect(await page.locator(".clip-placeholder").count()).toBeLessThan(108);
+      // The scrollbar still spans all 114: the last row sits far below the viewport.
+      expect(await page.locator(".library-scroll").evaluate((node) => node.scrollHeight)).toBeGreaterThan(114 * 60);
       await expect(page.getByText(/Loaded 6 of 114 clips/)).toBeVisible();
       const contentBounds = await page.locator(".library-content").boundingBox();
       const scrollBounds = await page.locator(".library-scroll").boundingBox();

@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { AppEvent, AppState, ApplicationArtwork, CaptureSource, NoticeOptions, Preferences, RecorderState, RecordingCapabilities } from "../shared/types";
 import { recordingArtwork, type RecordingArtwork } from "./recording-artwork";
-import { categoryRequest, idSchema } from "../shared/validation";
+import { categoryRequest, historyPartsSchema, idSchema, preferenceResetSchema, rendererErrorSchema, resetPartsSchema } from "../shared/validation";
 import { assertDistinctAudioSources } from "./audio-sources";
 import { audioTopology, synchronizeLegacyAudio, monitoringPreferences } from "../shared/audio-model";
 import { mergePreferenceChanges, readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
@@ -24,15 +24,15 @@ import { CaptureTimeout, Recorder } from "./recorder";
 import { CaptureSources } from "./capture-sources";
 import { serveMedia } from "./serve";
 import { StatsLog } from "./stats";
-import { viewEventSchema } from "../shared/stats";
+import { viewEventSchema } from "../shared/stats-log";
 import type { SaveTrigger, StatsAction } from "../shared/stats";
 import { summarizeStats } from "../shared/stats-summary";
 import { Diagnostics, homeRedactor } from "./diagnostics";
 import type { LogLevel, SessionRecord } from "./diagnostics";
 import { buildSystemReport } from "./system-report";
 import { createZip } from "./zip";
-import { bugReportUrl, describeSystem, logArchiveName, rendererErrorSchema } from "../shared/diagnostics";
-import { factoryResetDetail, historyPartsSchema, preferenceResetSchema, resetPartsSchema, resetPreferenceGroups } from "../shared/maintenance";
+import { bugReportUrl, describeSystem, logArchiveName } from "../shared/diagnostics";
+import { factoryResetDetail, resetPreferenceGroups } from "../shared/maintenance";
 import type { ResetPart } from "../shared/maintenance";
 import { loudnessEnvelope, probe } from "./media";
 import { BACKGROUND_CHECK_INTERVAL, Updates } from "./updates";
@@ -50,7 +50,7 @@ import { attaCutEnvironment, findAttaCut } from "./attacut";
 import { needsMicrophonePermission } from "../shared/audio-policy";
 import { StorageMonitor } from "./storage";
 import { StateChanges } from "./state-changes";
-import { updateTray as renderTray } from "./tray";
+import { trayStatus } from "./tray";
 import { CollectionRefresh } from "./collection-refresh";
 import { footageWindow, mergeCandidate } from "./merge-policy";
 import type { SavedFootage } from "./merge-policy";
@@ -82,7 +82,7 @@ process.on("unhandledRejection", (reason) =>
 if (process.platform === "linux") app.setDesktopName(linuxDesktopName);
 if (process.platform === "win32") app.setAppUserModelId(windowsAppId());
 let mainWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
+let showTrayStatus: ReturnType<typeof trayStatus> | null = null;
 let quitting = false;
 let exiting: Promise<boolean> | null = null;
 let preferences: Preferences;
@@ -95,6 +95,10 @@ let startingCapture: Promise<void> | null = null;
 let previewSourceId: string | null = null;
 let previewOwner: string | null = null;
 let playbackRequest: { id: string; controller: AbortController } | undefined;
+// Level meters only exist on the Capture page, which says when it shows them.
+let metersShown = false;
+let meterLevels: { capture: number; microphone: number; additional: Record<string, number> } = { capture: 0, microphone: 0, additional: {} };
+let meterFlush: ReturnType<typeof setTimeout> | null = null;
 const mediaFiles = new Map<string, string>();
 const mediaKeys = new Map<string, string>();
 const stateChanges = new StateChanges();
@@ -387,15 +391,16 @@ const recorder = new Recorder({
    onAudioMonitorError: (monitorError, listeningError) =>
       send({ type: "audio-monitor", monitorError, ...(listeningError !== undefined ? { listeningError } : {}) }),
    onAudioLevels: (levels) => {
-      if (windowShown())
-         send({
-            type: "audio-levels",
-            levels: {
-               capture: levels.capture * 100,
-               microphone: levels.microphone * 100,
-               ...(levels.additional ? { additional: Object.fromEntries(Object.entries(levels.additional).map(([id, level]) => [id, level * 100])) } : {}),
-            },
-         });
+      if (!metersShown || !windowShown()) return;
+      // Every source reports about 30 times a second. They share one event per frame.
+      meterLevels.capture = levels.capture * 100;
+      meterLevels.microphone = levels.microphone * 100;
+      for (const [id, level] of Object.entries(levels.additional ?? {})) meterLevels.additional[id] = level * 100;
+      meterFlush ??= setTimeout(() => {
+         meterFlush = null;
+         if (metersShown) send({ type: "audio-levels", levels: meterLevels });
+         meterLevels = { capture: meterLevels.capture, microphone: meterLevels.microphone, additional: {} };
+      }, 33);
    },
    nativePath: helperPath("acroclip-recorder"),
    onOutput: (text) => diagnostics.recorderOutput(text),
@@ -416,7 +421,9 @@ const recorder = new Recorder({
       trackCaptureSession(current);
       recordingNotices.state(current, closingRequested);
       updateStorageActivity();
-      send({ type: "recorder", recorder: recorderState() });
+      // The helper reports every second. Only a change reaches the window.
+      const event = windowShown() ? stateChanges.recorder(recorderState()) : undefined;
+      if (event) send(event);
       updateTray();
    },
    onError: (message, context) =>
@@ -689,7 +696,10 @@ function createWindow() {
       // The launcher's native splash gives way to the app's own startup screen.
       releaseSplash();
    });
-   mainWindow.webContents.on("did-start-loading", () => stateChanges.reset());
+   mainWindow.webContents.on("did-start-loading", () => {
+      stateChanges.reset();
+      metersShown = false;
+   });
    const visibilityChanged = () => {
       const visible = windowShown();
       trackWindow(visible);
@@ -745,17 +755,7 @@ function trayIcon() {
    return image.resize({ width: 20, height: 20 });
 }
 function updateTray() {
-   if (!tray) return;
-   const active = capturing();
-   renderTray(tray, recorder.status, !!startingCapture, {
-      open: () => {
-         mainWindow?.show();
-         mainWindow?.focus();
-      },
-      toggleRecording: () => void (active ? stopRecording() : startRecording()).catch(captureActionError),
-      saveClip: () => void saveClip("tray").catch(captureActionError),
-      exit: () => void requestExit(),
-   });
+   showTrayStatus?.(recorder.status, !!startingCapture);
 }
 async function ensureMicrophoneAccess(value: Preferences): Promise<void> {
    if (process.platform === "darwin" && needsMicrophonePermission(value) && systemPreferences.getMediaAccessStatus("microphone") !== "granted") {
@@ -1053,8 +1053,7 @@ async function requestExit() {
 function trustedPath(path: unknown): string {
    const candidate = z.string().max(4096).parse(path);
    const full = resolve(candidate);
-   const known = [collections.root, ...collections.clips.flatMap((c) => [c.path, ...c.shareables.map((s) => s.path)])].some((p) => samePath(resolve(p), full));
-   if (!known) throw new Error("This file is not part of the open collection.");
+   if (!samePath(resolve(collections.root), full) && !fileOwner(full)) throw new Error("This file is not part of the open collection.");
    const actual = realpathSync(full);
    if (!withinRoot(collections.root, actual)) throw new Error("This file moved outside the collection.");
    return actual;
@@ -1633,6 +1632,9 @@ function registerIPC() {
             break;
       }
    });
+   ipcMain.on("meters", (event, shown) => {
+      if (event.sender === mainWindow?.webContents) metersShown = shown === true;
+   });
    ipcMain.on("drag", (event, path) => {
       if (event.sender !== mainWindow?.webContents) return;
       try {
@@ -1764,8 +1766,18 @@ else {
          });
          registerIPC();
          createWindow();
-         tray = new Tray(trayIcon());
+         // The status updater holds the tray from here on, which also keeps its icon from being collected.
+         const tray = new Tray(trayIcon());
          tray.on("double-click", () => mainWindow?.show());
+         showTrayStatus = trayStatus(tray, {
+            open: () => {
+               mainWindow?.show();
+               mainWindow?.focus();
+            },
+            toggleRecording: () => void (capturing() ? stopRecording() : startRecording()).catch(captureActionError),
+            saveClip: () => void saveClip("tray").catch(captureActionError),
+            exit: () => void requestExit(),
+         });
          updateTray();
          if (process.platform === "linux" && isPackagedApp() && process.env["ACROCLIP_TEST"] !== "1") {
             await linuxDesktopIdentity(

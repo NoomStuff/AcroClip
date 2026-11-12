@@ -61,11 +61,21 @@ import { useAttaCutAvailable } from "./useAttaCutAvailable";
 import { applicationKeys, summarizeClips, orderLibrarySections, summarizeFolders, selectChildFolders, selectLibraryClips } from "./library-index";
 import type { LibrarySectionId, LibrarySort } from "./library-index";
 import { groupClips } from "./library-groups";
-import type { LibraryGrouping } from "./library-groups";
+import type { ClipGroup, LibraryGrouping } from "./library-groups";
+import { LibraryGrid } from "./LibraryGrid";
+import type { GridItemKind } from "./grid-window";
 import { readFoldedGroups, readLibraryView, storeFoldedGroups, storeLibraryView } from "./library-view";
 import { LibraryViewMenu } from "./LibraryViewMenu";
 import { LibrarySection } from "./LibrarySection";
 import type { PlayQueue } from "./play-queue";
+
+/** A child of the clip grid, in the order the grid lays them out. */
+type LibraryItem =
+   | { type: "folder"; key: string; path: string }
+   | { type: "group"; key: string; group: ClipGroup; open: boolean }
+   | { type: "clip"; key: string; clip: Clip }
+   | { type: "pending"; key: string };
+const itemKind = (item: LibraryItem): GridItemKind => (item.type === "group" ? "header" : item.type === "pending" ? "placeholder" : "card");
 
 export function Library({
    state,
@@ -113,7 +123,8 @@ export function Library({
       observer.observe(header);
       return () => observer.disconnect();
    }, []);
-   const [placeholderCount, setPlaceholderCount] = useState(8);
+   // How many placeholders fill the viewport.
+   const [placeholderFit, setPlaceholderFit] = useState(8);
    const [view, setView] = useState<"grid" | "list">(() => {
       try {
          return localStorage.getItem("acroclip.library.view") === "list" ? "list" : "grid";
@@ -160,7 +171,7 @@ export function Library({
          const { width, height } = entry.contentRect;
          if (view === "list") {
             setGridMetrics((current) => (current.width === width ? current : { ...current, width }));
-            setPlaceholderCount(Math.min(24, Math.max(1, Math.ceil(height / ((thumbnailSizes.list * 9) / 16 + 20)))));
+            setPlaceholderFit(Math.max(1, Math.ceil(height / ((thumbnailSizes.list * 9) / 16 + 20))));
             return;
          }
          const gridElement = node.querySelector<HTMLElement>(".clip-grid");
@@ -168,7 +179,7 @@ export function Library({
          setGridMetrics((current) => (current.width === width && current.gap === gap ? current : { width, gap }));
          const columns = Math.max(1, Math.floor((width + gap) / (thumbnailSizes.grid + gap)));
          const cardHeight = Math.max(205, (((width - (columns - 1) * gap) / columns) * 9) / 16 + 68);
-         setPlaceholderCount(Math.min(24, columns * Math.max(1, Math.ceil(height / (cardHeight + gap)))));
+         setPlaceholderFit(columns * Math.max(1, Math.ceil(height / (cardHeight + gap))));
       });
       observer.observe(node);
       return () => observer.disconnect();
@@ -422,19 +433,70 @@ export function Library({
          : folderPath === null
            ? discovery?.videos
            : (discovery?.byFolder[folderPath] ?? (discovery?.complete ? 0 : undefined));
-   const slots = discovery && discoveredCount !== undefined && (discovery.complete || discoveredCount > 0) ? discoveredCount : placeholderCount;
+   // The skeleton never scrolls, so it holds a screenful at most: the clips found so far, or a guess of 24.
+   const slots = Math.min(placeholderFit, discovery && discoveredCount !== undefined && (discovery.complete || discoveredCount > 0) ? discoveredCount : 24);
    const remainingSlots = discovering && !query && discoveredCount !== undefined ? Math.max(0, discoveredCount - clips.length) : 0;
    const showPlaceholders = discovering && !clips.length && !childFolders.length && !query;
    const grid = useRef<HTMLDivElement>(null);
+   const items = useMemo(() => {
+      const result: LibraryItem[] = childFolders.map((path) => ({ type: "folder", key: `folder:${path}`, path }));
+      const card = (clip: Clip): LibraryItem => ({ type: "clip", key: clip.id, clip });
+      if (groups.length)
+         for (const group of groups) {
+            const open = !foldedKeys.has(group.key);
+            result.push({ type: "group", key: `group:${group.key}`, group, open });
+            if (open) for (const clip of group.clips) result.push(card(clip));
+         }
+      else for (const clip of clips) result.push(card(clip));
+      for (let index = 0; index < remainingSlots; index++) result.push({ type: "pending", key: `pending:${index}` });
+      return result;
+   }, [childFolders, groups, foldedKeys, clips, remainingSlots]);
+   const itemKeys = useMemo(() => new Set(items.map((item) => item.key)), [items]);
+   // A new object whenever the layout can have changed, which is when cards may need to move.
    const layoutSignature = useMemo(
-      () => JSON.stringify([view, gridMetrics.width, thumbnailSizes[view], childFolders, groups.map((group) => group.key), shownClips.map((clip) => clip.id)]),
-      [view, gridMetrics.width, thumbnailSizes, childFolders, groups, shownClips]
+      () => ({ view, width: gridMetrics.width, size: thumbnailSizes[view], items }),
+      [view, gridMetrics.width, thumbnailSizes, items]
    );
-   const captureLayout = useGridMotion(grid, layoutSignature, visible, JSON.stringify([collectionRoot, filter]), view, view === "list" && listSizing);
+   const { captureLayout, settle, natural } = useGridMotion(
+      grid,
+      layoutSignature,
+      itemKeys,
+      visible,
+      JSON.stringify([collectionRoot, filter]),
+      view,
+      view === "list" && listSizing
+   );
    // Opening a clip hands the player this view as its queue: the same filter, search, sort and folds.
    const playQueue = useRef<PlayQueue>({ ids: [], label: "" });
    const openFromView = useCallback((clip: Clip) => openClip(clip, playQueue.current), [openClip]);
    const trimFromView = useCallback((clip: Clip) => openClip(clip, playQueue.current, { trim: true }), [openClip]);
+   const renderItem = (item: LibraryItem) =>
+      item.type === "folder" ? (
+         <FolderCard
+            key={item.key}
+            path={item.path}
+            count={folderStats.get(item.path)?.count ?? 0}
+            dropProps={folderDropProps(item.path)}
+            actions={folderMenu(item.path, "tile")}
+            onOpen={(path) => setFilter(`folder:${path}`)}
+            requestMenu={(path, element, left, top) => requestFolderMenu(path, "tile", element, left, top)}
+         />
+      ) : item.type === "group" ? (
+         <h2 key={item.key} className="clip-group-header" data-layout-key={item.key}>
+            <button className="clip-group-control" aria-expanded={item.open} onClick={() => toggleGroup(item.group.key)}>
+               <ChevronRight size={12} aria-hidden="true" />
+               {item.group.label}
+               <span className="clip-group-count">{item.group.clips.length}</span>
+            </button>
+         </h2>
+      ) : item.type === "pending" ? (
+         <div className="clip-placeholder" key={item.key} aria-hidden="true">
+            <div />
+            <span />
+         </div>
+      ) : (
+         renderClip(item.clip)
+      );
    const renderClip = (clip: Clip) => (
       <ClipCard
          createTag={createCategory}
@@ -819,41 +881,18 @@ export function Library({
                      ))}
                   </div>
                ) : clips.length || childFolders.length ? (
-                  <div className="clip-grid" data-view={view} ref={grid}>
-                     {childFolders.map((path) => (
-                        <FolderCard
-                           key={`folder:${path}`}
-                           path={path}
-                           count={folderStats.get(path)?.count ?? 0}
-                           dropProps={folderDropProps(path)}
-                           actions={folderMenu(path, "tile")}
-                           onOpen={(path) => setFilter(`folder:${path}`)}
-                           requestMenu={(path, element, left, top) => requestFolderMenu(path, "tile", element, left, top)}
-                        />
-                     ))}
-                     {/* Headers and cards stay siblings, so regrouping moves each card instead of remounting it. */}
-                     {groups.length
-                        ? groups.flatMap((group) => {
-                             const open = !foldedKeys.has(group.key);
-                             return [
-                                <h2 key={`group:${group.key}`} className="clip-group-header" data-layout-key={`group:${group.key}`}>
-                                   <button className="clip-group-control" aria-expanded={open} onClick={() => toggleGroup(group.key)}>
-                                      <ChevronRight size={12} aria-hidden="true" />
-                                      {group.label}
-                                      <span className="clip-group-count">{group.clips.length}</span>
-                                   </button>
-                                </h2>,
-                                ...(open ? group.clips.map(renderClip) : []),
-                             ];
-                          })
-                        : clips.map(renderClip)}
-                     {Array.from({ length: remainingSlots }, (_, index) => (
-                        <div className="clip-placeholder" key={`pending:${index}`} aria-hidden="true">
-                           <div />
-                           <span />
-                        </div>
-                     ))}
-                  </div>
+                  // Headers and cards are siblings, so regrouping moves each card instead of remounting it.
+                  <LibraryGrid
+                     grid={grid}
+                     scroller={scrollArea}
+                     view={view}
+                     visible={visible}
+                     items={items}
+                     kind={itemKind}
+                     render={renderItem}
+                     natural={natural}
+                     onSettled={settle}
+                  />
                ) : pending ? null : unavailable ? (
                   <Empty icon={<FolderOpen size={38} />} title="Collection unavailable">
                      <Button onClick={() => void run(() => api.refresh())}>Retry</Button>

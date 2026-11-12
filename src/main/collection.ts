@@ -355,8 +355,9 @@ export class CollectionService {
          const match = /^([a-f0-9]{64})\.keyframes-v(\d+)-\d+\.jpg$/i.exec(name);
          if (match && (!known.has(match[1]!) || match[2] !== "2")) await rm(join(directory, name), { force: true }).catch(() => undefined);
       }
+      const storedClips = new Map(this.metadata.clips.map((stored) => [stored.id, stored]));
       for (const clip of this.clips) {
-         const stored = this.metadata.clips.find((item) => item.id === clip.id);
+         const stored = storedClips.get(clip.id);
          if (!stored || clip.originalMissing || !(clip.duration > 0)) continue;
          const output = this.stripFile(stored.identity, clip.duration);
          if (names.has(basename(output)) || this.stripFailed.has(output)) continue;

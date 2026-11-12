@@ -85,7 +85,10 @@ test("expanded sections reorder in a scrolling sidebar and large libraries bound
          };
          publish("app-event", { type: "state-patch", patch: { clips: fixture } });
       }, clips);
-      await expect(page.locator(".clip-card")).toHaveCount(1000);
+      // The library holds every clip, and mounts only the rows near the viewport.
+      await expect(page.locator(".library-count")).toContainText("1000 clips");
+      await expect(page.locator(".clip-card").first()).toBeVisible();
+      expect(await page.locator(".clip-card").count()).toBeLessThan(120);
       await expect.poll(() => page.locator(".clip-thumbnail > img").count()).toBeGreaterThan(0);
       expect(await page.locator(".clip-thumbnail > img").count()).toBeLessThan(80);
       const countSlot = page.locator(".library-sidebar .sidebar-item").filter({ hasText: "All clips" }).locator(".count");

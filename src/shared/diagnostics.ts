@@ -1,18 +1,13 @@
-import { z } from "zod";
-
-export const repositoryUrl = "https://github.com/NoomStuff/AcroClip";
+const repositoryUrl = "https://github.com/NoomStuff/AcroClip";
 
 /** An error the renderer caught or failed to catch, forwarded to the app log. */
-export const rendererErrorSchema = z
-   .object({
-      kind: z.enum(["error", "rejection", "react"]),
-      message: z.string().max(4000),
-      stack: z.string().max(16_000).optional(),
-      // React's component stack, or the script location for window errors.
-      source: z.string().max(16_000).optional(),
-   })
-   .strict();
-export type RendererError = z.infer<typeof rendererErrorSchema>;
+export interface RendererError {
+   kind: "error" | "rejection" | "react";
+   message: string;
+   stack?: string | undefined;
+   // React's component stack, or the script location for window errors.
+   source?: string | undefined;
+}
 
 export interface BugReportContext {
    version: string;

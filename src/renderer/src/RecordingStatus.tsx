@@ -21,7 +21,7 @@ import {
 import { closePinned, glide, pillTargets, popIn, sweepOut } from "./notification-motion";
 import { NotificationIcon } from "./NotificationToast";
 
-export function RecordingStatus({ state, audioMessage = "" }: { state: AppState | null; visible: boolean; audioMessage?: string }) {
+export function RecordingStatus({ state, audioMessage = "" }: { state: AppState | null; audioMessage?: string }) {
    const [sources, setSources] = useState<CaptureSource[]>([]);
    const sourceId = state?.recorder.sourceId;
    const applicationRecording = state?.recorder.state === "recording" && state.recorder.sourceKind === "app";

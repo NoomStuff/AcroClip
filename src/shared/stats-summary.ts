@@ -1,5 +1,6 @@
 import { saveTriggers, statsActions, watchedBuckets } from "./stats";
-import type { SaveTrigger, StatsAction, StatsEvent } from "./stats";
+import type { SaveTrigger, StatsAction } from "./stats";
+import type { StatsEvent } from "./stats-log";
 import type { Clip } from "./types";
 
 /**
@@ -9,7 +10,7 @@ import type { Clip } from "./types";
  * older than the history or saved by other tools.
  */
 
-export interface DayStats {
+interface DayStats {
    /** Local calendar day, YYYY-MM-DD. */
    date: string;
    captureSeconds: number;
@@ -23,7 +24,7 @@ export interface DayStats {
    copies: number;
 }
 
-export interface ApplicationStats {
+interface ApplicationStats {
    /** The application ID, or `source:<label>` for captures without one, such as a screen. */
    key: string;
    name: string;
@@ -34,7 +35,7 @@ export interface ApplicationStats {
    watchSeconds: number;
 }
 
-export interface ClipStats {
+interface ClipStats {
    clipId: string;
    name: string | null;
    /** Still in the collection. */
@@ -153,7 +154,7 @@ export interface SummaryOptions {
 }
 
 const pad = (value: number) => String(value).padStart(2, "0");
-export const dayKey = (at: number) => {
+const dayKey = (at: number) => {
    const date = new Date(at);
    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 };

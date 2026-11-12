@@ -23,9 +23,18 @@ export default ts.config(
       rules: {
          "react-hooks/rules-of-hooks": "error",
          "react-hooks/exhaustive-deps": "error",
-         "no-restricted-imports": [
+         "@typescript-eslint/no-restricted-imports": [
             "error",
-            { patterns: [{ group: ["electron", "node:*", "**/main/**", "**/preload/**"], message: "Use the desktop bridge for privileged operations." }] },
+            {
+               patterns: [
+                  { group: ["electron", "node:*", "**/main/**", "**/preload/**"], message: "Use the desktop bridge for privileged operations." },
+                  {
+                     group: ["zod", "**/shared/validation", "**/shared/stats-log"],
+                     allowTypeImports: true,
+                     message: "Main validates. Importing a schema here puts zod in the window's startup bundle.",
+                  },
+               ],
+            },
          ],
       },
    },

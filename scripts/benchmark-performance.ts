@@ -13,9 +13,6 @@ import { groupFolders, summarizeClips } from "../src/renderer/src/library-index"
 // Real files and media, always in a disposable collection. Run before and after
 // a change on the same machine. Medians avoid a single noisy filesystem sample.
 const root = await mkdtemp(join(tmpdir(), "acroclip-performance-"));
-// The player switches single audio tracks itself. Measure the earlier prepared copy with
-// ACROCLIP_BENCHMARK_TRACK_COPIES=1 when comparing against a build without that.
-const nativeTrackSwitching = process.env["ACROCLIP_BENCHMARK_TRACK_COPIES"] !== "1";
 const results: Record<string, number> = {};
 async function measure(name: string, action: () => Promise<void>, count = 7) {
    const times: number[] = [];
@@ -146,7 +143,6 @@ try {
    await measure("first audio track change ms", async () => {
       const clip = nextTracks();
       await opening.playback(clip.path);
-      if (!nativeTrackSwitching) await opening.playback(clip.path, clip.tracks[1]!.index);
    });
    const playbackBytes = await readdir(join(openRoot, ".acroclip", "playback"))
       .then((names) => Promise.all(names.map(async (name) => (await stat(join(openRoot, ".acroclip", "playback", name))).size)))
@@ -191,14 +187,7 @@ try {
       categories: [`category-${index % 100}`, `category-${(index + 1) % 100}`],
    }));
    const categoryIds = Array.from({ length: 100 }, (_, index) => `category-${index}`);
-   await measure("category counts previous ms", async () => {
-      const counts = categoryIds.map((id) => clips.filter((clip) => clip.categories.includes(id)).length);
-      assert.equal(
-         counts.reduce((a, b) => a + b, 0),
-         20000
-      );
-   });
-   await measure("category counts indexed ms", async () => {
+   await measure("category counts ms", async () => {
       const summary = summarizeClips(clips);
       assert.equal(
          categoryIds.reduce((sum, id) => sum + (summary.categories.get(id) ?? 0), 0),
@@ -206,15 +195,7 @@ try {
       );
    });
    const folders = Array.from({ length: 5000 }, (_, index) => `Games/folder-${index}`);
-   await measure("folder grouping previous ms", async () => {
-      const children = new Map<string, string[]>();
-      for (const path of folders) {
-         const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-         children.set(parent, [...(children.get(parent) ?? []), path]);
-      }
-      assert.equal(children.get("Games")?.length, folders.length);
-   });
-   await measure("folder grouping indexed ms", async () => {
+   await measure("folder grouping ms", async () => {
       assert.equal(groupFolders(folders).get("Games")?.length, folders.length);
    });
    const output = process.argv[2];

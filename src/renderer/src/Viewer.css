@@ -485,7 +485,7 @@
    width: 39px;
    height: 39px;
    border-radius: 50%;
-   background: var(--surface-hover, #ffffff0d);
+   background: #ffffff0d;
    color: var(--text);
 }
 .player-play-button[data-playing] {

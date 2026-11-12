@@ -58,7 +58,7 @@ async function loadStrip(result: NonNullable<Strip>, thumbnail: string): Promise
 }
 
 /** Which frame of a strip a pointer position shows. Positions run from 0 to 1 across the thumbnail. */
-export function stripFrame(position: number, frames: number): number {
+function stripFrame(position: number, frames: number): number {
    return Math.min(frames - 1, Math.max(0, Math.floor(position * frames)));
 }
 

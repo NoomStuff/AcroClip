@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { advanceMeter } from "./audio-meter";
 import type { MeterReading } from "./audio-meter";
-import { api } from "./desktop";
+import { api, onAudioLevels } from "./desktop";
 export function AudioMeter({
    name,
    sourceId,
@@ -24,12 +24,17 @@ export function AudioMeter({
       if (!visible) return;
       // Meter samples feed the existing animation directly. They do not change
       // React state or rebuild recording controls and source lists.
-      return api.onEvent((event) => {
-         if (event.type === "audio-levels") {
-            const level = captureLevel ? event.levels.capture : event.levels.additional?.[sourceId];
-            if (level !== undefined) target.current = level;
-         } else if (event.type === "audio-monitor" && event.monitorError) target.current = 0;
+      const stopLevels = onAudioLevels((levels) => {
+         const level = captureLevel ? levels.capture : levels.additional?.[sourceId];
+         if (level !== undefined) target.current = level;
       });
+      const stopErrors = api.onEvent((event) => {
+         if (event.type === "audio-monitor" && event.monitorError) target.current = 0;
+      });
+      return () => {
+         stopLevels();
+         stopErrors();
+      };
    }, [sourceId, captureLevel, visible]);
    useEffect(() => {
       const node = meter.current;

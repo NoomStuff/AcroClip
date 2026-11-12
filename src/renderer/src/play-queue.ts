@@ -20,7 +20,7 @@ export interface QueuePosition {
 export const restartThreshold = 3;
 
 /** Every clip in the library's saved sort, for clips opened from outside a library view. */
-export function collectionQueue(clips: readonly Clip[], sort: LibrarySort): PlayQueue {
+function collectionQueue(clips: readonly Clip[], sort: LibrarySort): PlayQueue {
    return {
       ids: selectLibraryClips(clips, { search: "", filter: "all", folderPath: null, sort, applications: new Map() }).map((clip) => clip.id),
       label: "All clips",

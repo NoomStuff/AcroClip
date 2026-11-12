@@ -1,4 +1,7 @@
-/* Shared controls load before screen styles. All styles load eagerly so navigation does not change the cascade. */
+/* Every stylesheet loads here, eagerly and in this order, so navigation never changes the cascade. Shared controls come before screen styles. */
+@import "./MotionList.css";
+@import "./AudioFilters.css";
+@import "./UpdateChip.css";
 @import "./global.css";
 @import "./ui.css";
 @import "./FolderPicker.css";

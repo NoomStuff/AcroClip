@@ -22,6 +22,19 @@ function snapshot(): AppState {
    };
 }
 describe("incremental app state", () => {
+   it("sends recorder reports only when they differ from what the renderer has", () => {
+      const changes = new StateChanges();
+      const state = snapshot();
+      // Before the first snapshot every report goes out, for the renderer to replay.
+      expect(changes.recorder(state.recorder)).toEqual({ type: "recorder", recorder: state.recorder });
+      changes.event(state);
+      expect(changes.recorder({ ...state.recorder })).toBeUndefined();
+      const recording = { ...state.recorder, state: "recording" as const, availableSeconds: 4 };
+      expect(changes.recorder(recording)).toEqual({ type: "recorder", recorder: recording });
+      expect(changes.recorder({ ...recording })).toBeUndefined();
+      // A full snapshot after that has no recorder news either.
+      expect(changes.event({ ...state, recorder: { ...recording } })).toBeUndefined();
+   });
    it("sends a full baseline, suppresses unchanged polls, and retains library references on status updates", () => {
       const changes = new StateChanges();
       const state = snapshot();

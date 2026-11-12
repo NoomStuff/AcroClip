@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Download, FolderOpen, TriangleAlert } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { UpdateState } from "../../shared/types";
-import "./UpdateChip.css";
 import { api } from "./desktop";
 import type { Run } from "./desktop";
 import { updateAction, updateDownloading, updateDownloadLabel } from "./update-action";

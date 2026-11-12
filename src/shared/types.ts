@@ -1,6 +1,6 @@
 import type { AudioFilter } from "./audio-filters";
 import type { ShortcutBindings } from "./shortcuts";
-import type { ViewEvent } from "./stats";
+import type { ViewEvent } from "./stats-log";
 import type { StatsSummary } from "./stats-summary";
 import type { RendererError } from "./diagnostics";
 import type { HistoryParts, PreferenceResetParts, ResetPart } from "./maintenance";
@@ -340,6 +340,8 @@ export interface DesktopAPI {
    openInAttaCut(id: string): Promise<void>;
    attaCutAvailable(): Promise<boolean>;
    dragFile(path: string): void;
+   /** Audio levels are only sent while a level meter is on screen. */
+   showMeters(shown: boolean): void;
    reorderCategory(id: string, beforeId: string | null): Promise<void>;
    /** `compatible` asks for a converted copy after the renderer failed to decode the original. */
    playback(path: string, track?: number | number[], requestId?: string, options?: { compatible?: boolean }): Promise<string>;

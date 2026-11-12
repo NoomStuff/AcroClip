@@ -1,5 +1,4 @@
 import { memo } from "react";
-import { useThumbnailVisibility } from "./useThumbnailVisibility";
 import { useKeyframeScrub } from "./useKeyframeScrub";
 import type { CSSProperties } from "react";
 import { Clapperboard, LoaderCircle, MoreHorizontal, Play, Share2, X } from "lucide-react";
@@ -61,7 +60,6 @@ export const ClipCard = memo(function ClipCard({
    const shareable = clip.shareables.at(-1);
    // Dragging out shares the same file Copy file would.
    const dragPath = defaultClipFile(clip)?.path;
-   const thumbnail = useThumbnailVisibility();
    const scrub = useKeyframeScrub(clip, clip.duration > 0 && !clip.originalMissing && !job);
    return (
       <article
@@ -96,13 +94,11 @@ export const ClipCard = memo(function ClipCard({
             onClick={() => openClip(clip)}
             aria-label={`Open ${clip.name}`}
          >
-            <div className="clip-thumbnail" ref={thumbnail.ref} data-scrubbing={scrub.shown || undefined} data-same-frame={scrub.same || undefined}>
+            <div className="clip-thumbnail" data-scrubbing={scrub.shown || undefined} data-same-frame={scrub.same || undefined}>
                {/* Under the thumbnail, which zooms and fades away to reveal it. */}
                <canvas ref={scrub.canvas} className="clip-scrub" aria-hidden="true" />
                {clip.thumbnail ? (
-                  thumbnail.visible ? (
-                     <img src={clip.thumbnail} alt="" loading="lazy" decoding="async" className={clip.height > clip.width ? "portrait-thumbnail" : undefined} />
-                  ) : null
+                  <img src={clip.thumbnail} alt="" decoding="async" className={clip.height > clip.width ? "portrait-thumbnail" : undefined} />
                ) : (
                   <div className="thumbnail-fallback">
                      <Clapperboard size={34} />

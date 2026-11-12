@@ -387,6 +387,11 @@
    grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-thumbnail-size, 300px), 100%), 1fr));
    gap: 18px;
 }
+/* Stands in for the rows scrolled out of view. */
+.clip-grid-spacer {
+   grid-column: 1 / -1;
+   pointer-events: none;
+}
 .library-scale {
    position: absolute;
    right: calc(var(--library-overlay-right) + 12px);
@@ -575,7 +580,6 @@
 }
 .clip-grid[data-view="list"] .clip-placeholder {
    min-height: 78px;
-   contain-intrinsic-size: auto 78px;
    display: flex;
    align-items: center;
    gap: 16px;
@@ -937,8 +941,6 @@
 }
 
 .clip-placeholder {
-   content-visibility: auto;
-   contain-intrinsic-size: auto 205px;
    min-height: 205px;
    border-radius: 10px;
    background: var(--surface);
@@ -998,8 +1000,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-   .library-skeleton,
-   .source-placeholder {
+   .library-skeleton {
       animation: none;
    }
    .clip-card::before {

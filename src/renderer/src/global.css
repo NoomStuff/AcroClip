@@ -5,7 +5,6 @@
    --radius-control: 8px;
    --radius-panel: 14px;
    --border-control: #ffffff18;
-   --border-hover: #ffffff30;
    --slot-hover: #25232b;
    --row-hover: #1e1d22;
    --focus: #b197fce6;
@@ -255,7 +254,7 @@ progress::-webkit-progress-value {
 }
 
 /* Reserve the track at each scrolling pane's edge, independently of its content padding. */
-:is(.settings-scroll, .settings-nav, .sidebar-scroll, .library-scroll, .viewer-sidebar-scroll, .mixer-scroll, .source-panel, .dialog-panel, .onboarding-body) {
+:is(.settings-scroll, .settings-nav, .sidebar-scroll, .library-scroll, .viewer-sidebar-scroll, .mixer-scroll, .source-panel, .dialog-panel) {
    scrollbar-gutter: stable;
    min-height: 0;
    scroll-padding-block: 8px;

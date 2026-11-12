@@ -93,7 +93,10 @@ test("incremental updates preserve large libraries, meter routing, visibility an
       await publish({ type: "state-patch", patch: { clips: state.clips, categories: state.categories } });
       await expect(page.locator(".clip-card")).toHaveCount(0);
       await page.getByRole("button", { name: "Library", exact: true }).click();
-      await expect(page.locator(".clip-card")).toHaveCount(1000);
+      // The library holds every clip, and mounts only the rows near the viewport.
+      await expect(page.locator(".library-count")).toContainText("1000 clips");
+      await expect(page.locator(".clip-card").first()).toBeVisible();
+      expect(await page.locator(".clip-card").count()).toBeLessThan(120);
       await expect(page.getByRole("button", { name: /^Saved\s*500$/ })).toBeVisible();
       await page.getByRole("textbox", { name: "Search clips", exact: true }).fill("Moment 999");
       await expect(page.locator(".clip-card")).toHaveCount(1);

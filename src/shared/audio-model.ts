@@ -1,6 +1,6 @@
 import type { AdditionalAudioSource, Preferences } from "./types";
 const sourceBase = { deviceId: "", sourceId: "", executable: "", volume: 1, muted: false, includeInMaster: false, filters: [] };
-export function isDefaultMicrophone(source: Pick<AdditionalAudioSource, "id" | "kind">): boolean {
+function isDefaultMicrophone(source: Pick<AdditionalAudioSource, "id" | "kind">): boolean {
    return /^microphone-default(?:-\d+)?$/.test(source.id) && source.kind === "input";
 }
 export function normalizeMicrophone(source: AdditionalAudioSource): AdditionalAudioSource {

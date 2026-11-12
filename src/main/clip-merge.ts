@@ -9,13 +9,13 @@ import type { MediaInfo, MediaOptions } from "./media";
  * A merge keeps the older clip up to the newer clip's first packet in each
  * stream and the whole newer clip after it. Nothing is decoded or encoded.
  */
-export interface ListedPacket {
+interface ListedPacket {
    dts: number;
    duration: number;
    size: number;
    hash: string;
 }
-export interface ListedStream {
+interface ListedStream {
    index: number;
    kind: string;
    timeBase: number;
@@ -218,7 +218,7 @@ export function verifyMerged(listing: PacketListing, plan: Extract<MergePlan, { 
    return null;
 }
 
-export async function listPackets(path: string, options: MediaOptions = {}): Promise<PacketListing> {
+async function listPackets(path: string, options: MediaOptions = {}): Promise<PacketListing> {
    const text = await runMedia("ffmpeg", [...ffmpegBase, "-copyts", "-i", path, "-map", "0", "-c", "copy", "-f", "framehash", "-hash", "md5", "-"], {
       belowNormal: true,
       ...options,

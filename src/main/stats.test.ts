@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StatsLog } from "./stats";
-import { parseStatsLog, statsFileName, watchedBuckets } from "../shared/stats";
+import { statsFileName, watchedBuckets } from "../shared/stats";
+import { parseStatsLog } from "../shared/stats-log";
 
 const folders: string[] = [];
 afterEach(async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultPreferences } from "./defaults";
-import { factoryResetDetail, preferenceResetSchema, recordingSetupKeys, resetPreferenceGroups } from "./maintenance";
+import { factoryResetDetail, recordingSetupKeys, resetPreferenceGroups } from "./maintenance";
+import { preferenceResetSchema } from "./validation";
 import type { Preferences } from "./types";
 
 const customized: Preferences = {

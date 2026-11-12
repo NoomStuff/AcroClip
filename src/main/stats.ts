@@ -1,7 +1,8 @@
 import { appendFile, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { parseStatsLog, statsEventSchema, statsFileName, statsVersion } from "../shared/stats";
-import type { StatsEvent, StatsEventInput } from "../shared/stats";
+import { statsFileName, statsVersion } from "../shared/stats";
+import { parseStatsLog, statsEventSchema } from "../shared/stats-log";
+import type { StatsEvent, StatsEventInput } from "../shared/stats-log";
 
 export interface StatsOptions {
    /** The open collection, or "" while none is open. */
