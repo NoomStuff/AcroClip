@@ -42,6 +42,7 @@
    "build": {
       "appId": "dev.acroclip.app",
       "productName": "AcroClip",
+      "afterPack": "scripts/after-pack.cjs",
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "directories": {
          "output": "release"

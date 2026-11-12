@@ -37,6 +37,7 @@ import type { ResetPart } from "../shared/maintenance";
 import { loudnessEnvelope, probe } from "./media";
 import { BACKGROUND_CHECK_INTERVAL, Updates } from "./updates";
 import { testUpdateServer } from "./update-manager";
+import { fadeForExit, launcherPath, releaseSplash } from "./splash";
 import { isWaylandSession } from "./linux-session";
 import { linuxDesktopIdentity, linuxStartup, linuxDesktopName, xdgDirectory } from "./startup";
 import { pendingExitDecision } from "./lifecycle";
@@ -674,9 +675,20 @@ function createWindow() {
       });
    }
    if (process.platform === "win32") {
-      mainWindow.setAppDetails({ appId: windowsAppId(), appIconPath: process.execPath, appIconIndex: 0 });
+      // Taskbar relaunches go through the launcher, so they show the splash too.
+      mainWindow.setAppDetails({
+         appId: windowsAppId(),
+         appIconPath: process.execPath,
+         appIconIndex: 0,
+         relaunchDisplayName: "AcroClip",
+         relaunchCommand: isPackagedApp() ? `"${launcherPath()}"` : `"${process.execPath}" "${app.getAppPath()}"`,
+      });
    }
-   mainWindow.once("ready-to-show", () => mainWindow?.show());
+   mainWindow.once("ready-to-show", () => {
+      mainWindow?.show();
+      // The launcher's native splash gives way to the app's own startup screen.
+      releaseSplash();
+   });
    mainWindow.webContents.on("did-start-loading", () => stateChanges.reset());
    const visibilityChanged = () => {
       const visible = windowShown();
@@ -856,7 +868,7 @@ async function saveClip(trigger: SaveTrigger) {
 }
 async function applyStartup(enabled: boolean) {
    if (process.env["ACROCLIP_TEST"] === "1") return;
-   const executable = process.env["PORTABLE_EXECUTABLE_FILE"] ?? process.env["APPIMAGE"] ?? app.getPath("exe");
+   const executable = process.env["PORTABLE_EXECUTABLE_FILE"] ?? process.env["APPIMAGE"] ?? launcherPath();
    const args = isPackagedApp() ? [] : [app.getAppPath()];
    if (process.platform === "linux")
       await linuxStartup(enabled, xdgDirectory(process.env["XDG_CONFIG_HOME"], join(app.getPath("home"), ".config")), executable, args);
@@ -866,6 +878,13 @@ interface ExitOptions {
    /** The user asked to restart into an update: only destructive choices may still prompt. */
    update?: boolean;
    progress?: (message: string) => void;
+}
+/** Closing feels instant: a window with nothing left to finish hides at once, otherwise it fades to a spinner. */
+let restoreExitFade = () => {};
+function exitFeedback(work: boolean) {
+   if (!mainWindow || mainWindow.isDestroyed()) return;
+   if (work) void fadeForExit(mainWindow).then((restore) => (restoreExitFade = restore));
+   else mainWindow.hide();
 }
 async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
    if (exiting) return exiting;
@@ -886,6 +905,7 @@ async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
          // Restarting into an update is already the user's answer to "exit?". Clip
          // saves finish first, so no requested moment is lost to the installer.
          if (saves) options.progress?.(`Finishing ${saves === 1 ? "clip save" : `${saves} clip saves`}`);
+         exitFeedback(saves > 0);
          await recorder.close();
          phase("closed the recorder");
       } else if (saves || collections.pendingJobs.length) {
@@ -919,10 +939,12 @@ async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
                if (confirm.response !== 1) return false;
             }
             for (const job of collections.pendingJobs) collections.cancelJob(job.id);
+            exitFeedback(true);
             await recorder.close({ cancel: true });
             await collections.jobsSettled();
          } else {
             options.progress?.("Finishing work");
+            exitFeedback(true);
             await recorder.stop();
             await recorder.close();
             await collections.jobsSettled();
@@ -940,6 +962,7 @@ async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
             });
             if (result.response !== 0) return false;
          }
+         exitFeedback(false);
          await recorder.close();
       }
       return true;
@@ -956,9 +979,12 @@ async function prepareUpdateExit(progress: (message: string) => void): Promise<b
    // ask first, because finishing or cancelling them is the user's decision.
    if (!collections.pendingJobs.length) mainWindow?.hide();
    if (!(await prepareExit({ update: true, progress }))) {
+      restoreExitFade();
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
       return false;
    }
+   // The update splash takes the window's place while the installer runs.
+   mainWindow?.hide();
    // before-quit must not run the exit flow again while the installer waits for this process.
    quitting = true;
    closingRequested = true;
@@ -1019,6 +1045,8 @@ async function requestExit() {
          app.quit();
       }
    } catch (error) {
+      restoreExitFade();
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
       notice(`AcroClip could not finish exiting: ${errorMessage(error)}`, true);
    }
 }

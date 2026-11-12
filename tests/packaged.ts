@@ -3,6 +3,7 @@ import { _electron as electron, chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawn, execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { copyFile, mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
@@ -84,8 +85,11 @@ try {
          if (launcher.exitCode === null) launcher.kill();
       };
    } else {
+      // Playwright attaches to the Electron runtime. On Windows the product exe is the splash
+      // launcher in front of it, which does not pass the runtime's debugger output on.
+      const runtime = join(dirname(executable), "AcroClip-app.exe");
       const application = await electron.launch({
-         executablePath: executable,
+         executablePath: !linux && existsSync(runtime) ? runtime : executable,
          args: linux ? ["--no-sandbox", "--disable-gpu-sandbox"] : ["--disable-gpu-sandbox"],
          env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile, ACROCLIP_COLLECTION: collection },
       });

@@ -8,6 +8,12 @@ export default ts.config(
    js.configs.recommended,
    ...ts.configs.recommended,
    {
+      // The packaging hook is shared with AttaCut and Deduup, and electron-builder loads it with require.
+      files: ["scripts/after-pack.cjs"],
+      languageOptions: { sourceType: "commonjs", globals: { require: "readonly", module: "writable", __dirname: "readonly", console: "readonly" } },
+      rules: { "@typescript-eslint/no-require-imports": "off" },
+   },
+   {
       files: ["**/*.{ts,tsx}"],
       rules: { "@typescript-eslint/consistent-type-imports": "error", "@typescript-eslint/no-explicit-any": "error" },
    },

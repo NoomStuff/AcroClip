@@ -310,7 +310,8 @@ async function verify({ scope }: Variant): Promise<void> {
          })
       );
       application = await electron.launch({
-         executablePath: executable,
+         // Playwright attaches to the Electron runtime behind the renamed splash launcher.
+         executablePath: existsSync(join(install, "AcroClip-app.exe")) ? join(install, "AcroClip-app.exe") : executable,
          args: ["--disable-gpu-sandbox"],
          env: {
             ...process.env,
