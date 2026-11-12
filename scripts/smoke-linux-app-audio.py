@@ -105,14 +105,21 @@ try:
     fixture=launch([str(fixture_binary),title,"997"],"selected")
     unrelated=launch(["ffplay","-v","error","-f","lavfi","-i","sine=frequency=1234:sample_rate=48000","-nodisp"],"unrelated")
     candidate=None
-    for attempt in range(40):
+    current={"windows":[]}
+    # A loaded runner can take several seconds to map the fixture window.
+    deadline=time.monotonic()+20
+    while time.monotonic()<deadline and fixture.poll() is None:
         previous=len(events)
         command(dict(action="candidates"))
         current=next(event for event in events[previous:] if event["event"]=="candidates")
         candidate=next((v for v in current["windows"] if v["name"]==title),None)
         if candidate: break
         time.sleep(.2)
-    assert candidate and candidate["pid"]==fixture.pid, candidate
+    if not candidate or candidate["pid"]!=fixture.pid:
+        logs[-2].flush()
+        fixture_log=(folder/"selected.log").read_text(errors="replace")[-2000:]
+        raise AssertionError(f"The audio fixture window was not offered for capture. Fixture exit: {fixture.poll()}. "
+            f"Offered windows: {[window['name'] for window in current['windows']]}. Fixture log: {fixture_log!r}")
     # Establish that every real producer is audible before testing isolation.
     # Otherwise a broken producer can masquerade as a capture regression.
     deadline = time.monotonic() + 10
