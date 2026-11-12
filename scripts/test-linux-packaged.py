@@ -26,7 +26,9 @@ root = pathlib.Path.cwd()
 # Exercise the source-matched Linux app separately before testing the actual
 # AppImage payload. Both checks use private display, audio and profile state.
 print("Verifying Linux UI and native capture before the independent AppImage check", flush=True)
-subprocess.run([sys.executable, str(root / "scripts/run-linux-ui.py"), bun, "x", "playwright", "test"],
+# Only the Linux-specific specs: the Windows app checks already run every platform-neutral
+# flow, and repeating them under Xvfb on slower runners only added timing failures.
+subprocess.run([sys.executable, str(root / "scripts/run-linux-ui.py"), bun, "x", "playwright", "test", "linux-native", "linux-desktop"],
                cwd=root, env=dict(os.environ, ACROCLIP_NATIVE_UI="1"), check=True)
 evidence = root / ".cache/linux-packaged" / str(uuid.uuid4())
 evidence.mkdir(parents=True)
