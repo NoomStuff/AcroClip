@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { hashFile } from "./release-sources";
@@ -33,14 +33,31 @@ const run = (command: string, args: string[]) => {
    if (result.status !== 0) throw new Error(`${command} failed: ${result.stderr || result.stdout}`);
    return result.stdout;
 };
+// GitHub's git transport sometimes drops a clone mid-handshake ("expected flush after ref
+// listing"). Retry the network step, starting from an empty folder each time.
+const fetchWithRetry = (folder: string, step: () => void) => {
+   for (let attempt = 1; ; attempt++) {
+      try {
+         step();
+         return;
+      } catch (error) {
+         if (attempt === 3) throw error;
+         console.warn(`Retrying after a failed download (${attempt} of 3): ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
+         rmSync(folder, { recursive: true, force: true });
+         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attempt * 15_000);
+      }
+   }
+};
 await mkdir(folder, { recursive: true });
 if (!existsSync(path.join(source, "libobs/obs.h")))
-   run("git", ["clone", "--depth", "1", "--branch", "32.2.2", "https://github.com/obsproject/obs-studio.git", source]);
+   fetchWithRetry(source, () => run("git", ["clone", "--depth", "1", "--branch", "32.2.2", "https://github.com/obsproject/obs-studio.git", source]));
 if (run("git", ["-C", source, "rev-parse", "HEAD"]).trim() !== commit) throw new Error("OBS headers differ from the pinned source commit.");
 // These header-only SIMD adapters match OBS's pinned macOS dependency recipe.
 if (!existsSync(path.join(simde, "simde/x86/sse2.h"))) {
-   run("git", ["init", simde]);
-   run("git", ["-C", simde, "fetch", "--depth", "1", "https://github.com/simd-everywhere/simde.git", simdeCommit]);
+   fetchWithRetry(simde, () => {
+      run("git", ["init", simde]);
+      run("git", ["-C", simde, "fetch", "--depth", "1", "https://github.com/simd-everywhere/simde.git", simdeCommit]);
+   });
    run("git", ["-C", simde, "checkout", "--detach", "FETCH_HEAD"]);
 }
 if (run("git", ["-C", simde, "rev-parse", "HEAD"]).trim() !== simdeCommit) throw new Error("SIMDe headers differ from the pinned OBS dependency.");

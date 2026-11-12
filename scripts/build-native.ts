@@ -1,5 +1,5 @@
 import { copyFile, cp, mkdir, readFile, rm, writeFile, readdir, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -12,6 +12,21 @@ const runtime = path.join(root, "resources", "recorder");
 const source = path.join(cache, "obs-source");
 const output = path.join(cache, "native-build");
 const psLiteral = (value: string): string => `'${value.replaceAll("'", "''")}'`;
+// GitHub's git transport sometimes drops a clone mid-handshake ("expected flush after ref
+// listing"). Retry the network step, starting from an empty folder each time.
+const fetchWithRetry = (folder: string, step: () => void) => {
+   for (let attempt = 1; ; attempt++) {
+      try {
+         step();
+         return;
+      } catch (error) {
+         if (attempt === 3) throw error;
+         console.warn(`Retrying after a failed download (${attempt} of 3): ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
+         rmSync(folder, { recursive: true, force: true });
+         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attempt * 15_000);
+      }
+   }
+};
 const run = (command: string, args: string[]): string => {
    const result = spawnSync(command, args, { encoding: "utf8", windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
    if (result.status !== 0) throw new Error(`${command} failed\n${result.stdout}\n${result.stderr}`);
@@ -43,7 +58,7 @@ await mkdir(cache, { recursive: true });
 await mkdir(path.join(root, "native", "generated"), { recursive: true });
 await mkdir(path.join(root, "native", "vendor"), { recursive: true });
 if (!existsSync(path.join(source, "libobs", "obs.h")))
-   run("git", ["clone", "--depth", "1", "--branch", version, "https://github.com/obsproject/obs-studio.git", source]);
+   fetchWithRetry(source, () => run("git", ["clone", "--depth", "1", "--branch", version, "https://github.com/obsproject/obs-studio.git", source]));
 const tag = run("git", ["-C", source, "describe", "--tags", "--exact-match"]).trim();
 if (tag !== version) throw new Error(`OBS headers must match ${version}, found ${tag}`);
 if (run("git", ["-C", source, "rev-parse", "HEAD"]).trim() !== "ba2f32bdf791005443988a4955e963663e16b1ed")
