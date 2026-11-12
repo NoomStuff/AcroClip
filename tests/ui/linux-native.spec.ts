@@ -145,7 +145,9 @@ test("Linux recording saves the requested footage during a first library scan", 
       "1",
       seed,
    ]);
-   for (let index = 0; index < 600; index++) await copyFile(seed, join(collection, `Imported ${index}.mp4`));
+   // Large enough that the scan, at one file at a time during capture, outlasts both saves on a fast runner.
+   const imported = 2000;
+   for (let index = 0; index < imported; index++) await copyFile(seed, join(collection, `Imported ${index}.mp4`));
    // Recordings are MP4 too, so tell them apart from the imported fixtures.
    const recorded = (file: string) => file.endsWith(".mp4") && !file.endsWith(".saving.mp4") && !basename(file).startsWith("Imported ");
    await writeFile(
@@ -206,7 +208,7 @@ test("Linux recording saves the requested footage during a first library scan", 
          .toBe(2);
       expect(["loading", "refreshing"]).toContain((await page.evaluate(() => window.acroClip.state())).collectionStatus.phase);
       await page.getByRole("button", { name: "Stop capturing", exact: true }).click();
-      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length, { timeout: 120000 }).toBe(602);
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).clips.length, { timeout: 120000 }).toBe(imported + 2);
       const file = (await readdir(collection, { recursive: true })).find(recorded)!;
       await promisify(execFile)(mediaTool("ffmpeg"), ["-v", "error", "-i", join(collection, file), "-f", "null", "-"]);
    } finally {
