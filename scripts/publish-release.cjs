@@ -5,7 +5,19 @@
 
 const sourceNote = "Source code for the GPL and LGPL components bundled with AcroClip is in the AcroClip-sources files, one per platform.";
 
-module.exports = async function publish({ github, context, core, directory = "candidate" }) {
+/** The included commits, then the source note. Tests pass `notes` instead of reading GitHub. */
+async function releaseBody(github, repo, tag, commit, notes) {
+   if (notes === undefined) {
+      const { pathToFileURL } = await import("node:url");
+      const { join } = await import("node:path");
+      // module.path is this script's folder; the github-script runner loads it with require.
+      const { releaseNotes } = await import(pathToFileURL(join(module.path, "release-notes.mjs")).href);
+      notes = await releaseNotes({ tag, commit, api: async (path) => (await github.request(`GET /repos/${repo.owner}/${repo.repo}/${path}`)).data });
+   }
+   return [notes, sourceNote].filter(Boolean).join("\n\n");
+}
+
+module.exports = async function publish({ github, context, core, directory = "candidate", notes }) {
    const fs = await import("node:fs/promises");
    const crypto = await import("node:crypto");
    const repo = context.repo;
@@ -63,7 +75,7 @@ module.exports = async function publish({ github, context, core, directory = "ca
          tag_name: tag,
          target_commitish: manifest.commit,
          name: `AcroClip ${manifest.version}`,
-         body: sourceNote,
+         body: await releaseBody(github, repo, tag, manifest.commit, notes),
          draft: true,
          prerelease: false,
          make_latest: "false",

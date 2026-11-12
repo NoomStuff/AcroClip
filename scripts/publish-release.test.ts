@@ -105,7 +105,13 @@ async function fixture() {
       rest: { repos, git },
       paginate: async <T, P>(method: (params: P) => Promise<{ data: T[] }>, params: P) => (await method(params)).data,
    };
-   const args = { github, context: { repo: { owner: "NoomStuff", repo: "AcroClip" }, sha, runId: 123 }, core: { info: vi.fn() }, directory };
+   const args = {
+      github,
+      context: { repo: { owner: "NoomStuff", repo: "AcroClip" }, sha, runId: 123 },
+      core: { info: vi.fn() },
+      directory,
+      notes: "- Fix the thing (aaaaaaa)",
+   };
    return { args, repos, releases, refs, assets, sha, directory };
 }
 
@@ -115,7 +121,9 @@ it("publishes downloads, feeds and sources as one release with no evidence files
    expect(refs.get("tags/v0.3.1")).toBe(sha);
    expect(releases).toHaveLength(1);
    expect(releases[0]).toMatchObject({ name: "AcroClip 0.3.1", prerelease: false, draft: false, target_commitish: sha });
-   expect(releases[0]!.body).toContain("AcroClip-sources");
+   expect(releases[0]!.body).toBe(
+      "- Fix the thing (aaaaaaa)\n\nSource code for the GPL and LGPL components bundled with AcroClip is in the AcroClip-sources files, one per platform."
+   );
    expect(
       assets
          .get(1)!
