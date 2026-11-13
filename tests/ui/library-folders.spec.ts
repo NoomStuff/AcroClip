@@ -90,7 +90,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
                const action = rect(".collection-home .header-actions button");
                const title = rect(".collection-home .context-header-title");
                const category = rect(".sidebar-group-title .icon-button");
-               const count = rect(".sidebar-scroll > .sidebar-item > .count");
+               const count = rect(".sidebar-scroll > .sidebar-row > .sidebar-item > .count");
                return Math.max(
                   Math.abs(action.y + action.height / 2 - title.y - title.height / 2),
                   Math.abs(action.x + action.width / 2 - category.x - category.width / 2),
@@ -148,7 +148,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await renameFolder.getByRole("textbox").fill("Sorted");
       await renameFolder.getByRole("button", { name: "Rename", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Sorted", exact: true })).toBeVisible();
-      await page.locator(".sidebar-scroll > .sidebar-item").first().click();
+      await page.locator(".sidebar-scroll > .sidebar-row > .sidebar-item").first().click();
       await expect
          .poll(() =>
             page

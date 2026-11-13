@@ -76,7 +76,8 @@ test("Auto game management searches the saved catalogue and persists application
       await expect(page.locator(".game-list .motion-list-item:not([data-exiting]) .game-entry").first()).toContainText("My local game");
       await expect(page.locator(".game-category")).toHaveText(["Added games"]);
       await page.locator(".rail").getByRole("button", { name: "Library", exact: true }).click();
-      const addedApplication = page.locator(".application-filter").filter({ hasText: "My local game" });
+      // The row carries the empty state. Its tab is the application filter.
+      const addedApplication = page.locator(".application-row").filter({ hasText: "My local game" });
       await expect(addedApplication).toBeVisible();
       await expect(addedApplication).toHaveAttribute("data-empty", "true");
       await addedApplication.click();
