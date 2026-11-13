@@ -53,6 +53,8 @@ test("cached loading states, enumeration retry, and interrupted library movement
          app.evaluate((_electron, snapshot) => {
             (globalThis as typeof globalThis & { publishFixture?: (snapshot: unknown) => void }).publishFixture?.(snapshot);
          }, value);
+      // Wide enough for all six clips to sit in the mounted rows, whatever the runner's screen.
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(1380, 900));
       await page.getByRole("button", { name: "Library", exact: true }).click();
       await expect(page.locator(".clip-card")).toHaveCount(6);
       await page.getByRole("button", { name: "Collection actions", exact: true }).click();

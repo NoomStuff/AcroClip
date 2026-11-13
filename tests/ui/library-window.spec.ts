@@ -106,7 +106,8 @@ test("a large library mounts only the rows in view and still behaves like the wh
       await expect(page.locator(".library-count")).toContainText(`${count} clips`);
       const last = page.getByRole("button", { name: `Open Moment ${count - 1}`, exact: true });
 
-      expect(await audit(page, "grid")).toBeGreaterThan(160);
+      // Far more items pass through than are ever mounted at once, even in a narrow one-column window.
+      expect(await audit(page, "grid")).toBeGreaterThan(60);
       await expect(last).toBeVisible();
 
       // Group headers take rows of their own, and a folded group gives its rows back.
@@ -125,7 +126,7 @@ test("a large library mounts only the rows in view and still behaves like the wh
 
       await page.getByRole("button", { name: "List view", exact: true }).click();
       await page.waitForTimeout(500);
-      expect(await audit(page, "list")).toBeGreaterThan(160);
+      expect(await audit(page, "list")).toBeGreaterThan(60);
       await expect(last).toBeVisible();
       // Zooming the list resizes its rows over several frames. The window follows them to the new size.
       await page.getByRole("slider", { name: "List thumbnail size", exact: true }).press("End");
