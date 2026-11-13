@@ -92,3 +92,29 @@ export function rowsInView(offsets: readonly number[], top: number, bottom: numb
    const first = rowAt(Math.max(0, top));
    return { first, end: Math.max(first + 1, rowAt(Math.max(0, bottom)) + 1) };
 }
+
+/** Where an item's slot starts, relative to the grid's top left corner. */
+export interface GridPlace {
+   left: number;
+   top: number;
+}
+
+/**
+ * Looks up where each item's slot sits in one layout, mounted or not. `columns` holds where each
+ * column starts. The lookup is built on first use, so a layout nobody asks about costs nothing.
+ */
+export function gridPlaces(keyAt: (index: number) => string, rows: readonly GridRow[], offsets: readonly number[], columns: readonly number[]) {
+   let places: Map<string, GridPlace> | undefined;
+   return (key: string): GridPlace | undefined => {
+      if (!places) {
+         places = new Map();
+         rows.forEach((row, index) => {
+            for (let item = row.start; item < row.end; item++) {
+               const left = columns[item - row.start];
+               if (left !== undefined) places!.set(keyAt(item), { left, top: offsets[index]! });
+            }
+         });
+      }
+      return places.get(key);
+   };
+}

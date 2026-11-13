@@ -75,6 +75,7 @@ type LibraryItem =
    | { type: "group"; key: string; group: ClipGroup; open: boolean }
    | { type: "clip"; key: string; clip: Clip }
    | { type: "pending"; key: string };
+const itemKey = (item: LibraryItem) => item.key;
 const itemKind = (item: LibraryItem): GridItemKind => (item.type === "group" ? "header" : item.type === "pending" ? "placeholder" : "card");
 
 export function Library({
@@ -889,6 +890,7 @@ export function Library({
                      visible={visible}
                      items={items}
                      kind={itemKind}
+                     itemKey={itemKey}
                      render={renderItem}
                      natural={natural}
                      onSettled={settle}

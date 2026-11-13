@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gridRows, measuredSizes, rowOffsets, rowsInView } from "./grid-window";
+import { gridPlaces, gridRows, measuredSizes, rowOffsets, rowsInView } from "./grid-window";
 import type { GridItemKind, GridSizes } from "./grid-window";
 
 const sizes: GridSizes = { columns: 3, gap: 10, card: 100, placeholder: 120, header: 34, firstHeader: 20 };
@@ -34,5 +34,15 @@ describe("library grid window", () => {
       expect(rowsInView(offsets, -500, -100)).toEqual({ first: 0, end: 1 });
       expect(rowsInView(offsets, 5000, 9000)).toEqual({ first: 9, end: 10 });
       expect(rowsInView([0], 0, 100)).toEqual({ first: 0, end: 0 });
+   });
+   it("finds the slot of every item, mounted or not", () => {
+      const rows = gridRows(kinds("hcccch"), 3);
+      const keys = ["h1", "a", "b", "c", "d", "h2"];
+      const place = gridPlaces((index) => keys[index]!, rows, rowOffsets(rows, sizes), [0, 110, 220]);
+      expect(place("h1")).toEqual({ left: 0, top: 0 });
+      expect(place("c")).toEqual({ left: 220, top: 30 });
+      expect(place("d")).toEqual({ left: 0, top: 140 });
+      expect(place("h2")).toEqual({ left: 0, top: 250 });
+      expect(place("missing")).toBeUndefined();
    });
 });

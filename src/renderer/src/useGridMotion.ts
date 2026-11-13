@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
 import type { RefObject } from "react";
 import { createGridMotion, paintGridCard, paintGridThumbnail } from "./grid-motion";
+import type { GridPlace } from "./grid-window";
 
 const offscreen = (rect: DOMRect) => rect.bottom < 0 || rect.top > innerHeight;
 
@@ -42,6 +43,8 @@ export function useGridMotion<T extends HTMLElement>(
    const previousNavigation = useRef(navigationKey);
    // The signature the mounted cards were last animated for.
    const applied = useRef<unknown>(undefined);
+   // Where every item's slot sat at the last settle, mounted or not.
+   const places = useRef<((key: string) => GridPlace | undefined) | null>(null);
    const view = useRef({ signature, viewKeys, navigationKey, layoutKey, flowResize });
    view.current = { signature, viewKeys, navigationKey, layoutKey, flowResize };
    const releaseRows = useCallback(() => {
@@ -76,143 +79,157 @@ export function useGridMotion<T extends HTMLElement>(
       measured.current.clear();
       applied.current = undefined;
    }, [root]);
-   const settle = useCallback(() => {
-      const grid = root.current;
-      if (!grid) return;
-      if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
-         clear();
-         return;
-      }
-      const { signature, viewKeys, navigationKey, layoutKey, flowResize } = view.current;
-      if (
-         applied.current === signature &&
-         previousLayout.current === layoutKey &&
-         previousNavigation.current === navigationKey &&
-         previousFlow.current === flowResize
-      ) {
-         // Scrolling changed which cards are mounted. Note where the new ones sit, so the next change can move them.
-         const cards = mountedCards(grid);
-         const active = new Set(cards.map((card) => card.node));
-         const arrived = cards.filter((card) => !measured.current.has(card.node) && known.current.has(card.key));
-         let left = false;
-         for (const node of measured.current) {
-            if (active.has(node)) continue;
-            measured.current.delete(node);
-            left = true;
+   const settle = useCallback(
+      (place: (key: string) => GridPlace | undefined) => {
+         const grid = root.current;
+         if (!grid) return;
+         const previousPlace = places.current;
+         places.current = place;
+         if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            clear();
+            return;
          }
-         if (!arrived.length && !left) return;
-         const bounds = grid.getBoundingClientRect();
-         for (const { node } of arrived) {
-            const rect = node.getBoundingClientRect();
-            motion.current?.to(node, { left: rect.left - bounds.left, top: rect.top - bounds.top, width: rect.width, height: rect.height }, false, true);
-            measured.current.add(node);
+         const { signature, viewKeys, navigationKey, layoutKey, flowResize } = view.current;
+         if (
+            applied.current === signature &&
+            previousLayout.current === layoutKey &&
+            previousNavigation.current === navigationKey &&
+            previousFlow.current === flowResize
+         ) {
+            // Scrolling changed which cards are mounted. Note where the new ones sit, so the next change can move them.
+            const cards = mountedCards(grid);
+            const active = new Set(cards.map((card) => card.node));
+            const arrived = cards.filter((card) => !measured.current.has(card.node) && known.current.has(card.key));
+            let left = false;
+            for (const node of measured.current) {
+               if (active.has(node)) continue;
+               measured.current.delete(node);
+               left = true;
+            }
+            if (!arrived.length && !left) return;
+            const bounds = grid.getBoundingClientRect();
+            for (const { node } of arrived) {
+               const rect = node.getBoundingClientRect();
+               motion.current?.to(node, { left: rect.left - bounds.left, top: rect.top - bounds.top, width: rect.width, height: rect.height }, false, true);
+               measured.current.add(node);
+            }
+            motion.current?.retain(active);
+            return;
          }
-         motion.current?.retain(active);
-         return;
-      }
-      applied.current = signature;
-      const layoutChanged = previousLayout.current !== layoutKey;
-      const directFlow = !layoutChanged && (flowResize || previousFlow.current);
-      previousFlow.current = flowResize;
-      previousLayout.current = layoutKey;
-      const navigated = previousNavigation.current !== navigationKey;
-      previousNavigation.current = navigationKey;
-      if (navigated) {
-         clear();
          applied.current = signature;
-      }
-      const controller = (motion.current ??= createGridMotion<HTMLElement>(
-         (node, offset, current, target) => paintGridCard(node.style, offset, current, target),
-         { request: (callback) => requestAnimationFrame(callback), cancel: (frame) => cancelAnimationFrame(frame) },
-         releaseRows
-      ));
-      const images = (thumbnailMotion.current ??= createGridMotion<HTMLElement>(
-         (node, _offset, current, target) => paintGridThumbnail(node.style, current, target),
-         { request: (callback) => requestAnimationFrame(callback), cancel: (frame) => cancelAnimationFrame(frame) },
-         releaseRows
-      ));
-      if (directFlow) {
-         controller.clear();
-         images.clear();
-      }
-      // Restore natural layout for measurement. Reapply the current visual sizes before paint.
-      grid.style.removeProperty("grid-template-rows");
-      for (const node of measured.current) {
-         node.style.removeProperty("width");
-         node.style.removeProperty("height");
-         node.style.removeProperty("transform");
-         const thumbnail = node.querySelector<HTMLElement>(".clip-thumbnail");
-         if (thumbnail) paintGridThumbnail(thumbnail.style);
-      }
-      measured.current.clear();
-      const rows = getComputedStyle(grid).gridTemplateRows;
-      const bounds = grid.getBoundingClientRect();
-      const active = new Set<HTMLElement>();
-      const imageTargets: { node: HTMLElement; width: number; height: number; immediate: boolean }[] = [];
-      const targets: { node: HTMLElement; left: number; top: number; width: number; height: number; enter: boolean; immediate: boolean }[] = [];
-      // Read all layout positions before writing any compensating transforms.
-      for (const { node, key } of mountedCards(grid)) {
-         active.add(node);
-         measured.current.add(node);
-         const rect = node.getBoundingClientRect();
-         const hidden = offscreen(rect);
-         // Offscreen thumbnails never animate, so skip measuring them.
-         const thumbnail = hidden ? null : node.querySelector<HTMLElement>(".clip-thumbnail");
-         if (thumbnail) {
-            const image = thumbnail.getBoundingClientRect();
-            imageTargets.push({ node: thumbnail, width: image.width, height: image.height, immediate: directFlow });
+         const layoutChanged = previousLayout.current !== layoutKey;
+         const directFlow = !layoutChanged && (flowResize || previousFlow.current);
+         previousFlow.current = flowResize;
+         previousLayout.current = layoutKey;
+         const navigated = previousNavigation.current !== navigationKey;
+         previousNavigation.current = navigationKey;
+         if (navigated) {
+            clear();
+            applied.current = signature;
          }
-         targets.push({
-            node,
-            left: rect.left - bounds.left,
-            top: rect.top - bounds.top,
-            width: rect.width,
-            height: rect.height,
-            enter: !known.current.has(key) && (navigated || known.current.size > 0),
-            immediate: directFlow || hidden,
-         });
-      }
-      controller.retain(active);
-      for (const [node, animation] of appearances.current) {
-         if (grid.contains(node)) continue;
-         animation.cancel();
-         appearances.current.delete(node);
-      }
-      for (const { node, left, top, width, height, enter, immediate } of targets) {
-         controller.to(node, { left, top, width, height }, enter, immediate);
-         if (!enter || immediate) continue;
-         const animation = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: "cubic-bezier(.22,.8,.3,1)" });
-         appearances.current.set(node, animation);
-         animation.onfinish = () => {
-            if (appearances.current.get(node) === animation) appearances.current.delete(node);
-         };
-      }
-      images.retain(new Set(imageTargets.map((target) => target.node)));
-      const animateImages = layoutChanged || images.active;
-      for (const { node, width, height, immediate } of imageTargets) {
-         const captured = layoutChanged ? capturedThumbnails.current.get(node) : undefined;
-         if (captured) images.to(node, { left: 0, top: 0, ...captured }, false, true);
-         images.to(node, { left: 0, top: 0, width, height }, false, immediate || !animateImages);
-      }
-      capturedThumbnails.current.clear();
-      if (layoutChanged) {
-         for (const target of targets) {
-            if (target.immediate) continue;
-            for (const node of target.node.querySelectorAll<HTMLElement>(".clip-card-info,.clip-file-facts")) {
-               const previous = appearances.current.get(node);
-               previous?.cancel();
-               const animation = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, delay: 40, fill: "backwards" });
-               appearances.current.set(node, animation);
-               animation.onfinish = () => {
-                  if (appearances.current.get(node) === animation) appearances.current.delete(node);
-               };
+         const controller = (motion.current ??= createGridMotion<HTMLElement>(
+            (node, offset, current, target) => paintGridCard(node.style, offset, current, target),
+            { request: (callback) => requestAnimationFrame(callback), cancel: (frame) => cancelAnimationFrame(frame) },
+            releaseRows
+         ));
+         const images = (thumbnailMotion.current ??= createGridMotion<HTMLElement>(
+            (node, _offset, current, target) => paintGridThumbnail(node.style, current, target),
+            { request: (callback) => requestAnimationFrame(callback), cancel: (frame) => cancelAnimationFrame(frame) },
+            releaseRows
+         ));
+         if (directFlow) {
+            controller.clear();
+            images.clear();
+         }
+         // Restore natural layout for measurement. Reapply the current visual sizes before paint.
+         grid.style.removeProperty("grid-template-rows");
+         for (const node of measured.current) {
+            node.style.removeProperty("width");
+            node.style.removeProperty("height");
+            node.style.removeProperty("transform");
+            const thumbnail = node.querySelector<HTMLElement>(".clip-thumbnail");
+            if (thumbnail) paintGridThumbnail(thumbnail.style);
+         }
+         measured.current.clear();
+         const rows = getComputedStyle(grid).gridTemplateRows;
+         const bounds = grid.getBoundingClientRect();
+         const active = new Set<HTMLElement>();
+         const imageTargets: { node: HTMLElement; width: number; height: number; immediate: boolean }[] = [];
+         const targets: { node: HTMLElement; key: string; left: number; top: number; width: number; height: number; enter: boolean; immediate: boolean }[] = [];
+         // Read all layout positions before writing any compensating transforms.
+         for (const { node, key } of mountedCards(grid)) {
+            active.add(node);
+            measured.current.add(node);
+            const rect = node.getBoundingClientRect();
+            const hidden = offscreen(rect);
+            // Offscreen thumbnails never animate, so skip measuring them.
+            const thumbnail = hidden ? null : node.querySelector<HTMLElement>(".clip-thumbnail");
+            if (thumbnail) {
+               const image = thumbnail.getBoundingClientRect();
+               imageTargets.push({ node: thumbnail, width: image.width, height: image.height, immediate: directFlow });
+            }
+            targets.push({
+               node,
+               key,
+               left: rect.left - bounds.left,
+               top: rect.top - bounds.top,
+               width: rect.width,
+               height: rect.height,
+               enter: !known.current.has(key) && (navigated || known.current.size > 0),
+               immediate: directFlow || hidden,
+            });
+         }
+         controller.retain(active);
+         for (const [node, animation] of appearances.current) {
+            if (grid.contains(node)) continue;
+            animation.cancel();
+            appearances.current.delete(node);
+         }
+         for (const { node, key, left, top, width, height, enter, immediate } of targets) {
+            // A card that was in the view but not mounted has no motion yet. It starts from the slot it had,
+            // at most a screen away, so it glides in with the rest instead of appearing in place.
+            const before = !immediate && !controller.has(node) && known.current.has(key) ? previousPlace?.(key) : undefined;
+            const after = before && place(key);
+            if (before && after) {
+               const rise = Math.max(-innerHeight, Math.min(innerHeight, before.top - after.top));
+               controller.to(node, { left: left + before.left - after.left, top: top + rise, width, height }, false, true);
+            }
+            controller.to(node, { left, top, width, height }, enter, immediate);
+            if (!enter || immediate) continue;
+            const animation = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: "cubic-bezier(.22,.8,.3,1)" });
+            appearances.current.set(node, animation);
+            animation.onfinish = () => {
+               if (appearances.current.get(node) === animation) appearances.current.delete(node);
+            };
+         }
+         images.retain(new Set(imageTargets.map((target) => target.node)));
+         const animateImages = layoutChanged || images.active;
+         for (const { node, width, height, immediate } of imageTargets) {
+            const captured = layoutChanged ? capturedThumbnails.current.get(node) : undefined;
+            if (captured) images.to(node, { left: 0, top: 0, ...captured }, false, true);
+            images.to(node, { left: 0, top: 0, width, height }, false, immediate || !animateImages);
+         }
+         capturedThumbnails.current.clear();
+         if (layoutChanged) {
+            for (const target of targets) {
+               if (target.immediate) continue;
+               for (const node of target.node.querySelectorAll<HTMLElement>(".clip-card-info,.clip-file-facts")) {
+                  const previous = appearances.current.get(node);
+                  previous?.cancel();
+                  const animation = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, delay: 40, fill: "backwards" });
+                  appearances.current.set(node, animation);
+                  animation.onfinish = () => {
+                     if (appearances.current.get(node) === animation) appearances.current.delete(node);
+                  };
+               }
             }
          }
-      }
-      // Keep layout slots at their destination sizes while the cards resize inside them.
-      if (controller.active || images.active) grid.style.gridTemplateRows = rows;
-      known.current = viewKeys;
-   }, [root, clear, releaseRows]);
+         // Keep layout slots at their destination sizes while the cards resize inside them.
+         if (controller.active || images.active) grid.style.gridTemplateRows = rows;
+         known.current = viewKeys;
+      },
+      [root, clear, releaseRows]
+   );
    // Without a visible grid there is nothing to move, and whatever shows next starts fresh.
    useLayoutEffect(() => {
       if (!root.current || !visible) clear();

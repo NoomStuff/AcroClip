@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { gridRows, measuredSizes, rowOffsets, rowsInView } from "./grid-window";
-import type { GridItemKind, GridSizes } from "./grid-window";
+import { gridPlaces, gridRows, measuredSizes, rowOffsets, rowsInView } from "./grid-window";
+import type { GridItemKind, GridPlace, GridSizes } from "./grid-window";
 
 // Rows this far outside the viewport stay mounted, so scrolling and Tab always land on a real card.
 const overscan = 600;
@@ -22,6 +22,7 @@ export function LibraryGrid<Item>({
    visible,
    items,
    kind,
+   itemKey,
    render,
    natural,
    onSettled,
@@ -32,11 +33,12 @@ export function LibraryGrid<Item>({
    visible: boolean;
    items: readonly Item[];
    kind: (item: Item) => GridItemKind;
+   itemKey: (item: Item) => string;
    render: (item: Item) => ReactNode;
    /** Runs a read against the layout as it is once any card animation has finished. */
    natural: <Result>(read: () => Result) => Result;
-   /** The mounted rows are laid out at their real sizes. Runs before paint. */
-   onSettled: () => void;
+   /** The mounted rows are laid out at their real sizes. Runs before paint, with where every item's slot sits. */
+   onSettled: (place: (key: string) => GridPlace | undefined) => void;
 }) {
    const [measured, setMeasured] = useState<{ view: "grid" | "list"; sizes: GridSizes } | null>(null);
    const sizes = measured?.view === view ? measured.sizes : estimates[view];
@@ -47,26 +49,32 @@ export function LibraryGrid<Item>({
    const end = Math.min(Math.max(range.end, first), rows.length);
    const before = offsets[first]! - sizes.gap;
    const after = offsets[rows.length]! - offsets[end]! - sizes.gap;
-   const current = useRef({ rows, offsets, sizes, view, first, end, before, natural, onSettled });
-   current.current = { rows, offsets, sizes, view, first, end, before, natural, onSettled };
+   const current = useRef({ items, itemKey, rows, offsets, sizes, view, first, end, before, natural, onSettled });
+   current.current = { items, itemKey, rows, offsets, sizes, view, first, end, before, natural, onSettled };
    /** Reads the grid's real layout and corrects the sizes or the window. Reports once neither needed correcting. */
    const update = useCallback(() => {
       const element = grid.current,
          viewport = scroller.current;
       // A hidden page has no layout to read. Its last window stays as it was.
       if (!element || !viewport || !viewport.clientHeight) return;
-      const { rows, offsets, sizes, view, first, end, before, natural, onSettled } = current.current;
-      const next = natural(() => {
+      const { items, itemKey, rows, offsets, sizes, view, first, end, before, natural, onSettled } = current.current;
+      const { next, columns } = natural(() => {
          const style = getComputedStyle(element);
          // The browser's own row tracks: one per mounted row, after the spacer.
          const tracks = style.gridTemplateRows.split(" ").map(Number.parseFloat);
          const mounted = tracks.slice(before > 0 ? 1 : 0, (before > 0 ? 1 : 0) + end - first);
-         return measuredSizes(
-            { ...sizes, columns: Math.max(1, style.gridTemplateColumns.split(" ").length), gap: Number.parseFloat(style.rowGap) || 0 },
-            rows,
-            first,
-            mounted.every(Number.isFinite) ? mounted : []
-         );
+         const widths = style.gridTemplateColumns.split(" ").map(Number.parseFloat);
+         const columnGap = Number.parseFloat(style.columnGap) || 0;
+         return {
+            next: measuredSizes(
+               { ...sizes, columns: Math.max(1, widths.length), gap: Number.parseFloat(style.rowGap) || 0 },
+               rows,
+               first,
+               mounted.every(Number.isFinite) ? mounted : []
+            ),
+            // Where each column starts.
+            columns: widths.every(Number.isFinite) ? widths.map((_, index) => widths.slice(0, index).reduce((left, width) => left + width + columnGap, 0)) : [],
+         };
       });
       if ((Object.keys(next) as Array<keyof GridSizes>).some((key) => Math.abs(next[key] - sizes[key]) > 0.5)) {
          // The rows are placed again with these sizes, and the pass after that render picks the window.
@@ -76,7 +84,7 @@ export function LibraryGrid<Item>({
       // Where the viewport sits over the grid, which starts below the heading and breadcrumb.
       const top = viewport.getBoundingClientRect().top - element.getBoundingClientRect().top;
       const window = rowsInView(offsets, top - overscan, top + viewport.clientHeight + overscan);
-      if (window.first === first && window.end === end) onSettled();
+      if (window.first === first && window.end === end) onSettled(gridPlaces((index) => itemKey(items[index]!), rows, offsets, columns));
       else setRange(window);
    }, [grid, scroller]);
    // After every render, before paint: sizes can change with the view, the zoom or the window's width.

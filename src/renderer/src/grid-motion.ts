@@ -96,6 +96,9 @@ export function createGridMotion<Key>(
       get active() {
          return frame !== 0;
       },
+      has(key: Key) {
+         return items.has(key);
+      },
       offset(key: Key): GridPoint {
          const item = items.get(key);
          return item ? offset(item) : { left: 0, top: 0 };
