@@ -330,7 +330,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                      <>
                         <p className="setup-description">Your shortcut saves recent footage while capturing.</p>
                         <div className="setup-shortcut">
-                           <ShortcutInput value={draft.shortcut} onChange={(value) => change("shortcut", value)} />
+                           <ShortcutInput global value={draft.shortcut} onChange={(value) => change("shortcut", value)} />
                         </div>
                         <div className="setup-row">
                            <label htmlFor="setup-length">Save the last</label>

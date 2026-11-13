@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Folder, FolderInput } from "lucide-react";
 import { DialogPanel } from "./Dialog";
 import { FolderTree } from "./FolderTree";
+import { SidebarTab } from "./SidebarTab";
 import { Button } from "./ui";
 import { describeError } from "./desktop";
 
@@ -45,10 +46,7 @@ export function MoveDialog({
          className="move-dialog"
       >
          <div className="move-folders" inert={busy}>
-            <button className={`sidebar-item ${destination === "" ? "selected" : ""}`} aria-pressed={destination === ""} onClick={() => setDestination("")}>
-               <Folder size={16} />
-               Collection
-            </button>
+            <SidebarTab icon={<Folder size={16} />} label="Collection" selected={destination === ""} onSelect={() => setDestination("")} />
             <FolderTree paths={available} selected={destination} onSelect={setDestination} />
          </div>
          <p className="move-destination">{destination || "Collection"}</p>

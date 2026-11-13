@@ -1,4 +1,4 @@
-import { Gauge, Headphones, ListVideo, Maximize, Minimize, Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import { Gauge, Headphones, ListVideo, LoaderCircle, Maximize, Minimize, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { loudnessCurve } from "./loudness-curve";
 import { restartThreshold } from "./play-queue";
@@ -24,6 +24,7 @@ export function ViewerTransport({
    muted,
    tracks,
    track,
+   tracksPending,
    speed,
    onSpeed,
    disabled,
@@ -55,6 +56,8 @@ export function ViewerTransport({
    muted: boolean;
    tracks: Pick<AudioTrack, "index" | "title">[];
    track: number[];
+   // A mix of the chosen tracks is on its way. The current audio plays meanwhile.
+   tracksPending: boolean;
    speed: number;
    onSpeed: (value: number) => void;
    disabled: boolean;
@@ -322,12 +325,13 @@ export function ViewerTransport({
                   options={tracks.map((item, index) => ({ value: String(item.index), label: item.title || `Track ${index + 1}` }))}
                   value={track.map(String)}
                   multiple
+                  soloClick
                   required
                   disabled={tracks.length <= 1}
                   onChange={(values) => onTrack(values.map(Number))}
                   triggerContent={
                      <>
-                        <Headphones size={14} />
+                        {tracksPending ? <LoaderCircle size={14} className="spin" aria-label="Mixing tracks" /> : <Headphones size={14} />}
                         <b>{audioLabel}</b>
                      </>
                   }

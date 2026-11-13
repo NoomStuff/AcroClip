@@ -92,16 +92,20 @@ test("expanded sections reorder in a scrolling sidebar and large libraries bound
       await expect.poll(() => page.locator(".clip-thumbnail > img").count()).toBeGreaterThan(0);
       expect(await page.locator(".clip-thumbnail > img").count()).toBeLessThan(80);
       const countSlot = page.locator(".library-sidebar .sidebar-item").filter({ hasText: "All clips" }).locator(".count");
+      // Counts read like a column of figures. The last digit sits centered under the row actions and
+      // longer counts grow to the left.
       const slot = await countSlot.boundingBox();
-      const normal = await countSlot.locator("span").boundingBox();
-      expect(normal!.x + normal!.width / 2).toBeCloseTo(slot!.x + slot!.width / 2, 0);
-      await countSlot.locator("span").evaluate((node) => {
-         node.textContent = "123456789";
-      });
-      const wide = await countSlot.locator("span").boundingBox();
-      expect(wide!.x).toBeLessThan(slot!.x);
-      expect(wide!.x + wide!.width).toBeCloseTo(slot!.x + slot!.width, 0);
-      await countSlot.locator("span").evaluate((node) => {
+      const digits = countSlot.locator("span");
+      const lastDigitCenter = async (text: string) => {
+         await digits.evaluate((node, value) => (node.textContent = value), text);
+         const box = (await digits.boundingBox())!;
+         return { left: box.x, center: box.x + box.width - box.width / text.length / 2 };
+      };
+      const single = await lastDigitCenter("7");
+      expect(single.center).toBeCloseTo(slot!.x + slot!.width - 15, 0);
+      for (const text of ["1000", "123456789"]) expect((await lastDigitCenter(text)).center).toBeCloseTo(single.center, 0);
+      expect((await lastDigitCenter("123456789")).left).toBeLessThan(slot!.x);
+      await digits.evaluate((node) => {
          node.textContent = "1000";
       });
       console.log(

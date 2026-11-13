@@ -23,6 +23,7 @@ export function DropdownSelect({
    menuWidth,
    iconOnly = false,
    multiple,
+   soloClick = false,
    required = false,
    triggerRef,
 }: {
@@ -35,6 +36,9 @@ export function DropdownSelect({
    placement?: "up";
    menuWidth?: number;
    iconOnly?: boolean;
+   /** With `multiple`: a plain click picks only that option and closes, while Shift-click or
+       right-click adds or removes it. Suits lists where one choice is the usual case. */
+   soloClick?: boolean;
    required?: boolean;
 } & ({ multiple?: false; value: string; onChange: (value: string) => void } | { multiple: true; value: string[]; onChange: (value: string[]) => void })) {
    const description = useFieldDescription();
@@ -184,33 +188,49 @@ export function DropdownSelect({
                   {...highlight.handlers}
                >
                   {highlight.highlight}
-                  {options.map((option) => (
-                     <button
-                        type="button"
-                        key={option.value}
-                        role="option"
-                        aria-selected={values.includes(option.value)}
-                        disabled={option.disabled}
-                        data-value={option.value}
-                        tabIndex={-1}
-                        onClick={() => {
-                           if (multiple) {
-                              const next = value.includes(option.value) ? value.filter((entry) => entry !== option.value) : [...value, option.value];
-                              if (!required || next.length) onChange(next);
-                           } else {
-                              onChange(option.value);
+                  {options.map((option) => {
+                     const chosen = values.includes(option.value);
+                     const toggle = () => {
+                        if (!multiple) return;
+                        const next = chosen ? value.filter((entry) => entry !== option.value) : [...value, option.value];
+                        if (!required || next.length) onChange(next);
+                     };
+                     return (
+                        <button
+                           type="button"
+                           key={option.value}
+                           role="option"
+                           aria-selected={chosen}
+                           disabled={option.disabled}
+                           data-value={option.value}
+                           tabIndex={-1}
+                           onClick={(event) => {
+                              if (multiple && (!soloClick || event.shiftKey)) {
+                                 toggle();
+                                 return;
+                              }
+                              if (multiple) onChange([option.value]);
+                              else onChange(option.value);
                               close();
                               // The trigger takes the choice with a small pop.
                               selectionBounce(trigger.current);
+                           }}
+                           onContextMenu={
+                              multiple && soloClick
+                                 ? (event) => {
+                                      event.preventDefault();
+                                      toggle();
+                                   }
+                                 : undefined
                            }
-                        }}
-                     >
-                        <span>{option.label}</span>
-                        <span className="select-check" aria-hidden="true">
-                           {values.includes(option.value) && <Check size={14} />}
-                        </span>
-                     </button>
-                  ))}
+                        >
+                           <span>{option.label}</span>
+                           <span className="select-check" aria-hidden="true">
+                              {chosen && <Check size={14} />}
+                           </span>
+                        </button>
+                     );
+                  })}
                </div>,
                document.fullscreenElement ?? document.body
             )}

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useVideoReveal } from "./useVideoReveal";
 
@@ -13,6 +13,8 @@ export function usePlaybackFade(
    const outgoing = useRef<HTMLCanvasElement>(null);
    const motion = useRef<Animation | null>(null);
    const shown = useRef<{ identity: string; url: string } | null>(null);
+   // A held frame covers a reload of the same clip until the new file shows a frame.
+   const holding = useRef(false);
    const [decoded, setDecoded] = useState("");
    const key = `${identity}\0${url}\0${generation}`;
    const ready = visible && prepared && decoded === key;
@@ -23,6 +25,7 @@ export function usePlaybackFade(
       const clear = () => {
          motion.current?.cancel();
          motion.current = null;
+         holding.current = false;
          if (surface) surface.style.opacity = "0";
       };
       const media = matchMedia("(prefers-reduced-motion: reduce)");
@@ -40,10 +43,7 @@ export function usePlaybackFade(
          shown.current = null;
          if (visible && !media.matches) {
             clear();
-            const scale = Math.min(1, 960 / node.videoWidth, 540 / node.videoHeight);
-            surface.width = Math.max(1, Math.round(node.videoWidth * scale));
-            surface.height = Math.max(1, Math.round(node.videoHeight * scale));
-            surface.getContext("2d", { alpha: false })?.drawImage(node, 0, 0, surface.width, surface.height);
+            drawFrame(node, surface);
             const animation = surface.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: "ease-out", fill: "forwards" });
             motion.current = animation;
             void animation.finished.then(
@@ -66,6 +66,17 @@ export function usePlaybackFade(
       },
       []
    );
+   /** Shows the current frame over the player until the file that replaces it shows one. */
+   const hold = useCallback(() => {
+      const node = video.current,
+         surface = outgoing.current;
+      if (!node || !surface || node.readyState < 2 || !node.videoWidth || !node.videoHeight) return;
+      motion.current?.cancel();
+      motion.current = null;
+      drawFrame(node, surface);
+      surface.style.opacity = "1";
+      holding.current = true;
+   }, [video]);
 
    useLayoutEffect(() => {
       const node = video.current;
@@ -99,5 +110,33 @@ export function usePlaybackFade(
       };
    }, [video, visible, prepared, url, key, identity]);
    useVideoReveal(video, ready, key);
-   return { ready, outgoing };
+   // The held frame fades out as the new file's frame fades in over it.
+   useLayoutEffect(() => {
+      const surface = outgoing.current;
+      if (!ready || !holding.current || !surface) return;
+      holding.current = false;
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+         surface.style.opacity = "0";
+         return;
+      }
+      const animation = surface.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: "ease-out", fill: "forwards" });
+      motion.current = animation;
+      void animation.finished.then(
+         () => {
+            if (motion.current !== animation) return;
+            motion.current = null;
+            animation.cancel();
+            surface.style.opacity = "0";
+         },
+         () => undefined
+      );
+   }, [ready, key]);
+   return { ready, outgoing, hold };
+}
+
+function drawFrame(node: HTMLVideoElement, surface: HTMLCanvasElement) {
+   const scale = Math.min(1, 960 / node.videoWidth, 540 / node.videoHeight);
+   surface.width = Math.max(1, Math.round(node.videoWidth * scale));
+   surface.height = Math.max(1, Math.round(node.videoHeight * scale));
+   surface.getContext("2d", { alpha: false })?.drawImage(node, 0, 0, surface.width, surface.height);
 }

@@ -16,6 +16,7 @@ function snapshot(): AppState {
       categories: [],
       jobs: [],
       recorder: { ...stoppedRecorder },
+      pendingPreferences: {},
       update: { state: "idle", version: "", progress: 0, message: "" },
       version: "test",
       platform: "win32",

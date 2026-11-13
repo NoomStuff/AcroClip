@@ -1,5 +1,5 @@
 import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clapperboard, LibraryBig, Play, Minus, Settings2, Square, Video, X } from "lucide-react";
+import { Clapperboard, LibraryBig, Play, Minus, Settings as Gear, Square, Video, X } from "lucide-react";
 import { AppLogo } from "./AppLogo";
 import type { AppEvent, AppState, Clip, NoticeOptions } from "../../shared/types";
 import { applyStatePatch } from "../../shared/state-patch";
@@ -243,6 +243,7 @@ export function App() {
       collectionStatus = state?.collectionStatus,
       jobs = state?.jobs,
       preferences = state?.preferences,
+      pendingPreferences = state?.pendingPreferences,
       recorder = state?.recorder,
       platform = state?.platform,
       update = state?.update,
@@ -260,8 +261,11 @@ export function App() {
       [applicationIcons, jobs, preferences, categories]
    );
    const settingsState = useMemo(
-      () => (preferences && recorder && jobs && update && version ? { preferences, recorder, jobs, update, version, platform: state?.platform ?? "" } : null),
-      [preferences, recorder, jobs, update, version, state?.platform]
+      () =>
+         preferences && pendingPreferences && recorder && jobs && update && version
+            ? { preferences, pendingPreferences, recorder, jobs, update, version, platform: state?.platform ?? "" }
+            : null,
+      [preferences, pendingPreferences, recorder, jobs, update, version, state?.platform]
    );
    const pages = [
       { id: "recording", title: "Capture", icon: Video },
@@ -323,7 +327,7 @@ export function App() {
                onClick={() => setPage("settings")}
             >
                {page === "settings" && <TabMarker />}
-               <Settings2 size={23} strokeWidth={1.65} />
+               <Gear size={23} strokeWidth={1.65} />
                <span>Settings</span>
             </button>
          </nav>

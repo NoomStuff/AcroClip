@@ -1,7 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { defaultPreferences } from "./defaults";
 import { preferencesSchema } from "./validation";
-import { bindingFor, normalizeBinding, shortcutConflict, shortcutClashes, eventBinding, physicalBinding } from "./shortcuts";
+import {
+   bindingFor,
+   normalizeBinding,
+   shortcutConflict,
+   shortcutClashes,
+   eventBinding,
+   physicalBinding,
+   globalShortcutProblem,
+   formatBinding,
+} from "./shortcuts";
 describe("shortcut defaults and conflicts", () => {
    it("defaults to Alt+C for saving with no recording shortcut", () => {
       expect(bindingFor(defaultPreferences, "saveClip")).toBe("Alt+C");
@@ -42,5 +51,28 @@ describe("shortcut defaults and conflicts", () => {
       expect(eventBinding(german as KeyboardEvent)).toBe("Control+-");
       expect(normalizeBinding(physicalBinding(german)!, false)).toBe(normalizeBinding(bindingFor(defaultPreferences, "shortcutHelp"), false));
       expect(physicalBinding({ code: "KeyA", ctrlKey: true, metaKey: false, altKey: false, shiftKey: false })).toBeNull();
+   });
+   it("binds macro, numpad and media keys the way Electron registers them", () => {
+      const press = (code: string, key: string, modifiers: Partial<Pick<KeyboardEvent, "ctrlKey" | "altKey" | "shiftKey">> = {}) =>
+         eventBinding({ code, key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...modifiers });
+      expect(press("F13", "F13")).toBe("F13");
+      expect(press("F24", "F24", { ctrlKey: true })).toBe("Control+F24");
+      // A numpad digit is its own key, apart from the digit row. With Num Lock off it acts as an arrow.
+      expect(press("Numpad4", "4")).toBe("num4");
+      expect(press("NumpadAdd", "+")).toBe("numadd");
+      expect(press("Numpad4", "ArrowLeft")).toBe("Left");
+      expect(press("Digit4", "4")).toBe("4");
+      expect(press("AudioVolumeUp", "AudioVolumeUp")).toBe("VolumeUp");
+      expect(press("MediaTrackNext", "MediaTrackNext")).toBe("MediaNextTrack");
+      expect(press("ScrollLock", "ScrollLock")).toBe("Scrolllock");
+      // Keys the browser can't name, such as unassigned macro keys, give no binding.
+      expect(press("", "Unidentified")).toBe("");
+      expect(formatBinding("Control+num4", false)).toBe("Ctrl + Num 4");
+      expect(formatBinding("MediaPlayPause", false)).toBe("Play/Pause");
+   });
+   it("keeps global shortcuts from taking keys that type in every app", () => {
+      for (const binding of ["4", "C", "Shift+4", "Space", "Left", "Enter"]) expect(globalShortcutProblem(binding)).toContain("block that key");
+      for (const binding of ["Alt+C", "Control+4", "Command+Shift+F", "F13", "F8", "Shift+F9", "num4", "MediaPlayPause", "PrintScreen", ""])
+         expect(globalShortcutProblem(binding)).toBeNull();
    });
 });

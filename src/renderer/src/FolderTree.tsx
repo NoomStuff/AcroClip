@@ -3,6 +3,7 @@ import type { ReactNode, HTMLAttributes } from "react";
 import { ChevronRight, Folder, FolderOpen } from "lucide-react";
 import { groupFolders, visibleFolderRows } from "./library-index";
 import { MotionList } from "./MotionList";
+import { SidebarTab } from "./SidebarTab";
 export function FolderTree({
    paths,
    counts,
@@ -51,61 +52,61 @@ export function FolderTree({
             ?.focus()
       );
    const render = ({ id: path, level, hasChildren, open, position, siblings }: (typeof rows)[number]) => (
-      <div
+      <SidebarTab
          className="folder-tree-row"
-         role="treeitem"
-         aria-label={path.split("/").at(-1)!}
-         aria-level={level}
-         aria-posinset={position}
-         aria-setsize={siblings}
-         aria-selected={selected === path}
-         aria-expanded={hasChildren ? open : undefined}
-         data-path={path}
-         tabIndex={selected === path || (!selectedExists && path === rows[0]?.id) ? 0 : -1}
-         onClick={(event) => {
-            if (event.target === event.currentTarget) onSelect(path);
+         rowAttributes={{
+            role: "treeitem",
+            "aria-label": path.split("/").at(-1)!,
+            "aria-level": level,
+            "aria-posinset": position,
+            "aria-setsize": siblings,
+            "aria-selected": selected === path,
+            "aria-expanded": hasChildren ? open : undefined,
+            "data-path": path,
+            tabIndex: selected === path || (!selectedExists && path === rows[0]?.id) ? 0 : -1,
+            onClick: (event) => {
+               if (event.target === event.currentTarget) onSelect(path);
+            },
+            "data-empty": (counts && !counts.get(path)?.count) || undefined,
+            style: { marginLeft: (level - 1) * 16 },
+            ...dropProps?.(path),
+            onContextMenu: (event) => {
+               if (!requestMenu) return;
+               event.preventDefault();
+               requestMenu(path, event.currentTarget, event.clientX, event.clientY);
+            },
+            onKeyDown: (event) => {
+               if (!requestMenu || (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))) return;
+               event.preventDefault();
+               event.stopPropagation();
+               const item = event.currentTarget;
+               const bounds = item.getBoundingClientRect();
+               requestMenu(path, item, bounds.left + 20, bounds.bottom);
+            },
          }}
-         data-empty={(counts && !counts.get(path)?.count) || undefined}
-         style={{ marginLeft: (level - 1) * 16 }}
-         {...dropProps?.(path)}
-         onContextMenu={(event) => {
-            if (!requestMenu) return;
-            event.preventDefault();
-            requestMenu(path, event.currentTarget, event.clientX, event.clientY);
-         }}
-         onKeyDown={(event) => {
-            if (!requestMenu || (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))) return;
-            event.preventDefault();
-            event.stopPropagation();
-            const item = event.currentTarget;
-            const bounds = item.getBoundingClientRect();
-            requestMenu(path, item, bounds.left + 20, bounds.bottom);
-         }}
-      >
-         <button
-            type="button"
-            className="folder-expand"
-            tabIndex={-1}
-            aria-label={`${open ? "Collapse" : "Expand"} folder ${path}`}
-            disabled={!hasChildren}
-            onClick={() => expand(path, !open)}
-         >
-            <ChevronRight size={13} style={{ rotate: open ? "90deg" : undefined }} />
-         </button>
-         <button
-            type="button"
-            data-list-control=""
-            tabIndex={-1}
-            className={`sidebar-item ${selected === path ? "selected" : ""}`}
-            data-tooltip={path}
-            data-tooltip-overflow=""
-            onClick={() => onSelect(path)}
-         >
-            {open ? <FolderOpen size={16} /> : <Folder size={16} />}
-            <span>{path.split("/").at(-1)!}</span>
-         </button>
-         {renderActions?.(path)}
-      </div>
+         leading={
+            <button
+               type="button"
+               className="folder-expand"
+               tabIndex={-1}
+               aria-label={`${open ? "Collapse" : "Expand"} folder ${path}`}
+               disabled={!hasChildren}
+               onClick={() => expand(path, !open)}
+            >
+               <ChevronRight size={13} style={{ rotate: open ? "90deg" : undefined }} />
+            </button>
+         }
+         // The row is the tree item and takes focus. The tab inside it only takes clicks.
+         selection="none"
+         tabAttributes={{ tabIndex: -1 }}
+         icon={open ? <FolderOpen size={16} /> : <Folder size={16} />}
+         label={path.split("/").at(-1)!}
+         tooltip={path}
+         selected={selected === path}
+         onSelect={() => onSelect(path)}
+         {...(counts && renderActions ? { count: counts.get(path)?.count ?? 0 } : {})}
+         actions={renderActions?.(path)}
+      />
    );
    return (
       <div

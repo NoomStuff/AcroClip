@@ -80,13 +80,13 @@ test("settings autosave retains drafts, merges external changes and retries fail
          ipcMain.handle("choose-folder", () => folder);
       }, broken);
       await page.getByRole("button", { name: "Choose collection folder", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Retry save", exact: true })).toBeVisible({ timeout: 15000 });
+      // A failed save says so over the page and retries by itself, so fixing the cause is enough.
+      await expect(page.locator(".settings-save-feedback[data-shown]")).toContainText("Retrying", { timeout: 15000 });
       expect((await page.evaluate(() => window.acroClip.state())).preferences.collection).toBe(collection);
       await expect(page.locator(".toast.error")).toHaveCount(0);
       await unlink(broken);
       await mkdir(broken);
-      await page.getByRole("button", { name: "Retry save", exact: true }).click();
-      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.collection).toBe(broken);
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.collection, { timeout: 20000 }).toBe(broken);
       await expect(page.getByRole("status", { name: "Settings saved", exact: true })).toBeVisible();
       await page.locator(".settings-sidebar").getByRole("button", { name: "Collection", exact: true }).click();
       await page.getByRole("group", { name: "Default maximum size choices", exact: true }).getByRole("button", { name: "Custom", exact: true }).click();

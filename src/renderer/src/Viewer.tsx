@@ -93,11 +93,13 @@ export function Viewer({
    const [controlsShown, setControlsShown] = useState(true);
    const controlsTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
    const [track, setTrack] = useState<number[] | undefined>(undefined);
-   // The menu shows a choice at once. A choice that needs a mixed copy waits a moment, so toggling
-   // tracks one by one never loads a copy for a combination that only existed between two clicks.
-   const [shownTrack, setShownTrack] = useState<number[] | undefined>(undefined);
-   const mixDelay = useRef<number | undefined>(undefined);
-   useEffect(() => () => window.clearTimeout(mixDelay.current), []);
+   // The tracks the loaded file plays: undefined for a file that holds every track, which the
+   // element switches between itself, or the selection a prepared copy carries as one mix.
+   const [loadedTracks, setLoadedTracks] = useState<number[] | undefined>(undefined);
+   // A different mix is being prepared while the current file keeps playing.
+   const [mixing, setMixing] = useState(false);
+   // What the listener hears right now, so a mix that fails can put the picker back.
+   const audible = useRef<number[] | undefined>(undefined);
    const [speed, setSpeed] = useState(1);
    // The part to keep while trimming, and whether saving makes a copy or replaces the clip.
    const [trim, setTrim] = useState<TrimRange | null>(null);
@@ -195,20 +197,30 @@ export function Viewer({
    const compatible = !!path && compatiblePaths.has(path);
    const nativeTrackSelection = nativeAudioTracks && !!path && !trackCopyPaths.has(path);
    // Chromium plays one audio track at a time and switches it in place. A mix of several
-   // tracks plays from a prepared copy, requested once the selection settles, so clicking
-   // through the picker doesn't start conversions that are immediately replaced.
+   // tracks plays from a prepared copy, requested once the selection settles, so adding tracks
+   // one by one doesn't start conversions that are immediately replaced. Until the copy is
+   // ready, the current file keeps playing with the first chosen track.
    const mixTracks = version === "original" && track && (track.length > 1 || !nativeTrackSelection) ? track : undefined;
    const [settledMix, setSettledMix] = useState<number[] | undefined>(undefined);
    useEffect(() => {
-      if (!mixTracks) return;
+      if (!mixTracks) {
+         setSettledMix(undefined);
+         return;
+      }
       const timer = setTimeout(() => setSettledMix(mixTracks), 350);
       return () => clearTimeout(timer);
    }, [mixTracks]);
-   const requestedTrack = mixTracks && settledMix === mixTracks ? mixTracks : undefined;
+   // While a new mix settles, the previous one stays requested, so the file playing doesn't change twice.
+   const requestedTrack = mixTracks ? settledMix : undefined;
+   const mixSettling = !!mixTracks && settledMix !== mixTracks;
    const singleTrack = !mixTracks;
    const selectedTracks = track ?? clip?.tracks.slice(0, 1).map((item) => item.index) ?? [];
-   const masterSelected = !track || (track.length === 1 && track[0] === clip?.tracks[0]?.index);
-   const playbackIdentity = JSON.stringify([clip?.id, path, version, requestedTrack, compatible, revision]);
+   // The tracks the element itself enables: the selection, or its first track while a mix prepares.
+   const nativeTracks = singleTrack ? selectedTracks : selectedTracks.slice(0, 1);
+   // Which file plays. The audio selection isn't part of it, so a new mix swaps in without
+   // the player giving up the file that is showing meanwhile.
+   const playbackIdentity = JSON.stringify([clip?.id, path, version, compatible, revision]);
+   const loaded = useRef({ identity: "", url: "" });
    const currentPlayback = useRef({ identity: playbackIdentity, generation: urlGeneration });
    useLayoutEffect(() => {
       currentPlayback.current = { identity: playbackIdentity, generation: urlGeneration };
@@ -242,9 +254,8 @@ export function Viewer({
          resume.current = autoplayRef.current;
          setTime(0);
          setVersion(clip?.originalMissing ? "shareable" : "original");
-         window.clearTimeout(mixDelay.current);
          setTrack(undefined);
-         setShownTrack(undefined);
+         audible.current = undefined;
          setShareId("");
          setTrim(null);
          setOverride(false);
@@ -256,6 +267,8 @@ export function Viewer({
    }, [clip?.originalMissing]);
    useEffect(() => {
       if (!visible) {
+         // A hidden player gives up its file, so showing it again loads it in full instead of swapping.
+         loaded.current = { identity: "", url: "" };
          setPlaying(false);
          setUrlOwner("");
          video.current?.pause();
@@ -264,6 +277,7 @@ export function Viewer({
          return;
       }
       if (!path) {
+         loaded.current = { identity: "", url: "" };
          setUrl("");
          setUrlOwner("");
          setLoading(false);
@@ -272,41 +286,73 @@ export function Viewer({
       }
       let disposed = false;
       const requestId = crypto.randomUUID();
-      switching.current = true;
-      setPlaying(false);
-      video.current?.pause();
-      setLoading(true);
+      // The same file with a different audio selection swaps in place. It keeps playing,
+      // and stays controllable, until the prepared copy is ready.
+      const swap = loaded.current.identity === playbackIdentity && !!loaded.current.url;
+      if (swap) setMixing(true);
+      else {
+         switching.current = true;
+         setPlaying(false);
+         video.current?.pause();
+         setLoading(true);
+      }
       setMediaError("");
       void (async () => {
          try {
             const prepared = await api.playback(path, requestedTrack, requestId, compatible ? { compatible: true } : undefined);
             // The same file path after a trim replaced it. A new address keeps the old footage from being reused.
             const result = revision ? `${prepared}?revision=${revision}` : prepared;
-            if (!disposed) {
-               setMediaError("");
-               if (currentUrl.current === result) {
-                  switching.current = false;
-                  if (resume.current) void video.current?.play().catch(() => undefined);
+            if (disposed) return;
+            setMediaError("");
+            if (currentUrl.current === result) {
+               switching.current = false;
+               // The file already playing carries this selection, so nothing reloads or blinks.
+               if (swap) {
+                  if (requestedTrack) audible.current = requestedTrack;
+                  setLoadedTracks(requestedTrack);
+                  setUrlOwner(playbackIdentity);
+                  return;
                }
-               currentUrl.current = result;
-               setUrl(result);
-               setUrlOwner(playbackIdentity);
-               setUrlGeneration((value) => value + 1);
+               if (resume.current) void video.current?.play().catch(() => undefined);
+            } else if (swap) {
+               // Continue from the same moment, and cover the reload with the frame showing now.
+               rememberPlayback();
+               fade.hold();
+               switching.current = true;
             }
+            currentUrl.current = result;
+            loaded.current = { identity: playbackIdentity, url: result };
+            if (requestedTrack) audible.current = requestedTrack;
+            setLoadedTracks(requestedTrack);
+            setUrl(result);
+            setUrlOwner(playbackIdentity);
+            setUrlGeneration((value) => value + 1);
          } catch (error) {
-            if (!disposed) {
-               setUrl("");
-               setUrlOwner("");
-               setMediaError(describeError(error));
+            if (disposed) return;
+            if (swap) {
+               // The file that is playing stays, and the picker goes back to what it plays.
+               reportFeedback({ kind: "notice", message: `Couldn't switch audio tracks. ${describeError(error)}`, error: true });
+               setTrack(audible.current);
+               return;
             }
+            loaded.current = { identity: "", url: "" };
+            setUrl("");
+            setUrlOwner("");
+            setMediaError(describeError(error));
          } finally {
-            if (!disposed) setLoading(false);
+            if (!disposed) {
+               setLoading(false);
+               setMixing(false);
+            }
          }
       })();
       return () => {
          disposed = true;
+         setMixing(false);
          void api.cancelPlayback(requestId).catch(() => undefined);
       };
+      // rememberPlayback and fade.hold read refs only.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
    }, [path, requestedTrack, compatible, visible, playbackIdentity, revision]);
    // Track changes apply to the playing element without reloading it.
    useEffect(() => {
@@ -317,16 +363,16 @@ export function Viewer({
          !clip ||
          version !== "original" ||
          !nativeTrackSelection ||
-         !singleTrack ||
-         requestedTrack ||
+         loadedTracks ||
          media.readyState < HTMLMediaElement.HAVE_METADATA ||
          !ownsMedia(media)
       )
          return;
-      if (!selectAudioTracks(mediaAudioTracks(media), clip.tracks, selectedTracks) && path) setTrackCopyPaths((paths) => new Set(paths).add(path));
-      // selectedTracks follows track and clip.tracks, and ownsMedia follows the url state.
+      if (selectAudioTracks(mediaAudioTracks(media), clip.tracks, nativeTracks)) audible.current = nativeTracks;
+      else if (path) setTrackCopyPaths((paths) => new Set(paths).add(path));
+      // nativeTracks follows track and clip.tracks, and ownsMedia follows the url state.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [track, clip?.tracks, url, urlOwner, urlGeneration, version, nativeTrackSelection, singleTrack, requestedTrack, path]);
+   }, [track, clip?.tracks, url, urlOwner, urlGeneration, version, nativeTrackSelection, singleTrack, loadedTracks, path]);
 
    const rememberPlayback = () => {
       if (!switching.current) {
@@ -338,16 +384,7 @@ export function Viewer({
       rememberPlayback();
       setVersion(next);
    };
-   const changeTrack = (value: number[]) => {
-      setShownTrack(value);
-      window.clearTimeout(mixDelay.current);
-      const apply = () => {
-         rememberPlayback();
-         setTrack(value);
-      };
-      if (value.length > 1 || !nativeTrackSelection) mixDelay.current = window.setTimeout(apply, 350);
-      else apply();
-   };
+   const changeTrack = (value: number[]) => setTrack(value);
    // While trimming, playback stays between the handles. Playing from the end starts over at the start handle.
    // A pending seek may still be catching up when play is pressed, so judge by where the playhead is headed.
    const play = useCallback(
@@ -837,11 +874,12 @@ export function Viewer({
                            return;
                         }
                         // A prepared mix carries one track. Otherwise the element holds all of them.
-                        const tracks = version === "original" && nativeTrackSelection && !requestedTrack ? mediaAudioTracks(media) : undefined;
-                        if (tracks && !selectAudioTracks(tracks, clip.tracks, singleTrack ? selectedTracks : selectedTracks.slice(0, 1)) && path) {
-                           setTrackCopyPaths((paths) => new Set(paths).add(path));
-                           // Only the first track plays until a prepared copy carries the selection.
-                           if (!masterSelected) return;
+                        // When the element can't switch them, its first track plays until a prepared
+                        // copy carries the selection, which then swaps in at the same moment.
+                        const tracks = version === "original" && nativeTrackSelection && !loadedTracks ? mediaAudioTracks(media) : undefined;
+                        if (tracks) {
+                           if (selectAudioTracks(tracks, clip.tracks, nativeTracks)) audible.current = nativeTracks;
+                           else if (path) setTrackCopyPaths((paths) => new Set(paths).add(path));
                         }
                         setDuration(media.duration);
                         media.currentTime = Math.min(seek.current, media.duration || 0);
@@ -923,7 +961,8 @@ export function Viewer({
                volume={volume}
                muted={muted}
                tracks={version === "original" ? clip.tracks : clip.tracks.length ? [{ index: -1, title: "Master" }] : []}
-               track={version === "original" ? (shownTrack ?? clip.tracks.slice(0, 1).map((item) => item.index)) : clip.tracks.length ? [-1] : []}
+               track={version === "original" ? selectedTracks : clip.tracks.length ? [-1] : []}
+               tracksPending={version === "original" && (mixing || mixSettling)}
                speed={speed}
                onSpeed={setSpeed}
                disabled={!url || loading}

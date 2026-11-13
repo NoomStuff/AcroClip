@@ -1,8 +1,8 @@
 import { useFieldDescription } from "./field-accessibility";
 import { useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { api } from "./desktop";
-import { eventBinding } from "../../shared/shortcuts";
+import { api, reportFeedback } from "./desktop";
+import { eventBinding, globalShortcutProblem, keyLabel } from "../../shared/shortcuts";
 import type { ShortcutModifier } from "../../shared/shortcuts";
 
 const mac = navigator.platform.includes("Mac");
@@ -25,11 +25,14 @@ export function ShortcutInput({
    onChange,
    label = "Clip shortcut",
    clash = false,
+   global = false,
 }: {
    value: string;
    onChange: (value: string) => void;
    label?: string;
    clash?: boolean;
+   /** Works in every app, so keys that type need a modifier. */
+   global?: boolean;
 }) {
    const description = useFieldDescription();
    const [editing, setEditing] = useState(false);
@@ -65,7 +68,7 @@ export function ShortcutInput({
       ? value
            .replace("CommandOrControl", mac ? "Command" : "Control")
            .split("+")
-           .map((key) => keyNames[key] ?? key)
+           .map((key, index, parts) => keyNames[key] ?? (index === parts.length - 1 ? keyLabel(key) : key))
       : [];
    return (
       <button
@@ -91,7 +94,14 @@ export function ShortcutInput({
                stop();
                return;
             }
-            onChange(eventBinding(event.nativeEvent, pressed.current));
+            const binding = eventBinding(event.nativeEvent, pressed.current);
+            const problem = !binding
+               ? "AcroClip can't read that key. Macro keys such as G1 to G6 work once their software sets them to F13 to F24."
+               : global
+                 ? globalShortcutProblem(binding)
+                 : null;
+            if (problem) reportFeedback({ kind: "notice", message: problem, error: true });
+            else onChange(binding);
             stop();
          }}
          onKeyUp={(event) => {

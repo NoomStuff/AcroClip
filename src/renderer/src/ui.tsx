@@ -117,6 +117,12 @@ export function Segmented<T extends string>({
       </div>
    );
 }
+/** How far the pressed thumb travels between off and on, in px. Matches ui.css: a 40px switch, 3px inset, 22px pressed thumb. */
+const switchTravel = 12;
+/** Dragging past either end gives this much at most, so the thumb feels held rather than stuck. */
+const switchStretch = 4;
+const rubberBand = (distance: number) => switchStretch * (1 - 1 / (distance / 12 + 1));
+
 export function Toggle({
    checked,
    onChange,
@@ -131,8 +137,83 @@ export function Toggle({
    disabled?: boolean;
 }) {
    const detailId = useId();
+   const track = useRef<HTMLSpanElement>(null);
+   const thumb = useRef<HTMLSpanElement>(null);
+   const drag = useRef<{ pointer: number; startX: number; from: number; position: number; on: boolean; moved: boolean } | null>(null);
+   // The click that follows a drag would flip the switch a second time.
+   const swallowClick = useRef(false);
+   const reset = () => {
+      for (const element of [track.current, thumb.current]) element?.removeAttribute("style");
+      track.current?.parentElement?.removeAttribute("data-dragging");
+   };
+   const place = (position: number, on: boolean) => {
+      const switchElement = track.current,
+         thumbElement = thumb.current;
+      if (!switchElement || !thumbElement) return;
+      const shown = position < 0 ? -rubberBand(-position) : position > switchTravel ? switchTravel + rubberBand(position - switchTravel) : position;
+      switchElement.parentElement?.setAttribute("data-dragging", "");
+      // Inline styles outrank the hover and checked rules. Removing them lets the usual spring carry the thumb home.
+      thumbElement.style.transition = "background 150ms var(--ease)";
+      thumbElement.style.width = "22px";
+      thumbElement.style.transform = `translateX(${shown}px)`;
+      thumbElement.style.background = on ? "#17161a" : "#d4d1da";
+      switchElement.style.background = on ? "var(--accent-hover)" : "var(--slot-hover)";
+   };
    return (
-      <label className={`toggle-row ${disabled ? "disabled" : ""}`}>
+      <label
+         className={`toggle-row ${disabled ? "disabled" : ""}`}
+         onClickCapture={(event) => {
+            if (!swallowClick.current) return;
+            swallowClick.current = false;
+            event.preventDefault();
+         }}
+         // Dragging the thumb sets whichever side it is released past. A plain press still toggles.
+         onPointerDown={(event) => {
+            const bounds = track.current?.getBoundingClientRect();
+            if (disabled || event.button !== 0 || !bounds) return;
+            const slop = 6;
+            if (
+               event.clientX < bounds.left - slop ||
+               event.clientX > bounds.right + slop ||
+               event.clientY < bounds.top - slop ||
+               event.clientY > bounds.bottom + slop
+            )
+               return;
+            swallowClick.current = false;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            const from = checked ? switchTravel : 0;
+            drag.current = { pointer: event.pointerId, startX: event.clientX, from, position: from, on: checked, moved: false };
+         }}
+         onPointerMove={(event) => {
+            const current = drag.current;
+            if (!current || current.pointer !== event.pointerId) return;
+            const offset = event.clientX - current.startX;
+            if (!current.moved && Math.abs(offset) < 3) return;
+            current.moved = true;
+            current.position = current.from + offset;
+            const on = current.position > switchTravel / 2;
+            // Crossing the middle gives the thumb a small pop, like a detent.
+            if (on !== current.on && !matchMedia("(prefers-reduced-motion: reduce)").matches)
+               thumb.current?.animate([{ scale: 1 }, { scale: 1.14 }, { scale: 1 }], { duration: 220, easing: "ease-out" });
+            current.on = on;
+            place(current.position, on);
+         }}
+         onPointerUp={(event) => {
+            const current = drag.current;
+            if (!current || current.pointer !== event.pointerId) return;
+            drag.current = null;
+            reset();
+            if (!current.moved) return;
+            swallowClick.current = true;
+            // A release without a click, such as outside the window, must not eat the next real click.
+            setTimeout(() => (swallowClick.current = false));
+            if (current.on !== checked) onChange(current.on);
+         }}
+         onPointerCancel={() => {
+            drag.current = null;
+            reset();
+         }}
+      >
          <span>
             <span className="field-label">{label}</span>
             {detail && (
@@ -149,8 +230,8 @@ export function Toggle({
             onChange={(event) => onChange(event.target.checked)}
             disabled={disabled}
          />
-         <span className="switch" aria-hidden="true">
-            <span className="switch-thumb" />
+         <span className="switch" aria-hidden="true" ref={track}>
+            <span className="switch-thumb" ref={thumb} />
          </span>
       </label>
    );

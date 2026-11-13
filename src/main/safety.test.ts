@@ -44,6 +44,8 @@ describe("shortcut and startup validation", () => {
       expect(isValidShortcut("Control++")).toBe(false);
       expect(isValidShortcut("Control+Control+K")).toBe(false);
       expect(isValidShortcut("Meta+UnknownKey")).toBe(false);
+      // Macro keys set to F13 to F24, numpad and media keys register as their own keys.
+      for (const binding of ["F13", "num4", "numadd", "VolumeUp", "MediaNextTrack", "Scrolllock", "Control+num9"]) expect(isValidShortcut(binding)).toBe(true);
    });
    it("quotes Linux executable paths and escapes desktop entry interpolation", () => {
       const command = desktopExec("/home/user/My App%/AcroClip", ["/project/path"]);

@@ -90,60 +90,7 @@
    margin: 0;
 }
 
-.library-sidebar .sidebar-item .count {
-   flex: 0 0 var(--library-action-size);
-   width: var(--library-action-size);
-   display: flex;
-   justify-content: flex-end;
-   font-variant-numeric: tabular-nums;
-}
-
-.library-sidebar .sidebar-item .count > span {
-   flex: 0 0 auto;
-   min-width: 100%;
-   text-align: center;
-}
-
-.library-sidebar .sidebar-item:has(> .count) {
-   padding-right: 0;
-}
-
-.category-item {
-   position: relative;
-}
-
-.category-item .count {
-   visibility: hidden;
-}
-
-.category-item > .menu-wrap {
-   position: absolute;
-   top: 50%;
-   right: 0;
-   transform: translateY(-50%);
-}
-
-/* Keep contextual actions visible for touch, keyboard focus, and an open menu. */
 @media (hover: hover) and (pointer: fine) {
-   .category-item > .menu-wrap {
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 120ms var(--ease);
-   }
-   .category-item .count {
-      visibility: visible;
-   }
-   .category-item:hover > .menu-wrap,
-   :root[data-keyboard] .category-item:focus-within > .menu-wrap,
-   .category-item > .menu-wrap:has([aria-expanded="true"]) {
-      opacity: 1;
-      pointer-events: auto;
-   }
-   .category-item:hover .count,
-   :root[data-keyboard] .category-item:focus-within .count,
-   .category-item:has([aria-expanded="true"]) .count {
-      visibility: hidden;
-   }
    .card-menu {
       opacity: 0;
       transition: opacity 120ms var(--ease);
@@ -154,21 +101,9 @@
    }
 }
 
-.sidebar-item > .sidebar-label {
-   flex: 1;
-   min-width: 0;
-   overflow: hidden;
-   text-overflow: ellipsis;
-   white-space: nowrap;
-}
-.application-filter.selected {
-   color: var(--application-color, var(--accent));
-}
-:root[data-keyboard] .application-filter:focus-visible {
-   outline-color: var(--application-color, var(--accent));
-}
-.application-filter:not(.selected):hover {
-   background: color-mix(in srgb, var(--application-color, #bdbdbd) 8%, transparent);
+/* Tags and applications only set the tab color. Everything else is the shared tab. */
+.application-filter {
+   --tab-color: var(--application-color, var(--accent));
 }
 
 .library-content {
@@ -804,15 +739,11 @@
    }
 }
 
-.category-item .sidebar-item.selected {
+.category-item > .sidebar-item {
+   --tab-color: var(--category-color);
+}
+.category-item > .sidebar-item.selected {
    --category-ink: var(--category-color);
-   color: var(--category-color);
-}
-.category-item .sidebar-item.selected .count {
-   color: inherit;
-}
-.category-item .sidebar-item:not(.selected):hover {
-   background: #ffffff05;
 }
 .sidebar-scroll > .selection-indicator {
    transition:
@@ -824,15 +755,11 @@
       transition: none;
    }
 }
-:root[data-keyboard] .category-item .sidebar-item:focus-visible {
-   outline-color: var(--category-color);
-}
 .category-item .sidebar-item:disabled {
    opacity: 0.5;
 }
 
 .folder-tree-row {
-   position: relative;
    display: flex;
    align-items: center;
 }
@@ -840,25 +767,6 @@
    flex: 1;
    min-width: 0;
    padding-left: 25px;
-   padding-right: 32px;
-}
-.folder-tree-row > .menu-wrap {
-   position: absolute;
-   right: 0;
-   top: 50%;
-   transform: translateY(-50%);
-}
-@media (hover: hover) and (pointer: fine) {
-   .folder-tree-row > .menu-wrap {
-      opacity: 0;
-      transition: opacity 120ms var(--ease);
-      pointer-events: none;
-   }
-   .folder-tree-row:is(:hover, :focus-within) > .menu-wrap,
-   .folder-tree-row > .menu-wrap:has([aria-expanded="true"]) {
-      opacity: 1;
-      pointer-events: auto;
-   }
 }
 .move-dialog {
    width: min(460px, calc(100vw - 32px));
@@ -868,18 +776,10 @@
    overflow-y: auto;
    margin-top: 16px;
 }
-.move-folders .folder-tree-row > .sidebar-item {
-   padding-right: 12px;
-}
 .move-destination {
    overflow-wrap: anywhere;
    color: var(--muted);
    font-size: 12px;
-}
-.folder-tree-row > .sidebar-item > span {
-   overflow: hidden;
-   text-overflow: ellipsis;
-   white-space: nowrap;
 }
 .folder-expand {
    position: absolute;
@@ -1037,31 +937,17 @@
    background: var(--accent-soft);
 }
 
-.sidebar-group-title[data-empty],
-.category-item[data-empty],
-.folder-tree-row[data-empty],
-.application-filter[data-empty] {
-   opacity: 0.75;
-   transition: opacity 140ms ease;
-}
+/* Empty tab rows dim through .sidebar-row. An empty section title dims further. */
 .sidebar-group-title[data-empty] {
    opacity: 0.5;
+   transition: opacity 140ms ease;
 }
 .sidebar-group-title[data-empty]:hover,
-:root[data-keyboard] .sidebar-group-title[data-empty]:focus-within,
-.category-item[data-empty]:hover,
-:root[data-keyboard] .category-item[data-empty]:focus-within,
-.folder-tree-row[data-empty]:hover,
-:root[data-keyboard] .folder-tree-row[data-empty]:focus-within,
-.application-filter[data-empty]:hover,
-:root[data-keyboard] .application-filter[data-empty]:focus-visible {
+:root[data-keyboard] .sidebar-group-title[data-empty]:focus-within {
    opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-   .sidebar-group-title[data-empty],
-   .category-item[data-empty],
-   .folder-tree-row[data-empty],
-   .application-filter[data-empty] {
+   .sidebar-group-title[data-empty] {
       transition: none;
    }
 }

@@ -10,6 +10,7 @@ import {
 } from "../../shared/audio-filters";
 import { DialogPanel } from "./Dialog";
 import { MotionList } from "./MotionList";
+import { SidebarTab } from "./SidebarTab";
 import { Slider } from "./Slider";
 import { ContextHeader, Menu, MenuItem, Segmented, type ContextMenuRequest } from "./ui";
 
@@ -91,55 +92,51 @@ export function AudioFilters({
                      const label = audioFilterDefinitions[filter.kind].label;
                      const selectedRow = filter.id === selected?.id;
                      return (
-                        <div
+                        <SidebarTab
                            className="audio-filter"
-                           data-disabled={!filter.enabled || undefined}
-                           onContextMenu={(event) => {
-                              event.preventDefault();
-                              setContextMenu({
-                                 id: filter.id,
-                                 left: event.clientX,
-                                 top: event.clientY,
-                                 restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
-                              });
+                           rowAttributes={{
+                              "data-disabled": !filter.enabled || undefined,
+                              onContextMenu: (event) => {
+                                 event.preventDefault();
+                                 setContextMenu({
+                                    id: filter.id,
+                                    left: event.clientX,
+                                    top: event.clientY,
+                                    restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
+                                 });
+                              },
                            }}
-                        >
-                           <button
-                              type="button"
-                              data-list-control=""
-                              data-filter-select={filter.id}
-                              className={`sidebar-item ${selectedRow ? "selected" : ""}`}
-                              aria-pressed={selectedRow}
-                              aria-description={filter.enabled ? undefined : "Off"}
-                              onClick={() => setSelectedId(filter.id)}
-                           >
-                              <AudioWaveform size={16} aria-hidden="true" />
-                              <span className="sidebar-label" data-tooltip={label} data-tooltip-overflow="">
-                                 {label}
-                              </span>
-                              {!filter.enabled && (
+                           tabAttributes={{ "data-filter-select": filter.id, "aria-description": filter.enabled ? undefined : "Off" }}
+                           icon={<AudioWaveform size={16} aria-hidden="true" />}
+                           label={label}
+                           selected={selectedRow}
+                           onSelect={() => setSelectedId(filter.id)}
+                           after={
+                              !filter.enabled && (
                                  <span className="audio-filter-state" aria-hidden="true">
                                     Off
                                  </span>
-                              )}
-                           </button>
-                           <Menu
-                              className="audio-filter-actions"
-                              label={`Actions for ${label}`}
-                              trigger={<MoreHorizontal size={14} />}
-                              contextRequest={contextMenu?.id === filter.id ? contextMenu : undefined}
-                              onContextClose={() => setContextMenu((current) => (current?.id === filter.id ? null : current))}
-                           >
-                              <MenuItem onClick={() => commit(change(filter.id, { enabled: !filter.enabled }))}>
-                                 {filter.enabled ? <PowerOff size={14} /> : <Power size={14} />}
-                                 {filter.enabled ? "Turn off" : "Turn on"}
-                              </MenuItem>
-                              <MenuItem danger onClick={() => remove(filter.id)}>
-                                 <Trash2 size={14} />
-                                 Remove filter
-                              </MenuItem>
-                           </Menu>
-                        </div>
+                              )
+                           }
+                           actions={
+                              <Menu
+                                 className="audio-filter-actions"
+                                 label={`Actions for ${label}`}
+                                 trigger={<MoreHorizontal size={14} />}
+                                 contextRequest={contextMenu?.id === filter.id ? contextMenu : undefined}
+                                 onContextClose={() => setContextMenu((current) => (current?.id === filter.id ? null : current))}
+                              >
+                                 <MenuItem onClick={() => commit(change(filter.id, { enabled: !filter.enabled }))}>
+                                    {filter.enabled ? <PowerOff size={14} /> : <Power size={14} />}
+                                    {filter.enabled ? "Turn off" : "Turn on"}
+                                 </MenuItem>
+                                 <MenuItem danger onClick={() => remove(filter.id)}>
+                                    <Trash2 size={14} />
+                                    Remove filter
+                                 </MenuItem>
+                              </Menu>
+                           }
+                        />
                      );
                   }}
                </MotionList>

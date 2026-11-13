@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultPreferences } from "./defaults";
-import { previewFilename, validFilenameTemplate, filenameTemplateError, filenameTemplateWarning } from "./filename";
+import { previewFilename, validFilenameTemplate, filenameFields, filenameTemplateError, filenameTemplateWarning } from "./filename";
 
 describe("custom recording filenames", () => {
    it("rejects folder paths, unsupported tokens, and control characters", () => {
@@ -37,6 +37,19 @@ describe("custom recording filenames", () => {
       expect(filenameTemplateWarning("{source} {time}")).toContain("different days");
       expect(filenameTemplateWarning("{source} {date} {time}")).toBe("");
       expect(filenameTemplateWarning("../invalid")).toBe("");
+      // Separate date and time fields count as the whole date and time.
+      expect(filenameTemplateWarning("{source}_{year}{month}{day}_{hour}{minute}{second}")).toBe("");
+      expect(filenameTemplateWarning("{source} {year}{month}{day} {hour}{minute}")).toContain("same name");
+      expect(filenameTemplateWarning("{source} {weekday} {time}")).toContain("different days");
+   });
+   it("fills every field and preset on the local clock", () => {
+      const at = new Date(2026, 9, 8, 9, 5, 7);
+      expect(previewFilename({ filenamePreset: "replay", filenameTemplate: "" }, "Game", at)).toBe("Replay 2026-10-08 09-05-07.mp4");
+      expect(previewFilename({ filenamePreset: "compact", filenameTemplate: "" }, "Game", at)).toBe("Game_20261008_090507.mp4");
+      expect(
+         previewFilename({ filenamePreset: "custom", filenameTemplate: "{weekday} {day}.{month}.{year} {hour}h{minute}m{second}s {source}" }, "Game", at)
+      ).toBe("Thursday 08.10.2026 09h05m07s Game.mp4");
+      for (const field of filenameFields) expect(validFilenameTemplate(`Clip ${field.token}`)).toBe(true);
    });
    it("sanitizes captured window titles without adding IDs", () => {
       const preferences = { ...defaultPreferences, filenamePreset: "custom" as const, filenameTemplate: "{date} - {source}" };

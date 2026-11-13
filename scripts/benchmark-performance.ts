@@ -158,6 +158,7 @@ try {
       categories: [],
       jobs: [],
       recorder: { ...stoppedRecorder },
+      pendingPreferences: {},
       update: { state: "idle", version: "", progress: 0, message: "" },
       version: "benchmark",
       platform: process.platform,

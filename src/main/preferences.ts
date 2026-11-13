@@ -105,6 +105,34 @@ export async function writePreferences(path: string, value: Preferences): Promis
       await rm(temporary, { force: true });
    }
 }
+/** What capture is doing while a settings change applies. */
+export interface PreferenceCapture {
+   starting: boolean;
+   /** Changes that rebuild the recorder must wait while this is true. */
+   running: boolean;
+   /** The collection folder can't change while capture, saves or shareables are in progress. */
+   busy: boolean;
+}
+/**
+ * Which edited keys can apply with capture as it is, and which must wait. Keys apply in order, so a
+ * key only waits when adding it to the ones before would need capture to stop.
+ */
+export function splitHeldPreferences(
+   current: Preferences,
+   merge: (applied: Array<keyof Preferences>) => Preferences,
+   keys: readonly (keyof Preferences)[],
+   capture: PreferenceCapture
+): { applied: Array<keyof Preferences>; deferred: Array<keyof Preferences> } {
+   if (capture.starting) return { applied: [], deferred: [...keys] };
+   const held = (next: Preferences) => (capture.running && requiresCaptureRestart(current, next)) || (next.collection !== current.collection && capture.busy);
+   const applied: Array<keyof Preferences> = [];
+   const deferred: Array<keyof Preferences> = [];
+   for (const key of keys) {
+      if (held(merge([...applied, key]))) deferred.push(key);
+      else applied.push(key);
+   }
+   return { applied, deferred };
+}
 export function requiresCaptureRestart(a: Preferences, b: Preferences): boolean {
    return (
       a.clipSeconds !== b.clipSeconds ||

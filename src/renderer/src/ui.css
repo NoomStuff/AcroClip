@@ -396,6 +396,15 @@ label:active > .checkbox {
    cursor: default;
 }
 
+/* Dragging the thumb picks a side. The thumb follows the pointer, so nothing else should select or scroll. */
+.toggle-row[data-dragging] {
+   cursor: grabbing;
+   user-select: none;
+}
+.toggle-row .switch {
+   touch-action: pan-y;
+}
+
 .field {
    display: flex;
    gap: 25px;
@@ -467,20 +476,130 @@ label:active > .checkbox {
    text-overflow: ellipsis;
 }
 
-.sidebar-item:hover {
-   background: #ffffff04;
+/* Every tab follows one color: --tab-color, the accent unless a tag or an application sets its own.
+   Hover lifts an unselected tab and leaves a selected one in its color. A row's actions sit over
+   its tab, so pointing at them keeps the tab hovered. */
+.sidebar-item:not(.selected):hover,
+.sidebar-row:hover > .sidebar-item:not(.selected) {
+   background: #ffffff05;
    color: var(--text);
 }
 
 .sidebar-item.selected {
    background: var(--accent-soft);
-   color: var(--accent);
+   color: var(--tab-color, var(--accent));
+}
+.sidebar-item.selected .count {
+   color: inherit;
+}
+:root[data-keyboard] .sidebar-item:focus-visible {
+   outline-color: var(--tab-color, var(--accent));
 }
 
+/* One sidebar tab, the same in every list: see SidebarTab.tsx. The count and the row actions share
+   a column at the end. Counts align right like a column of figures, with the last digit centered
+   under the actions, so longer counts grow to the left and take room from the label. */
+.sidebar-row {
+   --sidebar-action-size: 30px;
+   position: relative;
+   /* Lets the actions find the row's center for the press. Menus open in a portal, so containment can't trap them. */
+   container-type: inline-size;
+}
+.sidebar-item > .sidebar-label {
+   flex: 1;
+   min-width: 0;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
 .sidebar-item .count {
+   flex: 0 0 auto;
+   min-width: var(--sidebar-action-size);
    margin-left: auto;
+   /* Tabular digits are 1ch wide, so this puts the last one's center on the column's center. */
+   padding-inline: 0 calc(var(--sidebar-action-size) / 2 - 0.5ch);
+   display: flex;
+   justify-content: flex-end;
    font-size: 11px;
    color: var(--subtle);
+   font-variant-numeric: tabular-nums;
+   white-space: nowrap;
+}
+.sidebar-item:has(> .count) {
+   padding-right: 0;
+}
+.sidebar-row:has(> .menu-wrap) > .sidebar-item:not(:has(> .count)) {
+   padding-right: var(--sidebar-action-size);
+}
+.sidebar-row > .menu-wrap {
+   position: absolute;
+   top: 50%;
+   right: 0;
+   transform: translateY(-50%);
+   /* A pressed tab squashes around its own center. The actions squash around the same point, so they
+      stay on the tab. 50cqw is half the row. */
+   transform-origin: calc(100% - 50cqw) 50%;
+}
+.sidebar-row:has(> .sidebar-item:active) > .menu-wrap {
+   scale: 0.97;
+}
+.sidebar-row > .menu-wrap > .icon-button {
+   width: var(--sidebar-action-size);
+   height: var(--sidebar-action-size);
+   /* The icon slides in inside its own button, so it never crosses the edge of the list. */
+   overflow: hidden;
+}
+/* On touch screens the actions stay out. With a mouse they appear on hover, keyboard focus or an open menu. */
+@media (hover: hover) and (pointer: fine) {
+   .sidebar-row > .menu-wrap {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms var(--ease);
+   }
+   .sidebar-row > .menu-wrap > .icon-button > svg {
+      translate: 8px 0;
+      transition: translate 260ms var(--spring);
+   }
+   .sidebar-row:hover > .menu-wrap,
+   :root[data-keyboard] .sidebar-row:focus-within > .menu-wrap,
+   .sidebar-row > .menu-wrap:has([aria-expanded="true"]) {
+      opacity: 1;
+      pointer-events: auto;
+   }
+   .sidebar-row:hover > .menu-wrap > .icon-button > svg,
+   :root[data-keyboard] .sidebar-row:focus-within > .menu-wrap > .icon-button > svg,
+   .sidebar-row > .menu-wrap:has([aria-expanded="true"]) > .icon-button > svg {
+      translate: 0;
+   }
+   .sidebar-row:is(:hover, :has([aria-expanded="true"])):has(> .menu-wrap) > .sidebar-item > .count,
+   :root[data-keyboard] .sidebar-row:focus-within:has(> .menu-wrap) > .sidebar-item > .count {
+      visibility: hidden;
+   }
+}
+@media not ((hover: hover) and (pointer: fine)) {
+   .sidebar-row:has(> .menu-wrap) > .sidebar-item > .count {
+      visibility: hidden;
+   }
+}
+@media (prefers-reduced-motion: reduce) {
+   .sidebar-row > .menu-wrap > .icon-button > svg {
+      translate: 0;
+      transition: none;
+   }
+}
+/* Rows with nothing in them step back until pointed at. */
+.sidebar-row[data-empty] {
+   opacity: 0.75;
+   transition: opacity 140ms ease;
+}
+.sidebar-row[data-empty]:hover,
+:root[data-keyboard] .sidebar-row[data-empty]:focus-within {
+   opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+   .sidebar-row[data-empty] {
+      transition: none;
+   }
 }
 
 .menu-wrap {

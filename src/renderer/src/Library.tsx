@@ -27,6 +27,7 @@ import { useThumbnailSize } from "./useThumbnailSize";
 import { gridZoomRange, gridZoomTarget } from "./thumbnail-scale";
 import { Slider } from "./Slider";
 import { SelectionIndicator } from "./SelectionIndicator";
+import { SidebarTab } from "./SidebarTab";
 import { MotionList } from "./MotionList";
 import { ContextHeader, Button, Empty, IconButton, Menu, MenuItem } from "./ui";
 import { api, reportFeedback } from "./desktop";
@@ -665,13 +666,13 @@ export function Library({
             </div>
             <div className="sidebar-scroll moving-selection">
                <SelectionIndicator value={filter} />
-               <button className={`sidebar-item ${filter === "all" ? "selected" : ""}`} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>
-                  <Grid2X2 size={17} />
-                  <span className="sidebar-label">All clips</span>
-                  <span className="count">
-                     <span>{initial ? "" : state.clips.length}</span>
-                  </span>
-               </button>
+               <SidebarTab
+                  icon={<Grid2X2 size={17} />}
+                  label="All clips"
+                  selected={filter === "all"}
+                  onSelect={() => setFilter("all")}
+                  count={initial ? "" : state.clips.length}
+               />
                <MotionList items={sections} identity={collectionRoot} onReorder={reorderSection} followContentSize>
                   {(section) => (
                      <LibrarySection
@@ -706,51 +707,45 @@ export function Library({
                                  onReorder={(id, beforeId) => run(() => api.reorderCategory(id, beforeId))}
                               >
                                  {(item) => (
-                                    <div
-                                       className="category-item"
-                                       data-empty={!summary.categories.get(item.id) || undefined}
+                                    <SidebarTab
                                        key={item.id}
-                                       onContextMenu={(event) => {
-                                          event.preventDefault();
-                                          setCategoryContextMenu({
-                                             categoryId: item.id,
-                                             left: event.clientX,
-                                             top: event.clientY,
-                                             restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
-                                          });
+                                       className="category-item"
+                                       rowAttributes={{
+                                          "data-empty": !summary.categories.get(item.id) || undefined,
+                                          onContextMenu: (event) => {
+                                             event.preventDefault();
+                                             setCategoryContextMenu({
+                                                categoryId: item.id,
+                                                left: event.clientX,
+                                                top: event.clientY,
+                                                restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
+                                             });
+                                          },
                                        }}
-                                    >
-                                       <button
-                                          data-list-control=""
-                                          className={`sidebar-item ${filter === `category:${item.id}` ? "selected" : ""}`}
-                                          aria-pressed={filter === `category:${item.id}`}
-                                          style={categoryStyle(item.color)}
-                                          onClick={() => setFilter(`category:${item.id}`)}
-                                       >
-                                          <CategoryMark category={item} />
-                                          <span className="sidebar-label" data-tooltip={item.name} data-tooltip-overflow="">
-                                             {item.name}
-                                          </span>
-                                          <span className="count">
-                                             <span>{summary.categories.get(item.id) ?? 0}</span>
-                                          </span>
-                                       </button>
-                                       <Menu
-                                          label={`Actions for ${item.name}`}
-                                          trigger={<MoreHorizontal size={14} />}
-                                          contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
-                                          onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
-                                       >
-                                          <MenuItem onClick={() => setEditingCategory(item)}>
-                                             <Pencil size={14} />
-                                             Edit tag
-                                          </MenuItem>
-                                          <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
-                                             <Trash2 size={14} />
-                                             Delete tag
-                                          </MenuItem>
-                                       </Menu>
-                                    </div>
+                                       icon={<CategoryMark category={item} />}
+                                       label={item.name}
+                                       selected={filter === `category:${item.id}`}
+                                       tabStyle={categoryStyle(item.color)}
+                                       onSelect={() => setFilter(`category:${item.id}`)}
+                                       count={summary.categories.get(item.id) ?? 0}
+                                       actions={
+                                          <Menu
+                                             label={`Actions for ${item.name}`}
+                                             trigger={<MoreHorizontal size={14} />}
+                                             contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
+                                             onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
+                                          >
+                                             <MenuItem onClick={() => setEditingCategory(item)}>
+                                                <Pencil size={14} />
+                                                Edit tag
+                                             </MenuItem>
+                                             <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
+                                                <Trash2 size={14} />
+                                                Delete tag
+                                             </MenuItem>
+                                          </Menu>
+                                       }
+                                    />
                                  )}
                               </MotionList>
                            </>
@@ -758,22 +753,18 @@ export function Library({
                            <>
                               <MotionList items={sources} identity={collectionRoot} visible={sectionOpen("applications")}>
                                  {(source) => (
-                                    <button
+                                    <SidebarTab
                                        key={source.id}
-                                       data-empty={!applicationCounts.get(source.id) || undefined}
-                                       className={`sidebar-item application-filter ${filter === `source:${source.id}` ? "selected" : ""}`}
-                                       style={{ "--application-color": applicationColors[source.id] } as CSSProperties}
-                                       aria-pressed={filter === `source:${source.id}`}
-                                       onClick={() => setFilter(`source:${source.id}`)}
-                                    >
-                                       <ApplicationIcon src={source.icon} size={16} />
-                                       <span className="sidebar-label" data-tooltip={source.name} data-tooltip-overflow="">
-                                          {source.name}
-                                       </span>
-                                       <span className="count">
-                                          <span>{applicationCounts.get(source.id) ?? 0}</span>
-                                       </span>
-                                    </button>
+                                       className="application-row"
+                                       rowAttributes={{ "data-empty": !applicationCounts.get(source.id) || undefined }}
+                                       tabClassName="application-filter"
+                                       tabStyle={{ "--application-color": applicationColors[source.id] } as CSSProperties}
+                                       icon={<ApplicationIcon src={source.icon} size={16} />}
+                                       label={source.name}
+                                       selected={filter === `source:${source.id}`}
+                                       onSelect={() => setFilter(`source:${source.id}`)}
+                                       count={applicationCounts.get(source.id) ?? 0}
+                                    />
                                  )}
                               </MotionList>
                            </>

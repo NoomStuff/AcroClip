@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
    AlertCircle,
    Info,
@@ -29,8 +30,9 @@ import {
 } from "lucide-react";
 import type { AppState, OverlapClips, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
-import { previewFilename, filenamePatterns, filenameTemplateError, filenameTemplateWarning } from "../../shared/filename";
+import { previewFilename, filenameFields, filenamePatterns, filenameTemplateError, filenameTemplateWarning } from "../../shared/filename";
 import { SelectionIndicator } from "./SelectionIndicator";
+import { SidebarTab } from "./SidebarTab";
 import { MotionList } from "./MotionList";
 import { HeaderActions, Button, Select } from "./ui";
 import { PresetNumberInput } from "./PresetNumberInput";
@@ -110,6 +112,8 @@ function FilenameEditor({
             <Select label="Filename preset" value={preset} onChange={(next) => onPreset(next as Preferences["filenamePreset"])}>
                <option value="source-date">App + date</option>
                <option value="date-source">Date + app</option>
+               <option value="replay">Replay + date</option>
+               <option value="compact">Compact</option>
                <option value="custom">Custom</option>
             </Select>
          </div>
@@ -132,17 +136,30 @@ function FilenameEditor({
             <WarningIcon message={message} error={!!error} id="filename-pattern-message" />
          </div>
          <div className="filename-tokens">
-            {[
-               { token: "{source}", name: "Application" },
-               { token: "{date}", name: "Date" },
-               { token: "{time}", name: "Time" },
-            ].map((item) => (
+            {filenameFields.map((item) => (
                <button key={item.token} data-tooltip={item.token} onMouseDown={(event) => event.preventDefault()} onClick={() => insert(item.token)}>
                   {item.name}
                   <span>{item.token}</span>
                </button>
             ))}
          </div>
+      </div>
+   );
+}
+/**
+ * Save problems and waiting changes float over the bottom of the page, so showing one never moves
+ * the settings under the pointer. The last message stays while it fades out.
+ */
+function SaveFeedback({ message, tone, action }: { message: string; tone: "error" | "info"; action: ReactNode }) {
+   const [last, setLast] = useState({ message, tone, action });
+   useLayoutEffect(() => {
+      if (message) setLast({ message, tone, action });
+   }, [message, tone, action]);
+   const shown = message ? { message, tone, action } : last;
+   return (
+      <div className="settings-save-feedback" role="status" aria-hidden={!message || undefined} data-shown={!!message || undefined} data-tone={shown.tone}>
+         <span>{shown.message}</span>
+         {message && shown.action}
       </div>
    );
 }
@@ -157,7 +174,7 @@ export function Settings({
    target,
    showShortcuts,
 }: {
-   state: Pick<AppState, "preferences" | "recorder" | "jobs" | "update" | "version" | "platform">;
+   state: Pick<AppState, "preferences" | "pendingPreferences" | "recorder" | "jobs" | "update" | "version" | "platform">;
    run: Run;
    ask: Ask;
    target: SettingsTarget | null;
@@ -210,7 +227,8 @@ export function Settings({
          reducedMotion.removeEventListener("change", reduce);
       };
    }, [section, direction]);
-   const { draft, write, status, error: saveError, retry, flush } = useSettingsAutosave(state.preferences);
+   const { draft, write, status, error: saveError, retrying, retry, flush } = useSettingsAutosave(state.preferences, state.pendingPreferences);
+   const waiting = Object.keys(state.pendingPreferences) as Array<keyof Preferences>;
    const recording = ["recording", "waiting", "starting"].includes(state.recorder.state);
    const captureSettings = section === "recording";
    const collectionSettings = section === "collection";
@@ -376,16 +394,14 @@ export function Settings({
                <SelectionIndicator value={section} />
                <MotionList items={sections}>
                   {(item) => (
-                     <button
-                        data-list-control=""
+                     <SidebarTab
                         key={item.id}
-                        className={`sidebar-item ${section === item.id ? "selected" : ""}`}
-                        aria-current={section === item.id ? "page" : undefined}
-                        onClick={() => void switchSection(item.id)}
-                     >
-                        <item.icon size={17} />
-                        {item.label}
-                     </button>
+                        icon={<item.icon size={17} />}
+                        label={item.label}
+                        selection="page"
+                        selected={section === item.id}
+                        onSelect={() => void switchSection(item.id)}
+                     />
                   )}
                </MotionList>
             </div>
@@ -395,10 +411,10 @@ export function Settings({
          </aside>
          <PaneDivider label="Settings sidebar width" pane={sidebar} />
          <div className="settings-main" key={section} ref={content}>
-            <header className="settings-heading">
-               <h1>{title}</h1>
-            </header>
             <div className="settings-scroll">
+               <header className="settings-heading">
+                  <h1>{title}</h1>
+               </header>
                <fieldset className="settings-body" disabled={captureSettings && locked}>
                   {section === "recording" && (
                      <>
@@ -450,7 +466,7 @@ export function Settings({
                         {[
                            {
                               title: "Capture",
-                              detail: "Global shortcuts work in the tray. Stopping clears unsaved recent footage.",
+                              detail: "Global shortcuts work in every app and from the tray.",
                               items: shortcutRegistry.filter((item) => item.scope === "global"),
                            },
                            {
@@ -480,6 +496,7 @@ export function Settings({
                                     >
                                        <ShortcutInput
                                           clash={clashes.length > 0}
+                                          global={item.scope === "global"}
                                           label={item.id === "saveClip" ? "Clip shortcut" : `${item.label} shortcut`}
                                           value={bindingFor(draft, item.id)}
                                           onChange={(value) =>
@@ -680,16 +697,24 @@ export function Settings({
                   )}
                </fieldset>
             </div>
-            {(qualityError || (!filenameError && !inlineClash && saveError) || locked) && (
-               <div className="settings-save-feedback" role="status">
-                  <span>
-                     {qualityError ||
-                        saveError ||
-                        (recording ? "Stop capturing to change capture or collection settings." : "Finish pending work before changing the collection.")}
-                  </span>
-                  {saveError && !filenameError && <Button onClick={retry}>Retry save</Button>}
-               </div>
-            )}
+            <SaveFeedback
+               message={
+                  qualityError ||
+                  (!filenameError && !inlineClash && saveError ? `${saveError}${retrying ? " Retrying…" : ""}` : "") ||
+                  (waiting.length
+                     ? waiting.includes("collection") && waiting.length === 1
+                        ? "The new collection folder applies once capture stops and shareables finish."
+                        : "Your capture changes are saved and apply when capture stops."
+                     : "") ||
+                  (locked
+                     ? recording
+                        ? "Stop capturing to change capture or collection settings."
+                        : "Finish pending work before changing the collection."
+                     : "")
+               }
+               tone={qualityError || (saveError && !filenameError && !inlineClash) ? "error" : "info"}
+               action={saveError && !filenameError && !retrying ? <Button onClick={retry}>Retry save</Button> : null}
+            />
          </div>
       </div>
    );

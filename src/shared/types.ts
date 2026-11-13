@@ -124,7 +124,7 @@ export interface Preferences {
    // What a save does when its footage overlaps the previous clip.
    overlapClips: OverlapClips;
    folderLayout: "flat" | "application";
-   filenamePreset: "source-date" | "date-source" | "custom";
+   filenamePreset: "source-date" | "date-source" | "replay" | "compact" | "custom";
    filenameTemplate: string;
    setupComplete: boolean;
 }
@@ -239,9 +239,16 @@ export interface AppState {
    categories: Category[];
    jobs: Job[];
    recorder: RecorderState;
+   /** Settings changed while capture kept them from applying. They apply once capture allows. */
+   pendingPreferences: Partial<Preferences>;
    update: UpdateState;
    version: string;
    platform: string;
+}
+/** What an automatic settings save applied, and the edited keys it held back until capture allows them. */
+export interface AutosaveResult {
+   state: AppState;
+   deferred: Array<keyof Preferences>;
 }
 /** How an in-app notice behaves. See src/renderer/src/notifications.ts. */
 export interface NoticeOptions {
@@ -292,6 +299,8 @@ export interface DesktopAPI {
    listenAudio(source: string | null): Promise<void>;
    audioDevices(kind?: "input" | "output"): Promise<{ id: string; name: string }[]>;
    savePreferences(value: Preferences, changedKeys?: Array<keyof Preferences>): Promise<AppState>;
+   /** Saves what can apply now. Keys capture holds back come back in `deferred`. */
+   autosavePreferences(value: Preferences, changedKeys: Array<keyof Preferences>): Promise<AutosaveResult>;
    captureShortcut(enabled: boolean): Promise<void>;
    chooseFolder(): Promise<string | null>;
    startRecording(): Promise<void>;

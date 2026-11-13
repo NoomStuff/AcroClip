@@ -27,6 +27,7 @@ export function isValidShortcut(value: string): boolean {
    return (
       /^[A-Z0-9]$/i.test(key) ||
       /^F(?:[1-9]|1\d|2[0-4])$/.test(key) ||
+      /^num(?:\d|dec|add|sub|mult|div)$/.test(key) ||
       new Set([
          "Plus",
          "Space",

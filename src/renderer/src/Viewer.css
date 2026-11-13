@@ -624,11 +624,82 @@
 }
 .player-volume-panel {
    display: flex;
+   flex-direction: column;
    align-items: center;
-   padding: 8px 12px;
+   gap: 6px;
+   padding: 9px 6px 10px;
    border-radius: 8px;
    background: var(--raised);
    box-shadow: 0 4px 14px #0005;
+}
+.player-volume-value {
+   min-width: 3ch;
+   color: var(--muted);
+   font-size: 10px;
+   font-weight: 550;
+   text-align: center;
+   font-variant-numeric: tabular-nums;
+}
+/* Vertical, filling from the bottom. The thumb inset matches ViewerVolume.tsx. */
+.player-volume-slider {
+   --thumb-inset: 6px;
+   position: relative;
+   display: flex;
+   justify-content: center;
+   width: 24px;
+   height: 104px;
+   cursor: pointer;
+   touch-action: none;
+}
+.player-volume-slider[data-disabled] {
+   cursor: default;
+   opacity: 0.5;
+}
+.player-volume-slider::before {
+   content: "";
+   position: absolute;
+   top: 0;
+   bottom: 0;
+   width: 5px;
+   border-radius: 3px;
+   background: linear-gradient(to top, var(--accent) var(--fill), var(--line) var(--fill));
+   pointer-events: none;
+}
+.player-volume-slider > i {
+   position: absolute;
+   bottom: calc(var(--thumb-inset) + (100% - 2 * var(--thumb-inset)) * var(--volume));
+   width: 11px;
+   height: 11px;
+   border-radius: 50%;
+   background: #fff;
+   transform: translateY(50%);
+   box-shadow: 0 1px 3px #0006;
+   pointer-events: none;
+   transition: scale 260ms var(--spring);
+}
+.player-volume-slider:not([data-disabled]):hover > i,
+:root[data-keyboard] .player-volume-slider:has(input:focus-visible) > i {
+   scale: 1.2;
+}
+.player-volume-slider[data-dragging] > i {
+   scale: 1.3;
+}
+.player-volume-slider input {
+   position: absolute;
+   inset: 0;
+   width: 100%;
+   height: 100%;
+   margin: 0;
+   writing-mode: vertical-lr;
+   direction: rtl;
+   opacity: 0;
+   /* ViewerVolume handles pointers itself. The input only takes keyboard focus. */
+   pointer-events: none;
+}
+:root[data-keyboard] .player-volume-slider:has(input:focus-visible) {
+   outline: 2px solid var(--accent);
+   outline-offset: 3px;
+   border-radius: 4px;
 }
 
 .player-volume-controls .custom-select {

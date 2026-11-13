@@ -103,15 +103,24 @@ test("the player opens Matroska, QuickTime and converted formats, and switches a
             const decoded = await audioDecoded();
             await expect.poll(audioDecoded).toBeGreaterThan(decoded);
          };
-         // Several tracks play as one mixed stream from a prepared copy.
-         await selectOption(page, "Audio tracks", "2");
+         await playing();
+         // Shift-click mixes several tracks into one stream from a prepared copy. The original keeps
+         // playing while the copy prepares, and the copy picks up from the same moment.
+         const picker = page.getByRole("combobox", { name: "Audio tracks", exact: true });
+         const options = page.getByRole("listbox", { name: "Audio tracks", exact: true }).getByRole("option");
+         await picker.click();
+         await options.filter({ hasText: "Microphone" }).click({ modifiers: ["Shift"] });
          await page.keyboard.press("Escape");
+         expect(await video.evaluate((node: HTMLVideoElement) => [node.currentSrc, node.paused])).toEqual([source, false]);
+         await expect(picker).toBeEnabled();
          await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentSrc), { timeout: 60000 }).not.toBe(source);
+         const mixedAt = await video.evaluate((node: HTMLVideoElement) => node.currentTime);
          await expect.poll(enabledTracks).toEqual([true]);
          await playing();
-         // One track plays from the original element again, with that track enabled.
-         await selectOption(page, "Audio tracks", "1");
-         await page.keyboard.press("Escape");
+         expect(await video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(mixedAt);
+         await expect(picker).toHaveAttribute("data-value", "1,2");
+         // A plain click plays only that track from the original element, with that track enabled.
+         await selectOption(page, "Audio tracks", "2");
          await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentSrc), { timeout: 60000 }).toBe(source);
          await expect.poll(enabledTracks).toEqual([false, true]);
          await playing();
@@ -120,10 +129,9 @@ test("the player opens Matroska, QuickTime and converted formats, and switches a
             node.dataset["loads"] = "0";
             node.addEventListener("loadstart", () => (node.dataset["loads"] = String(Number(node.dataset["loads"]) + 1)));
          });
-         await page.getByRole("combobox", { name: "Audio tracks", exact: true }).click();
-         const options = page.getByRole("listbox", { name: "Audio tracks", exact: true }).getByRole("option");
-         await options.filter({ hasText: "Master" }).click();
-         await options.filter({ hasText: "Microphone" }).click();
+         await picker.click();
+         await options.filter({ hasText: "Master" }).click({ modifiers: ["Shift"] });
+         await options.filter({ hasText: "Microphone" }).click({ button: "right" });
          await page.keyboard.press("Escape");
          await expect.poll(enabledTracks).toEqual([true, false]);
          await playing();
@@ -131,6 +139,16 @@ test("the player opens Matroska, QuickTime and converted formats, and switches a
          expect(await video.evaluate((node: HTMLVideoElement) => [node.currentSrc, node.dataset["loads"]])).toEqual([source, "0"]);
          await page.getByRole("button", { name: "Pause", exact: true }).click();
       }
+      // A minimized or covered window hides the player. Coming back, the same clip plays again.
+      await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.minimize());
+      await page.waitForTimeout(500);
+      await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.restore());
+      await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.readyState), { timeout: 30000 }).toBeGreaterThanOrEqual(2);
+      await page.getByRole("button", { name: "Play", exact: true }).click();
+      await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+      await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Pause", exact: true }).click();
+      await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
       await expect(page.locator(".playback-error")).toHaveCount(0);
    } finally {
       await desktop.close();

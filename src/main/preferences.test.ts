@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultPreferences } from "../shared/defaults";
 import { preferencesSchema } from "../shared/validation";
-import { mergePreferenceChanges, readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
+import { mergePreferenceChanges, readPreferences, requiresCaptureRestart, splitHeldPreferences, writePreferences } from "./preferences";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -75,6 +75,31 @@ describe("recording settings boundaries", () => {
       expect(preferencesSchema.safeParse({ ...defaultPreferences, clipSeconds: Infinity }).success).toBe(false);
       expect(preferencesSchema.safeParse({ ...defaultPreferences, shareSizeMB: 0 }).success).toBe(false);
       expect(preferencesSchema.safeParse({ ...defaultPreferences, unknown: true }).success).toBe(false);
+   });
+});
+describe("settings capture holds back", () => {
+   // Main always holds normalized preferences, so the test starts from the same.
+   const current = mergePreferenceChanges(defaultPreferences, { ...defaultPreferences, collection: "C:/Clips" }, undefined);
+   const value = { ...current, clipSeconds: 90, shareSizeMB: 30, collection: "C:/Other" };
+   const merge = (keys: Array<keyof typeof current>) => mergePreferenceChanges(current, value, keys);
+   const keys: Array<keyof typeof current> = ["clipSeconds", "shareSizeMB", "collection"];
+   it("saves everything when capture is off", () => {
+      expect(splitHeldPreferences(current, merge, keys, { starting: false, running: false, busy: false })).toEqual({ applied: keys, deferred: [] });
+   });
+   it("holds back only what needs capture to stop, so other changes still save", () => {
+      expect(splitHeldPreferences(current, merge, keys, { starting: false, running: true, busy: true })).toEqual({
+         applied: ["shareSizeMB"],
+         deferred: ["clipSeconds", "collection"],
+      });
+   });
+   it("waits with every change while capture starts", () => {
+      expect(splitHeldPreferences(current, merge, keys, { starting: true, running: false, busy: true }).deferred).toEqual(keys);
+   });
+   it("holds a collection change while saves or shareables run, even with capture off", () => {
+      expect(splitHeldPreferences(current, merge, keys, { starting: false, running: false, busy: true })).toEqual({
+         applied: ["clipSeconds", "shareSizeMB"],
+         deferred: ["collection"],
+      });
    });
 });
 describe("overlapping clip choice", () => {

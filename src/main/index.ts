@@ -10,15 +10,34 @@ import { randomUUID } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { AppEvent, AppState, ApplicationArtwork, CaptureSource, NoticeOptions, Preferences, RecorderState, RecordingCapabilities } from "../shared/types";
+import type {
+   AppEvent,
+   AppState,
+   ApplicationArtwork,
+   AutosaveResult,
+   CaptureSource,
+   NoticeOptions,
+   Preferences,
+   RecorderState,
+   RecordingCapabilities,
+} from "../shared/types";
 import { recordingArtwork, type RecordingArtwork } from "./recording-artwork";
-import { categoryRequest, historyPartsSchema, idSchema, preferenceResetSchema, rendererErrorSchema, resetPartsSchema } from "../shared/validation";
+import {
+   categoryRequest,
+   historyPartsSchema,
+   idSchema,
+   preferenceKeysSchema,
+   preferenceResetSchema,
+   rendererErrorSchema,
+   resetPartsSchema,
+} from "../shared/validation";
 import { assertDistinctAudioSources } from "./audio-sources";
 import { audioTopology, synchronizeLegacyAudio, monitoringPreferences } from "../shared/audio-model";
-import { mergePreferenceChanges, readPreferences, requiresCaptureRestart, writePreferences } from "./preferences";
+import { mergePreferenceChanges, readPreferences, requiresCaptureRestart, splitHeldPreferences, writePreferences } from "./preferences";
+import type { PreferenceCapture } from "./preferences";
 import { CollectionService, withinRoot } from "./collection";
 import { isValidShortcut, recordingDestination, recordingSourceLabel, samePath } from "./safety";
-import { bindingFor, shortcutRegistry, shortcutConflict } from "../shared/shortcuts";
+import { bindingFor, globalShortcutProblem, shortcutRegistry, shortcutConflict } from "../shared/shortcuts";
 import type { ShortcutAction } from "../shared/shortcuts";
 import { CaptureTimeout, Recorder } from "./recorder";
 import { CaptureSources } from "./capture-sources";
@@ -95,6 +114,18 @@ let startingCapture: Promise<void> | null = null;
 let previewSourceId: string | null = null;
 let previewOwner: string | null = null;
 let playbackRequest: { id: string; controller: AbortController } | undefined;
+function currentPreferenceCapture(): PreferenceCapture {
+   return {
+      starting: !!startingCapture,
+      running: recorder.status.state !== "stopped" && recorder.status.state !== "error",
+      busy: recorder.status.state !== "stopped" || recorder.status.pendingSaves > 0 || collections.pendingJobs.length > 0,
+   };
+}
+/** Edited settings that wait until capture allows them, by key. */
+let pendingPreferences: Partial<Preferences> = {};
+let applyingPendingPreferences = false;
+/** Set once IPC is registered. Applies waiting settings when capture allows them. */
+let applyPendingPreferences = () => {};
 // Level meters only exist on the Capture page, which says when it shows them.
 let metersShown = false;
 let meterLevels: { capture: number; microphone: number; additional: Record<string, number> } = { capture: 0, microphone: 0, additional: {} };
@@ -421,6 +452,7 @@ const recorder = new Recorder({
       trackCaptureSession(current);
       recordingNotices.state(current, closingRequested);
       updateStorageActivity();
+      applyPendingPreferences();
       // The helper reports every second. Only a change reaches the window.
       const event = windowShown() ? stateChanges.recorder(recorderState()) : undefined;
       if (event) send(event);
@@ -521,6 +553,7 @@ function state(): AppState {
       categories: collections.categories,
       jobs: collections.jobs,
       recorder: recorderState(),
+      pendingPreferences,
       update: updates.state,
       version: app.getVersion(),
       platform: process.platform,
@@ -534,6 +567,7 @@ function send(event: AppEvent) {
 function emitState() {
    if (!preferences) return;
    updateStorageActivity();
+   applyPendingPreferences();
    libraryRefresh.update(collections.root, windowShown());
    // Do not advance the baseline while the renderer cannot receive updates.
    if (!windowShown()) return;
@@ -1069,6 +1103,7 @@ const collectionIndependent = new Set([
    "update-reveal",
    "exit",
    "preferences",
+   "preferences-autosave",
    "playback",
    "cancel-playback",
    "record-start",
@@ -1092,6 +1127,7 @@ const collectionIndependent = new Set([
 /** Changes refused once exiting has begun. */
 const changesWhileExiting = new Set([
    "preferences",
+   "preferences-autosave",
    "share",
    "rename",
    "delete",
@@ -1114,6 +1150,7 @@ const locallyReported = new Set([
    "monitor-audio",
    "listen-audio",
    "preferences",
+   "preferences-autosave",
    "keyframes",
    "loudness",
    "stats-view",
@@ -1233,13 +1270,61 @@ function registerIPC() {
       const picked = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"], defaultPath: preferences.collection });
       return picked.canceled ? null : (picked.filePaths[0] ?? null);
    });
+   /**
+    * Settings save as they change. What capture keeps from applying now waits in main, and the rest
+    * saves, so one held change never blocks every other one. Held changes apply by themselves once
+    * capture allows them, even after Settings closes.
+    */
+   async function autosavePreferences(value: unknown, keys: Array<keyof Preferences>): Promise<AutosaveResult> {
+      let deferred: Array<keyof Preferences> = [];
+      const result = await applyPreferences((capture) => {
+         const incoming = mergePreferenceChanges(preferences, value, keys);
+         const merge = (applied: Array<keyof Preferences>) => synchronizeLegacyAudio(preferences, mergePreferenceChanges(preferences, value, applied));
+         const split = splitHeldPreferences(preferences, merge, keys, capture);
+         deferred = split.deferred;
+         // A newer save of a held key replaces the waiting value. One that applies clears it.
+         const pending: Partial<Preferences> = { ...pendingPreferences };
+         for (const key of keys) {
+            if (deferred.includes(key)) Object.assign(pending, { [key]: incoming[key] });
+            else delete pending[key];
+         }
+         pendingPreferences = pending;
+         return merge(split.applied);
+      });
+      if (deferred.length) log(`preferences: ${deferred.join(", ")} wait for capture to allow them`);
+      return { state: result, deferred };
+   }
+   applyPendingPreferences = () => {
+      const keys = Object.keys(pendingPreferences) as Array<keyof Preferences>;
+      if (!keys.length || applyingPendingPreferences || startingCapture) return;
+      const value = { ...preferences, ...pendingPreferences };
+      const merge = (applied: Array<keyof Preferences>) => synchronizeLegacyAudio(preferences, mergePreferenceChanges(preferences, value, applied));
+      // Most recorder reports change nothing for these keys. Only a change that can apply starts a save.
+      if (!splitHeldPreferences(preferences, merge, keys, currentPreferenceCapture()).applied.length) return;
+      applyingPendingPreferences = true;
+      void autosavePreferences(value, keys)
+         .then(({ deferred }) => {
+            if (!deferred.length) log(`preferences: applied ${keys.join(", ")} once capture allowed them`);
+         })
+         .catch((error: unknown) => {
+            // A held value that no longer fits is dropped, so it can't fail again every second.
+            pendingPreferences = {};
+            emitState();
+            notice(`Couldn't apply settings changed during capture. ${errorMessage(error)}`, true, "info", "action");
+         })
+         .finally(() => {
+            applyingPendingPreferences = false;
+         });
+   };
    /** Every settings change goes through here, one at a time, and rolls back as a whole. */
-   function applyPreferences(build: () => Preferences): Promise<AppState> {
+   function applyPreferences(build: (capture: PreferenceCapture) => Preferences): Promise<AppState> {
       const operation = preferenceWrites
          .catch(() => undefined)
          .then(async () => {
-            if (startingCapture) throw new Error("Capture is starting. Wait before applying settings.");
-            const next = build();
+            const capture = currentPreferenceCapture();
+            const next = build(capture);
+            if (capture.starting && JSON.stringify(next) !== JSON.stringify(preferences))
+               throw new Error("Capture is starting. Wait before applying settings.");
             if (audioTopology(next) !== audioTopology(preferences) || next.sourceKind !== preferences.sourceKind || next.sourceId !== preferences.sourceId)
                assertDistinctAudioSources(next, captureSources.cached);
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
@@ -1256,6 +1341,9 @@ function registerIPC() {
             for (const item of shortcutRegistry) {
                const key = bindingFor(next, item.id);
                if (key && !isValidShortcut(key)) throw new Error(`Choose a valid shortcut for ${item.label}.`);
+               // Only a changed binding is refused, so one saved before this rule never blocks other settings.
+               const problem = item.scope === "global" && key !== bindingFor(preferences, item.id) ? globalShortcutProblem(key) : null;
+               if (problem) throw new Error(problem);
             }
             const rollbackShortcuts = installShortcuts(next);
             const sourceChanged =
@@ -1306,6 +1394,7 @@ function registerIPC() {
    handle("preferences", (value, changedKeys) =>
       applyPreferences(() => synchronizeLegacyAudio(preferences, mergePreferenceChanges(preferences, value, changedKeys)))
    );
+   handle("preferences-autosave", (value, changedKeys) => autosavePreferences(value, preferenceKeysSchema.parse(changedKeys)));
    // Applies live like any other change, so nothing needs a restart.
    handle("preferences-reset", (value) => {
       const parts = preferenceResetSchema.parse(value);
@@ -1789,6 +1878,10 @@ else {
             if (preferences.startWithOS) await applyStartup(true).catch((error: unknown) => notice(errorMessage(error), true));
          }
          installShortcuts(preferences, true);
+         for (const item of shortcutRegistry.filter((entry) => entry.scope === "global")) {
+            const problem = globalShortcutProblem(bindingFor(preferences, item.id));
+            if (problem) notice(`${item.label}: ${problem} Change it in Settings.`, true);
+         }
          if (process.argv.includes("--clip")) void saveClip("command").catch(captureActionError);
          if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
             void startRecording({ quiet: true }).catch(captureActionError);

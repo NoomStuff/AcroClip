@@ -285,12 +285,21 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await page.getByRole("button", { name: "Unmute playback", exact: true }).click();
       expect(await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.volume)).toBeCloseTo(0.37);
 
+      // The wheel steps 5% per notch over the button, and the level shows above the slider.
       await page.getByRole("button", { name: "Mute playback", exact: true }).hover();
+      await page.mouse.wheel(0, 100);
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.volume)).toBeCloseTo(0.32);
+      await expect(page.locator(".player-volume-value")).toHaveText("32");
+      await page.mouse.wheel(0, -100);
+      await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.volume)).toBeCloseTo(0.37);
+      // Dragging the vertical slider to the bottom mutes, and unmuting restores the level the drag began at.
       const volumeSlider = page.getByRole("slider", { name: "Playback volume", exact: true });
-      await volumeSlider.dispatchEvent("pointerdown", { pointerType: "mouse" });
-      await volumeSlider.fill("0.18");
-      await volumeSlider.fill("0");
-      await volumeSlider.dispatchEvent("pointerup", { pointerType: "mouse" });
+      await expect(volumeSlider).toHaveAttribute("aria-orientation", "vertical");
+      const volumeBox = (await volumeSlider.boundingBox())!;
+      await page.mouse.move(volumeBox.x + volumeBox.width / 2, volumeBox.y + volumeBox.height * 0.8);
+      await page.mouse.down();
+      await page.mouse.move(volumeBox.x + volumeBox.width / 2, volumeBox.y + volumeBox.height + 30, { steps: 4 });
+      await page.mouse.up();
       await expect(page.getByRole("button", { name: "Unmute playback", exact: true })).toBeVisible();
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.muted)).toBe(true);
       await page.getByRole("button", { name: "Unmute playback", exact: true }).click();
@@ -314,12 +323,12 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(2.9);
       await position.press("ArrowLeft");
       await expect(position).toHaveValue("2");
-      await selectOption(page, "Audio tracks", "2");
+      // A plain click plays only that track and closes the menu. Shift-click mixes.
+      await page.getByRole("combobox", { name: "Audio tracks", exact: true }).click();
       await expect(page.getByRole("listbox", { name: "Audio tracks", exact: true })).toHaveAttribute("aria-multiselectable", "true");
-      await expect(page.getByRole("option", { name: "Master", exact: true })).toHaveAttribute("aria-selected", "true");
-      await expect(page.getByRole("option", { name: "Microphone", exact: true })).toHaveAttribute("aria-selected", "true");
-      await page.getByRole("option", { name: "Master", exact: true }).click();
       await page.keyboard.press("Escape");
+      await selectOption(page, "Audio tracks", "2");
+      await expect(page.getByRole("listbox", { name: "Audio tracks", exact: true })).toHaveCount(0);
       await expect
          .poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState), { timeout: 30000 })
          .toBeGreaterThanOrEqual(2);
@@ -335,8 +344,6 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await expect.poll(enabledTracks).toEqual([false, true]);
       const originalUrl = await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentSrc);
       await selectOption(page, "Audio tracks", "1");
-      await page.getByRole("option", { name: "Microphone", exact: true }).click();
-      await page.keyboard.press("Escape");
       await expect.poll(enabledTracks).toEqual([true, false]);
       expect(await page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentSrc)).toBe(originalUrl);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);

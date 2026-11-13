@@ -1,4 +1,4 @@
-import { Settings2 } from "lucide-react";
+import { Settings as Gear } from "lucide-react";
 import type { Preferences } from "../../shared/types";
 import { bindingFor, formatBinding, shortcutRegistry } from "../../shared/shortcuts";
 import { DialogPanel } from "./Dialog";
@@ -82,7 +82,7 @@ export function ShortcutSheet({
                   openSettings();
                }}
             >
-               <Settings2 size={15} />
+               <Gear size={15} />
                Change shortcuts
             </Button>
          </div>

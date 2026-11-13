@@ -37,15 +37,7 @@
    gap: 2px;
 }
 
-/* Matches the Library tag rows: the row selects and drags, actions appear on hover. */
-.audio-filter {
-   position: relative;
-}
-
-.audio-filter > .sidebar-item {
-   padding-right: 34px;
-}
-
+/* A SidebarTab like the Library rows: the row selects and drags, actions appear on hover. */
 .audio-filter[data-disabled] > .sidebar-item > :is(svg, .sidebar-label) {
    opacity: 0.45;
 }
@@ -60,29 +52,6 @@
    letter-spacing: 0.04em;
    text-transform: uppercase;
    color: var(--subtle);
-}
-
-.audio-filter > .menu-wrap {
-   position: absolute;
-   top: 50%;
-   right: 0;
-   width: 30px;
-   height: 30px;
-   transform: translateY(-50%);
-}
-
-@media (hover: hover) and (pointer: fine) {
-   .audio-filter > .menu-wrap {
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 120ms var(--ease);
-   }
-   .audio-filter:hover > .menu-wrap,
-   :root[data-keyboard] .audio-filter:focus-within > .menu-wrap,
-   .audio-filter > .menu-wrap:has([aria-expanded="true"]) {
-      opacity: 1;
-      pointer-events: auto;
-   }
 }
 
 .audio-filter-actions-popup {

@@ -152,11 +152,12 @@ export const preferencesSchema = z
       notificationErrorSound: z.boolean().default(true),
       overlapClips: z.enum(["keep", "trim", "merge"]),
       folderLayout: z.enum(["flat", "application"]),
-      filenamePreset: z.enum(["source-date", "date-source", "custom"]),
+      filenamePreset: z.enum(["source-date", "date-source", "replay", "compact", "custom"]),
       filenameTemplate: z.string().refine(validFilenameTemplate, "Use supported filename tokens without folder separators"),
       setupComplete: z.boolean(),
    })
    .strict();
+export const preferenceKeysSchema = z.array(preferencesSchema.keyof()).max(100);
 export const idSchema = z.string().min(1).max(200);
 export const categoryRequest = z
    .object({

@@ -81,13 +81,9 @@ type BindingEvent = Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "metaKey" |
  */
 export function eventBinding(event: BindingEvent, held: ReadonlySet<ShortcutModifier> = new Set()): string {
    const altGraph = event.getModifierState?.("AltGraph") ?? false;
-   const key = event.code.startsWith("Key")
-      ? event.code.slice(3)
-      : event.code.startsWith("Digit")
-        ? event.code.slice(5)
-        : event.key === " "
-          ? "Space"
-          : event.key.replace("Arrow", "");
+   const key = bindingKey(event);
+   // Keys the browser can't name, such as unassigned macro keys, can't be registered.
+   if (!key) return "";
    return [
       (event.ctrlKey || altGraph || held.has("Control")) && "Control",
       (event.metaKey || held.has("Command")) && "Command",
@@ -97,6 +93,87 @@ export function eventBinding(event: BindingEvent, held: ReadonlySet<ShortcutModi
    ]
       .filter(Boolean)
       .join("+");
+}
+// Numpad keys while Num Lock is on, named the way Electron registers them. With Num Lock off they
+// act as arrows and Home or End, and bind by that key instead.
+const numpadKeys: Record<string, string> = {
+   Numpad0: "num0",
+   Numpad1: "num1",
+   Numpad2: "num2",
+   Numpad3: "num3",
+   Numpad4: "num4",
+   Numpad5: "num5",
+   Numpad6: "num6",
+   Numpad7: "num7",
+   Numpad8: "num8",
+   Numpad9: "num9",
+   NumpadDecimal: "numdec",
+   NumpadAdd: "numadd",
+   NumpadSubtract: "numsub",
+   NumpadMultiply: "nummult",
+   NumpadDivide: "numdiv",
+};
+// Browser key names that Electron spells differently.
+const acceleratorKeys: Record<string, string> = {
+   " ": "Space",
+   "+": "Plus",
+   AudioVolumeUp: "VolumeUp",
+   AudioVolumeDown: "VolumeDown",
+   AudioVolumeMute: "VolumeMute",
+   MediaTrackNext: "MediaNextTrack",
+   MediaTrackPrevious: "MediaPreviousTrack",
+   ScrollLock: "Scrolllock",
+   NumLock: "Numlock",
+   CapsLock: "Capslock",
+};
+function bindingKey(event: Pick<KeyboardEvent, "code" | "key">): string {
+   if (event.code.startsWith("Key")) return event.code.slice(3);
+   if (event.code.startsWith("Digit")) return event.code.slice(5);
+   const numpad = numpadKeys[event.code];
+   if (numpad && /^[\d.,+\-*/]$/.test(event.key)) return numpad;
+   if (!event.key || ["Unidentified", "Dead", "Process"].includes(event.key)) return "";
+   return acceleratorKeys[event.key] ?? event.key.replace("Arrow", "");
+}
+const keyLabels: Record<string, string> = {
+   numdec: "Num .",
+   numadd: "Num +",
+   numsub: "Num -",
+   nummult: "Num *",
+   numdiv: "Num /",
+   volumeup: "Volume up",
+   volumedown: "Volume down",
+   volumemute: "Mute",
+   medianexttrack: "Next track",
+   mediaprevioustrack: "Previous track",
+   mediastop: "Media stop",
+   mediaplaypause: "Play/Pause",
+   scrolllock: "Scroll Lock",
+   numlock: "Num Lock",
+   capslock: "Caps Lock",
+   printscreen: "Print Screen",
+   pageup: "Page Up",
+   pagedown: "Page Down",
+};
+/** How one key of a binding reads to people, such as Num 4 for num4. */
+export function keyLabel(key: string): string {
+   const lower = key.toLowerCase();
+   const digit = /^num(\d)$/.exec(lower);
+   return digit ? `Num ${digit[1]}` : (keyLabels[lower] ?? key);
+}
+// Keys that neither type nor move the caret. Alone they make fine global shortcuts.
+const standaloneKeys =
+   /^(?:F(?:[1-9]|1\d|2[0-4])|num(?:\d|dec|add|sub|mult|div)|Insert|PrintScreen|Scrolllock|Volume(?:Up|Down|Mute)|Media(?:NextTrack|PreviousTrack|Stop|PlayPause))$/i;
+/**
+ * Why a global shortcut would get in the way, or null. A global shortcut takes its key from every
+ * app, so a key that types or moves the caret needs Ctrl, Alt or the Windows key with it. Shift alone
+ * still types, so it doesn't count.
+ */
+export function globalShortcutProblem(value: string): string | null {
+   if (!value) return null;
+   const parts = value.split("+");
+   const key = parts.pop() ?? "";
+   if (parts.some((part) => !/^shift$/i.test(part)) || standaloneKeys.test(key)) return null;
+   return `${formatBinding(value, false)} alone would block that key in every app. Hold Ctrl or Alt with it, or use F13 to F24.`;
 }
 // US-layout symbols for punctuation keys, by physical position.
 const physicalSymbols: Record<string, string> = {
@@ -122,7 +199,10 @@ export function physicalBinding(event: Pick<KeyboardEvent, "code" | "ctrlKey" | 
    return [event.ctrlKey && "Control", event.metaKey && "Command", event.altKey && "Alt", event.shiftKey && "Shift", symbol].filter(Boolean).join("+");
 }
 export function formatBinding(value: string, mac: boolean): string {
-   return value
+   const parts = value.split("+");
+   const key = parts.pop() ?? "";
+   return [...parts, keyLabel(key)]
+      .join("+")
       .replace(/CommandOrControl|CmdOrCtrl/g, mac ? "Cmd" : "Ctrl")
       .replace(/Control/g, "Ctrl")
       .replace(/Command/g, "Cmd")

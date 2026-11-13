@@ -17,6 +17,7 @@ const state: AppState = {
    categories: [],
    jobs: [],
    recorder: { ...stoppedRecorder, supported: true },
+   pendingPreferences: {},
    update: { state: "idle", version: "", progress: 0, message: "" },
    version: "0.2.0",
    platform: "win32",

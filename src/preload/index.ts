@@ -12,6 +12,7 @@ const api: DesktopAPI = {
    audioDevices: (kind) => ipcRenderer.invoke("audio-devices", kind),
    captureShortcut: (enabled) => ipcRenderer.invoke("capture-shortcut", enabled),
    savePreferences: (value, changedKeys) => ipcRenderer.invoke("preferences", value, changedKeys),
+   autosavePreferences: (value, changedKeys) => ipcRenderer.invoke("preferences-autosave", value, changedKeys),
    chooseFolder: () => ipcRenderer.invoke("choose-folder"),
    startRecording: () => ipcRenderer.invoke("record-start"),
    stopRecording: () => ipcRenderer.invoke("record-stop"),
