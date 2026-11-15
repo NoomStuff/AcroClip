@@ -53,6 +53,8 @@ export function LibraryGrid<Item>({
    const end = Math.min(Math.max(range.end, first), rows.length);
    const before = offsets[first]! - sizes.gap;
    const after = offsets[rows.length]! - offsets[end]! - sizes.gap;
+   // Set when the ResizeObserver reports a change, and read by the next pass.
+   const observedResize = useRef(false);
    const current = useRef({ items, itemKey, rows, keys, offsets, measure, sizes, view, first, end, before, natural, onSettled });
    current.current = { items, itemKey, rows, keys, offsets, measure, sizes, view, first, end, before, natural, onSettled };
    /** Reads the grid's real layout and corrects the sizes or the window. Reports once neither needed correcting. */
@@ -77,10 +79,14 @@ export function LibraryGrid<Item>({
             columns: widths.every(Number.isFinite) ? widths.map((_, index) => widths.slice(0, index).reduce((left, width) => left + width + columnGap, 0)) : [],
          };
       });
-      // New column widths, or rows that changed height in place like a zoomed list, make every known
-      // height stale, so they start over from the estimates.
+      // New column widths, or rows the browser resized in place like a zoomed list, make every known
+      // height stale, so they start over from the estimates. Only a resize the observer reported counts:
+      // within one chain of passes, a row mounted mid-animation can differ from its neighbours, and
+      // starting over there would chase it without end.
+      const resized = observedResize.current;
+      observedResize.current = false;
       const base: GridMeasure =
-         measure?.layout === layout && measure.sizes.gap === gap && !rowsResized(measure, keys, first, mounted)
+         measure?.layout === layout && measure.sizes.gap === gap && !(resized && rowsResized(measure, keys, first, mounted))
             ? measure
             : { sizes: { ...sizes, columns: Math.max(1, columns.length), gap }, learned: new Set(), heights: new Map() };
       // Rows are packed by the measured column count, so a different count is placed again before its rows are read.
@@ -108,7 +114,10 @@ export function LibraryGrid<Item>({
       // Focus scrolls its target into view at once. Following it here keeps the next row mounted for the next Tab.
       element.addEventListener("focusin", update);
       // The list's thumbnails resize over several frames without a render.
-      const observer = new ResizeObserver(update);
+      const observer = new ResizeObserver(() => {
+         observedResize.current = true;
+         update();
+      });
       observer.observe(element);
       observer.observe(viewport);
       return () => {
