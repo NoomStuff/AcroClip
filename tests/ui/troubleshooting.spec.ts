@@ -66,7 +66,7 @@ test("troubleshooting exports logs and opens a prefilled bug report", async () =
          .toBe(true);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page.getByRole("button", { name: "App & updates", exact: true }).click();
-      await page.getByRole("button", { name: "Export logs", exact: true }).click();
+      await page.getByRole("button", { name: "Export", exact: true }).click();
       await expect.poll(() => existsSync(exported)).toBe(true);
       const files = unzip(await readFile(exported));
       // A first run has no earlier sessions or rotated logs yet.
@@ -76,7 +76,7 @@ test("troubleshooting exports logs and opens a prefilled bug report", async () =
       expect(system.collection.clips).toBe(0);
       expect(system.preferences.clipSeconds).toBe(defaultPreferences.clipSeconds);
 
-      await page.getByRole("button", { name: "Report a bug", exact: true }).click();
+      await page.getByRole("button", { name: "Open report", exact: true }).click();
       await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { opened?: string }).opened)).toBeTruthy();
       const opened = new URL(await app.evaluate(() => (globalThis as typeof globalThis & { opened: string }).opened));
       expect(opened.pathname).toBe("/NoomStuff/AcroClip/issues/new");

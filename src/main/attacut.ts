@@ -70,7 +70,7 @@ export async function findAttaCut(settings: string, locations: AttaCutLocations)
 
 export async function rememberAttaCut(settings: string, selection: string, platform: NodeJS.Platform): Promise<string> {
    const executable = attaCutExecutable(selection, platform);
-   if (!(await executableExists(executable, platform))) throw new Error("The selected AttaCut application cannot run.");
+   if (!(await executableExists(executable, platform))) throw new Error("The selected AttaCut app can't run.");
    const temporary = `${settings}.${randomUUID()}.tmp`;
    try {
       await writeFile(temporary, `${JSON.stringify({ executable })}\n`, { flag: "wx" });

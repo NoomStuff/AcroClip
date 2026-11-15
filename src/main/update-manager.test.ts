@@ -53,7 +53,7 @@ it.skipIf(process.platform === "darwin")("handles automatic progress, readiness,
    Object.defineProperty(process, "resourcesPath", { value: tmpdir(), configurable: true });
    automatic.checkForUpdates.mockResolvedValue({ downloadPromise: Promise.resolve([]) });
    const { manager: updates, send } = manager();
-   expect(() => updates.install()).toThrow("not ready");
+   expect(() => updates.install()).toThrow("isn't ready");
    await updates.offer(release);
    await vi.waitFor(() => expect(automatic.checkForUpdates).toHaveBeenCalled());
    expect(automatic.setFeedURL).toHaveBeenCalledWith({
@@ -93,7 +93,7 @@ it.skipIf(process.platform === "darwin")("keeps one automatic download active an
    expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ version: release.version, phase: "downloading" }));
    automatic.emit("update-downloaded", { version: release.version });
    expect(updates.isReady).toBe(false);
-   expect(() => updates.install()).toThrow("not ready");
+   expect(() => updates.install()).toThrow("isn't ready");
    automatic.checkForUpdates.mockResolvedValueOnce({ downloadPromise: Promise.resolve([]) });
    finish();
    await vi.waitFor(() => expect(automatic.checkForUpdates).toHaveBeenCalledTimes(2));
@@ -191,7 +191,7 @@ it.skipIf(process.platform === "darwin").each(["missing", "rejected"])("automati
    await updates.offer(release);
    await vi.waitFor(() => expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ phase: "error" })));
    expect(updates.isReady).toBe(false);
-   expect(() => updates.install()).toThrow("not ready");
+   expect(() => updates.install()).toThrow("isn't ready");
 });
 
 it.skipIf(process.platform === "darwin")("reports an outdated automatic feed instead of leaving the offered release downloading forever", async () => {
@@ -366,8 +366,8 @@ it("checks release metadata in branded development without a download or install
       expect(net.fetch).toHaveBeenCalledTimes(1);
       expect(automatic.checkForUpdates).not.toHaveBeenCalled();
       await updates.download();
-      expect(updates.state).toMatchObject({ state: "error", message: "This download is not available." });
-      await expect(updates.install({ prepare: async () => true, recover: () => undefined })).rejects.toThrow("not ready");
+      expect(updates.state).toMatchObject({ state: "error", message: "This download isn't available." });
+      await expect(updates.install({ prepare: async () => true, recover: () => undefined })).rejects.toThrow("isn't ready");
       expect(net.fetch).toHaveBeenCalledTimes(1);
       expect(automatic.quitAndInstall).not.toHaveBeenCalled();
       const checked = updates.state.lastChecked;

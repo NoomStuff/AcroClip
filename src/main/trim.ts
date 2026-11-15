@@ -114,7 +114,7 @@ export async function probeTrimSource(path: string, signal?: AbortSignal): Promi
    const output = await runMedia("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", path], signal ? { signal } : {});
    const result = probeSchema.parse(JSON.parse(output));
    const duration = Number(result.format?.duration);
-   if (!Number.isFinite(duration) || duration <= 0) throw new Error("The clip's length could not be read.");
+   if (!Number.isFinite(duration) || duration <= 0) throw new Error("Couldn't read the clip's length.");
    const startOffset = Number(result.format?.start_time);
    return {
       path,

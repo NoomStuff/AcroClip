@@ -428,15 +428,11 @@ const recordingNotices = new RecordingNotices(
    chosenApplicationClosed
 );
 
-// The banner's second line says what to do. Without one it would only repeat the app's name.
-const storageAdvice: Record<string, string> = {
-   "Low storage in clip folder": "Free up space so new clips can save.",
-   "Free storage could not be checked": "AcroClip will check again shortly.",
-};
 // The status bar shows low storage as a condition, so the app side stays quiet here.
 const storage = new StorageMonitor({
    onChange: () => emitState(),
-   onWarning: (message) => notice(message, false, "info", "native", { tone: "warning", ...(storageAdvice[message] ? { detail: storageAdvice[message] } : {}) }),
+   onWarning: (message, detail) => notice(message, false, "info", "native", { tone: "warning", detail }),
+   onUnreadable: () => log(`storage: couldn't read free space for ${collections.root}`, "warn"),
 });
 const recorder = new Recorder({
    gameCatalogPath: join(app.getPath("userData"), "game-catalog.json"),
@@ -486,7 +482,7 @@ const recorder = new Recorder({
       queueMicrotask(() => {
          if (recordingNotices.handledError(message)) return;
          criticalFailure(
-            context === "save" ? "Couldn't save clip" : context === "saved-clip" ? "Saved clip needs attention" : "Capture needs attention",
+            context === "save" ? "Couldn't save clip" : context === "saved-clip" ? "Problem with the saved clip" : "Capture error",
             message,
             context === "capture" ? "capture" : "save"
          );
@@ -528,7 +524,7 @@ const recorder = new Recorder({
       if (!candidate.merge || !previous) {
          previousSave = footage;
          record("saved");
-         reportSave({ kind: "saved", previousFootage: capture.previousFootage }, banner);
+         reportSave({ kind: "saved", previousFootage: capture.previousFootage, secondsSinceCapture: capture.secondsSinceCapture }, banner);
          autoShare(clip.id);
          return;
       }
@@ -552,7 +548,7 @@ function errorMessage(error: unknown): string {
       ? error
       : error && typeof error === "object" && "message" in error && typeof error.message === "string"
         ? error.message
-        : "Something went wrong. Try again.";
+        : "Couldn't finish that. If it keeps happening, export logs from Settings.";
 }
 function recorderState(): RecorderState {
    const current = recorder.status;
@@ -828,7 +824,7 @@ async function ensureMicrophoneAccess(value: Preferences): Promise<void> {
 /** `quiet` is for starts AcroClip makes itself, like capturing on launch. Only failures speak up. */
 async function startRecording(options: { quiet?: boolean } = {}) {
    if (!preferences.setupComplete) throw new Error("Finish setup before capturing.");
-   if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to record.");
+   if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to capture.");
    if (captureActive()) throw new Error("Capture is already running.");
    lastRecordingArtwork = undefined;
    recordingNotices.starting(preferences.sourceKind === "auto" ? "Automatic game detection" : recordingSourceLabel(preferences, captureSources.cached), {
@@ -839,7 +835,7 @@ async function startRecording(options: { quiet?: boolean } = {}) {
       await preferenceWrites.catch(() => undefined);
       await ensureMicrophoneAccess(preferences);
       const available = await captureSources.list();
-      if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to record.");
+      if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to capture.");
       await recorder.start(preferences, available);
    })();
    emitState();
@@ -984,6 +980,14 @@ function exitFeedback(work: boolean) {
    if (work) void fadeForExit(mainWindow).then((restore) => (restoreExitFade = restore));
    else mainWindow.hide();
 }
+/** Names what exiting would interrupt, such as "1 clip is still saving and 2 shareables are still being made". */
+function unfinishedWork(saves: number, shareables: number): string {
+   const parts = [
+      saves ? `${saves} clip${saves === 1 ? " is" : "s are"} still saving` : "",
+      shareables ? `${shareables} shareable${shareables === 1 ? " is" : "s are"} still being made` : "",
+   ].filter(Boolean);
+   return `${parts.join(" and ")}`;
+}
 async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
    if (exiting) return exiting;
    closingRequested = true;
@@ -1013,10 +1017,10 @@ async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
                (
                   await dialog.showMessageBox({
                      type: "question",
-                     title: "Work is still running",
-                     message: "Finish before exiting?",
-                     detail: `${saves ? `${saves} clip save${saves === 1 ? "" : "s"}` : ""}${saves && collections.pendingJobs.length ? " and " : ""}${collections.pendingJobs.length ? `${collections.pendingJobs.length} shareable${collections.pendingJobs.length === 1 ? "" : "s"}` : ""} still in progress.`,
-                     buttons: ["Finish and exit", "Cancel work", "Keep open"],
+                     title: "Exit AcroClip",
+                     message: unfinishedWork(saves, collections.pendingJobs.length),
+                     detail: "Exiting now cancels them.",
+                     buttons: ["Finish, then exit", "Exit now", "Keep open"],
                      defaultId: 0,
                      cancelId: 2,
                      signal,
@@ -1028,8 +1032,8 @@ async function prepareExit(options: ExitOptions = {}): Promise<boolean> {
             if (recorder.status.pendingSaves) {
                const confirm = await dialog.showMessageBox({
                   type: "warning",
-                  message: "Discard pending clips?",
-                  detail: "These moments have not finished saving and may be lost.",
+                  message: recorder.status.pendingSaves === 1 ? "Exit without this clip?" : "Exit without these clips?",
+                  detail: recorder.status.pendingSaves === 1 ? "It hasn't finished saving." : "They haven't finished saving.",
                   buttons: ["Keep saving", "Discard and exit"],
                   defaultId: 1,
                   cancelId: 0,
@@ -1145,13 +1149,13 @@ async function requestExit() {
    } catch (error) {
       restoreExitFade();
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
-      notice(`AcroClip could not finish exiting: ${errorMessage(error)}`, true);
+      notice(`AcroClip couldn't finish exiting: ${errorMessage(error)}`, true);
    }
 }
 function trustedPath(path: unknown): string {
    const candidate = z.string().max(4096).parse(path);
    const full = resolve(candidate);
-   if (!samePath(resolve(collections.root), full) && !fileOwner(full)) throw new Error("This file is not part of the open collection.");
+   if (!samePath(resolve(collections.root), full) && !fileOwner(full)) throw new Error("This file isn't part of the open collection.");
    const actual = realpathSync(full);
    if (!withinRoot(collections.root, actual)) throw new Error("This file moved outside the collection.");
    return actual;
@@ -1322,7 +1326,7 @@ function registerIPC() {
          previewSourceId = null;
          return;
       }
-      if (requested === portalScreenId) throw new Error("System-selected capture does not provide a separate live preview.");
+      if (requested === portalScreenId) throw new Error("System-selected capture doesn't have a separate live preview.");
       if (process.platform === "linux" && (await recorder.capabilities()).captureBackend === "wayland-portal")
          throw new Error("Live preview is unavailable in this Wayland session. Capture uses the selected application directly.");
       if (!windowShown() || !preferences.setupComplete) throw new Error("Open Capture to preview the capture source.");
@@ -1405,7 +1409,7 @@ function registerIPC() {
             if (capture.starting && JSON.stringify(next) !== JSON.stringify(preferences))
                throw new Error("Capture is starting. Wait before applying settings.");
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
-            if (!isValidShortcut(next.shortcut)) throw new Error("That key combination is not supported. Try a letter, number, or function key.");
+            if (!isValidShortcut(next.shortcut)) throw new Error("That key combination isn't supported. Try a letter, number or function key.");
             if (recorder.status.state !== "stopped" && recorder.status.state !== "error" && requiresCaptureRestart(preferences, next))
                throw new Error("Stop capturing to apply these changes. Footage you haven't saved will be discarded.");
             if (
@@ -1476,8 +1480,8 @@ function registerIPC() {
    handle("preferences-reset", (value) => {
       const parts = preferenceResetSchema.parse(value);
       return applyPreferences(() => {
-         if (parts.setup && (captureActive() || recorder.status.pendingSaves)) throw new Error("Stop capturing before resetting the recording setup.");
-         log(`maintenance: reset ${[parts.settings ? "settings" : "", parts.setup ? "recording setup" : ""].filter(Boolean).join(" and ")}`, "warn");
+         if (parts.setup && (captureActive() || recorder.status.pendingSaves)) throw new Error("Stop capturing before resetting the capture setup.");
+         log(`maintenance: reset ${[parts.settings ? "settings" : "", parts.setup ? "capture setup" : ""].filter(Boolean).join(" and ")}`, "warn");
          return mergePreferenceChanges(preferences, resetPreferenceGroups(preferences, parts), undefined);
       });
    });
@@ -1555,7 +1559,8 @@ function registerIPC() {
       const clipId = idSchema.parse(id);
       const shareableId = shareId === undefined ? undefined : idSchema.parse(shareId);
       const selection = scope === undefined ? undefined : z.literal("shareables").parse(scope);
-      if (collections.pendingJobs.some((j) => j.clipId === clipId)) throw new Error("Finish or cancel this clip's export before removing it.");
+      if (collections.pendingJobs.some((j) => j.clipId === clipId))
+         throw new Error("Wait for the shareable to finish, or cancel it, before removing this clip.");
       const result = await dialog.showMessageBox({
          type: "warning",
          message: shareableId

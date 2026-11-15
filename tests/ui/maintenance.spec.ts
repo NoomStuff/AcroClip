@@ -75,20 +75,20 @@ test("maintenance clears what each action names and leaves the clips alone", asy
       await expect.poll(() => existsSync(join(metadata, "playback"))).toBe(false);
 
       // The checklist feeds the native confirmation, and backing out there changes nothing.
-      await page.getByRole("button", { name: "Factory reset", exact: true }).click();
+      await page.getByRole("button", { name: "Reset…", exact: true }).click();
       await expect(dialog.getByRole("checkbox")).toHaveCount(5);
       await dialog.getByRole("checkbox", { name: /^Layout/ }).uncheck();
       await dialog.getByRole("button", { name: "Factory reset", exact: true }).click();
       await expect.poll(() => app.evaluate(() => (globalThis as Fixture).confirmations!.length)).toBe(1);
       expect((await app.evaluate(() => (globalThis as Fixture).confirmations!))[0]).toContain(
-         "removes settings and recording setup, cache, logs and usage stats. AcroClip restarts and opens setup."
+         "Removes settings and capture setup, cache, logs and usage stats, then restarts and opens setup."
       );
       expect(JSON.parse(await readFile(preferencesFile, "utf8"))).toMatchObject({ clipSeconds: 45 });
 
-      // Resetting settings defaults to plain settings: the recording setup and the collection stay.
+      // Resetting settings defaults to plain settings: the capture setup and the collection stay.
       await page.getByRole("button", { name: "Reset settings", exact: true }).click();
       await expect(dialog.getByRole("checkbox", { name: /^Settings/ })).toBeChecked();
-      await expect(dialog.getByRole("checkbox", { name: /^Recording setup/ })).not.toBeChecked();
+      await expect(dialog.getByRole("checkbox", { name: /^Capture setup/ })).not.toBeChecked();
       await dialog.getByRole("button", { name: "Reset", exact: true }).click();
       await expect
          .poll(async () => JSON.parse(await readFile(preferencesFile, "utf8")) as Record<string, unknown>)
@@ -100,10 +100,10 @@ test("maintenance clears what each action names and leaves the clips alone", asy
          });
       await expect(page.locator("#setup-heading")).toHaveCount(0);
 
-      // The recording setup on its own goes back to defaults and opens setup.
+      // The capture setup on its own goes back to defaults and opens setup.
       await page.getByRole("button", { name: "Reset settings", exact: true }).click();
       await dialog.getByRole("checkbox", { name: /^Settings/ }).uncheck();
-      await dialog.getByRole("checkbox", { name: /^Recording setup/ }).check();
+      await dialog.getByRole("checkbox", { name: /^Capture setup/ }).check();
       await dialog.getByRole("button", { name: "Reset", exact: true }).click();
       await expect(page.locator("#setup-heading")).toBeVisible();
       const reset = JSON.parse(await readFile(preferencesFile, "utf8")) as Record<string, unknown>;

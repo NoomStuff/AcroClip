@@ -202,7 +202,10 @@ try:
     assert "System audio" in rejected["message"], rejected
     command(dict(action="stop"))
     command(configuration)
-    time.sleep(3.5)
+    # "isolated" is the reference level for the volume checks below. On Intel CI the audio taps can
+    # take a couple of seconds to deliver after start, which left a quarter of a 2 s clip silent and
+    # the reference too low. Wait until the replay holds only steady tone.
+    time.sleep(6)
     save("isolated")
     command(dict(action="audio", source="selected", volume=0.5, muted=False))
     time.sleep(3)

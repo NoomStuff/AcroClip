@@ -3,7 +3,8 @@
  * so richer save feedback can present the same outcomes later.
  */
 export type SaveOutcome =
-   | { kind: "saved"; previousFootage: boolean }
+   /** `secondsSinceCapture` is how long before the save request the clip ends. */
+   | { kind: "saved"; previousFootage: boolean; secondsSinceCapture: number }
    | { kind: "extended"; seconds: number; added: number }
    | { kind: "kept-both" }
    | { kind: "extended-previous-kept" };
@@ -11,6 +12,11 @@ export type SaveOutcome =
 export interface SaveNotice {
    message: string;
    detail?: string;
+}
+
+/** How long ago, for a clip that ends before the save request. */
+function ago(seconds: number): string {
+   return seconds < 90 ? `${Math.max(1, Math.round(seconds))} s` : `${Math.round(seconds / 60)} min`;
 }
 
 function length(seconds: number): string {
@@ -27,7 +33,9 @@ export function savingNotice(extendTo?: number): string {
 export function saveOutcomeNotice(outcome: SaveOutcome): SaveNotice {
    switch (outcome.kind) {
       case "saved":
-         return { message: outcome.previousFootage ? "Saved the footage that was still available" : "Clip saved" };
+         return outcome.previousFootage
+            ? { message: `Saved up to ${ago(outcome.secondsSinceCapture)} ago`, detail: "Nothing was captured after that." }
+            : { message: "Clip saved" };
       case "extended":
          return { message: `Clip extended to ${length(outcome.seconds)}`, detail: `Added ${length(outcome.added)} to the previous clip` };
       case "kept-both":

@@ -18,11 +18,7 @@ export class PageBoundary extends Component<{ children: ReactNode }, { failed: b
    override render(): ReactNode {
       if (!this.state.failed) return this.props.children;
       return (
-         <Empty
-            icon={<TriangleAlert size={38} />}
-            title="This page ran into a problem"
-            detail="Capture keeps running. Exporting logs from Settings helps us fix it."
-         >
+         <Empty icon={<TriangleAlert size={38} />} title="This page crashed" detail="Capture is still running. Exporting logs from Settings helps us fix it.">
             <Button onClick={() => this.setState({ failed: false })}>Reload page</Button>
          </Empty>
       );

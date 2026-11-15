@@ -302,7 +302,7 @@ export function Settings({
          "settings",
          {
             title: "Reset settings?",
-            detail: "Your clip folder, clips, tags and stats stay. This can't be undone.",
+            detail: "Your collection folder, clips, tags and stats stay. This can't be undone.",
             confirm: "Reset",
             choices: [
                { id: "settings", ...preferenceResetCopy.settings, checked: true },
@@ -314,7 +314,7 @@ export function Settings({
             // A change still waiting to save would land on top of the defaults.
             await flush();
             await api.resetPreferences(parts);
-            const reset = parts.settings && parts.setup ? "Settings and recording setup" : parts.settings ? "Settings" : "Recording setup";
+            const reset = parts.settings && parts.setup ? "Settings and capture setup" : parts.settings ? "Settings" : "Capture setup";
             reportFeedback({ kind: "notice", message: `${reset} reset`, error: false, tone: "success" });
          }
       );
@@ -323,8 +323,7 @@ export function Settings({
          "cache",
          {
             title: "Clear the cache?",
-            detail:
-               "Removes this collection's thumbnails, hover previews and playback copies. They rebuild in the background, which keeps the computer busy for a while on a big library. Clips, tags and shareables stay.",
+            detail: "Thumbnails, hover previews and playback copies rebuild in the background. On a big library that takes a while.",
             confirm: "Clear cache",
          },
          async () => {
@@ -356,7 +355,7 @@ export function Settings({
          "factory",
          {
             title: "Factory reset",
-            detail: "Choose what to remove. AcroClip asks once more, then restarts. Your clips, tags and shareables stay where they are.",
+            detail: "AcroClip restarts afterwards. Your clips, tags and shareables aren't touched.",
             confirm: "Factory reset",
             choices: resetParts.map((id) => ({ id, ...resetPartCopy[id], checked: true })),
          },
@@ -466,7 +465,7 @@ export function Settings({
                         {[
                            {
                               title: "Capture",
-                              detail: "Global shortcuts work in every app and from the tray.",
+                              detail: "Work in any app, including fullscreen games.",
                               items: shortcutRegistry.filter((item) => item.scope === "global"),
                            },
                            {
@@ -476,14 +475,13 @@ export function Settings({
                            },
                            {
                               title: "Library",
-                              detail: "Search clips while browsing, or create a tag or folder from any page.",
                               items: shortcutRegistry.filter((item) => shortcutGroup(item) === "library"),
                            },
                            { title: "Player", detail: "While a clip is open.", items: shortcutRegistry.filter((item) => item.page === "viewer") },
                         ].map((group) => (
                            <section className="settings-group" key={group.title}>
                               <h2>{group.title}</h2>
-                              <p className="section-description">{group.detail}</p>
+                              {"detail" in group && <p className="section-description">{group.detail}</p>}
                               {group.items.map((item) => {
                                  const clashes = shortcutClashes(draft, item.id, mac);
                                  return (
@@ -657,22 +655,21 @@ export function Settings({
                         </section>
                         <section className="settings-group">
                            <h2>Troubleshooting</h2>
-                           <p className="section-description">AcroClip keeps local logs. You can export them to help diagnose problems.</p>
                            <Field icon={Bug} label="Report a bug" detail="Saves your logs to Downloads and opens a bug report on GitHub.">
                               <Button busy={exporting === "report"} disabled={!!exporting} onClick={() => exportLogs("report")}>
-                                 Report a bug
+                                 Open report
                               </Button>
                            </Field>
                            <Field icon={FileArchive} label="Export logs" detail="Save logs and system details as a zip.">
                               <Button busy={exporting === "export"} disabled={!!exporting} onClick={() => exportLogs("export")}>
-                                 Export logs
+                                 Export
                               </Button>
                            </Field>
                         </section>
                         <section className="settings-group settings-danger">
                            <h2>Maintenance</h2>
-                           <p className="section-description">Clean up your installation and reset settings. Your files are untouched.</p>
-                           <Field icon={RotateCcw} label="Reset settings & setup" detail="Reset settings, recording setup or both.">
+                           <p className="section-description">None of these touch your clips.</p>
+                           <Field icon={RotateCcw} label="Reset settings & setup" detail="Reset settings, capture setup or both.">
                               <Button className="destructive" busy={maintaining === "settings"} disabled={!!maintaining} onClick={resetSettings}>
                                  Reset settings
                               </Button>
@@ -689,7 +686,7 @@ export function Settings({
                            </Field>
                            <Field icon={Trash2} label="Factory reset" detail="Choose what to remove, then AcroClip restarts.">
                               <Button className="destructive" busy={maintaining === "factory"} disabled={!!maintaining} onClick={factoryReset}>
-                                 Factory reset
+                                 Reset…
                               </Button>
                            </Field>
                         </section>

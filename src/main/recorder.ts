@@ -165,7 +165,7 @@ export class Recorder {
       this.current.supported =
          (process.platform === "win32" || process.platform === "linux" || process.platform === "darwin") &&
          (existsSync(this.executable) || (!options.nativePath && existsSync(this.developmentExecutable)));
-      if (!this.current.supported) this.current.message = "The native recorder is not available in this build";
+      if (!this.current.supported) this.current.message = "The recorder isn't available in this build";
    }
    private get executable(): string {
       const resources = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
@@ -235,7 +235,7 @@ export class Recorder {
             supported: false,
             hardwareEncoders: [],
             recommended: "standard",
-            message: failure instanceof Error ? failure.message : "The recorder could not initialize.",
+            message: failure instanceof Error ? failure.message : "The recorder couldn't start.",
          };
       }
    }
@@ -309,7 +309,7 @@ export class Recorder {
                  )
                : [];
          } catch {
-            throw new Error("Application discovery failed. Try refreshing the source list.");
+            throw new Error("Couldn't list open apps. Refresh to try again.");
          }
       }
       await this.initialize();
@@ -446,9 +446,7 @@ export class Recorder {
    private rejectCommands(): void {
       for (const command of this.commands.values()) {
          clearTimeout(command.timeout);
-         command.reject(
-            this.expectedExit ? new CaptureClosed("Capture closed before this finished.") : new Error("Capture stopped unexpectedly. Start capturing again.")
-         );
+         command.reject(this.expectedExit ? new CaptureClosed("Capture closed before this finished.") : new Error("Capture stopped unexpectedly."));
       }
       this.commands.clear();
    }
@@ -466,7 +464,7 @@ export class Recorder {
             clearTimeout(timeout);
             this.commands.delete(id);
             onNotAccepted();
-            reject(error instanceof Error ? error : new Error("Capture stopped responding. Try again."));
+            reject(error instanceof Error ? error : new Error("Capture stopped responding."));
          }
       });
    }
@@ -496,14 +494,14 @@ export class Recorder {
          this.readyReject?.(error);
          this.rejectCommands();
          // A write racing a deliberate exit or kill breaks the pipe; that is not a capture failure.
-         if (!this.expectedExit) this.error("Capture stopped unexpectedly. Start capturing again.");
+         if (!this.expectedExit) this.error("Capture stopped unexpectedly.");
       });
       createInterface({ input: child.stdout }).on("line", (line: string) => {
          try {
             const value: unknown = JSON.parse(line);
             if (value && typeof value === "object" && "event" in value && typeof value.event === "string") this.message(value as NativeMessage);
          } catch {
-            this.error("Capture stopped unexpectedly. Start capturing again.");
+            this.error("Capture stopped unexpectedly.");
          }
       });
       // Diagnostic text remains local and is never forwarded as user-facing errors.
@@ -547,7 +545,7 @@ export class Recorder {
             const message = unexpected
                ? this.current.state === "error" && this.current.message
                   ? this.current.message
-                  : `Capture stopped unexpectedly${code ? ` with exit code ${code}` : ""}`
+                  : `Capture stopped unexpectedly.${code ? ` The recorder exited with code ${code}.` : ""}`
                : "";
             if (unexpected && this.current.state !== "error") this.error(message);
             this.requests.clear();
@@ -558,7 +556,7 @@ export class Recorder {
          })
       );
       const timeout = setTimeout(() => {
-         this.readyReject?.(new Error("Capture took too long to start. Try again."));
+         this.readyReject?.(new Error("Capture took too long to start."));
          child.kill();
       }, 20_000);
       try {
@@ -736,7 +734,7 @@ export class Recorder {
                   : {}),
             });
          })()
-            .catch((error: unknown) => this.error(error instanceof Error ? error.message : "The saved clip could not be added to the library", "saved-clip"))
+            .catch((error: unknown) => this.error(error instanceof Error ? error.message : "Couldn't add the saved clip to the library", "saved-clip"))
             .finally(() => {
                if (value.requestId) {
                   this.requests.delete(value.requestId);
@@ -759,7 +757,7 @@ export class Recorder {
          if (value.requestId) {
             this.requests.delete(value.requestId);
             this.requestArtwork.delete(value.requestId);
-         } else if (this.current.state === "starting") this.update({ state: "error", startedAt: null, message: value.message ?? "Capture could not start" });
+         } else if (this.current.state === "starting") this.update({ state: "error", startedAt: null, message: value.message ?? "Capture couldn't start" });
          this.update({ pendingSaves: this.requests.size });
          this.error(value.message ?? "Capture failed", value.requestId ? "save" : "capture");
       }
@@ -944,7 +942,7 @@ export class Recorder {
          this.autoSources = sources;
          this.autoKey = this.configurationKey(configuration);
       } catch (error) {
-         this.update({ state: "error", message: error instanceof Error ? error.message : "Capture could not start" });
+         this.update({ state: "error", message: error instanceof Error ? error.message : "Capture couldn't start" });
          throw error;
       }
    }

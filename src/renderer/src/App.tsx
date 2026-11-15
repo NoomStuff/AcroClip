@@ -71,7 +71,6 @@ export function App() {
    );
    const openGames = useCallback(() => openSettings("games"), [openSettings]);
    const openCollectionSettings = useCallback(() => openSettings("collection"), [openSettings]);
-   const openLibrary = useCallback(() => setPage("library"), [setPage]);
    const [windowVisible, setWindowVisible] = useState(!document.hidden);
    useEffect(() => {
       const update = () => setWindowVisible(!document.hidden);
@@ -280,7 +279,7 @@ export function App() {
                <Clapperboard size={17} aria-hidden="true" />
                <span>AcroClip</span>
             </div>
-            <span className="window-page">{pages.find((item) => item.id === page)?.title ?? page}</span>
+            <span className="window-page">{page === "settings" ? "Settings" : pages.find((item) => item.id === page)?.title}</span>
             <div className="titlebar-drag" />
             {state?.update.version && state.update.mode && !["idle", "checking"].includes(state.update.state) && <UpdateChip state={state.update} run={run} />}
             {state?.platform === "win32" && (
@@ -377,7 +376,6 @@ export function App() {
                                  stepClip={stepClip}
                                  visible={page === "viewer" && windowVisible}
                                  run={run}
-                                 openLibrary={openLibrary}
                                  trimRequest={trimRequest}
                                  showClip={showClip}
                               />
@@ -399,7 +397,7 @@ export function App() {
                <div className="loading-app" role="status" aria-label="Opening AcroClip">
                   <div className="startup-brand">
                      <AppLogo size={64} />
-                     <p>Loading...</p>
+                     <p>Loading…</p>
                   </div>
                </div>
             )}

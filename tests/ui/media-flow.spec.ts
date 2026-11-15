@@ -164,7 +164,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       expect(await page.evaluate(() => window.firstPlaybackReveal)).toEqual({ from: 0, to: 1, duration: 140 });
       await expect(page.locator(".video-loading")).toHaveCount(0);
       await page.getByRole("button", { name: "Shareable", exact: true }).click();
-      await expect(page.getByText("No shareable", { exact: true })).toBeVisible();
+      await expect(page.getByText("No shareable yet", { exact: true })).toBeVisible();
       await expect(page.locator(".player-poster")).toHaveCount(0);
       await expect(page.locator(".player-outgoing")).toBeHidden();
       await page.evaluate(() => {

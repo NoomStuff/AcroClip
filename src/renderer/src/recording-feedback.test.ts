@@ -29,7 +29,7 @@ describe("recording buffer status", () => {
          createElement(RecordingStatus, { state: { ...state, recorder: { ...state.recorder, state: "recording", availableSeconds: 42 } } })
       );
       expect(html).toContain("0:42 available");
-      expect(html).toContain("Buffer 70% full");
+      expect(html).toContain("Replay memory 70% full");
    });
    it("caps the display at the requested clip length", () => {
       const html = renderToStaticMarkup(
@@ -42,7 +42,7 @@ describe("recording buffer status", () => {
          })
       );
       expect(html).toContain("0:30 available");
-      expect(html).toContain("Buffer 100% full");
+      expect(html).toContain("Replay memory 100% full");
    });
    it("retains recording status and background activity alongside the buffer", () => {
       const html = renderToStaticMarkup(

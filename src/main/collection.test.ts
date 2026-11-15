@@ -376,7 +376,7 @@ describe("collection folder operations", () => {
          await service.open(root);
          await expect(service.createFolder("../outside", "New")).rejects.toThrow("inside");
          await expect(service.createFolder(".acroclip", "New")).rejects.toThrow("inside");
-         await expect(service.createFolder("Link", "New")).rejects.toThrow("real folder");
+         await expect(service.createFolder("Link", "New")).rejects.toThrow("isn't a folder in this collection");
          await expect(service.renameFolder("", "Root")).rejects.toThrow("inside");
          await expect(service.renameFolder("Games", "Existing")).rejects.toThrow("already exists");
          await expect(service.moveFolder("Games", "Games/Nested")).rejects.toThrow("itself");

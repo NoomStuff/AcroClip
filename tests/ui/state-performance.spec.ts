@@ -106,13 +106,13 @@ test("incremental updates preserve large libraries, meter routing, visibility an
       await publish({
          type: "state-patch",
          patch: {
-            storageWarning: "Low storage in clip folder",
+            storageWarning: "Low storage",
             jobs: [{ id: "job", clipId: "clip-999", kind: "shareable", state: "running", progress: 0.5, message: "Creating shareable" }],
          },
       });
       await expect(clip).toBeFocused();
       await expect(page.locator(".card-job")).toContainText("50%");
-      await expect(page.getByText("Low storage in clip folder", { exact: true })).toBeVisible();
+      await expect(page.getByText("Low storage", { exact: true })).toBeVisible();
       await publish({ type: "state-patch", patch: { storageWarning: "", jobs: [] } });
       await expect(page.locator(".card-job")).toHaveCount(0);
       await expect(page.getByRole("textbox", { name: "Search clips", exact: true })).toHaveValue("Moment 999");

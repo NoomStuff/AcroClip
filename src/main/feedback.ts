@@ -25,7 +25,7 @@ interface SystemNotice {
 }
 /** The banner's two lines, for desktops that show a system notification instead. */
 function systemNotice(message: string, error: boolean, busy: boolean, details: FeedbackDetails): SystemNotice {
-   if (error) return { title: details.errorTitle || "AcroClip needs attention", body: details.errorTitle ? details.detail || "" : message, busy };
+   if (error) return { title: details.errorTitle || "AcroClip error", body: details.errorTitle ? details.detail || "" : message, busy };
    return { title: message, body: details.detail ?? "", busy };
 }
 
@@ -129,7 +129,7 @@ export class Feedback {
       if (pending) this.system(pending.notice);
    }
    private system(notice: SystemNotice): void {
-      // Progress such as "Starting capture..." changes its detail often. A banner animates that; a system notification would post again each time.
+      // Progress such as "Starting capture…" changes its detail often. A banner animates that; a system notification would post again each time.
       if (notice.busy && this.notification && this.shown?.title === notice.title) return;
       try {
          if (!Notification.isSupported()) {

@@ -274,7 +274,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                                           ))}
                                        </div>
                                     )}
-                                    {sourcePhase === "loading" && <p role="status">Finding capture sources...</p>}
+                                    {sourcePhase === "loading" && <p role="status">Finding capture sources…</p>}
                                     {sourcePhase === "ready" && !choices.length && (
                                        <div className="setup-source-empty">
                                           <p>
@@ -322,7 +322,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                         </div>
                         {(micPending || micMessage) && (
                            <p className="setup-note" role="status">
-                              {micPending ? "Waiting for microphone permission..." : micMessage}
+                              {micPending ? "Waiting for microphone permission…" : micMessage}
                            </p>
                         )}
                      </>

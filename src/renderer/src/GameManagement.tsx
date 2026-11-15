@@ -294,9 +294,9 @@ export function GameManagement({
          )}
          <div className="game-list-summary">
             <span>
-               {catalog ? `${filtered.filter((game) => !game.added).length.toLocaleString()} games` : error ? "Catalogue unavailable" : "Loading games…"}
+               {catalog ? `${filtered.filter((game) => !game.added).length.toLocaleString()} games` : error ? "Catalog unavailable" : "Loading games…"}
             </span>
-            {catalog && <span>{catalog.source === "saved" ? "Saved catalogue" : "Built-in catalogue"}</span>}
+            {catalog && <span>{catalog.source === "saved" ? "Saved catalog" : "Built-in catalog"}</span>}
          </div>
          {error && (
             <p className="game-error" role="alert">

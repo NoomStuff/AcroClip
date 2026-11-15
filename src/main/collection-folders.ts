@@ -30,7 +30,7 @@ export async function collectionFolder(root: string, path: string, allowRoot = t
    for (const part of parts) {
       current = join(current, part);
       const info = await lstat(current);
-      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error("Choose a real folder inside this collection.");
+      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error("That isn't a folder in this collection.");
    }
    const actual = await realpath(current);
    const rel = relative(root, actual);

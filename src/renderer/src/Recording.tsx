@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useApplicationColors } from "./useApplicationColors";
-import { Clapperboard, Circle, CircleStop, Gamepad2, LoaderCircle, Monitor, RefreshCw } from "lucide-react";
+import { Clapperboard, Circle, CirclePause, CircleStop, Gamepad2, LoaderCircle, Monitor, RefreshCw } from "lucide-react";
 import type { AppState, CaptureSource, GameCandidate, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
 import { api, describeError, reportFeedback } from "./desktop";
 import { Button, ContextHeader, Empty, Field, Segmented, Select } from "./ui";
@@ -106,6 +106,7 @@ export function Recording({
    const portal = sources.some((item) => item.id === portalScreenId);
    const previewUnavailable = capabilities?.captureBackend === "wayland-portal" || source?.id === portalScreenId;
    const nativeScreenPreview = state.platform === "win32" && source?.kind === "screen";
+   const previewPaused = visible && background && !!source && !previewUnavailable && state.preferences.setupComplete;
    const preview = useSourcePreview(
       previewUnavailable ? undefined : source?.id,
       live && state.preferences.setupComplete,
@@ -277,7 +278,7 @@ export function Recording({
             style={{ gridTemplateColumns: `minmax(0, 1fr) 12px ${controls.size}px`, gridTemplateRows: `minmax(0, 1fr) 12px ${lower.size}px` }}
          >
             <div className="recording-main">
-               <div className="preview-surface" data-preview={source ? preview.status : undefined}>
+               <div className="preview-surface" data-preview={source ? preview.status : undefined} data-paused={previewPaused || undefined}>
                   <canvas ref={preview.outgoing} className="preview-outgoing" aria-hidden="true" />
                   {source && previewUnavailable ? (
                      <Empty
@@ -315,8 +316,22 @@ export function Recording({
                            >
                               {!preview.cached && source.thumbnail.length > 30 && <img className="preview-poster" src={source.thumbnail} alt="" />}
                               <div className="preview-placeholder">
-                                 <ApplicationIcon src={source.appIcon} size={48} />
+                                 {source.kind === "screen" ? <Monitor size={48} /> : <ApplicationIcon src={source.appIcon} size={48} />}
                               </div>
+                           </div>
+                        )}
+                        {/* Background mode stops the preview and meters. Without this the last frame just sits there.
+                            It stays mounted so it can fade out as well as in. */}
+                        {!previewUnavailable && (
+                           <div
+                              className="preview-message preview-paused"
+                              data-shown={previewPaused || undefined}
+                              role={previewPaused ? "status" : undefined}
+                              aria-hidden={!previewPaused || undefined}
+                           >
+                              <CirclePause size={30} />
+                              <h3>Preview paused to save resources</h3>
+                              <p>{active ? "Capture keeps running. Click to resume." : "Click to resume."}</p>
                            </div>
                         )}
                         {preview.status === "error" && (
@@ -338,14 +353,24 @@ export function Recording({
                      </div>
                   ) : (
                      <Empty
-                        icon={<Monitor size={38} />}
-                        title={state.preferences.sourceKind === "auto" ? (active ? "Waiting for game" : "Auto capture") : "Choose what to capture"}
+                        icon={state.preferences.sourceKind === "auto" ? <Gamepad2 size={38} /> : <Monitor size={38} />}
+                        title={
+                           state.preferences.sourceKind === "auto"
+                              ? active
+                                 ? "Waiting for a game"
+                                 : detectedGame
+                                   ? "Game found"
+                                   : "No game running"
+                              : "Choose what to capture"
+                        }
                         detail={
                            state.preferences.sourceKind === "auto"
                               ? detectedGame
                                  ? "Start capturing to save detected games."
-                                 : "Open a game, or add an application to your games."
-                              : "Select a screen or application from the list."
+                                 : active
+                                   ? "Open a game Auto knows, and capture starts keeping footage."
+                                   : "Start capturing, then open a game Auto knows. Add any it misses on the right."
+                              : "Pick a screen or application on the right."
                         }
                      />
                   )}
@@ -376,7 +401,7 @@ export function Recording({
                         aria-label={active ? "Stop capturing" : state.recorder.state === "starting" ? "Starting capture" : "Start capturing"}
                         aria-busy={state.recorder.state === "starting"}
 
-                        aria-description={active ? "Stopping clears unsaved history." : undefined}
+                        aria-description={active ? "Stopping clears footage you haven't saved." : undefined}
                         disabled={state.recorder.state === "starting" || !state.recorder.supported || (!active && !captureAvailable)}
                         onClick={() => void run(active ? () => api.stopRecording() : () => api.startRecording(), { feedback: "external" })}
                      >

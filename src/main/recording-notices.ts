@@ -80,7 +80,7 @@ export class RecordingNotices {
       this.held = "";
       this.seen = this.adopting = false;
       this.reportedErrors.clear();
-      this.emit("recording-starting", "Starting capture...");
+      this.emit("recording-starting", "Starting capture…");
    }
 
    /** The user chose another source while capturing. Nothing was found or lost; capture moved. */
@@ -107,7 +107,7 @@ export class RecordingNotices {
    private progress(detail: string): void {
       if (detail === this.pendingText) return;
       this.pendingText = detail;
-      this.emit("recording-progress", "Starting capture...", detail);
+      this.emit("recording-progress", "Starting capture…", detail);
    }
 
    stoppingRequested(): void {
@@ -134,7 +134,7 @@ export class RecordingNotices {
    state(current: RecorderState, exiting = false): void {
       if (!this.active) return;
       if (current.state === "error") {
-         this.fail(current.message || "Start capturing again.");
+         this.fail(current.message);
          return;
       }
       if (current.state === "stopped") {
@@ -142,7 +142,7 @@ export class RecordingNotices {
          else if (this.stopping) {
             this.active = false;
             this.emit("recording-stopped", "Capture stopped");
-         } else if (this.confirmed) this.fail("Start capturing again.");
+         } else if (this.confirmed) this.fail("");
          return;
       }
       const name = current.sourceName ?? "";
@@ -219,15 +219,15 @@ export class RecordingNotices {
       const again = this.seen;
       this.seen = true;
       if (this.mode === "auto") this.emit("game-found", "Now capturing", target);
-      else this.emit("recording-resumed", "Capture resumed", again ? `${target} was found again.` : `${target} was found.`);
+      else this.emit("recording-resumed", "Capture resumed", again ? `${target} is back` : `Found ${target}`);
    }
 
    private fail(message: string): void {
       this.active = false;
       this.reportedErrors.add(message);
       const title = this.confirmed ? "Capture stopped unexpectedly" : "Couldn't start capture";
-      // A message that only restates the title still needs a second line that says what to do.
-      this.emit("critical-error", title, withoutTitle(message, title) || (this.confirmed ? "Start capturing again." : "Try again."));
+      // Without a cause beyond the title, the banner is one line. Starting again is the obvious next step.
+      this.emit("critical-error", title, withoutTitle(message, title));
    }
 
    private emit(kind: RecordingNoticeKind, message: string, detail = this.source): void {

@@ -16,8 +16,8 @@ export interface ResetPartCopy {
 
 export const resetPartCopy: Record<ResetPart, ResetPartCopy> = {
    settings: {
-      label: "Settings and recording setup",
-      detail: "Every setting, shortcut, audio source and custom game. Setup opens again, starting from the default clip folder.",
+      label: "Settings and capture setup",
+      detail: "Every setting, shortcut, audio source and custom game. Setup opens again, starting from the default collection folder.",
    },
    cache: {
       label: "Cache",
@@ -82,7 +82,7 @@ export const preferenceResetCopy: Record<keyof PreferenceResetParts, ResetPartCo
       detail: "Shortcuts, notifications, shareables, games, file names and startup go back to their defaults.",
    },
    setup: {
-      label: "Recording setup",
+      label: "Capture setup",
       detail: "Capture source, quality, clip length and audio go back to their defaults, and setup opens so you can choose them again.",
    },
 };
@@ -110,5 +110,5 @@ export function factoryResetDetail(parts: readonly ResetPart[]): string {
    const names = parts.map((part) => resetPartCopy[part].label.toLowerCase());
    const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)!}` : names[0]!;
    const setup = parts.includes("settings") ? " and opens setup" : "";
-   return `This removes ${list}. AcroClip restarts${setup}. Your clips, tags and shareables stay where they are. This can't be undone.`;
+   return `Removes ${list}, then restarts${setup}. Clips, tags and shareables aren't touched. This can't be undone.`;
 }

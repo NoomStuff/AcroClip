@@ -4,9 +4,9 @@ import type { NotificationEditableKey, NotificationPreferenceKey, NotificationPr
 import { Toggle } from "./ui";
 
 const rows = [
-   { action: "startRecording", label: "Capture started", detail: "When capture starts.", icon: CircleDot },
-   { action: "stopRecording", label: "Capture stopped", detail: "When capture stops.", icon: CircleStop },
-   { action: "saveClip", label: "Save clip", detail: "When saving begins and finishes.", icon: Clapperboard },
+   { action: "startRecording", label: "Capture started", detail: "When you start the recorder.", icon: CircleDot },
+   { action: "stopRecording", label: "Capture stopped", detail: "When you stop the recorder.", icon: CircleStop },
+   { action: "saveClip", label: "Save clip", detail: "While a clip saves, and when it's done.", icon: Clapperboard },
    { action: "gameFound", label: "Now capturing", detail: "When Auto finds a game after capture started.", icon: Gamepad2 },
    { action: "gameLost", label: "Stopped capturing game", detail: "When the game Auto was capturing closes.", icon: Gamepad2 },
    { action: "capturePaused", label: "Capture paused", detail: "When the chosen application or screen is lost.", icon: CirclePause },

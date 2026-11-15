@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { defaultPreferences } from "../../src/shared/defaults";
+import { anyTitle, emptyTitles } from "../../src/renderer/src/empty-flavor";
 import type { AppState } from "../../src/shared/types";
 
 test("cached loading states, enumeration retry, and interrupted library movement", async () => {
@@ -98,7 +99,7 @@ test("cached loading states, enumeration retry, and interrupted library movement
       await page.locator(".library-scroll").evaluate((node) => {
          node.scrollTop = 0;
       });
-      await expect(page.getByText("No clips", { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: anyTitle(emptyTitles.library) })).toHaveCount(0);
       await page.waitForTimeout(400);
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(1380, 900));
@@ -160,7 +161,7 @@ test("cached loading states, enumeration retry, and interrupted library movement
       await send({ ...actual, clips: [following] });
       await expect(page.locator(".clip-card")).toHaveCount(1);
       await send({ ...actual, clips: [], collectionStatus: { root: collection, phase: "ready" } });
-      await expect(page.getByText("No clips", { exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: anyTitle(emptyTitles.library) })).toBeVisible();
       await send({ ...actual, clips: [], folders: [], categories: [], collectionStatus: { root: join(profile, "Other"), phase: "loading" } });
       await expect(page.getByLabel("Opening collection")).toBeVisible();
       await expect(page.getByRole("button", { name: `Open ${following.name}`, exact: true })).toHaveCount(0);

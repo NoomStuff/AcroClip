@@ -154,7 +154,7 @@ it("uses the app icon when a source thumbnail is empty", () => {
 });
 it("uses recording status graphics instead of thumbnail placeholders", () => {
    const { feedback, child } = helper();
-   feedback.show("Starting capture...", false, true, { recordingStatus: "starting", replay: false });
+   feedback.show("Starting capture…", false, true, { recordingStatus: "starting", replay: false });
    const message: unknown = JSON.parse(String(child.stdin.read()).trim());
    expect(message).toMatchObject({ recordingStatus: "starting", artwork: "", replay: false, saving: true });
 });
@@ -223,13 +223,13 @@ it("falls back when spawning the helper throws synchronously", () => {
 it("shows the banner's title and detail in a system notification, without reposting busy progress", () => {
    const { feedback } = helper();
    mocks.exists.mockReturnValue(false);
-   feedback.show("Starting capture...", false, true, { detail: "Preparing capture" });
-   feedback.show("Starting capture...", false, true, { detail: "Waiting for source" });
+   feedback.show("Starting capture…", false, true, { detail: "Preparing capture" });
+   feedback.show("Starting capture…", false, true, { detail: "Waiting for source" });
    feedback.show("Capture started", false, false, { detail: "Starfall" });
-   feedback.show("Capture stopped unexpectedly", true, false, { errorTitle: "Capture stopped unexpectedly", detail: "Start capturing again." });
+   feedback.show("Capture stopped unexpectedly", true, false, { errorTitle: "Capture stopped unexpectedly", detail: "The recorder exited with code 3." });
    expect(mocks.created.mock.calls.map(([options]) => options as { title: string; body: string })).toMatchObject([
-      { title: "Starting capture...", body: "Preparing capture" },
+      { title: "Starting capture…", body: "Preparing capture" },
       { title: "Capture started", body: "Starfall" },
-      { title: "Capture stopped unexpectedly", body: "Start capturing again." },
+      { title: "Capture stopped unexpectedly", body: "The recorder exited with code 3." },
    ]);
 });

@@ -133,7 +133,7 @@ function align(outer: PacketListing, inner: PacketListing, offset: number, mode:
          continue;
       }
       const start = nearest(outerStream, first);
-      if (Math.abs(seconds(outerStream, outerPackets[start]!) - first) > limit) return "The clips' tracks do not line up.";
+      if (Math.abs(seconds(outerStream, outerPackets[start]!) - first) > limit) return "The clips' tracks don't line up.";
       // Every shared packet must be the same packet. A newer clip shares
       // everything through the older clip's end. An older clip inside a
       // newer one is shared entirely.
@@ -143,7 +143,7 @@ function align(outer: PacketListing, inner: PacketListing, offset: number, mode:
          const innerPacket = innerPackets[step]!,
             outerPacket = outerPackets[start + step]!;
          if (innerPacket.hash !== outerPacket.hash || innerPacket.size !== outerPacket.size) return "The clips' shared footage is different.";
-         if (Math.abs(seconds(innerStream, innerPacket) + offset - seconds(outerStream, outerPacket)) > limit) return "The clips' tracks do not line up.";
+         if (Math.abs(seconds(innerStream, innerPacket) + offset - seconds(outerStream, outerPacket)) > limit) return "The clips' tracks don't line up.";
       }
       cuts.push(start);
    }
@@ -179,7 +179,7 @@ export function planMerge(older: PacketListing, newer: PacketListing): MergePlan
          return typeof align(newer, older, offset, "inside") !== "string";
       });
       if (contained.length === 1) return { kind: "contained" };
-      return { kind: "refuse", reason: contained.length > 1 ? "The clips' shared footage is ambiguous." : "The clips do not share footage." };
+      return { kind: "refuse", reason: contained.length > 1 ? "The clips' shared footage is ambiguous." : "The clips don't share footage." };
    }
    const { offset, cuts } = candidates[0]!;
    const expected = older.streams.map((stream, index) => [

@@ -162,7 +162,7 @@ describe("recorder helper termination", () => {
       async () => {
          const { child, errors, root } = await fixture("candidates-timeout");
          if (process.platform === "win32") {
-            await expect(child.applicationCandidates()).rejects.toThrow("Application discovery failed");
+            await expect(child.applicationCandidates()).rejects.toThrow("Couldn't list open apps");
             expect((await readFile(join(root, "discovery-attempts"), "utf8")).trim().split("\n")).toHaveLength(3);
             expect(child.status.state).toBe("recording");
             expect(errors).toEqual([]);
@@ -282,7 +282,7 @@ describe("recorder helper termination", () => {
       async () => {
          const { child, errors } = await fixture("crash");
          await expect.poll(() => child.status.state).toBe("error");
-         expect(errors).toEqual(["Capture stopped unexpectedly with exit code 17"]);
+         expect(errors).toEqual(["Capture stopped unexpectedly. The recorder exited with code 17."]);
          expect(child.status).toMatchObject({ message: errors[0], availableSeconds: 0, startedAt: null, pendingSaves: 0 });
       },
       helperTestTimeout
@@ -294,7 +294,7 @@ describe("recorder helper termination", () => {
          await child.save(join(root, "unsaved.mkv"));
          await child.stop();
          await child.close();
-         expect(errors).toEqual(["Capture stopped unexpectedly with exit code 19"]);
+         expect(errors).toEqual(["Capture stopped unexpectedly. The recorder exited with code 19."]);
          expect(child.status).toMatchObject({ state: "error", pendingSaves: 0 });
       },
       helperTestTimeout

@@ -89,7 +89,7 @@ describe("AttaCut locations", () => {
          expect(await readFile(settings, "utf8")).toBe(content);
          await writeFile(settings, "damaged");
          expect(await findAttaCut(settings, locations)).toBeNull();
-         await expect(rememberAttaCut(settings, root, process.platform)).rejects.toThrow("cannot run");
+         await expect(rememberAttaCut(settings, root, process.platform)).rejects.toThrow("can't run");
          await expect(rememberAttaCut(settings, "relative.exe", process.platform)).rejects.toThrow("absolute");
       } finally {
          await rm(root, { recursive: true, force: true });

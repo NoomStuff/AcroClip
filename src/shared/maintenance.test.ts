@@ -50,11 +50,9 @@ describe("resetPreferenceGroups", () => {
 
 describe("factoryResetDetail", () => {
    it("lists the parts and only mentions setup when settings go", () => {
-      expect(factoryResetDetail(["cache"])).toBe(
-         "This removes cache. AcroClip restarts. Your clips, tags and shareables stay where they are. This can't be undone."
-      );
+      expect(factoryResetDetail(["cache"])).toBe("Removes cache, then restarts. Clips, tags and shareables aren't touched. This can't be undone.");
       expect(factoryResetDetail(["settings", "logs", "stats"])).toContain(
-         "removes settings and recording setup, logs and usage stats. AcroClip restarts and opens setup."
+         "Removes settings and capture setup, logs and usage stats, then restarts and opens setup."
       );
    });
 });

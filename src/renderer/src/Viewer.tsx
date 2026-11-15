@@ -1,7 +1,8 @@
 import { shareableTargetAllowed } from "../../shared/shareable-target";
 import { useDirectionalContent } from "./useDirectionalContent";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Copy, CopyPlus, Film, FolderOpen, LibraryBig, LoaderCircle, MoreHorizontal, Save, Scissors, Share2, X } from "lucide-react";
+import { Check, ChevronDown, Copy, CopyPlus, Film, FolderOpen, LoaderCircle, MoreHorizontal, Save, Scissors, Share2, X } from "lucide-react";
+import { dailyLine, emptyTitles } from "./empty-flavor";
 import type { ReactNode, RefObject } from "react";
 import type { AppState, Clip } from "../../shared/types";
 import { api, describeError, fileDragProps, reportFeedback } from "./desktop";
@@ -47,7 +48,6 @@ export function Viewer({
    stepClip,
    visible,
    run,
-   openLibrary,
    ask,
    trimRequest,
    showClip,
@@ -59,7 +59,6 @@ export function Viewer({
    stepClip: (clip: Clip, play: boolean) => void;
    visible: boolean;
    run: Run;
-   openLibrary: () => void;
    ask: Ask;
    // Asks the player to start trimming this clip, such as from a library card's menu.
    trimRequest: { clipId: string; at: number } | null;
@@ -243,7 +242,8 @@ export function Viewer({
       };
    }, [clipPath, visible, loudnessCurrent, revision]);
    const fade = usePlaybackFade(video, playbackIdentity, url, urlOwner === playbackIdentity, visible, urlGeneration);
-   const targetAllowed = shareableTargetAllowed(clip?.size ?? 0, override ? target : state.preferences.shareSizeMB);
+   const shareTarget = override ? target : state.preferences.shareSizeMB;
+   const targetAllowed = shareableTargetAllowed(clip?.size ?? 0, shareTarget);
    const job = state.jobs.find((item) => item.clipId === clip?.id && item.kind === "shareable" && ["queued", "running"].includes(item.state));
    const trimJob = state.jobs.find((item) => item.clipId === clip?.id && item.kind === "trim" && ["queued", "running"].includes(item.state));
    useEffect(() => {
@@ -613,12 +613,7 @@ export function Viewer({
    if (!clip)
       return (
          <div className="viewer-page" ref={layout}>
-            <Empty icon={<Film size={40} />} title="No clip selected">
-               <Button onClick={openLibrary}>
-                  <LibraryBig size={16} />
-                  Open Library
-               </Button>
-            </Empty>
+            <Empty icon={<Film size={40} />} title={dailyLine(emptyTitles.player, "player")} detail="Open a clip from the library to play it here." />
          </div>
       );
    return (
@@ -916,7 +911,7 @@ export function Viewer({
                      onError={(event) => {
                         if (!ownsMedia(event.currentTarget)) return;
                         if (event.currentTarget.error && path && !compatible) setCompatiblePaths((paths) => new Set(paths).add(path));
-                        else setMediaError("This video could not be played. Try opening it in AttaCut or another player.");
+                        else setMediaError("Couldn't play this video. Try opening it in AttaCut or another player.");
                      }}
                      onClick={(event) => {
                         const media = event.currentTarget;
@@ -937,12 +932,14 @@ export function Viewer({
                   !loading && (
                      <Empty
                         icon={<Share2 size={38} />}
-                        title={mediaError ? "Playback unavailable" : clip.originalMissing && !shareable ? "Clip unavailable" : "No shareable"}
+                        title={mediaError ? "Playback unavailable" : clip.originalMissing && !shareable ? "Clip unavailable" : "No shareable yet"}
                         detail={
                            mediaError ||
                            (clip.originalMissing && !shareable
                               ? "The clip is missing or changed. Locate it in your collection folder."
-                              : "Create a compressed copy of the full clip.")
+                              : targetAllowed
+                                ? `A smaller copy of the whole clip, under ${shareTarget} MB, for chats with upload limits.`
+                                : `This clip is already under ${shareTarget} MB, so you can share it as it is.`)
                         }
                      />
                   )

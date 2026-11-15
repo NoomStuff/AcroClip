@@ -93,14 +93,14 @@ export class Updates {
       }
    }
    async reveal(): Promise<void> {
-      if (!this.manager.downloadedPath) throw new Error("No verified update download is available.");
+      if (!this.manager.downloadedPath) throw new Error("The update hasn't finished downloading.");
       shell.showItemInFolder(this.manager.downloadedPath);
    }
    async release(): Promise<void> {
       if (this.available) await shell.openExternal(this.available.url);
    }
    async install(hooks: InstallHooks): Promise<void> {
-      if (!this.manager.isReady) throw new Error("The update is not ready yet.");
+      if (!this.manager.isReady) throw new Error("The update isn't ready yet.");
       if (this.installing) return;
       const ready = this.state;
       const version = ready.version;
@@ -129,7 +129,7 @@ export class Updates {
          );
          this.manager.install(fail);
       } catch (error) {
-         fail(error instanceof Error ? error.message : "Could not apply the update. Open the release to update manually.");
+         fail(error instanceof Error ? error.message : "Couldn't install the update. Download it from the release page.");
       }
    }
    /** Reports an install the previous session started that did not change the version. */

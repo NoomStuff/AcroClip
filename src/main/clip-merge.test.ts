@@ -97,7 +97,7 @@ describe("lossless clip merging", () => {
          kind: "refuse",
          reason: "The clips were recorded with different settings.",
       });
-      expect(planMerge(older, parsePacketListing(clip(recorded, 7, 12)))).toMatchObject({ kind: "refuse", reason: "The clips do not share footage." });
+      expect(planMerge(older, parsePacketListing(clip(recorded, 7, 12)))).toMatchObject({ kind: "refuse", reason: "The clips don't share footage." });
    });
 
    it("recognizes a newer clip that already holds all of the older one", () => {

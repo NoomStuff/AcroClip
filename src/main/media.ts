@@ -295,7 +295,7 @@ export async function createThumbnail(source: string, output: string, duration: 
 }
 export async function probe(path: string, options: Pick<MediaOptions, "signal" | "belowNormal"> = {}): Promise<MediaInfo> {
    const value: unknown = JSON.parse(await runMedia("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", path], options));
-   if (!value || typeof value !== "object") throw new Error("The video metadata could not be read.");
+   if (!value || typeof value !== "object") throw new Error("Couldn't read the video's metadata.");
    const result = value as ProbeResult;
    if (!Array.isArray(result.streams)) throw new Error("The file contains no readable media streams.");
    const video = result.streams.find((stream) => stream.codec_type === "video");

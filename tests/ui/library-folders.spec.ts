@@ -1,5 +1,6 @@
 import { mediaTool } from "./media-tool";
 import { test, expect, _electron as electron } from "@playwright/test";
+import { anyTitle, emptyTitles } from "../../src/renderer/src/empty-flavor";
 import { execFile } from "node:child_process";
 import { copyFile, mkdir, mkdtemp, writeFile, stat, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -103,12 +104,16 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await expect(page.getByRole("button", { name: "Open folder Games", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Open Root moment", exact: true })).toBeVisible();
       expect(await page.locator(".clip-grid .clip-open").first().getAttribute("aria-label")).toMatch(/^Open folder /);
+      // The folder section starts folded.
+      const foldersToggle = page.getByRole("button", { name: "Folders", exact: true });
+      await expect(foldersToggle).toHaveAttribute("aria-expanded", "false");
+      await expect(page.getByRole("treeitem", { name: "Games", exact: true })).toHaveCount(0);
+      await foldersToggle.click();
       await expect(page.getByRole("treeitem", { name: "Highlights", exact: true })).toHaveCount(0);
       const games = page.getByRole("treeitem", { name: "Games", exact: true });
       await games.focus();
       await games.press("ArrowRight");
       await expect(page.getByRole("treeitem", { name: "Highlights", exact: true })).toBeVisible();
-      const foldersToggle = page.getByRole("button", { name: "Folders", exact: true });
       await foldersToggle.click();
       await expect(foldersToggle).toHaveAttribute("aria-expanded", "false");
       await expect(page.getByRole("treeitem", { name: "Games", exact: true })).toHaveCount(0);
@@ -124,7 +129,7 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await expect(page.getByRole("treeitem", { name: "Highlights", exact: true })).toHaveAttribute("aria-selected", "true");
       await page.getByRole("navigation", { name: "Folder path" }).getByRole("button", { name: "Games", exact: false }).click();
       await page.getByRole("button", { name: "Open folder Games/Empty", exact: true }).click();
-      await expect(page.getByRole("heading", { name: "Folder is empty", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: anyTitle(emptyTitles.folder) })).toBeVisible();
       await page.locator('.library-sidebar [role="treeitem"][data-path="Games"]').click();
       await page.locator('.library-sidebar [role="treeitem"][data-path="Other"]').click();
       await page.dispatchEvent("body", "mouseup", { button: 3 });

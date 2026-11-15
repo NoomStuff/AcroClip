@@ -49,7 +49,7 @@ export function describeError(error: unknown): string {
          ? error
          : error && typeof error === "object" && "message" in error && typeof error.message === "string" && error.message.trim()
            ? error.message
-           : "Something went wrong. Try again.";
+           : "Couldn't finish that. If it keeps happening, export logs from Settings.";
    return message.replace(/^Error invoking remote method '[^']+':\s*/, "").replace(/^Error:\s*/, "");
 }
 

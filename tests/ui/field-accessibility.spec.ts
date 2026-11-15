@@ -32,6 +32,10 @@ test("field descriptions reach controls and folders support keyboard selection",
       }
       await page.evaluate(() => window.acroClip.createFolder("", "Saved"));
       await page.getByRole("button", { name: "Library", exact: true }).click();
+      // The folder section starts folded.
+      const foldersToggle = page.getByRole("button", { name: "Folders", exact: true });
+      await expect(foldersToggle).toHaveAttribute("aria-expanded", "false");
+      await foldersToggle.click();
       const folder = page.getByRole("treeitem", { name: "Saved", exact: true });
       await folder.focus();
       await folder.press("Space");

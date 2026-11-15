@@ -28,7 +28,7 @@ const lostApp = { state: "waiting", sourceKind: "app", sourceName: "HASTE", mess
 it("acknowledges a start immediately, then confirms usable footage once", () => {
    const { feedback, notices, state, kinds, start } = fixture();
    start("Screen 1");
-   expect(notices).toEqual([{ kind: "recording-starting", message: "Starting capture...", detail: "Screen 1", error: false }]);
+   expect(notices).toEqual([{ kind: "recording-starting", message: "Starting capture…", detail: "Screen 1", error: false }]);
    state({ state: "starting" });
    state({ ...capturing, availableSeconds: 0 });
    expect(notices).toHaveLength(3);
@@ -130,7 +130,7 @@ it("pauses when the chosen application is lost, and resumes when it is found aga
    expect(notices.at(-1)).toEqual({ kind: "recording-paused", message: "Capture paused", detail: "Lost HASTE. Capture resumes when it's back.", error: false });
    expect(kinds().filter((kind) => kind === "recording-paused")).toHaveLength(1);
    after(1000, capturing);
-   expect(notices.at(-1)).toEqual({ kind: "recording-resumed", message: "Capture resumed", detail: "HASTE was found again.", error: false });
+   expect(notices.at(-1)).toEqual({ kind: "recording-resumed", message: "Capture resumed", detail: "HASTE is back", error: false });
    after(1000, capturing);
    expect(kinds().filter((kind) => kind === "recording-resumed")).toHaveLength(1);
 });
@@ -153,7 +153,7 @@ it("calls a chosen application that never appears armed, then says when it is fo
    after(1, lostApp);
    expect(notices.at(-1)).toMatchObject({ kind: "recording-started", detail: "Waiting for application" });
    after(1000, capturing);
-   expect(notices.at(-1)).toMatchObject({ kind: "recording-resumed", detail: "HASTE was found." });
+   expect(notices.at(-1)).toMatchObject({ kind: "recording-resumed", detail: "Found HASTE" });
 });
 it("treats a crash while paused as a stopped capture, not a failed start", () => {
    const { notices, after, start } = fixture();
@@ -203,10 +203,10 @@ it("never repeats the title as the error detail", () => {
    start("Starfall", "app");
    after(0, { ...capturing, sourceName: "Starfall" });
    after(1000, { state: "error", message: "Capture stopped unexpectedly" });
-   expect(notices.at(-1)).toEqual({ kind: "critical-error", message: "Capture stopped unexpectedly", detail: "Start capturing again.", error: true });
+   expect(notices.at(-1)).toEqual({ kind: "critical-error", message: "Capture stopped unexpectedly", detail: "", error: true });
    start("Starfall", "app");
    after(0, { state: "error", message: "Couldn't start capture." });
-   expect(notices.at(-1)).toEqual({ kind: "critical-error", message: "Couldn't start capture", detail: "Try again.", error: true });
+   expect(notices.at(-1)).toEqual({ kind: "critical-error", message: "Couldn't start capture", detail: "", error: true });
 });
 it("says to choose a closed application again where capture cannot follow it", () => {
    let closed = false;

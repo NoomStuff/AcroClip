@@ -24,7 +24,7 @@ describe("custom recording filenames", () => {
       }
    });
    it("explains invalid syntax and names that require sanitizing", () => {
-      expect(filenameTemplateError("Bad:name")).toContain("cannot contain");
+      expect(filenameTemplateError("Bad:name")).toContain("can't contain");
       expect(filenameTemplateError("{unknown}")).toContain("Use only");
       expect(filenameTemplateWarning("CON")).toContain("Windows reserves");
       expect(filenameTemplateWarning("CON.{time}")).toContain("Windows reserves");

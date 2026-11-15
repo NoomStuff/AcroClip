@@ -210,7 +210,7 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
                   name === "NotAllowedError" || message === "Permission denied"
                      ? "Capture permission was denied or the source changed. Select the source again, then retry."
                      : name === "NotReadableError" || name === "AbortError"
-                       ? "This window could not be captured. Keep it open and visible, then retry or capture its screen."
+                       ? "Couldn't capture this window. Keep it open and visible, then retry or capture its screen."
                        : message
                );
                setStatus("error");

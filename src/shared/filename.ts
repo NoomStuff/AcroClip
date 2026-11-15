@@ -37,9 +37,9 @@ const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 
 export function filenameTemplateError(template: string): string {
    if (!template.trim()) return "Enter a file name pattern.";
-   if (template.length > 160) return "Keep the pattern under 161 characters.";
+   if (template.length > 160) return "Use 160 characters or fewer.";
    if (/[<>:"/\\|?*]/.test(template) || [...template].some((character) => character.charCodeAt(0) < 32))
-      return 'File names cannot contain < > : " / \\ | ? * or control characters.';
+      return `File names can't contain < > : " / \\ | ? * or control characters.`;
    if (/[{}]/.test(template.replace(fieldPattern, ""))) return "Use only the fields below, such as {source} or {date}.";
    return "";
 }

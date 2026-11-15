@@ -1174,7 +1174,7 @@ export class CollectionService {
          if (fingerprint && (await folderContents(source, supported)).fingerprint !== fingerprint)
             throw new Error("The folder contents changed. Review the folder and try moving it again.");
          const targetParent = parent === undefined ? dirname(source) : await this.checkedFolder(parent);
-         if (withinRoot(source, targetParent)) throw new Error("A folder cannot be moved into itself or one of its subfolders.");
+         if (withinRoot(source, targetParent)) throw new Error("A folder can't move into itself or one of its subfolders.");
          const destination = join(targetParent, name ?? basename(source));
          if (normal(source) === normal(destination)) return relative(this.root, source).replaceAll("\\", "/");
          try {
@@ -1215,7 +1215,7 @@ export class CollectionService {
    moveClip(id: string, destination: string): Promise<boolean> {
       return this.changeFiles(async () => {
          const target = await this.checkedFolder(destination);
-         if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's export before moving it.");
+         if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Wait for the shareable to finish, or cancel it, before moving this clip.");
          const stored = this.stored(id);
          const source = await this.resolveFile(stored);
          if (!source) throw new Error("The original video moved or changed. Refresh the library and try again.");
@@ -1251,7 +1251,7 @@ export class CollectionService {
       )
          throw new Error("That name contains characters reserved for files. Choose another name.");
       if (!this.metadataWritable) throw new Error("Renaming clips is locked while collection info is damaged.");
-      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's export before renaming it.");
+      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Wait for the shareable to finish, or cancel it, before renaming this clip.");
       const stored = this.stored(id);
       const original = await this.resolveFile(stored);
       if (!original) throw new Error("The original video moved or changed. Try again after the library updates.");
@@ -1341,7 +1341,7 @@ export class CollectionService {
          await this.scan();
          clip = this.clips.find((entry) => normal(entry.path) === normal(actual));
       }
-      if (!clip) throw new Error("The capture finished, but could not be opened. Its file has been kept.");
+      if (!clip) throw new Error("Saved the clip, but couldn't read it back. It's in your collection folder.");
       this.stored(clip.id).source = source;
       if (application && grouped) this.rememberApplicationFolder(application.id, actual);
       if (application) {
@@ -1426,7 +1426,7 @@ export class CollectionService {
    }
 
    async filesForDeletion(id: string, shareableId?: string, scope?: "shareables"): Promise<string[]> {
-      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's export before deleting it.");
+      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Wait for the shareable to finish, or cancel it, before deleting this clip.");
       const stored = this.stored(id);
       const files: StoredFile[] = shareableId
          ? stored.shareables.filter((share) => share.id === shareableId)
@@ -1493,7 +1493,7 @@ export class CollectionService {
                }
                if (existing && !(await this.shareablesOwned()))
                   throw new Error(
-                     "A shareables folder already exists and is not owned by AcroClip. Rename it or choose another collection before creating shareables."
+                     "A shareables folder already exists that AcroClip didn't make. Rename it or choose another collection before creating shareables."
                   );
                await this.safeDirectory(sharesRoot);
                if (!existing)
@@ -1514,15 +1514,14 @@ export class CollectionService {
                   const size = (await stat(temporary)).size;
                   const outputInfo = await probe(temporary);
                   if (Math.abs(outputInfo.duration - info.duration) > Math.max(0.25, 2 / info.frameRate))
-                     throw new Error("The shareable did not retain the complete clip. The original is safe.");
-                  if (outputInfo.tracks.length !== Math.min(1, info.tracks.length))
-                     throw new Error("The shareable's audio could not be verified. The original is safe.");
+                     throw new Error("The shareable came out a different length than the clip.");
+                  if (outputInfo.tracks.length !== Math.min(1, info.tracks.length)) throw new Error("Couldn't verify the shareable's audio.");
                   if (size <= Math.floor(targetMB * 1_000_000)) {
                      verified = true;
                      break;
                   }
                }
-               if (!verified) throw new Error("The shareable could not fit the size limit. Choose a larger limit.");
+               if (!verified) throw new Error("The shareable couldn't fit the size limit. Choose a larger limit.");
                if (controller.signal.aborted) throw new Error("Cancelled");
                if ((await fileIdentity(original)) !== this.stored(id).identity)
                   throw new Error("The original changed during export. Try creating the shareable again.");
@@ -1546,7 +1545,7 @@ export class CollectionService {
             } catch (error) {
                this.jobUpdate(job, {
                   state: controller.signal.aborted ? "cancelled" : "failed",
-                  message: controller.signal.aborted ? "Shareable cancelled. Original kept." : message(error),
+                  message: controller.signal.aborted ? "Shareable canceled" : message(error),
                });
             } finally {
                await Promise.all(temporaryFiles.map((path) => rm(path, { force: true }).catch(() => undefined)));
@@ -1568,7 +1567,7 @@ export class CollectionService {
       if (!this.metadataWritable) throw new Error("Trimming is locked while collection info is damaged.");
       const clip = this.visible(id);
       if (clip.originalMissing) throw new Error("The original is missing. Existing shareables are still available.");
-      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Finish or cancel this clip's export before trimming it.");
+      if (this.pendingJobs.some((job) => job.clipId === id)) throw new Error("Wait for the shareable to finish, or cancel it, before trimming this clip.");
       const job: Job = { id: randomUUID(), clipId: id, kind: "trim", state: "queued", progress: 0, message: "Waiting to trim" };
       this.stored(id).editedAt ??= Date.now();
       await this.writeMetadata();
@@ -1619,7 +1618,7 @@ export class CollectionService {
             } catch (error) {
                this.jobUpdate(job, {
                   state: signal.aborted ? "cancelled" : "failed",
-                  message: signal.aborted ? "Trim cancelled. The clip is unchanged." : message(error),
+                  message: signal.aborted ? "Trim canceled. The clip is unchanged." : message(error),
                });
             } finally {
                if (temporary) {
@@ -1854,7 +1853,7 @@ export class CollectionService {
       if (root !== this.root || !withinRoot(root, actual)) throw new Error("The video is outside the current collection.");
       const key = normal(actual);
       const allowed = this.clips.some((clip) => normal(clip.path) === key || clip.shareables.some((share) => normal(share.path) === key));
-      if (!allowed) throw new Error("That video is not part of this collection.");
+      if (!allowed) throw new Error("That video isn't part of this collection.");
       // The scan already read this file's metadata. Reuse it while the file is unchanged.
       const scanned = this.cache.get(actual);
       const info = scanned && scanned.stamp === fileStamp(await stat(actual, { bigint: true })) ? scanned.info : undefined;

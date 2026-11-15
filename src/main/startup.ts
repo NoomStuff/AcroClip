@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 export function desktopExec(executable: string, args: string[]): string {
    const quote = (value: string) => {
-      if (/[\r\n\0]/.test(value)) throw new Error("The app path cannot be used for desktop integration.");
+      if (/[\r\n\0]/.test(value)) throw new Error("The app path can't be used for desktop integration.");
       // Desktop string decoding precedes Exec argument decoding.
       const argument = value.replaceAll("%", "%%").replace(/[\\"`$]/g, "\\$&");
       return `"${argument.replaceAll("\\", "\\\\").replaceAll("\t", "\\t")}"`;
@@ -29,7 +29,7 @@ export async function linuxDesktopIdentity(dataDirectory: string, executable: st
    } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
    }
-   if (/[\r\n\0]/.test(executable) || /[\r\n\0]/.test(icon)) throw new Error("The app path cannot be used for desktop integration.");
+   if (/[\r\n\0]/.test(executable) || /[\r\n\0]/.test(icon)) throw new Error("The app path can't be used for desktop integration.");
    await mkdir(directory, { recursive: true });
    const icons = join(dataDirectory, "icons", "hicolor", "256x256", "apps");
    await mkdir(icons, { recursive: true });

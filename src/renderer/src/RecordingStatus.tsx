@@ -127,7 +127,7 @@ export function RecordingStatus({ state, audioMessage = "" }: { state: AppState 
                      style={{ animationDuration: `${Math.max(1, capacity) / 0.94}s` }}
                      viewBox="0 0 20 20"
                      role="img"
-                     aria-label={`Buffer ${Math.round(fill * 100)}% full${fill >= 1 ? ", rolling" : ""}`}
+                     aria-label={`Replay memory ${Math.round(fill * 100)}% full${fill >= 1 ? ", rolling" : ""}`}
                   >
                      <circle cx="10" cy="10" r="8" fill="none" stroke="var(--border-control)" strokeWidth="2" />
                      <circle

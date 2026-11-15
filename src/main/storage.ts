@@ -1,5 +1,5 @@
 import { statfs } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, win32 } from "node:path";
 
 const lowStorageBytes = 1024n * 1024n * 1024n;
 const checkInterval = 30_000;
@@ -7,8 +7,19 @@ const checkTimeout = 3000;
 type SpaceReader = (directory: string) => Promise<bigint>;
 interface StorageOptions {
    onChange: () => void;
-   onWarning: (message: string) => void;
+   /** Free space dropped below the limit. `detail` says how much is left and where. */
+   onWarning: (message: string, detail: string) => void;
+   /** Free space couldn't be read. Nothing is asked of the user, so this only reaches the log. */
+   onUnreadable?: () => void;
    readSpace?: SpaceReader;
+}
+export const lowStorageWarning = "Low storage";
+
+/** Below the 1 GiB limit, megabytes are always the right unit. */
+export function lowStorageDetail(root: string, available: bigint, platform: NodeJS.Platform = process.platform): string {
+   const megabytes = available / (1024n * 1024n);
+   const drive = platform === "win32" ? win32.parse(root).root.replace(/\\$/, "") : "";
+   return `Only ${megabytes.toLocaleString("en-US")} MB left on ${drive || "the collection's drive"}, so new clips may not save.`;
 }
 /**
  * Free space on the volume that holds `directory`. A collection folder that was deleted, or not
@@ -33,6 +44,7 @@ export class StorageMonitor {
    private readonly readSpace: SpaceReader;
    private root = "";
    private message = "";
+   private unreadable = false;
    private timer: ReturnType<typeof setInterval> | null = null;
    private pending: Promise<void> | null = null;
    private spaceRead: { root: string; promise: Promise<bigint | undefined> } | null = null;
@@ -44,11 +56,11 @@ export class StorageMonitor {
    get warning(): string {
       return this.message;
    }
-   private publish(message: string): void {
+   private publish(message: string, detail = ""): void {
       if (message === this.message) return;
       this.message = message;
       this.options.onChange();
-      if (message) this.options.onWarning(message);
+      if (message) this.options.onWarning(message, detail);
    }
    setActivity(root: string, active: boolean): void {
       if (root !== this.root) {
@@ -58,6 +70,7 @@ export class StorageMonitor {
          this.generation++;
          this.pending = null;
          this.spaceRead = null;
+         this.unreadable = false;
          this.publish("");
       }
       if (!root || !active) {
@@ -99,7 +112,15 @@ export class StorageMonitor {
          ]);
          if (timeout) clearTimeout(timeout);
          if (generation !== this.generation) return;
-         this.publish(available === undefined ? "Free storage could not be checked" : available < lowStorageBytes ? "Low storage in clip folder" : "");
+         // An unreadable volume keeps the last answer. It may only be slow, and it's checked again soon.
+         if (available === undefined) {
+            if (!this.unreadable) this.options.onUnreadable?.();
+            this.unreadable = true;
+            return;
+         }
+         this.unreadable = false;
+         if (available < lowStorageBytes) this.publish(lowStorageWarning, lowStorageDetail(root, available));
+         else this.publish("");
       })();
       this.pending = check;
       try {

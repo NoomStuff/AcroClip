@@ -3,11 +3,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties, DragEvent } from "react";
 import {
    AlertCircle,
+   AppWindow,
    ChevronRight,
+   Clapperboard,
    Folder,
    FolderInput,
    FolderOpen,
    FolderPlus,
+   FolderX,
    Grid2X2,
    List,
    LoaderCircle,
@@ -15,6 +18,8 @@ import {
    Pencil,
    Plus,
    Search,
+   SearchX,
+   Tag,
    Trash2,
    X,
    ZoomIn,
@@ -47,6 +52,8 @@ function readThumbnailSize(view: "grid" | "list"): number {
    }
 }
 import { age, folderName, formatSize } from "./format";
+import { bindingFor, formatBinding } from "../../shared/shortcuts";
+import { dailyLine, emptyTitles, noMatchTitle } from "./empty-flavor";
 import type { Run } from "./desktop";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { ClipCard } from "./ClipCard";
@@ -78,6 +85,23 @@ type LibraryItem =
    | { type: "pending"; key: string };
 const itemKey = (item: LibraryItem) => item.key;
 const itemKind = (item: LibraryItem): GridItemKind => (item.type === "group" ? "header" : item.type === "pending" ? "placeholder" : "card");
+
+/** "minute", "2 minutes", "90 seconds": how a clip length reads in a sentence. */
+function spokenLength(seconds: number): string {
+   if (seconds === 60) return "minute";
+   return seconds % 60 === 0 ? `${seconds / 60} minutes` : `${seconds} seconds`;
+}
+
+/**
+ * Reads the live save binding and clip length, so it stays true after either changes. "Up to",
+ * because replay memory or a capture that only just started can hold less than the full length.
+ */
+function saveHint(binding: string, clipSeconds: number, mac: boolean): string {
+   const length = spokenLength(clipSeconds);
+   return binding
+      ? `Press ${formatBinding(binding, mac)} while capturing to save up to the last ${length}.`
+      : `Use Save clip on the Capture page to keep up to the last ${length}.`;
+}
 
 export function Library({
    state,
@@ -890,43 +914,47 @@ export function Library({
                      onSettled={settle}
                   />
                ) : pending ? null : unavailable ? (
-                  <Empty icon={<FolderOpen size={38} />} title="Collection unavailable">
+                  <Empty icon={<FolderX size={38} />} title="Can't open the collection folder" detail="It may have moved, or its drive is disconnected.">
                      <Button onClick={() => void run(() => api.refresh())}>Retry</Button>
                   </Empty>
                ) : (
                   <Empty
-                     icon={<FolderOpen size={38} />}
-                     title={query ? "No matching clips" : folderPath !== null ? "Folder is empty" : "No clips"}
+                     icon={
+                        query ? (
+                           <SearchX size={38} />
+                        ) : folderPath !== null ? (
+                           <FolderOpen size={38} />
+                        ) : selectedCategory ? (
+                           <Tag size={38} />
+                        ) : filter.startsWith("source:") ? (
+                           <AppWindow size={38} />
+                        ) : (
+                           <Clapperboard size={38} />
+                        )
+                     }
+                     title={
+                        query
+                           ? noMatchTitle(query)
+                           : folderPath !== null
+                             ? dailyLine(emptyTitles.folder, "folder")
+                             : selectedCategory
+                               ? `Nothing tagged ${selectedCategory.name}`
+                               : filter.startsWith("source:")
+                                 ? "No clips from this application"
+                                 : dailyLine(emptyTitles.library, "library")
+                     }
                      detail={
                         query
-                           ? "Try another name or application."
+                           ? "Search looks at clip, application and folder names."
                            : folderPath !== null
-                             ? "Put supported videos in this folder to see them here."
+                             ? "Move clips here from the library, or add videos to the folder."
                              : selectedCategory
-                               ? "Tag clips using their actions menu."
+                               ? "Right-click a clip to tag it."
                                : filter.startsWith("source:")
-                                 ? "Clips recorded from this application appear here."
-                                 : "Save a clip while capturing, or put supported videos into your collection folder."
+                                 ? ""
+                                 : saveHint(bindingFor(state.preferences, "saveClip"), state.preferences.clipSeconds, state.platform === "darwin")
                      }
-                  >
-                     {query && <Button onClick={() => setQuery("")}>Clear search</Button>}
-                     {filter !== "all" && (
-                        <Button
-                           onClick={() => {
-                              setFilter("all");
-                              setQuery("");
-                           }}
-                        >
-                           Show all clips
-                        </Button>
-                     )}
-                     {filter === "all" && !query && (
-                        <Button onClick={() => void run(() => api.reveal(collectionRoot))}>
-                           <FolderOpen size={16} />
-                           Open collection folder
-                        </Button>
-                     )}
-                  </Empty>
+                  />
                )}
             </div>
             <div className="library-scale" role="group" aria-label="Thumbnail scale">

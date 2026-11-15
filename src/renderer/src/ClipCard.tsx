@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useKeyframeScrub } from "./useKeyframeScrub";
 import type { CSSProperties } from "react";
 import { Clapperboard, LoaderCircle, MoreHorizontal, Play, Share2, X } from "lucide-react";
@@ -92,8 +92,34 @@ export const ClipCard = memo(function ClipCard({
    // Dragging out shares the same file Copy file would.
    const dragPath = defaultClipFile(clip)?.path;
    const scrub = useKeyframeScrub(clip, clip.duration > 0 && !clip.originalMissing && !job);
+   const card = useRef<HTMLElement>(null);
+   const scrubbing = scrub.position !== null;
+   const { setPosition } = scrub;
+   useEffect(() => {
+      if (!scrubbing) return;
+      // Pointer leave misses a card that scrolls out from under a still pointer, a drag taking over,
+      // the window losing focus and a click through to the player. Each would leave the scrub and
+      // its timecode open, so any of them ends it.
+      const stop = () => setPosition(null);
+      const moved = (event: PointerEvent) => {
+         if (!(event.target instanceof Node && card.current?.contains(event.target))) stop();
+      };
+      window.addEventListener("pointermove", moved, true);
+      window.addEventListener("scroll", stop, true);
+      window.addEventListener("dragstart", stop, true);
+      window.addEventListener("blur", stop);
+      document.addEventListener("visibilitychange", stop);
+      return () => {
+         window.removeEventListener("pointermove", moved, true);
+         window.removeEventListener("scroll", stop, true);
+         window.removeEventListener("dragstart", stop, true);
+         window.removeEventListener("blur", stop);
+         document.removeEventListener("visibilitychange", stop);
+      };
+   }, [scrubbing, setPosition]);
    return (
       <article
+         ref={card}
          className="clip-card"
          data-layout-key={clip.id}
          style={{ "--application-color": applicationColor } as CSSProperties}
@@ -122,7 +148,10 @@ export const ClipCard = memo(function ClipCard({
          <button
             className="clip-open"
             {...fileDragProps(dragPath, !clip.originalMissing && !job ? { id: clip.id, collection: collectionRoot } : undefined)}
-            onClick={() => openClip(clip)}
+            onClick={() => {
+               setPosition(null);
+               openClip(clip);
+            }}
             aria-label={`Open ${clip.name}`}
          >
             <div className="clip-thumbnail" data-scrubbing={scrub.shown || undefined} data-same-frame={scrub.same || undefined}>

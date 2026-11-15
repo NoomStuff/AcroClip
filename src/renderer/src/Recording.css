@@ -93,6 +93,55 @@
    margin: 0;
 }
 
+/* The frozen frame stays as a backdrop, dimmed so it doesn't pass for live. It eases down slowly
+   and comes back quickly, so resuming feels immediate. */
+.preview-surface > video,
+.preview-surface > canvas {
+   transition: filter 0.2s ease-out;
+}
+
+.preview-surface[data-paused] > video,
+.preview-surface[data-paused] > canvas {
+   filter: brightness(0.3) saturate(0.5);
+   transition: filter 0.6s ease-in-out;
+}
+
+.preview-paused {
+   gap: 8px;
+   color: var(--text);
+   pointer-events: none;
+   opacity: 0;
+   transform: translateY(6px);
+   /* Leaving is quick, so it is gone before the reconnecting preview's loading icon fades in. */
+   transition:
+      opacity 0.08s ease-out,
+      transform 0s linear 0.08s;
+}
+
+.preview-paused[data-shown] {
+   opacity: 1;
+   transform: none;
+   transition:
+      opacity 0.4s ease-out 0.2s,
+      transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s;
+}
+
+.preview-paused svg {
+   margin-bottom: 4px;
+   color: var(--muted);
+}
+
+.preview-paused p {
+   color: var(--muted);
+   font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+   .preview-paused {
+      transform: none;
+   }
+}
+
 .preview-loading {
    z-index: 1;
    position: absolute;

@@ -76,13 +76,13 @@ export const preferencesSchema = z
          .int()
          .min(64)
          .max(7680)
-         .refine((value) => value % 2 === 0, "Use an even recording width"),
+         .refine((value) => value % 2 === 0, "Use an even capture width"),
       customHeight: z
          .number()
          .int()
          .min(64)
          .max(4320)
-         .refine((value) => value % 2 === 0, "Use an even recording height"),
+         .refine((value) => value % 2 === 0, "Use an even capture height"),
       customFPS: z.number().int().min(1).max(120),
       customCQ: z.number().int().min(12).max(35),
       allowSoftwareEncoder: z.boolean(),

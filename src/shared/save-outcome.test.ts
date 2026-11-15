@@ -7,8 +7,13 @@ describe("save outcome notices", () => {
       expect(savingNotice(150.4)).toBe("Extending clip to 2:30");
    });
    it("says what a save did", () => {
-      expect(saveOutcomeNotice({ kind: "saved", previousFootage: false })).toEqual({ message: "Clip saved" });
-      expect(saveOutcomeNotice({ kind: "saved", previousFootage: true })).toEqual({ message: "Saved the footage that was still available" });
+      expect(saveOutcomeNotice({ kind: "saved", previousFootage: false, secondsSinceCapture: 0.1 })).toEqual({ message: "Clip saved" });
+      expect(saveOutcomeNotice({ kind: "saved", previousFootage: true, secondsSinceCapture: 12.4 })).toEqual({
+         message: "Saved up to 12 s ago",
+         detail: "Nothing was captured after that.",
+      });
+      expect(saveOutcomeNotice({ kind: "saved", previousFootage: true, secondsSinceCapture: 0.3 }).message).toBe("Saved up to 1 s ago");
+      expect(saveOutcomeNotice({ kind: "saved", previousFootage: true, secondsSinceCapture: 300 }).message).toBe("Saved up to 5 min ago");
    });
    it("gives the new length in the title and what was added in the detail", () => {
       expect(saveOutcomeNotice({ kind: "extended", seconds: 101.6, added: 41.6 })).toEqual({
