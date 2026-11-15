@@ -533,7 +533,7 @@ try {
    assert.equal(service.clips.length, 2, "unowned shareables folder is scanned rather than silently hidden");
    await service.createShareable(clip.id, 1);
    assert.equal(service.jobs.at(-1)?.state, "failed");
-   assert.match(service.jobs.at(-1)?.message ?? "", /not owned/);
+   assert.match(service.jobs.at(-1)?.message ?? "", /didn't make/);
    assert.equal(await fileIdentity(foreign), before, "conflict preserves unrelated files");
    await rename(foreignFolder, join(root, "other-videos"));
    await service.refresh();
