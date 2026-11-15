@@ -39,7 +39,9 @@ function hideFolder(path: string): void {
    if (process.platform !== "win32") return;
    spawn("attrib", ["+h", path], { windowsHide: true, stdio: "ignore" }).on("error", () => undefined);
 }
-const thumbnailName = (identity: string) => `${identity}.last-keyframe-v1.jpg`;
+const thumbnailName = (identity: string) => `${identity}.content-frame-v2.jpg`;
+// Earlier thumbnails stay on show while their replacement is made, newest first.
+const legacyThumbnailNames = (identity: string) => [`${identity}.last-keyframe-v1.jpg`, `${identity}.jpg`];
 const fileSchema = z.object({ relativePath: z.string(), absolutePath: z.string(), identity: z.string() });
 const shareSchema = fileSchema.extend({
    id: z.string(),
@@ -568,7 +570,7 @@ export class CollectionService {
             targetMB: share.targetMB,
             createdAt: share.createdAt,
          }));
-      const thumbnail = [thumbnailName(stored.identity), `${stored.identity}.jpg`].find((name) => thumbnailFiles.has(name));
+      const thumbnail = [thumbnailName(stored.identity), ...legacyThumbnailNames(stored.identity)].find((name) => thumbnailFiles.has(name));
       return clipRecord(
          stored,
          {
@@ -686,7 +688,7 @@ export class CollectionService {
    private async thumbnail(actual: string, identity: string, duration: number, thumbnails: ThumbnailIndex): Promise<string> {
       if (!thumbnails) return "";
       const name = thumbnailName(identity);
-      const legacy = `${identity}.jpg`;
+      const legacy = legacyThumbnailNames(identity);
       const path = join(thumbnails.directory, name);
       if (thumbnails.files.has(name)) return path;
       const temporary = `${path}.${randomUUID()}.jpg`;
@@ -694,11 +696,12 @@ export class CollectionService {
          await createThumbnail(actual, temporary, duration);
          await rename(temporary, path);
          thumbnails.files.add(name);
-         if (thumbnails.files.delete(legacy)) await rm(join(thumbnails.directory, legacy), { force: true }).catch(() => undefined);
+         for (const old of legacy) if (thumbnails.files.delete(old)) await rm(join(thumbnails.directory, old), { force: true }).catch(() => undefined);
          return path;
       } catch (error) {
          this.warn(`Preview thumbnail unavailable for ${basename(actual)}: ${message(error)}`, "log");
-         return thumbnails.files.has(legacy) ? join(thumbnails.directory, legacy) : "";
+         const kept = legacy.find((old) => thumbnails.files.has(old));
+         return kept ? join(thumbnails.directory, kept) : "";
       } finally {
          await rm(temporary, { force: true });
       }

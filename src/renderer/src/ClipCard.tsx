@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import { useKeyframeScrub } from "./useKeyframeScrub";
 import type { CSSProperties } from "react";
 import { Clapperboard, LoaderCircle, MoreHorizontal, Play, Share2, X } from "lucide-react";
@@ -13,6 +13,37 @@ import { IconButton, Menu, MenuItem } from "./ui";
 import { ClipActions } from "./ClipActions";
 import { defaultClipFile } from "./clip-files";
 import type { ContextMenuRequest } from "./ui";
+
+/** The clip's length, which opens up to show the scrubbed position before it while previewing. */
+function Duration({ duration, position }: { duration: number; position: number | null }) {
+   // The last position stays in place while the label closes, so it doesn't empty out mid-animation.
+   const shown = useRef(position ?? 0);
+   if (position !== null) shown.current = position;
+   // The label opens to the position's measured width. Tabular digits keep it steady while scrubbing, so it
+   // only changes with the digit count or a font swap. An exact width keeps the total from drifting.
+   const text = useRef<HTMLSpanElement>(null);
+   const [width, setWidth] = useState(0);
+   useLayoutEffect(() => {
+      const node = text.current;
+      if (!node) return;
+      const measure = () => setWidth(node.offsetWidth);
+      measure();
+      const observer = new ResizeObserver(measure);
+      observer.observe(node);
+      return () => observer.disconnect();
+   }, []);
+   return (
+      <span className="duration" data-scrubbing={position !== null || undefined} style={{ "--position-width": `${width}px` } as CSSProperties}>
+         <span className="duration-position" aria-hidden={position === null || undefined}>
+            <span ref={text}>
+               {formatTime(shown.current)}
+               <span className="duration-divider"> / </span>
+            </span>
+         </span>
+         <span className="duration-total">{formatTime(duration)}</span>
+      </span>
+   );
+}
 
 const dragSurface = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>')}`;
 
@@ -105,16 +136,7 @@ export const ClipCard = memo(function ClipCard({
                   </div>
                )}
                {clip.duration > 0 && (
-                  <span className="duration" data-scrubbing={scrub.frame !== null || undefined}>
-                     {scrub.frame !== null ? (
-                        <>
-                           {formatTime((scrub.frame * clip.duration) / scrub.frames)}
-                           <span> / {formatTime(clip.duration)}</span>
-                        </>
-                     ) : (
-                        formatTime(clip.duration)
-                     )}
-                  </span>
+                  <Duration duration={clip.duration} position={scrub.frame === null ? null : (scrub.frame * clip.duration) / scrub.frames} />
                )}
                {shareable && (
                   <span className="copy-indicator" data-tooltip={`${clip.shareables.length} shareable${clip.shareables.length === 1 ? "" : "s"}`}>

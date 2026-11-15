@@ -21,7 +21,8 @@
    min-width: 64px;
    height: 28px;
    padding: 0 6px;
-   border-radius: 6px;
+   border-radius: 10px;
+   corner-shape: squircle;
    background: var(--base);
    cursor: text;
    transition:
@@ -84,7 +85,8 @@
    margin: 0;
    padding: 0;
    border: 0;
-   border-radius: 7px;
+   border-radius: 11px;
+   corner-shape: squircle;
    background: transparent;
    outline: none;
    touch-action: pan-y;
@@ -112,7 +114,8 @@
    top: 6px;
    height: 28px;
    background: var(--base);
-   border-radius: 6px;
+   border-radius: 10px;
+   corner-shape: squircle;
    pointer-events: none;
 }
 .slider-fill {
@@ -121,7 +124,8 @@
    left: min(var(--slider-origin, 0%), var(--slider-position, 0%));
    width: max(calc(var(--slider-position, 0%) - var(--slider-origin, 0%)), calc(var(--slider-origin, 0%) - var(--slider-position, 0%)));
    height: 100%;
-   border-radius: 6px 0 0 6px;
+   border-radius: 10px 0 0 10px;
+   corner-shape: squircle;
    background: #9b82d0;
 }
 .slider[data-bipolar] .slider-fill {
@@ -241,6 +245,7 @@
 .slider-compact .slider-fill {
    background: var(--accent);
    border-radius: inherit;
+   corner-shape: inherit;
 }
 .slider-compact .slider-thumb {
    width: 11px;

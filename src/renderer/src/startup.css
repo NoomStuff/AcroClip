@@ -27,7 +27,8 @@ body {
    height: 148px;
    padding-top: 22px;
    gap: 22px;
-   border-radius: 16px;
+   border-radius: 26px;
+   corner-shape: squircle;
    background: #18171b;
    color: #eeeeee;
 }

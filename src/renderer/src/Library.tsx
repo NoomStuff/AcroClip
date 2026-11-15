@@ -320,10 +320,13 @@ export function Library({
    const sections = useMemo(() => orderLibrarySections(populatedSections, sectionOrder), [populatedSections, sectionOrder]);
    const [collapsedSections, setCollapsedSections] = useState<string[]>(() => {
       try {
-         const stored: unknown = JSON.parse(localStorage.getItem("acroclip.library.collapsed") ?? "[]");
-         return Array.isArray(stored) && stored.every((id): id is string => typeof id === "string") ? stored : [];
+         // Folders start folded, since the folder tree is long and the filters above it are what most visits need.
+         const saved = localStorage.getItem("acroclip.library.collapsed");
+         if (saved === null) return ["folders"];
+         const stored: unknown = JSON.parse(saved);
+         return Array.isArray(stored) && stored.every((id): id is string => typeof id === "string") ? stored : ["folders"];
       } catch {
-         return [];
+         return ["folders"];
       }
    });
    useEffect(() => {

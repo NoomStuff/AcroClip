@@ -82,7 +82,8 @@
    display: flex;
    align-items: center;
    justify-content: center;
-   border-radius: 16px;
+   border-radius: 9999px;
+   corner-shape: squircle;
    position: relative;
 }
 
@@ -181,7 +182,8 @@
    overflow: hidden;
    background: var(--tone-surface);
    border: 1px solid var(--tone-border);
-   border-radius: 12px;
+   border-radius: 19px;
+   corner-shape: squircle;
    box-shadow:
       0 10px 30px #0009,
       0 1px 0 #ffffff08 inset;
@@ -217,7 +219,8 @@
    flex-shrink: 0;
    width: 28px;
    height: 28px;
-   border-radius: 8px;
+   border-radius: 13px;
+   corner-shape: squircle;
    color: var(--tone);
    background: color-mix(in srgb, var(--tone) 15%, transparent);
 }
@@ -481,7 +484,8 @@
    align-items: flex-start;
    gap: 9px;
    padding: 8px 6px 8px 9px;
-   border-radius: 8px;
+   border-radius: 13px;
+   corner-shape: squircle;
    font-size: 12px;
 }
 
@@ -546,7 +550,8 @@
 
 .notification-log-clear {
    padding: 2px 5px;
-   border-radius: 5px;
+   border-radius: 8px;
+   corner-shape: squircle;
    color: var(--accent);
    font-size: 11px;
 }
@@ -584,7 +589,8 @@
 }
 .workspace {
    background: var(--base);
-   border-radius: 14px 0 0 14px;
+   border-radius: 22px 0 0 22px;
+   corner-shape: squircle;
 }
 .workspace > .page {
    animation: workspace-page-down 280ms var(--ease) both;

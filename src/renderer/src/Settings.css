@@ -62,9 +62,7 @@
 
 .settings-heading h1 {
    font-size: 23px;
-   text-shadow:
-      0 1px 3px #000,
-      0 0 8px #000;
+   text-shadow: var(--overlay-text-shadow);
 }
 
 .settings-scroll {
@@ -87,7 +85,8 @@
    margin: 20px 0;
    padding: 16px;
    background: var(--surface);
-   border-radius: 11px;
+   border-radius: 18px;
+   corner-shape: squircle;
    display: flex;
    gap: 16px;
    color: var(--muted);
@@ -127,6 +126,7 @@
    padding: 5px 9px;
    min-height: 30px;
    border-radius: var(--radius-control);
+   corner-shape: squircle;
    font-size: 12px;
    background: var(--raised);
 }
@@ -167,7 +167,8 @@
    gap: 12px;
    min-height: 44px;
    padding: 7px 8px 7px 16px;
-   border-radius: 11px;
+   border-radius: 18px;
+   corner-shape: squircle;
    background: var(--raised);
    box-shadow:
       0 10px 28px #0008,
@@ -309,8 +310,22 @@
    padding: 17px 20px;
    margin: 0 0 5px;
    border: 0;
-   border-radius: 8px;
+   border-radius: var(--settings-row-join);
+   corner-shape: squircle;
    background: var(--surface);
+}
+/* A run of rows reads as one block: its outer corners take the panel radius, the joins between rows stay
+   tighter, so the category is rounder than anything inside it. */
+.settings-body {
+   --settings-row-join: 8px;
+}
+.settings-body .settings-row:not(.settings-row + .settings-row) {
+   border-top-left-radius: var(--radius-panel);
+   border-top-right-radius: var(--radius-panel);
+}
+.settings-body .settings-row:not(:has(+ .settings-row)) {
+   border-bottom-left-radius: var(--radius-panel);
+   border-bottom-right-radius: var(--radius-panel);
 }
 .settings-row-icon {
    color: var(--muted);
@@ -346,7 +361,8 @@
 .settings-filename-row {
    padding: 18px 20px;
    background: var(--surface);
-   border-radius: 8px;
+   border-radius: 13px;
+   corner-shape: squircle;
    margin-bottom: 5px;
 }
 .settings-filename-row .filename-editor {
@@ -368,7 +384,8 @@
 }
 .settings-body .game-list .game-entry {
    background: var(--surface);
-   border-radius: 8px;
+   border-radius: 13px;
+   corner-shape: squircle;
    margin-bottom: 5px;
    padding: 14px 20px;
 }
@@ -409,7 +426,8 @@
 .settings-group > .folder-picker {
    min-height: 78px;
    padding: 17px 20px;
-   border-radius: 8px;
+   border-radius: var(--radius-panel);
+   corner-shape: squircle;
 }
 .settings-filename-row .filename-heading {
    gap: 8px 18px;
@@ -503,7 +521,8 @@
 .filename-warning-icon:focus-visible {
    outline: 2px solid #d9b56f;
    outline-offset: 2px;
-   border-radius: 3px;
+   border-radius: 5px;
+   corner-shape: squircle;
 }
 @media (prefers-reduced-motion: reduce) {
    .filename-warning-icon[data-state] {
@@ -558,6 +577,7 @@ fieldset.settings-group:disabled {
    position: absolute;
    inset: 0;
    border-radius: inherit;
+   corner-shape: inherit;
 }
 .settings-body .settings-row .field-control {
    cursor: auto;

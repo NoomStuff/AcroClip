@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { audioTrackTitle, mediaFailure } from "./media";
+import { audioTrackTitle, flatSpread, frameSpreads, mediaFailure, pickThumbnailFrame } from "./media";
 
 describe("imported audio track names", () => {
    it("uses ordinal names for generic MP4 handlers", () => {
@@ -29,5 +29,28 @@ describe("ffmpeg failures", () => {
       expect(mediaFailure(stderr)).toBe("error while decoding MB 46 31, bytestream -29 Decode error rate 0.75 exceeds maximum 0.666667");
       expect(mediaFailure("[mov,mp4,m4a,3gp,3g2,mj2 @ 0000025dbbf9eb00] moov atom not found\n")).toBe("moov atom not found");
       expect(mediaFailure("")).toBe("");
+   });
+});
+
+describe("thumbnail frame choice", () => {
+   it("reads each frame's brightness spread from signalstats", () => {
+      const stats = [
+         "frame:0    pts:0       pts_time:0",
+         "lavfi.signalstats.YLOW=16",
+         "lavfi.signalstats.YHIGH=140",
+         "frame:1    pts:10240   pts_time:1",
+         "lavfi.signalstats.YLOW=2",
+         "lavfi.signalstats.YHIGH=3",
+         "frame:2    pts:20480   pts_time:2",
+         "lavfi.signalstats.YLOW=9",
+      ].join("\r\n");
+      expect(frameSpreads(stats)).toEqual([124, 1, 0]);
+   });
+   it("takes the latest frame that shows something, else the most spread one", () => {
+      expect(pickThumbnailFrame([120, 60, 2, 0])).toBe(1);
+      expect(pickThumbnailFrame([120, 60])).toBe(1);
+      expect(pickThumbnailFrame([4, 10, 0])).toBe(1);
+      expect(pickThumbnailFrame([flatSpread, 0, flatSpread])).toBe(2);
+      expect(pickThumbnailFrame([])).toBe(-1);
    });
 });

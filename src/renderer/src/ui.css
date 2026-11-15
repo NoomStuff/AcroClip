@@ -49,6 +49,7 @@
    gap: 8px;
    padding: 10px 15px;
    border-radius: var(--radius-control);
+   corner-shape: squircle;
    background: var(--raised);
    color: var(--text);
    font-weight: 550;
@@ -110,6 +111,7 @@
    width: 30px;
    height: 30px;
    border-radius: var(--radius-control);
+   corner-shape: squircle;
    display: inline-flex;
    align-items: center;
    justify-content: center;
@@ -129,7 +131,8 @@
 .segmented {
    display: flex;
    padding: 4px;
-   border-radius: 12px;
+   border-radius: 9999px;
+   corner-shape: squircle;
    background: var(--base);
    gap: 3px;
 }
@@ -138,7 +141,8 @@
    flex: 1;
    min-height: 35px;
    color: var(--muted);
-   border-radius: 9px;
+   border-radius: 9999px;
+   corner-shape: squircle;
    font-weight: 550;
 }
 
@@ -206,6 +210,7 @@
    inset: 0;
    border: 1px solid var(--red);
    border-radius: inherit;
+   corner-shape: inherit;
    pointer-events: none;
    opacity: 0;
    animation: recording-status-pulse 3.2s ease-out infinite;
@@ -264,7 +269,8 @@
    width: 20px;
    height: 20px;
    flex-shrink: 0;
-   border-radius: 6px;
+   border-radius: 10px;
+   corner-shape: squircle;
    background: var(--base);
    /* Keeps an empty box visible on a hovered row, which is close to the slot's own color. */
    box-shadow: inset 0 0 0 1px #ffffff14;
@@ -455,6 +461,7 @@ label:active > .checkbox {
    flex-shrink: 0;
    background: var(--surface);
    border-radius: var(--radius-panel);
+   corner-shape: squircle;
    display: flex;
    flex-direction: column;
    padding: 18px 11px 12px;
@@ -467,7 +474,8 @@ label:active > .checkbox {
    text-align: left;
    gap: 10px;
    padding: 11px 12px;
-   border-radius: 10px;
+   border-radius: 9999px;
+   corner-shape: squircle;
    width: 100%;
    color: var(--muted);
    font-size: 13px;
@@ -614,7 +622,8 @@ label:active > .checkbox {
    z-index: 20;
    background: var(--raised);
    padding: 5px;
-   border-radius: 10px;
+   border-radius: 16px;
+   corner-shape: squircle;
    box-shadow:
       0 12px 32px #0008,
       0 2px 6px #0005;
@@ -674,7 +683,8 @@ label:active > .checkbox {
    align-items: center;
    width: 100%;
    text-align: left;
-   border-radius: 7px;
+   border-radius: 11px;
+   corner-shape: squircle;
    min-height: 36px;
    font-size: 13px;
    color: var(--text);
@@ -692,7 +702,8 @@ label:active > .checkbox {
    position: absolute;
    top: 0;
    left: 0;
-   border-radius: 7px;
+   border-radius: 11px;
+   corner-shape: squircle;
    background: #ffffff0d;
    opacity: 0;
    pointer-events: none;
@@ -703,7 +714,8 @@ label:active > .checkbox {
       opacity 120ms var(--ease);
 }
 .select-menu .menu-highlight {
-   border-radius: 6px;
+   border-radius: 10px;
+   corner-shape: squircle;
    background: var(--hover);
 }
 .menu-highlight[data-visible] {
@@ -751,6 +763,7 @@ label:active > .checkbox {
    width: min(420px, 100%);
    background: var(--surface);
    border-radius: var(--radius-panel);
+   corner-shape: squircle;
    padding: 22px 24px 24px;
    position: relative;
    max-height: calc(100dvh - 48px);
@@ -807,6 +820,7 @@ label:active > .checkbox {
    gap: 12px;
    padding: 9px 10px;
    border-radius: var(--radius-control);
+   corner-shape: squircle;
    cursor: pointer;
 }
 
@@ -896,7 +910,8 @@ label:active > .checkbox {
    pointer-events: none;
    z-index: -1;
    background: var(--selection-background, #b197fc12);
-   border-radius: 9px;
+   border-radius: 9999px;
+   corner-shape: squircle;
    transition: scale 280ms var(--spring);
 }
 /* Matches the press scale of the items it sits under. */
@@ -927,7 +942,8 @@ label:active > .checkbox {
    box-shadow: none;
 }
 .rail > .selection-indicator {
-   border-radius: 16px;
+   border-radius: 9999px;
+   corner-shape: squircle;
    background: #ffffff0b;
 }
 .rail-button > .rail-marker {
@@ -1069,12 +1085,14 @@ label:active > .checkbox {
 /* Segments sized to sit in a settings row beside other row controls. */
 .segmented-compact {
    padding: 3px;
-   border-radius: 10px;
+   border-radius: 9999px;
+   corner-shape: squircle;
 }
 .segmented-compact button {
    min-height: 32px;
    padding: 0 12px;
-   border-radius: 7px;
+   border-radius: 9999px;
+   corner-shape: squircle;
    font-size: 13px;
    white-space: nowrap;
 }
@@ -1086,14 +1104,16 @@ label:active > .checkbox {
    flex-shrink: 0;
    height: 38px;
    padding: 3px;
-   border-radius: 10px;
+   border-radius: 16px;
+   corner-shape: squircle;
    background: var(--base);
 }
 .stepper-step {
    display: grid;
    place-items: center;
    width: 30px;
-   border-radius: 7px;
+   border-radius: 11px;
+   corner-shape: squircle;
    color: var(--muted);
    transition:
       transform 260ms var(--spring),
@@ -1114,7 +1134,8 @@ label:active > .checkbox {
    justify-content: center;
    min-width: 64px;
    padding: 0 6px;
-   border-radius: 7px;
+   border-radius: 11px;
+   corner-shape: squircle;
    cursor: text;
    transition: background 160ms var(--ease);
 }
@@ -1174,7 +1195,8 @@ label:active > .checkbox {
    min-width: 64px;
    min-height: 32px;
    padding: 0 10px;
-   border-radius: 7px;
+   border-radius: 9999px;
+   corner-shape: squircle;
    color: var(--accent);
    font-size: 13px;
    cursor: text;
@@ -1235,7 +1257,8 @@ label:active > .checkbox {
    z-index: 400;
    max-width: 280px;
    padding: 6px 9px;
-   border-radius: 7px;
+   border-radius: 11px;
+   corner-shape: squircle;
    background: #2e2b34;
    box-shadow:
       0 8px 24px #0008,
@@ -1271,7 +1294,8 @@ label:active > .checkbox {
    z-index: 130;
    max-width: calc(100vw - 16px);
    padding: 14px;
-   border-radius: 12px;
+   border-radius: 19px;
+   corner-shape: squircle;
    background: var(--raised);
    box-shadow:
       0 12px 32px #0008,
@@ -1345,7 +1369,8 @@ label:active > .checkbox {
    padding: 2px 7px;
    border: 1px solid var(--border-control);
    border-bottom-width: 2px;
-   border-radius: 5px;
+   border-radius: 8px;
+   corner-shape: squircle;
    background: var(--raised);
    color: var(--text);
    font-family: inherit;

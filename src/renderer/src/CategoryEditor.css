@@ -5,7 +5,8 @@
    min-height: 42px;
    padding: 0 12px;
    margin: 20px 0 16px;
-   border-radius: 10px;
+   border-radius: 16px;
+   corner-shape: squircle;
    background: var(--base);
    transition: background 150ms var(--ease);
 }
@@ -45,7 +46,8 @@
    min-width: 0;
    height: 42px;
    padding: 0;
-   border-radius: 8px;
+   border-radius: 13px;
+   corner-shape: squircle;
    display: grid;
    place-items: center;
 }

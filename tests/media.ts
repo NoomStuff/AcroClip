@@ -78,6 +78,41 @@ try {
    const finalFrame = join(thumbnailRoot, "final-frame.jpg");
    await runMedia("ffmpeg", [...ffmpegBase, "-y", "-ss", "4.8", "-i", colored, "-frames:v", "1", "-pix_fmt", "yuvj420p", finalFrame]);
    await checkColor(finalFrame, "black");
+   // Clips that end on a fade to black or a loading screen look back for the last frame that shows the moment.
+   const textureSpread = async (image: string) => (await sharp(image).greyscale().stats()).channels[0]!.stdev;
+   for (const [name, ending] of [
+      ["fade-to-black", "drawbox=color=black:t=fill:enable='gte(t,6)'"],
+      ["loading-screen", "drawbox=color=black:t=fill:enable='gte(t,4)',drawbox=x=70:y=40:w=20:h=10:color=white:t=fill:enable='gte(t,4)'"],
+   ] as const) {
+      const file = join(thumbnailRoot, `${name}.mp4`);
+      await runMedia("ffmpeg", [
+         ...ffmpegBase,
+         "-y",
+         "-f",
+         "lavfi",
+         "-i",
+         "testsrc2=s=160x90:r=10:d=10",
+         "-vf",
+         ending,
+         "-c:v",
+         "libx264",
+         "-preset",
+         "ultrafast",
+         "-g",
+         "10",
+         "-keyint_min",
+         "10",
+         "-sc_threshold",
+         "0",
+         file,
+      ]);
+      const lastFrame = join(thumbnailRoot, `${name}-end.jpg`);
+      await runMedia("ffmpeg", [...ffmpegBase, "-y", "-ss", "9", "-i", file, "-frames:v", "1", "-pix_fmt", "yuvj420p", lastFrame]);
+      assert.ok((await textureSpread(lastFrame)) < 40, `${name} ends on a flat frame`);
+      const thumbnail = join(thumbnailRoot, `${name}.jpg`);
+      await createThumbnail(file, thumbnail, (await probe(file)).duration);
+      assert.ok((await textureSpread(thumbnail)) > 40, `${name} thumbnail shows the scene before the ending`);
+   }
    const longGop = join(thumbnailRoot, "long-gop.mp4");
    await runMedia("ffmpeg", [
       ...ffmpegBase,
@@ -136,12 +171,12 @@ try {
    const migrationVideo = join(migrationRoot, "Moment.mp4");
    await copyFile(colored, migrationVideo);
    const migrationIdentity = await fileIdentity(migrationVideo);
-   const legacyThumbnail = join(migrationRoot, ".acroclip", "thumbnails", `${migrationIdentity}.jpg`);
+   const legacyThumbnail = join(migrationRoot, ".acroclip", "thumbnails", `${migrationIdentity}.last-keyframe-v1.jpg`);
    await copyFile(fallbackThumbnail, legacyThumbnail);
    const migration = new CollectionService();
    await migration.open(migrationRoot);
    const migratedThumbnail = fileURLToPath(migration.clips[0]!.thumbnail);
-   assert.ok(migratedThumbnail.endsWith(".last-keyframe-v1.jpg"));
+   assert.ok(migratedThumbnail.endsWith(".content-frame-v2.jpg"));
    await checkColor(migratedThumbnail, "blue");
    await assert.rejects(stat(legacyThumbnail), { code: "ENOENT" });
    const generatedAt = (await stat(migratedThumbnail)).mtimeMs;
@@ -983,7 +1018,7 @@ try {
    assert.equal((await readdir(join(trimRoot, ".acroclip"))).filter((name) => name.startsWith("trim-")).length, 0, "no trim work remains");
    assert.equal(trimming.clips.filter((entry) => entry.path.includes("(Trim")).length, 2);
    console.log(
-      "Media verification passed: last-keyframe thumbnails and cache migration, keyframe hover strips, loudness envelopes, real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, deletion boundaries, lossless merging of overlapping saves, and trimming as a copy or in place."
+      "Media verification passed: thumbnails that skip flat endings and cache migration, keyframe hover strips, loudness envelopes, real multi-track video, full-duration size-target export, playback decode, categories, cancellation, folder conflicts, relative moves, metadata recovery, deletion boundaries, lossless merging of overlapping saves, and trimming as a copy or in place."
    );
 } finally {
    assert.ok(withinRoot(await realpath(tmpdir()), workspace), "test cleanup stays within isolated temporary workspace");

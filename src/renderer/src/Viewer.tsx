@@ -300,6 +300,7 @@ export function Viewer({
       void (async () => {
          try {
             const prepared = await api.playback(path, requestedTrack, requestId, compatible ? { compatible: true } : undefined);
+            if (prepared === null) return;
             // The same file path after a trim replaced it. A new address keeps the old footage from being reused.
             const result = revision ? `${prepared}?revision=${revision}` : prepared;
             if (disposed) return;
@@ -433,7 +434,7 @@ export function Viewer({
    const clipDuration = duration || clip?.duration || 0;
    // One export per clip at a time, so a clip making a shareable can't be trimmed, and the other way round.
    const trimAvailable = !!clip && !clip.originalMissing && clipDuration > 0 && !trimJob && !job;
-   // The sidebar's buttons rise in from the bottom when trimming starts or ends.
+   // The trim actions rise in from the bottom when trimming starts. The usual buttons drop back in from the top when it ends.
    const trimLayer = !!trim || !!trimJob;
    const bottomLayer = useRef<HTMLDivElement>(null);
    const shownLayer = useRef({ trimLayer, clip: clip?.id });
@@ -444,7 +445,7 @@ export function Viewer({
       if (!node || !visible || before.trimLayer === trimLayer || before.clip !== clip?.id || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
       const animation = node.animate(
          [
-            { opacity: 0, transform: "translateY(18px)" },
+            { opacity: 0, transform: `translateY(${trimLayer ? 18 : -18}px)` },
             { opacity: 1, transform: "translateY(0)" },
          ],
          { duration: 300, easing: "cubic-bezier(.22,.8,.3,1)" }
@@ -1201,26 +1202,37 @@ function TrimActions({
 /** An icon button that answers a finished action with a checkmark, then its own icon, each bouncing in. */
 function ConfirmButton({ label, icon, disabled, action }: { label: string; icon: ReactNode; disabled: boolean; action: () => Promise<boolean> }) {
    // Each change of icon remounts it, which plays the bounce. The first icon shows without one.
-   const [phase, setPhase] = useState<"rest" | "done" | "back">("rest");
+   const [phase, setPhase] = useState<"rest" | "working" | "done" | "back">("rest");
    const timer = useRef<number | undefined>(undefined);
+   const pending = useRef(false);
    useEffect(() => () => window.clearTimeout(timer.current), []);
    return (
       <Button
          className="wide confirm-button"
          aria-label={label}
+         aria-busy={phase === "working" || undefined}
          data-tooltip={label}
          disabled={disabled}
-         onClick={() =>
+         onClick={() => {
+            if (pending.current) return;
+            pending.current = true;
+            window.clearTimeout(timer.current);
+            // A quick action goes straight to its checkmark. A slow one, like copying a large file, spins until it's done.
+            timer.current = window.setTimeout(() => setPhase("working"), 150);
             void action().then((done) => {
-               if (!done) return;
+               pending.current = false;
                window.clearTimeout(timer.current);
+               if (!done) {
+                  setPhase((current) => (current === "working" ? "back" : current));
+                  return;
+               }
                setPhase("done");
                timer.current = window.setTimeout(() => setPhase("back"), 1100);
-            })
-         }
+            });
+         }}
       >
-         <span key={phase} className="confirm-icon" data-bounce={phase === "rest" ? undefined : true} aria-hidden="true">
-            {phase === "done" ? <Check size={16} /> : icon}
+         <span key={phase} className="confirm-icon" data-bounce={phase === "rest" || phase === "working" ? undefined : true} aria-hidden="true">
+            {phase === "done" ? <Check size={16} /> : phase === "working" ? <LoaderCircle size={16} className="spin" /> : icon}
          </span>
       </Button>
    );

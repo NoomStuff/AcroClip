@@ -16,7 +16,8 @@
    margin: auto;
    padding: 38px 36px 26px;
    border: 1px solid #ffffff16;
-   border-radius: 18px;
+   border-radius: 29px;
+   corner-shape: squircle;
    background: var(--surface);
    box-shadow: 0 24px 80px #0005;
    animation: setup-arrive 420ms var(--ease) both;
@@ -131,7 +132,8 @@
 .setup-source-tile {
    min-width: 0;
    padding: 5px;
-   border-radius: 10px;
+   border-radius: 16px;
+   corner-shape: squircle;
    background: #ffffff06;
    text-align: left;
    transition:
@@ -153,7 +155,8 @@
    align-items: center;
    justify-content: center;
    aspect-ratio: 16 / 9;
-   border-radius: 5px;
+   border-radius: 8px;
+   corner-shape: squircle;
    overflow: hidden;
    background: #0d0c0f;
    color: var(--subtle);
@@ -219,7 +222,8 @@
    background: #ffffff04;
    border: 1px solid #ffffff20;
    border-bottom-width: 4px;
-   border-radius: 9px;
+   border-radius: 14px;
+   corner-shape: squircle;
    transition:
       transform 220ms var(--spring),
       background 180ms,

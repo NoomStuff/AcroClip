@@ -3,7 +3,8 @@
    align-items: center;
    gap: 13px;
    padding: 15px;
-   border-radius: 12px;
+   border-radius: 19px;
+   corner-shape: squircle;
    background: var(--surface);
    color: var(--muted);
 }
@@ -30,7 +31,8 @@
    min-width: 0;
    padding: 8px;
    margin: -8px;
-   border-radius: 6px;
+   border-radius: 10px;
+   corner-shape: squircle;
    color: var(--muted);
    text-align: left;
    font-size: 12px;

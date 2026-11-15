@@ -39,7 +39,8 @@
    gap: 5px;
    max-width: 100%;
    padding: 4px 6px;
-   border-radius: 5px;
+   border-radius: 8px;
+   corner-shape: squircle;
    background: var(--category-tint);
    color: var(--category-color);
    font-size: 11px;
@@ -124,7 +125,8 @@
    padding: 0 8px;
    gap: 6px;
    white-space: nowrap;
-   border-radius: 10px 4px 4px 10px;
+   border-radius: 16px 6px 6px 16px;
+   corner-shape: squircle;
 }
 .viewer-create-size {
    font-weight: 550;
@@ -139,7 +141,8 @@
    height: 40px;
    padding: 0;
    justify-content: center;
-   border-radius: 4px 10px 10px 4px;
+   border-radius: 6px 16px 16px 6px;
+   corner-shape: squircle;
    background: var(--accent);
    color: #181818;
 }
@@ -200,7 +203,8 @@
    justify-content: center;
    background: #080808;
    border: 1px solid #ffffff05;
-   border-radius: 9px;
+   border-radius: 14px;
+   corner-shape: squircle;
    overflow: clip;
 }
 
@@ -251,7 +255,8 @@
    position: absolute;
    bottom: 20px;
    padding: 14px;
-   border-radius: 10px;
+   border-radius: 16px;
+   corner-shape: squircle;
    background: #321f27;
    color: var(--red);
    max-width: 80%;
@@ -387,7 +392,8 @@
 :root[data-keyboard] .player-progress:has(input:focus-visible) {
    outline: 2px solid var(--focus);
    outline-offset: 1px;
-   border-radius: 3px;
+   border-radius: 5px;
+   corner-shape: squircle;
 }
 /* A frame from the keyframe strip above the pointer, with the time it points at. */
 .player-preview {
@@ -404,7 +410,8 @@
 .player-preview-frame {
    display: none;
    overflow: hidden;
-   border-radius: 8px;
+   border-radius: 13px;
+   corner-shape: squircle;
    background: #000;
    box-shadow:
       0 0 0 1px #ffffff1f,
@@ -421,7 +428,8 @@
 }
 .player-preview time {
    padding: 2px 7px;
-   border-radius: 5px;
+   border-radius: 8px;
+   corner-shape: squircle;
    background: #090909e6;
    color: var(--text);
    font-size: 12px;
@@ -628,7 +636,8 @@
    align-items: center;
    gap: 6px;
    padding: 9px 6px 10px;
-   border-radius: 8px;
+   border-radius: 13px;
+   corner-shape: squircle;
    background: var(--raised);
    box-shadow: 0 4px 14px #0005;
 }
@@ -699,7 +708,8 @@
 :root[data-keyboard] .player-volume-slider:has(input:focus-visible) {
    outline: 2px solid var(--accent);
    outline-offset: 3px;
-   border-radius: 4px;
+   border-radius: 6px;
+   corner-shape: squircle;
 }
 
 .player-volume-controls .custom-select {
@@ -804,11 +814,13 @@
 }
 .trim-handle[data-edge="start"] {
    translate: -100% -50%;
-   border-radius: 7px 3px 3px 7px;
+   border-radius: 11px 5px 5px 11px;
+   corner-shape: squircle;
 }
 .trim-handle[data-edge="end"] {
    translate: 0 -50%;
-   border-radius: 3px 7px 7px 3px;
+   border-radius: 5px 11px 11px 5px;
+   corner-shape: squircle;
 }
 /* Reaching further away from the kept part than into it, which is where the playhead is grabbed. */
 .trim-handle[data-edge="start"]::before {

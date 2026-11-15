@@ -3,9 +3,18 @@ import { createPortal } from "react-dom";
 import { useMenuHighlight } from "./MenuHighlight";
 import type { ReactNode } from "react";
 import { Check, ChevronRight } from "lucide-react";
-import { submenuPosition } from "./menu-position";
+import { insidePolygon, submenuAimArea, submenuPosition } from "./menu-position";
 
-export const MenuFamilyContext = createContext({ id: "", closing: false, dismiss: () => {} });
+/** Shared by one menu's submenus, so only one is open and a pointer aiming at it does not open the ones it crosses. */
+export type SubmenuCoordinator = {
+   active: { id: string; dismiss: () => void; aiming: () => boolean } | null;
+   waiting: { id: string; open: () => void } | null;
+};
+export const createSubmenuCoordinator = (): SubmenuCoordinator => ({ active: null, waiting: null });
+export const MenuFamilyContext = createContext({ id: "", closing: false, dismiss: () => {}, submenus: createSubmenuCoordinator() });
+
+// How long a pointer may rest on the way to a submenu before it counts as having stopped aiming.
+const aimPause = 260;
 export function MenuSubmenu({
    label,
    icon,
@@ -37,13 +46,33 @@ export function MenuSubmenu({
       closeTimer.current = null;
    }, []);
    const close = useCallback(() => setPhase((current) => (current === "closed" ? current : "closing")), []);
+   const coordinator = family.submenus;
+   const aim = useRef<(() => void) | null>(null);
+   const stopAim = useCallback(() => {
+      aim.current?.();
+      aim.current = null;
+   }, []);
+   const closeNow = useCallback(() => {
+      stopAim();
+      clearClose();
+      close();
+      if (coordinator.active?.id === id) coordinator.active = null;
+      const waiting = coordinator.waiting;
+      coordinator.waiting = null;
+      waiting?.open();
+   }, [stopAim, clearClose, close, coordinator, id]);
    const scheduleClose = () => {
       clearClose();
-      closeTimer.current = setTimeout(close, 180);
+      closeTimer.current = setTimeout(closeNow, 180);
    };
    const open = (focus = false) => {
       if (disabled) return;
       clearClose();
+      stopAim();
+      if (coordinator.waiting?.id === id) coordinator.waiting = null;
+      const active = coordinator.active;
+      if (active && active.id !== id) active.dismiss();
+      coordinator.active = { id, dismiss: closeNow, aiming: () => aim.current !== null };
       if (focus && phase === "open") {
          panel.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
          return;
@@ -51,6 +80,47 @@ export function MenuSubmenu({
       keyboard.current = focus;
       setPhase("open");
    };
+   const hover = () => {
+      const active = coordinator.active;
+      // Another submenu is still being aimed at, so this one waits until that aim ends.
+      if (active && active.id !== id && active.aiming()) {
+         coordinator.waiting = { id, open: () => open() };
+         return;
+      }
+      open();
+   };
+   const startAim = (x: number, y: number) => {
+      if (!panel.current || !trigger.current) return scheduleClose();
+      stopAim();
+      clearClose();
+      const area = submenuAimArea({ x, y }, trigger.current.getBoundingClientRect(), panel.current.getBoundingClientRect());
+      let pause = setTimeout(closeNow, aimPause);
+      const move = (event: PointerEvent) => {
+         const target = event.target instanceof Node ? event.target : null;
+         if (panel.current?.contains(target) || trigger.current?.contains(target)) return stopAim();
+         if (!insidePolygon({ x: event.clientX, y: event.clientY }, area)) return closeNow();
+         clearTimeout(pause);
+         pause = setTimeout(closeNow, aimPause);
+      };
+      document.addEventListener("pointermove", move, true);
+      aim.current = () => {
+         clearTimeout(pause);
+         document.removeEventListener("pointermove", move, true);
+      };
+   };
+   useEffect(() => {
+      if (phase === "open") return;
+      stopAim();
+      if (coordinator.active?.id === id) coordinator.active = null;
+   }, [phase, stopAim, coordinator, id]);
+   useEffect(
+      () => () => {
+         stopAim();
+         if (coordinator.active?.id === id) coordinator.active = null;
+         if (coordinator.waiting?.id === id) coordinator.waiting = null;
+      },
+      [stopAim, coordinator, id]
+   );
    useEffect(() => clearClose, [clearClose]);
    useEffect(() => {
       if (disabled || family.closing) close();
@@ -86,7 +156,7 @@ export function MenuSubmenu({
       };
    }, [phase]);
    return (
-      <div className="menu-submenu" onPointerEnter={() => open()} onPointerLeave={scheduleClose}>
+      <div className="menu-submenu">
          <button
             ref={trigger}
             id={id}
@@ -96,6 +166,13 @@ export function MenuSubmenu({
             disabled={disabled}
             aria-haspopup="menu"
             aria-expanded={phase === "open"}
+            onPointerEnter={hover}
+            onPointerLeave={(event) => {
+               if (coordinator.waiting?.id === id) coordinator.waiting = null;
+               if (phase !== "open") return;
+               if (panel.current?.contains(event.relatedTarget as Node | null)) return;
+               startAim(event.clientX, event.clientY);
+            }}
             onClick={(event) => {
                event.stopPropagation();
                open(true);
@@ -131,12 +208,13 @@ export function MenuSubmenu({
                   onFocus={highlight.handlers.onFocus}
                   onPointerEnter={(event) => {
                      event.stopPropagation();
+                     stopAim();
                      clearClose();
                   }}
                   onPointerLeave={(event) => {
                      event.stopPropagation();
                      highlight.handlers.onPointerLeave(event);
-                     scheduleClose();
+                     if (!trigger.current?.contains(event.relatedTarget as Node | null)) scheduleClose();
                   }}
                   onAnimationEnd={(event) => {
                      if (phase === "closing" && event.target === event.currentTarget) setPhase("closed");

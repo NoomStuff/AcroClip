@@ -66,7 +66,7 @@ describe("collection folder operations", () => {
          const initial = new CollectionService();
          await initial.open(root);
          const latest = fileURLToPath(initial.clips[0]!.thumbnail);
-         expect(latest).toContain(".last-keyframe-v1.jpg");
+         expect(latest).toContain(".content-frame-v2.jpg");
          const legacy = join(root, ".acroclip", "thumbnails", `${await fileIdentity(video)}.jpg`);
          await rename(latest, legacy);
          await writeFile(legacy, "old preview");

@@ -1263,7 +1263,12 @@ function suspendShortcuts(enabled: boolean): void {
          notice(`${shortcutLabel(id)} shortcut is unavailable. Choose another in Settings.`, true, "info", "action");
    }
 }
-function installShortcuts(next: Preferences, startup = false): () => void {
+/**
+ * Registers the global shortcuts for `next`. At startup (`current` null) one that can't register is reported.
+ * Later, only a changed binding that can't register is refused. One that was already taken keeps failing quietly
+ * instead of blocking unrelated settings, and is tried again on each save.
+ */
+function installShortcuts(next: Preferences, current: Preferences | null): () => void {
    const desired = new Map(
       shortcutRegistry
          .filter((item) => item.scope === "global")
@@ -1283,8 +1288,8 @@ function installShortcuts(next: Preferences, startup = false): () => void {
    clear();
    for (const [id, key] of desired) {
       if (globalShortcut.register(key, () => globalAction(id))) installedShortcuts.set(id, key);
-      else if (startup) notice(`${shortcutLabel(id)} shortcut is unavailable. Choose another in Settings.`, true);
-      else {
+      else if (!current) notice(`${shortcutLabel(id)} shortcut is unavailable. Choose another in Settings.`, true);
+      else if (bindingFor(current, id) !== key) {
          restore();
          throw new Error(`${shortcutLabel(id)} shortcut isn't available. Choose another key combination.`);
       }
@@ -1417,7 +1422,7 @@ function registerIPC() {
                const problem = item.scope === "global" && key !== bindingFor(preferences, item.id) ? globalShortcutProblem(key) : null;
                if (problem) throw new Error(problem);
             }
-            const rollbackShortcuts = installShortcuts(next);
+            const rollbackShortcuts = installShortcuts(next, preferences);
             const sourceChanged =
                next.sourceId !== preferences.sourceId ||
                next.sourceKind !== preferences.sourceKind ||
@@ -1762,6 +1767,10 @@ function registerIPC() {
       playbackRequest = request;
       try {
          return await collections.playback(source, selection, request.controller.signal, preparation);
+      } catch (error) {
+         // The viewer moved on, so there is nothing to report. Rejecting would log a stack trace for every quick clip switch.
+         if (request.controller.signal.aborted) return null;
+         throw error;
       } finally {
          if (playbackRequest === request) playbackRequest = undefined;
       }
@@ -1949,7 +1958,7 @@ else {
             // AppImage updates can replace the versioned executable path.
             if (preferences.startWithOS) await applyStartup(true).catch((error: unknown) => notice(errorMessage(error), true));
          }
-         installShortcuts(preferences, true);
+         installShortcuts(preferences, null);
          for (const item of shortcutRegistry.filter((entry) => entry.scope === "global")) {
             const problem = globalShortcutProblem(bindingFor(preferences, item.id));
             if (problem) notice(`${item.label}: ${problem} Change it in Settings.`, true);

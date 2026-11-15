@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { parseClipTag } from "../shared/clip-tag";
 import type { ClipTag } from "../shared/clip-tag";
 import { existsSync } from "node:fs";
-import { rename, rm, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 import os from "node:os";
 import type { AudioTrack } from "../shared/types";
 
@@ -148,6 +148,83 @@ export interface MediaInfo {
    tag?: ClipTag;
 }
 
+/**
+ * A frame whose middle 80% of pixels spans at most this many brightness levels is a loading screen, a fade or
+ * a flash. A scene, even a dark one, spreads further.
+ */
+export const flatSpread = 12;
+// How far back from the end a thumbnail may look for a frame that shows something.
+const thumbnailLookBack = 20;
+
+/** Each frame's brightness spread, from ffmpeg's signalstats as the metadata filter prints them. */
+export function frameSpreads(stats: string): number[] {
+   const frames: Array<{ low?: number; high?: number }> = [];
+   for (const line of stats.split(/\r?\n/)) {
+      if (line.startsWith("frame:")) frames.push({});
+      const match = /^lavfi\.signalstats\.Y(LOW|HIGH)=(\d+(?:\.\d+)?)$/.exec(line.trim());
+      const frame = frames.at(-1);
+      if (match && frame) frame[match[1] === "LOW" ? "low" : "high"] = Number(match[2]);
+   }
+   return frames.map(({ low, high }) => (low === undefined || high === undefined ? 0 : Math.max(0, high - low)));
+}
+/** The latest frame that isn't flat, or the most spread one, latest first, when every frame is. */
+export function pickThumbnailFrame(spreads: readonly number[]): number {
+   let best = -1;
+   for (let index = spreads.length - 1; index >= 0; index--) {
+      const spread = spreads[index] ?? 0;
+      if (spread > flatSpread) return index;
+      if (best < 0 || spread > (spreads[best] ?? 0)) best = index;
+   }
+   return best;
+}
+
+/**
+ * Decodes only the keyframes from `from` to the end and writes each as a thumbnail candidate, measuring how
+ * flat each one is on a tiny copy. Returns the candidates in order.
+ */
+async function thumbnailCandidates(source: string, directory: string, from: number): Promise<Array<{ file: string; spread: number }>> {
+   await rm(directory, { recursive: true, force: true });
+   await mkdir(directory);
+   const stats = await runMedia(
+      "ffmpeg",
+      [
+         ...ffmpegBase,
+         "-y",
+         "-ss",
+         String(from),
+         "-noaccurate_seek",
+         "-skip_frame",
+         "nokey",
+         "-threads",
+         "2",
+         "-i",
+         source,
+         "-filter_complex",
+         "[0:v:0]scale=480:-2,format=yuvj420p,split=2[frame][probe];[probe]scale=64:36:flags=area,signalstats,metadata=mode=print:file=-,nullsink",
+         "-filter_complex_threads",
+         "1",
+         "-map",
+         "[frame]",
+         "-threads",
+         "1",
+         // Container indexes can seek before the last keyframe. Every decoded keyframe is kept, without
+         // decoding the frames between them.
+         "-fps_mode",
+         "passthrough",
+         "-f",
+         "image2",
+         join(directory, "%04d.jpg"),
+      ],
+      { belowNormal: true }
+   );
+   const spreads = frameSpreads(stats);
+   const images = new Set(await readdir(directory));
+   const files = spreads.map((spread, index) => ({ file: join(directory, `${String(index + 1).padStart(4, "0")}.jpg`), spread }));
+   const present = files.filter(({ file }) => images.has(basename(file)));
+   const sizes = await Promise.all(present.map(({ file }) => stat(file).then((info) => info.size)));
+   return present.filter((_, index) => (sizes[index] ?? 0) > 0);
+}
+
 export async function createThumbnail(source: string, output: string, duration: number): Promise<void> {
    const inputPath = resolve(source),
       outputPath = resolve(output);
@@ -155,15 +232,30 @@ export async function createThumbnail(source: string, output: string, duration: 
       throw new Error("A thumbnail must not overwrite its source video.");
    await rm(output, { force: true });
    const length = Number.isFinite(duration) && duration > 0 ? duration : 0;
-   const generate = async (keyframes: boolean) => {
+   const latest = `${output}.latest`,
+      earlier = `${output}.earlier`;
+   const fromKeyframes = async () => {
+      // Clips end on the moment, so the last keyframe usually is the thumbnail. Only a flat one, like a
+      // loading screen or a fade to black, is worth looking further back for.
+      let frames = await thumbnailCandidates(source, latest, Math.max(0, length - 1));
+      if (!frames.length) throw new Error("No thumbnail frame was decoded.");
+      if ((frames.at(-1)?.spread ?? 0) <= flatSpread && length > 1.5)
+         frames = await thumbnailCandidates(source, earlier, Math.max(0, length - thumbnailLookBack)).then(
+            (found) => (found.length ? found : frames),
+            () => frames
+         );
+      const chosen = frames[pickThumbnailFrame(frames.map((frame) => frame.spread))];
+      if (!chosen) throw new Error("No thumbnail frame was decoded.");
+      await rename(chosen.file, output);
+   };
+   const fromStart = async () => {
       await runMedia(
          "ffmpeg",
          [
             ...ffmpegBase,
             "-y",
             "-ss",
-            String(keyframes ? Math.max(0, length - 1) : Math.min(length * 0.2, 2)),
-            ...(keyframes ? ["-noaccurate_seek", "-skip_frame", "nokey"] : []),
+            String(Math.min(length * 0.2, 2)),
             "-threads",
             "2",
             "-i",
@@ -178,9 +270,8 @@ export async function createThumbnail(source: string, output: string, duration: 
             "1",
             "-threads",
             "1",
-            // Container indexes can seek before the last keyframe. Keep the final
-            // decoded keyframe, without buffering images or decoding intervening frames.
-            ...(keyframes ? ["-fps_mode", "passthrough"] : ["-frames:v", "1"]),
+            "-frames:v",
+            "1",
             "-f",
             "image2",
             "-update",
@@ -192,11 +283,14 @@ export async function createThumbnail(source: string, output: string, duration: 
       if ((await stat(output)).size === 0) throw new Error("No thumbnail frame was decoded.");
    };
    try {
-      await generate(length > 0);
+      if (length > 0) await fromKeyframes();
+      else await fromStart();
    } catch {
       // An incomplete index or unsupported keyframe skip must not leave a clip blank.
       await rm(output, { force: true });
-      await generate(false);
+      await fromStart();
+   } finally {
+      await Promise.all([latest, earlier].map((directory) => rm(directory, { recursive: true, force: true }).catch(() => undefined)));
    }
 }
 export async function probe(path: string, options: Pick<MediaOptions, "signal" | "belowNormal"> = {}): Promise<MediaInfo> {

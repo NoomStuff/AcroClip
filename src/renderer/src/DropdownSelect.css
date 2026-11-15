@@ -15,7 +15,8 @@
    color: var(--text);
    background: var(--base);
    border: 0;
-   border-radius: 10px;
+   border-radius: 16px;
+   corner-shape: squircle;
    font-size: 13px;
    text-align: left;
    transition:
@@ -61,7 +62,8 @@
    padding: 5px;
    background: var(--raised);
    border: 0;
-   border-radius: 10px;
+   border-radius: 16px;
+   corner-shape: squircle;
    box-shadow:
       0 12px 32px #0008,
       0 2px 6px #0005;
@@ -75,7 +77,8 @@
    justify-content: space-between;
    gap: 18px;
    padding: 9px 10px;
-   border-radius: 4px;
+   border-radius: 6px;
+   corner-shape: squircle;
    font-size: 13px;
    text-align: left;
 }

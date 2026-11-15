@@ -41,7 +41,15 @@ export function AudioMixerRow({
    return (
       <div className="mixer-channel" data-disabled={!enabled || undefined}>
          <div className="mixer-channel-header">
-            <button type="button" className="mixer-drag-handle" data-list-control="" aria-label={`Reorder ${name}`} disabled={active}>
+            {/* Track order sets the recording's tracks, so it waits for capture to stop. The handle stays in view to say so. */}
+            <button
+               type="button"
+               className="mixer-drag-handle"
+               data-list-control=""
+               aria-label={`Reorder ${name}`}
+               data-tooltip={active ? "Stop capturing to reorder" : undefined}
+               disabled={active}
+            >
                <GripVertical size={15} />
             </button>
             <span className="mixer-channel-name">{name}</span>

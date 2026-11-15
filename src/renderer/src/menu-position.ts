@@ -26,3 +26,36 @@ export function submenuPosition(
    const y = Math.max(0, Math.min(size.height, (anchor.top + anchor.bottom) / 2 - top));
    return { left, top, transformOrigin: `${x}px ${y}px` };
 }
+
+type Point = { x: number; y: number };
+type Rect = { left: number; right: number; top: number; bottom: number };
+
+/**
+ * The region a pointer crosses while heading from a submenu trigger to its panel: a wedge from where it left the
+ * trigger to the panel's near edge, plus the panel itself. Staying inside it means the user is still aiming.
+ */
+export function submenuAimArea(exit: Point, trigger: Rect, panel: Rect): Point[] {
+   const right = panel.left >= (trigger.left + trigger.right) / 2;
+   const near = right ? panel.left : panel.right;
+   const far = right ? panel.right : panel.left;
+   // A little slack behind the exit point absorbs the pointer's first, slightly crooked step.
+   const start = exit.x + (right ? -6 : 6);
+   return [
+      { x: start, y: exit.y - 4 },
+      { x: near, y: panel.top },
+      { x: far, y: panel.top },
+      { x: far, y: panel.bottom },
+      { x: near, y: panel.bottom },
+      { x: start, y: exit.y + 4 },
+   ];
+}
+export function insidePolygon(point: Point, polygon: Point[]) {
+   let inside = false;
+   for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+      const a = polygon[index],
+         b = polygon[previous];
+      if (!a || !b) continue;
+      if (a.y > point.y !== b.y > point.y && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+   }
+   return inside;
+}

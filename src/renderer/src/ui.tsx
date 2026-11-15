@@ -7,7 +7,7 @@ import { Check, LoaderCircle } from "lucide-react";
 import { SelectionIndicator } from "./SelectionIndicator";
 import { DropdownSelect } from "./DropdownSelect";
 import { menuPosition } from "./menu-position";
-import { MenuFamilyContext } from "./MenuSubmenu";
+import { createSubmenuCoordinator, MenuFamilyContext } from "./MenuSubmenu";
 import { useMenuHighlight } from "./MenuHighlight";
 import { selectionBounce } from "./value-kick";
 export { MenuSubmenu, MenuCheckboxItem, MenuRadioGroup, MenuRadioItem } from "./MenuSubmenu";
@@ -315,6 +315,7 @@ export function Menu({
 }) {
    const [phase, setPhase] = useState<"closed" | "open" | "closing">("closed");
    const familyId = useId();
+   const [submenus] = useState(createSubmenuCoordinator);
    const belongsToFamily = useCallback(
       (target: EventTarget | null) => target instanceof Element && target.closest<HTMLElement>("[data-menu-family]")?.dataset["menuFamily"] === familyId,
       [familyId]
@@ -489,7 +490,7 @@ export function Menu({
                   }}
                >
                   {highlight.highlight}
-                  <MenuFamilyContext.Provider value={{ id: familyId, closing: !open, dismiss }}>{children}</MenuFamilyContext.Provider>
+                  <MenuFamilyContext.Provider value={{ id: familyId, closing: !open, dismiss, submenus }}>{children}</MenuFamilyContext.Provider>
                </div>,
                document.fullscreenElement ?? document.body
             )}

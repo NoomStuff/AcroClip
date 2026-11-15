@@ -11,6 +11,7 @@
    padding: 18px 12px 14px;
    min-width: 0;
    border-radius: var(--radius-control);
+   corner-shape: squircle;
    background: var(--surface);
    display: flex;
    flex-direction: column;
@@ -118,6 +119,7 @@
    font-size: 13px;
    cursor: pointer;
    border-radius: var(--radius-control);
+   corner-shape: squircle;
 }
 .quality-advanced-toggle:hover {
    color: var(--text);

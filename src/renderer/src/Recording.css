@@ -46,7 +46,8 @@
    min-width: 0;
    min-height: 0;
    background: #090909;
-   border-radius: 14px;
+   border-radius: 22px;
+   corner-shape: squircle;
    overflow: hidden;
    position: relative;
    display: flex;
@@ -168,7 +169,8 @@
    min-width: 0;
    overflow: hidden;
    background: var(--surface);
-   border-radius: 14px;
+   border-radius: 22px;
+   corner-shape: squircle;
    padding: 0;
 }
 
@@ -196,7 +198,8 @@
 .clip-action {
    position: relative;
    min-width: 0;
-   border-radius: 14px;
+   border-radius: 22px;
+   corner-shape: squircle;
    padding: 20px 9px 36px;
    background: var(--surface);
    display: flex;
@@ -285,7 +288,8 @@
    overflow: auto;
    min-width: 0;
    padding: 16px calc(16px - var(--scrollbar-size)) 16px 16px;
-   border-radius: 14px;
+   border-radius: 22px;
+   corner-shape: squircle;
    background: var(--surface);
    display: flex;
    flex-direction: column;
@@ -315,7 +319,8 @@
 .source-skeleton-name {
    display: block;
    background: var(--raised);
-   border-radius: 4px;
+   border-radius: 6px;
+   corner-shape: squircle;
 }
 
 .source-skeleton-icon {
@@ -345,7 +350,8 @@
    display: flex;
    align-items: center;
    gap: 10px;
-   border-radius: 10px;
+   border-radius: 16px;
+   corner-shape: squircle;
    padding: 12px 10px;
    text-align: left;
    color: var(--muted);
@@ -393,7 +399,8 @@
 .detected-game {
    flex-shrink: 0;
    padding: 14px;
-   border-radius: 10px;
+   border-radius: 16px;
+   corner-shape: squircle;
    background: var(--raised);
 }
 .detected-game .context-header-label {
@@ -625,7 +632,8 @@
    display: flex;
    align-items: center;
    justify-content: center;
-   border-radius: 7px;
+   border-radius: 11px;
+   corner-shape: squircle;
    background: var(--base);
    padding: 0 6px;
    cursor: text;
@@ -838,7 +846,15 @@
 .motion-list-item[data-dragging] .mixer-drag-handle {
    opacity: 1;
 }
-.mixer-drag-handle:hover {
+/* Outranks the global disabled button opacity, which would otherwise keep it in view. */
+.mixer-drag-handle:disabled {
+   opacity: 0;
+}
+.mixer-channel:hover .mixer-drag-handle:disabled {
+   opacity: 0.45;
+   cursor: not-allowed;
+}
+.mixer-drag-handle:hover:not(:disabled) {
    color: var(--text);
 }
 @media (hover: none) {

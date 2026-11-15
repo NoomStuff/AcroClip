@@ -366,7 +366,9 @@ export interface DesktopAPI {
    showMeters(shown: boolean): void;
    reorderCategory(id: string, beforeId: string | null): Promise<void>;
    /** `compatible` asks for a converted copy after the renderer failed to decode the original. */
-   playback(path: string, track?: number | number[], requestId?: string, options?: { compatible?: boolean }): Promise<string>;
+   playback(path: string, track?: number | number[], requestId?: undefined, options?: { compatible?: boolean }): Promise<string>;
+   /** A request with an id can be cancelled, by `cancelPlayback` or a newer request, and then resolves to null. */
+   playback(path: string, track: number | number[] | undefined, requestId: string, options?: { compatible?: boolean }): Promise<string | null>;
    /** Loudness of the first audio track over time, 0 to 1. Empty without audio. */
    loudness(path: string): Promise<number[]>;
    cancelPlayback(requestId: string): Promise<void>;
