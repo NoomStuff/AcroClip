@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { gridPlaces, gridRows, measuredRows, rowKey, rowOffsets, rowsInView } from "./grid-window";
+import { gridPlaces, gridRows, measuredRows, rowKey, rowOffsets, rowsInView, rowsResized } from "./grid-window";
 import type { GridItemKind, GridMeasure, GridPlace, GridSizes } from "./grid-window";
 
 // Rows this far outside the viewport stay mounted, so scrolling and Tab always land on a real card.
@@ -77,9 +77,10 @@ export function LibraryGrid<Item>({
             columns: widths.every(Number.isFinite) ? widths.map((_, index) => widths.slice(0, index).reduce((left, width) => left + width + columnGap, 0)) : [],
          };
       });
-      // New column widths make every known height stale, so they start over from the estimates.
+      // New column widths, or rows that changed height in place like a zoomed list, make every known
+      // height stale, so they start over from the estimates.
       const base: GridMeasure =
-         measure?.layout === layout && measure.sizes.gap === gap
+         measure?.layout === layout && measure.sizes.gap === gap && !rowsResized(measure, keys, first, mounted)
             ? measure
             : { sizes: { ...sizes, columns: Math.max(1, columns.length), gap }, learned: new Set(), heights: new Map() };
       // Rows are packed by the measured column count, so a different count is placed again before its rows are read.

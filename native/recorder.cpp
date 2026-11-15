@@ -1541,6 +1541,12 @@ private:
           throw std::runtime_error(
               "The additional audio source identity is invalid");
         extra.kind=settings.at("kind").get<std::string>();
+#ifdef __APPLE__
+        // No macOS output but System audio can ever be captured, so this is a bad request, not a
+        // missing device, and it's refused before the source gets a track.
+        if (extra.kind == "output" && settings.value("enabled", true) && settings.value("deviceId", std::string("default")) != "system")
+          throw std::runtime_error("Choose System audio. Individual output-device capture is unavailable on macOS");
+#endif
         uint32_t mixer = uint32_t(audioNames.size());
         if(!monitoring && mixer>=6)throw std::runtime_error("The recorder audio track limit was reached");
         extra.isolatedMask=1u<<mixer;
@@ -1602,8 +1608,6 @@ private:
         } else if (kind == "output") {
 #ifdef __APPLE__
           data.reset();
-          if (extra.deviceId != "system")
-            throw std::runtime_error("Choose System audio. Individual output-device capture is unavailable on macOS");
           extra.source = acroclip::macos::createSystemAudio(extra.name);
 #else
           type = desktopType();

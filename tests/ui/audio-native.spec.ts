@@ -68,8 +68,10 @@ test("extra audio rows persist, obey recording boundaries and produce named isol
       await expect(page.getByRole("checkbox", { name: /Include in master mix/ })).toHaveCount(0);
       await page.getByRole("button", { name: "Add source", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.audioSources.length).toBe(3);
-      const source = (await page.evaluate(() => window.acroClip.state())).preferences.audioSources.find((item) => item.name === audioTitle)!;
-      expect(source).toMatchObject({ kind: "application", includeInMaster: false, enabled: true });
+      // The row takes the app's short name, not its window title.
+      const source = (await page.evaluate(() => window.acroClip.state())).preferences.audioSources.find((item) => item.kind === "application")!;
+      expect(source).toMatchObject({ kind: "application", includeInMaster: false, enabled: true, name: audio.applicationName });
+      expect(source.name).not.toBe(audioTitle);
       await page.getByRole("button", { name: "Start capturing", exact: true }).click();
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds, { timeout: 20_000 }).toBeGreaterThan(3);
       await expect(page.getByRole("button", { name: "Add audio source", exact: true })).toBeDisabled();

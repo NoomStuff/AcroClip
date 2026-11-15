@@ -95,6 +95,19 @@ export function measuredRows(measure: GridMeasure, rows: readonly GridRow[], key
    return { sizes: sizes ?? measure.sizes, learned: learned ?? measure.learned, heights: known ?? measure.heights };
 }
 
+/**
+ * Whether a row measured before now has another height. Scrolling never changes a row's own height,
+ * so this means the layout changed under the same columns, as when the list's thumbnails zoom, and
+ * every learned estimate is stale.
+ */
+export function rowsResized(measure: GridMeasure, keys: readonly string[], first: number, heights: readonly number[]): boolean {
+   return heights.some((height, offset) => {
+      const key = keys[first + offset];
+      const previous = key === undefined ? undefined : measure.heights.get(key);
+      return previous !== undefined && Number.isFinite(height) && Math.abs(previous - height) > 0.5;
+   });
+}
+
 /** Where each row starts, with one more entry for where a row after the last would start. A row's known height wins over the estimate. */
 export function rowOffsets(rows: readonly GridRow[], sizes: GridSizes, known?: (index: number) => number | undefined): number[] {
    const offsets = new Array<number>(rows.length + 1);

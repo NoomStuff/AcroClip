@@ -183,8 +183,11 @@ try {
    assert.equal(stopped.sources, baseline.sources);
    assert.equal(stopped.attached, baseline.attached);
    assert.equal(stopped.monitoring, false);
-   await assert.rejects(command("monitor-audio", { enabled: true, audioSources: [{ ...source, pid: target.pid + 1 }] }), /target changed/);
-   assert.equal((await lifecycle()).sources, baseline.sources, "Failed monitoring must release every source");
+   // A target that changed stays silent instead of failing every other meter.
+   await command("monitor-audio", { enabled: true, audioSources: [{ ...source, pid: target.pid + 1 }] });
+   assert.equal((await lifecycle()).sources, baseline.sources, "A changed monitoring target must not open a source");
+   await command("monitor-audio", { enabled: false });
+   assert.equal((await lifecycle()).sources, baseline.sources, "Stopped monitoring must release every source");
    for (let cycle = 0; cycle < 4; cycle++) {
       await command("monitor-audio", { enabled: true, audioSources: [source] });
       await command("monitor-audio", { enabled: false });
@@ -680,21 +683,43 @@ try {
    await command("stop");
    screenCover.kill();
    screenCover = undefined;
-   await assert.rejects(command("start", { ...routingConfig, audioSources: [{ ...otherApp, sourceId: target.id, pid: target.pid }] }), /already included/);
-   assert.equal((await lifecycle()).sources, baseline.sources);
-   await assert.rejects(
-      command("start", {
-         ...routingConfig,
-         sourceKind: "screen",
-         screenIndex: 0,
-         audioSources: [{ id: "duplicate-output", name: "Same output", kind: "output", deviceId: "default", enabled: true }],
-      }),
-      /already included/
+   // A source that hears what another already does keeps its own track and stays out of Master,
+   // so Master carries the sound once.
+   await command("start", { ...routingConfig, audioSources: [{ ...otherApp, sourceId: target.id, pid: target.pid }] });
+   await waitForFootage();
+   const duplicateApp = await saveProof("duplicate-application");
+   const duplicateAppTones = { master: toneAt(0, 997, duplicateApp), source: toneAt(1, 997, duplicateApp), duplicate: toneAt(2, 997, duplicateApp) };
+   assert.ok(
+      duplicateAppTones.duplicate > -60 && duplicateAppTones.source > -60 && Math.abs(duplicateAppTones.master - duplicateAppTones.source) < 1.5,
+      `A repeated application must not double Master: ${JSON.stringify(duplicateAppTones)}`
    );
+   await command("stop");
+   assert.equal((await lifecycle()).sources, baseline.sources);
+   await command("start", {
+      ...routingConfig,
+      sourceKind: "screen",
+      resolvedKind: "screen",
+      screenIndex: 0,
+      resolutionLimit: 720,
+      sourceName: "Controlled screen",
+      audioSources: [{ id: "duplicate-output", name: "Same output", kind: "output", deviceId: "default", enabled: true, volume: 1, muted: false }],
+   });
+   await waitForFootage();
+   const duplicateOutput = await saveProof("duplicate-output");
+   const duplicateOutputTones = {
+      master: toneAt(0, 997, duplicateOutput),
+      desktop: toneAt(1, 997, duplicateOutput),
+      duplicate: toneAt(2, 997, duplicateOutput),
+   };
+   assert.ok(
+      duplicateOutputTones.duplicate > -60 && duplicateOutputTones.desktop > -60 && Math.abs(duplicateOutputTones.master - duplicateOutputTones.desktop) < 1.5,
+      `A repeated output must not double Master: ${JSON.stringify(duplicateOutputTones)}`
+   );
+   await command("stop");
    assert.equal((await lifecycle()).sources, baseline.sources);
    console.log(
-      "Automatic APP all-source master, SCREEN isolated desktop master, isolated tracks, audible muted audition, restore and duplicate failures passed",
-      JSON.stringify({ appTones, screenTones })
+      "Automatic APP all-source master, SCREEN isolated desktop master, isolated tracks, audible muted audition, restore and repeated sources kept out of Master passed",
+      JSON.stringify({ appTones, screenTones, duplicateAppTones, duplicateOutputTones })
    );
    await writeFile(path.join(folder, "proof.json"), JSON.stringify({ baseline, live, stopped, timings, events }, null, 2));
    console.log(`Idle native audio, no video/encoder/history, mute/gain, invalid identity and repeated cleanup passed: ${folder}`);

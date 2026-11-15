@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gridPlaces, gridRows, measuredRows, rowKey, rowOffsets, rowsInView } from "./grid-window";
+import { gridPlaces, gridRows, measuredRows, rowKey, rowOffsets, rowsInView, rowsResized } from "./grid-window";
 import type { GridItemKind, GridMeasure, GridSizes } from "./grid-window";
 
 const sizes: GridSizes = { columns: 3, gap: 10, card: 100, placeholder: 120, header: 34, firstHeader: 20 };
@@ -54,6 +54,19 @@ describe("library grid window", () => {
          window = view;
       }
       throw new Error("The grid never settled");
+   });
+   it("learns new estimates when rows change height in place, as a zoomed list does", () => {
+      const rows = gridRows(kinds("c".repeat(30)), 1);
+      const keys = rows.map((row, index) => rowKey(row, index, String));
+      const learned = measuredRows({ sizes: { ...sizes, columns: 1 }, learned: new Set(), heights: new Map() }, rows, keys, 0, [100, 100, 100]);
+      // Scrolling to rows not measured yet isn't a resize.
+      expect(rowsResized(learned, keys, 3, [100, 100])).toBe(false);
+      expect(rowsResized(learned, keys, 0, [100, 100, 100])).toBe(false);
+      // The thumbnails zoomed, so the same rows are taller now.
+      expect(rowsResized(learned, keys, 0, [160, 160, 160])).toBe(true);
+      const zoomed = measuredRows({ sizes: learned.sizes, learned: new Set(), heights: new Map() }, rows, keys, 0, [160, 160, 160]);
+      expect(zoomed.sizes.card).toBe(160);
+      expect(rowOffsets(rows, zoomed.sizes, (index) => zoomed.heights.get(keys[index]!)).at(-1)).toBe(30 * 170);
    });
    it("finds the rows in view, and always at least one", () => {
       const offsets = rowOffsets(gridRows(kinds("c".repeat(30)), 3), sizes);
