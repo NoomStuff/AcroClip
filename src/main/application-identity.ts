@@ -1,5 +1,30 @@
 import { normalizeApplicationLabel } from "../shared/application-label";
 import { open } from "node:fs/promises";
+import { createHash } from "node:crypto";
+
+const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+const executableKey = (executable: string) => {
+   const path = executable.replaceAll("\\", "/");
+   return process.platform === "win32" ? path.toLowerCase() : path;
+};
+/**
+ * The id clips use to know which application they came from. A recognized game uses its catalog id.
+ * Other apps use their executable with its folder name, so moving a game library to another drive
+ * or reinstalling keeps the id, while two different "game.exe" files in different folders stay apart.
+ */
+export function applicationId(executable: string, gameId?: string): string {
+   // A custom game's id is its path, so it keys like any other app.
+   if (gameId && !gameId.startsWith("custom:")) return sha256(`game:${gameId}`);
+   return sha256(`app:${executableKey(executable).split("/").slice(-2).join("/")}`);
+}
+/**
+ * Ids an application had before, newest scheme first: the folder key from before its game was
+ * recognized, and the full-path hash older versions used. Clips saved under these move to the new id.
+ */
+export function previousApplicationIds(executable: string, gameId?: string): string[] {
+   const legacy = sha256(process.platform === "win32" ? executable.toLowerCase() : executable);
+   return gameId && !gameId.startsWith("custom:") ? [applicationId(executable), legacy] : [legacy];
+}
 
 const known: Record<string, string> = {
    explorer: "Explorer",

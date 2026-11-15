@@ -274,7 +274,7 @@ export async function mergeClips(older: string, newer: string, output: string, w
       );
       // MP4 stores a track's name in user data that the concat demuxer drops.
       const names = [...(await trackNames(newer, options))].flatMap(([index, name]) => [`-metadata:s:${index}`, `title=${name}`]);
-      const container = extname(output).toLowerCase() === ".mkv" ? ["-f", "matroska"] : ["-f", "mp4", "-movflags", "+faststart"];
+      const container = extname(output).toLowerCase() === ".mkv" ? ["-f", "matroska"] : ["-f", "mp4", "-movflags", "+faststart+use_metadata_tags"];
       await runMedia(
          "ffmpeg",
          [

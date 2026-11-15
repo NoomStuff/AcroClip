@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Mux protocol follows OBS Studio's ffmpeg-mux/ffmpeg-mux.h, Copyright Lain Bailey.
 #include "clip-writer.hpp"
+#include "clip-tags.hpp"
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -8,6 +9,7 @@
 #include <filesystem>
 #include <memory>
 #include <stdexcept>
+#include <util/base.h>
 #include <util/pipe.h>
 
 namespace acroclip {
@@ -128,7 +130,7 @@ void ClipWriter::run() {
 
 ClipResult ClipWriter::write(ClipJob &job) {
   if (auto *gate = std::getenv("ACROCLIP_NATIVE_TEST_WRITER_GATE")) {
-    for (int i = 0; i < 1000 && !std::filesystem::exists(gate); i++)
+    for (int i = 0; i < 1000 && !std::filesystem::exists(utf8Path(gate)); i++)
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   ClipResult result;
@@ -150,14 +152,14 @@ ClipResult ClipWriter::write(ClipJob &job) {
                                    1000000.)
                  : 0.;
   // The muxer picks its container from the temporary file's extension.
-  auto extension = std::filesystem::path(job.request.path).extension().string();
+  auto extension = utf8Path(job.request.path).extension().string();
   std::transform(extension.begin(), extension.end(), extension.begin(),
                  [](unsigned char c) { return char(std::tolower(c)); });
   if (extension != ".mkv" && extension != ".mp4")
     throw std::runtime_error("Clips can be saved as MKV or MP4 only");
   std::string temporary = job.request.path + ".saving" + extension;
   const auto destinationTaken = [&] {
-    return std::filesystem::exists(job.request.path);
+    return std::filesystem::exists(utf8Path(job.request.path));
   };
   if (destinationTaken())
     throw std::runtime_error(
@@ -170,7 +172,7 @@ ClipResult ClipWriter::write(ClipJob &job) {
     ~Cleanup() {
       std::error_code ignored;
       if (!keep)
-        std::filesystem::remove(path, ignored);
+        std::filesystem::remove(utf8Path(path), ignored);
     }
   } cleanup{temporary};
   using Arguments =
@@ -234,12 +236,16 @@ ClipResult ClipWriter::write(ClipJob &job) {
     okay = okay && code == 0;
   }
   std::error_code sizeError;
-  const auto written = std::filesystem::file_size(temporary, sizeError);
+  const auto written = std::filesystem::file_size(utf8Path(temporary), sizeError);
   if (!okay || sizeError || written <= 1000) {
     result.error = "The clip could not be finalized. Check free storage and "
                    "folder permissions";
     return result;
   }
+  // The tag lets the file say where it came from if the collection's metadata is lost. A clip
+  // without it is still complete, so a failure only logs.
+  if (extension == ".mp4" && !job.request.tag.empty() && !appendMp4Tag(temporary, "acroclip", job.request.tag))
+    blog(LOG_WARNING, "The clip was saved without its AcroClip tag");
   if (destinationTaken())
     throw std::runtime_error(
         "A file already exists at the clip destination. The existing file was "
@@ -247,11 +253,11 @@ ClipResult ClipWriter::write(ClipJob &job) {
   // A finished file that fails to publish stays on disk rather than being lost.
   cleanup.keep = true;
 #ifdef _WIN32
-  std::filesystem::rename(temporary, job.request.path);
+  std::filesystem::rename(utf8Path(temporary), utf8Path(job.request.path));
 #else
   // POSIX rename overwrites. The hard link publishes without that race.
-  std::filesystem::create_hard_link(temporary, job.request.path);
-  std::filesystem::remove(temporary);
+  std::filesystem::create_hard_link(utf8Path(temporary), utf8Path(job.request.path));
+  std::filesystem::remove(utf8Path(temporary));
 #endif
   previousEnd = std::max(previousEnd.load(), job.end);
   result.saved = true;

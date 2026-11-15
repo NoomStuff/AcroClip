@@ -7,6 +7,7 @@ import { api, describeError } from "./desktop";
 import { Button, IconButton, Select } from "./ui";
 import { DialogPanel } from "./Dialog";
 import { ApplicationIcon } from "./ApplicationIcon";
+import { gameSuggestions, storeGame } from "../../shared/game-suggestions";
 // The catalogue is large and rarely changes, so the Games page keeps it between visits instead of loading it every time.
 let cachedCatalog: GameCatalogSnapshot | null = null;
 const sameCatalog = (a: GameCatalogSnapshot, b: GameCatalogSnapshot) =>
@@ -16,6 +17,8 @@ const withAddedGame = (games: CustomGame[], game: CustomGame): CustomGame[] => [
    ...games.filter((item) => executableKey(item.executable) !== executableKey(game.executable)),
    game,
 ];
+/** A game's own name: the catalog's, then its store folder's, then the window title. */
+const suggestedName = (game: GameCandidate | undefined) => (game?.gameName || (game && storeGame(game.executable)?.name) || game?.name || "").slice(0, 200);
 function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add: (game: CustomGame) => void | Promise<void>; close: () => void }) {
    const [candidates, setCandidates] = useState<GameCandidate[]>([]),
       [sources, setSources] = useState<CaptureSource[]>([]);
@@ -28,17 +31,20 @@ function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add
       setLoading(true);
       setError("");
       try {
-         const [games, sources] = await Promise.all([api.games(), api.sources().catch(() => [])]);
+         const [found, sources] = await Promise.all([api.games(), api.sources().catch(() => [])]);
+         // Unrecognized apps from a store's game library are the likeliest picks, so they come first.
+         const suggested = new Set(gameSuggestions(found, additions).map((item) => item.id));
+         const games = [...found].sort((a, b) => Number(suggested.has(b.id)) - Number(suggested.has(a.id)));
          setCandidates(games);
          setSelected(games[0]?.id ?? "");
-         setName((games[0]?.gameName || games[0]?.name || "").slice(0, 200));
+         setName(suggestedName(games[0]));
          setSources(sources);
       } catch (reason) {
          setError(describeError(reason));
       } finally {
          setLoading(false);
       }
-   }, []);
+   }, [additions]);
    useEffect(() => {
       void load();
    }, [load]);
@@ -73,8 +79,7 @@ function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add
                disabled={loading || saving}
                onChange={(id) => {
                   setSelected(id);
-                  const next = candidates.find((item) => item.id === id);
-                  setName((next?.gameName || next?.name || "").slice(0, 200));
+                  setName(suggestedName(candidates.find((item) => item.id === id)));
                }}
             >
                {!selected && (
@@ -134,7 +139,22 @@ export function GameManagement({
       [error, setError] = useState(""),
       [query, setQuery] = useState(""),
       [limit, setLimit] = useState(80),
-      [adding, setAdding] = useState(false);
+      [adding, setAdding] = useState(false),
+      [running, setRunning] = useState<GameCandidate[]>([]);
+   // One look at what's running when the page opens. Store-installed games the catalog misses are offered, never assumed.
+   useEffect(() => {
+      let disposed = false;
+      void api
+         .games()
+         .then((value) => {
+            if (!disposed) setRunning(value);
+         })
+         .catch(() => undefined);
+      return () => {
+         disposed = true;
+      };
+   }, []);
+   const suggestions = useMemo(() => gameSuggestions(running, preferences.customGames), [running, preferences.customGames]);
    useEffect(() => {
       let disposed = false;
       void api
@@ -237,6 +257,33 @@ export function GameManagement({
                Add game
             </Button>
          </div>
+         {suggestions.length > 0 && !query.trim() && (
+            <section className="game-group" aria-label="Running games AcroClip doesn't recognize">
+               <h3 className="game-category">Running, not recognized</h3>
+               <div className="game-list" role="list" aria-label="Running games AcroClip doesn't recognize">
+                  {suggestions.map((game) => (
+                     <div className="game-entry" role="listitem" key={game.executable}>
+                        <Gamepad2 size={20} />
+                        <div>
+                           <span className="game-entry-name" data-tooltip={game.suggestedName} data-tooltip-overflow="">
+                              {game.suggestedName}
+                           </span>
+                           <span className="game-executables" data-tooltip={game.executable} data-tooltip-overflow="">
+                              {game.store} · {game.executable}
+                           </span>
+                        </div>
+                        <IconButton
+                           label={`Add game ${game.suggestedName}`}
+                           disabled={preferences.customGames.length >= 500}
+                           onClick={() => change(withAddedGame(preferences.customGames, { name: game.suggestedName, executable: game.executable }))}
+                        >
+                           <Plus size={15} />
+                        </IconButton>
+                     </div>
+                  ))}
+               </div>
+            </section>
+         )}
          {visibleEntries.some((game) => game.added) && (
             <section className="game-group" aria-label="Added games">
                <h3 className="game-category">Added games</h3>

@@ -187,10 +187,26 @@ export class GameCatalog {
    }
 }
 
-export function selectGame(games: DetectedGame[], currentId: string | null, lastFocused: Map<string, number>): DetectedGame | undefined {
+/** How long another game stays in front before capture follows it, so alt-tabbing between two games keeps the buffer. */
+export const GAME_SWITCH_MS = 3000;
+
+/**
+ * The game in front wins, then the one being captured, then the one focused last, then a fullscreen one.
+ * While a game is captured, another game only takes over once it has been in front since `foregroundSince`
+ * for `GAME_SWITCH_MS`. Without `foregroundSince` the game in front wins at once.
+ */
+export function selectGame(
+   games: DetectedGame[],
+   currentId: string | null,
+   lastFocused: Map<string, number>,
+   foregroundSince?: { id: string; at: number },
+   now = Date.now()
+): DetectedGame | undefined {
    const foreground = games.find((game) => game.foreground);
-   if (foreground) return foreground;
    const current = games.find((game) => game.id === currentId);
+   const settling = !!foreground && foregroundSince?.id === foreground.id && now - foregroundSince.at < GAME_SWITCH_MS;
+   if (foreground && current && foreground.id !== current.id && settling) return current;
+   if (foreground) return foreground;
    if (current) return current;
    return [...games].sort(
       (a, b) => (lastFocused.get(b.id) ?? 0) - (lastFocused.get(a.id) ?? 0) || Number(b.fullscreen) - Number(a.fullscreen) || a.id.localeCompare(b.id)

@@ -449,7 +449,8 @@ export async function writeTrim(
       "-t",
       String(duration),
       ...(mp4
-         ? ["-movflags", "+faststart", ...(video.codec === "hevc" ? ["-tag:v", "hvc1"] : [])]
+         ? // Custom keys, like the clip's own "acroclip" tag, only survive as QuickTime metadata.
+           ["-movflags", "+faststart+use_metadata_tags", ...(video.codec === "hevc" ? ["-tag:v", "hvc1"] : [])]
          : ["-bsf:a", dropOutside(0, duration), "-avoid_negative_ts", "disabled"]),
       ...colorArguments(video),
       ...aspectArguments(video),

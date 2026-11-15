@@ -18,6 +18,11 @@ function length(seconds: number): string {
    return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
+/** The banner while a save is in flight. A save that will extend the last clip says so up front. */
+export function savingNotice(extendTo?: number): string {
+   return extendTo === undefined ? "Saving clip…" : `Extending clip to ${length(extendTo)}`;
+}
+
 /** The title says what the collection now holds. The detail, when there is one, says how it got there. */
 export function saveOutcomeNotice(outcome: SaveOutcome): SaveNotice {
    switch (outcome.kind) {

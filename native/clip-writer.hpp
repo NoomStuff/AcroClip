@@ -26,6 +26,8 @@ struct ClipRequest {
   std::string id, path, source;
   int64_t end;
   std::string sourceId;
+  // JSON the finished MP4 carries as its "acroclip" tag. Empty writes none.
+  std::string tag;
 };
 
 // All media and profile data are sealed before a job leaves the replay history.

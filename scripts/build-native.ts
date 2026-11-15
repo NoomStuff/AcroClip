@@ -219,6 +219,7 @@ await writeFile(
                   "native/recording-preset.hpp",
                   "native/clip-writer.cpp",
                   "native/clip-writer.hpp",
+                  "native/clip-tags.hpp",
                   "native/audio-filters.cpp",
                   "native/audio-filters.hpp",
                   "native/CMakeLists.txt",

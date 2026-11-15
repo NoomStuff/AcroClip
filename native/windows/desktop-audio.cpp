@@ -48,6 +48,12 @@ struct DesktopAudio {
   std::string failure = "Audio capture is starting";
   struct Child { obs_source_t *source; obs_sceneitem_t *item; ProcessCaptureHealth health; };
   std::map<DWORD, Child> children;
+  // A process snapshot walks every process on the system, which is most of an update's cost.
+  // Parents never change after a process starts, so the snapshot is reused until a session or
+  // excluded app names a process it hasn't seen, and is retaken every 2 s to catch reused PIDs.
+  std::map<DWORD, DWORD> parents;
+  std::chrono::steady_clock::time_point parentsAt{};
+  std::set<DWORD> absent;
 
   DesktopAudio(obs_data_t *settings, obs_source_t *owner) : source(owner), device(obs_data_get_string(settings, "device_id")) {
     scene = obs_scene_create_private("Desktop audio streams");
@@ -77,14 +83,13 @@ struct DesktopAudio {
     if (FAILED(endpoint->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, reinterpret_cast<void **>(manager.GetAddressOf()))) ||
         FAILED(manager->GetSessionEnumerator(&sessions)))
       throw std::runtime_error("Desktop audio sessions could not be enumerated");
-    auto parents = processParents();
     std::vector<uint32_t> excluded;
     { std::lock_guard<std::mutex> lock(exclusionsMutex); excluded = exclusions; }
     // The app supplies its PID. Native-only fixtures exclude the recorder,
     // without treating their test launcher and sibling tone processes as AcroClip.
     excluded.push_back(GetCurrentProcessId());
-    std::set<DWORD> selected;
-    std::set<DWORD> active;
+    struct Session { DWORD pid; AudioSessionState state; };
+    std::vector<Session> listed;
     int count = 0;
     if (FAILED(sessions->GetCount(&count))) throw std::runtime_error("Desktop audio sessions could not be read");
     for (int index = 0; index < count; ++index) {
@@ -96,6 +101,22 @@ struct DesktopAudio {
           FAILED(session->GetProcessId(&pid)) || FAILED(session->GetState(&state)))
         throw std::runtime_error("A desktop audio session could not be identified");
       if (!pid || state == AudioSessionStateExpired) continue;
+      listed.push_back({pid, state});
+    }
+    const auto now = std::chrono::steady_clock::now();
+    // A PID the last snapshot already lacked, like an excluded app that closed, waits for the 2 s retake.
+    std::set<DWORD> wanted(excluded.begin(), excluded.end());
+    for (const auto &item : listed) wanted.insert(item.pid);
+    const bool unseen = std::any_of(wanted.begin(), wanted.end(), [&](DWORD pid) { return !parents.count(pid) && !absent.count(pid); });
+    if (unseen || now - parentsAt >= std::chrono::seconds(2)) {
+      parents = processParents();
+      parentsAt = now;
+      absent.clear();
+      for (DWORD pid : wanted) if (!parents.count(pid)) absent.insert(pid);
+    }
+    std::set<DWORD> selected;
+    std::set<DWORD> active;
+    for (const auto &[pid, state] : listed) {
       // An inactive session has no running streams. Only retain an existing
       // capture through silence; never open a new one for an idle application.
       if (state != AudioSessionStateActive && !children.count(pid)) continue;
@@ -115,40 +136,9 @@ struct DesktopAudio {
       if (std::any_of(selected.begin(), selected.end(), [&](DWORD other) { return other != pid && within(pid, other, parents); })) it = selected.erase(it);
       else ++it;
     }
-    // Process loopback has no endpoint selector. Refuse a process that is
-    // actually playing on another device rather than save that device's audio
-    // under the selected output's name.
-    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
-    Microsoft::WRL::ComPtr<IMMDeviceCollection> endpoints;
-    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator))) ||
-        FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &endpoints)))
-      throw std::runtime_error("Desktop audio output routing could not be verified");
-    UINT endpointCount = 0;
-    if (FAILED(endpoints->GetCount(&endpointCount))) throw std::runtime_error("Desktop audio outputs could not be read");
-    const auto selectedEndpoint = ListenRouting::identity(endpoint.Get());
-    for (UINT index = 0; index < endpointCount && !selected.empty(); ++index) {
-      Microsoft::WRL::ComPtr<IMMDevice> other;
-      Microsoft::WRL::ComPtr<IAudioSessionManager2> otherManager;
-      Microsoft::WRL::ComPtr<IAudioSessionEnumerator> otherSessions;
-      if (FAILED(endpoints->Item(index, &other))) throw std::runtime_error("A desktop audio output could not be identified");
-      if (ListenRouting::identity(other.Get()) == selectedEndpoint) continue;
-      if (FAILED(other->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, reinterpret_cast<void **>(otherManager.GetAddressOf()))) ||
-          FAILED(otherManager->GetSessionEnumerator(&otherSessions)))
-        throw std::runtime_error("Desktop audio output routing could not be inspected");
-      int otherCount = 0;
-      if (FAILED(otherSessions->GetCount(&otherCount))) throw std::runtime_error("Desktop audio output sessions could not be read");
-      for (int sessionIndex = 0; sessionIndex < otherCount; ++sessionIndex) {
-        Microsoft::WRL::ComPtr<IAudioSessionControl> control;
-        Microsoft::WRL::ComPtr<IAudioSessionControl2> session;
-        DWORD pid = 0;
-        AudioSessionState state = AudioSessionStateExpired;
-        if (FAILED(otherSessions->GetSession(sessionIndex, &control)) || FAILED(control.As(&session)) ||
-            FAILED(session->GetProcessId(&pid)) || FAILED(session->GetState(&state)))
-          throw std::runtime_error("A desktop audio session could not be identified");
-        if (state == AudioSessionStateActive && std::any_of(selected.begin(), selected.end(), [&](DWORD root) { return within(pid, root, parents); }))
-          throw std::runtime_error("Desktop audio cannot separate an application playing through multiple outputs. Route it through one output");
-      }
-    }
+    // Process loopback has no endpoint selector, so a process that also plays on another output
+    // brings that audio along. Mixers like SteelSeries Sonar render one process to several
+    // outputs, and refusing them would leave the whole desktop track silent.
     for (auto it = children.begin(); it != children.end();) {
       if (!selected.count(it->first)) {
         obs_sceneitem_remove(it->second.item);

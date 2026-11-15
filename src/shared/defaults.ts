@@ -46,7 +46,7 @@ export const defaultPreferences: Preferences = {
    notificationErrorBanner: true,
    notificationErrorSound: true,
    overlapClips: "keep",
-   folderLayout: "flat",
+   folderLayout: "application",
    filenamePreset: "source-date",
    filenameTemplate: "{source} {date} {time}",
    setupComplete: false,

@@ -18,7 +18,13 @@ describe("recording destination safety", () => {
    it("preserves existing and unfinished files and reserves pending save paths", async () => {
       const root = await mkdtemp(join(tmpdir(), "acroclip-names-"));
       try {
-         const prefs = { ...defaultPreferences, collection: root, filenamePreset: "custom" as const, filenameTemplate: "Moment" };
+         const prefs = {
+            ...defaultPreferences,
+            collection: root,
+            folderLayout: "flat" as const,
+            filenamePreset: "custom" as const,
+            filenameTemplate: "Moment",
+         };
          const first = recordingDestination(prefs, "Game");
          expect(first).toBe(join(root, "Moment.mp4"));
          const second = recordingDestination(prefs, "Game", new Date(), [first]);

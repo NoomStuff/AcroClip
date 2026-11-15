@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { gridPlaces, gridRows, measuredSizes, rowOffsets, rowsInView } from "./grid-window";
-import type { GridItemKind, GridSizes } from "./grid-window";
+import { gridPlaces, gridRows, measuredRows, rowKey, rowOffsets, rowsInView } from "./grid-window";
+import type { GridItemKind, GridMeasure, GridSizes } from "./grid-window";
 
 const sizes: GridSizes = { columns: 3, gap: 10, card: 100, placeholder: 120, header: 34, firstHeader: 20 };
 const kinds = (text: string): GridItemKind[] => [...text].map((letter) => (letter === "h" ? "header" : letter === "p" ? "placeholder" : "card"));
@@ -23,9 +23,37 @@ describe("library grid window", () => {
    });
    it("learns sizes from the rows on screen", () => {
       const rows = gridRows(kinds("hccccpphppp"), 3);
+      const keys = rows.map((row, index) => rowKey(row, index, String));
+      const empty: GridMeasure = { sizes, learned: new Set(), heights: new Map() };
       // Mounted from the second row: cards, a mixed row, a header, then placeholders.
-      expect(measuredSizes(sizes, rows, 1, [150, 170, 40, 160])).toEqual({ ...sizes, card: 150, header: 40, placeholder: 160 });
-      expect(measuredSizes(sizes, rows, 0, [25])).toEqual({ ...sizes, firstHeader: 25 });
+      const measure = measuredRows(empty, rows, keys, 1, [150, 170, 40, 160]);
+      expect(measure.sizes).toEqual({ ...sizes, card: 150, header: 40, placeholder: 160 });
+      expect(measuredRows(empty, rows, keys, 0, [25]).sizes).toEqual({ ...sizes, firstHeader: 25 });
+      // Every mounted row keeps its own height, the mixed one included.
+      expect(rowOffsets(rows, measure.sizes, (index) => measure.heights.get(keys[index]!))).toEqual([0, 30, 190, 370, 420, 590]);
+      // Nothing new to learn leaves the measure as it was, which is how the grid knows it settled.
+      expect(measuredRows(measure, rows, keys, 1, [150, 170.3, 40, 160])).toBe(measure);
+   });
+   it("settles when rows of one kind have different heights", () => {
+      // Some cards wrap their title onto a second line, so their rows are taller.
+      const rows = gridRows(kinds("c".repeat(60)), 3);
+      const keys = rows.map((row, index) => rowKey(row, index, String));
+      const height = (index: number) => (index % 3 === 2 ? 120 : 100);
+      let measure: GridMeasure = { sizes, learned: new Set(), heights: new Map() };
+      let window = { first: 0, end: 0 };
+      for (let pass = 0; pass < 20; pass++) {
+         const offsets = rowOffsets(rows, measure.sizes, (index) => measure.heights.get(keys[index]!));
+         const mounted = Array.from({ length: window.end - window.first }, (_, offset) => height(window.first + offset));
+         const next = measuredRows(measure, rows, keys, window.first, mounted);
+         if (next !== measure) {
+            measure = next;
+            continue;
+         }
+         const view = rowsInView(offsets, 700, 1000);
+         if (view.first === window.first && view.end === window.end) return;
+         window = view;
+      }
+      throw new Error("The grid never settled");
    });
    it("finds the rows in view, and always at least one", () => {
       const offsets = rowOffsets(gridRows(kinds("c".repeat(30)), 3), sizes);

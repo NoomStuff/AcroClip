@@ -9,6 +9,7 @@ const { RecordingStatus } = await import("./RecordingStatus");
 afterAll(() => vi.unstubAllGlobals());
 const state: AppState = {
    windowVisible: true,
+   background: false,
    preferences: { ...defaultPreferences, setupComplete: true, microphone: true, microphoneDevice: "missing-raw-device" },
    collectionStatus: { root: "", phase: "ready" },
    folders: [],

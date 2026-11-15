@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { WandSparkles, Pencil, Plus, Trash2 } from "lucide-react";
 import type { AdditionalAudioSource, GameCandidate, Preferences } from "../../shared/types";
+import { normalizeApplicationLabel } from "../../shared/application-label";
 import { api, describeError, reportFeedback } from "./desktop";
 import { Button, MenuItem, Select } from "./ui";
 import { DialogPanel } from "./Dialog";
@@ -83,7 +84,11 @@ export function AdditionalAudio({
          name:
             kind === "source"
                ? "Source audio"
-               : (app?.gameName ?? app?.name ?? (kind === "input" && device?.id === "default" ? "Microphone" : (device?.name ?? "Audio source"))),
+               : app
+                 ? applicationChoiceName(app)
+                 : kind === "input" && device?.id === "default"
+                   ? "Microphone"
+                   : (device?.name ?? "Audio source"),
          kind,
          sourceId: app?.id ?? "",
          executable: app?.executable ?? "",
@@ -135,7 +140,7 @@ export function AdditionalAudio({
                   key={source.id}
                   visible={visible}
                   sourceId={source.id}
-                  name={source.kind === "source" ? captureName : source.name}
+                  name={source.kind === "source" ? captureName : source.kind === "application" ? normalizeApplicationLabel(source.name) : source.name}
                   enabled={source.enabled}
                   listenAvailable={(source.kind !== "source" || captureAvailable) && !(source.kind === "input" && source.muted)}
                   muted={source.muted}
@@ -212,11 +217,17 @@ export function AdditionalAudio({
                                  Selected device unavailable
                               </option>
                            )}
-                           {(kind === "application" ? candidates : devices).map((item) => (
-                              <option key={item.id} value={item.id}>
-                                 {item.name}
-                              </option>
-                           ))}
+                           {kind === "application"
+                              ? candidates.map((item) => (
+                                   <option key={item.id} value={item.id}>
+                                      {applicationOption(item, candidates)}
+                                   </option>
+                                ))
+                              : devices.map((item) => (
+                                   <option key={item.id} value={item.id}>
+                                      {item.name}
+                                   </option>
+                                ))}
                         </>
                      )}
                   </Select>
@@ -236,4 +247,15 @@ export function AdditionalAudio({
          )}
       </>
    );
+}
+
+/** The app's short name, which follows it across windows. Its window title changes as you use it. */
+function applicationChoiceName(app: GameCandidate): string {
+   return app.applicationName ?? app.gameName ?? normalizeApplicationLabel(app.name);
+}
+/** Two windows of one app only differ by title, so the title tells them apart. */
+function applicationOption(app: GameCandidate, all: readonly GameCandidate[]): string {
+   const name = applicationChoiceName(app);
+   const shared = all.filter((other) => applicationChoiceName(other) === name).length > 1;
+   return shared && app.name !== name ? `${name}: ${app.name}` : name;
 }

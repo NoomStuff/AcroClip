@@ -153,6 +153,57 @@ describe("collection folder operations", () => {
          await rm(root, { recursive: true, force: true });
       }
    });
+   it("moves clips saved under an older application id to the stable one", async () => {
+      const root = await temporaryDirectory("acroclip-app-migration-");
+      try {
+         const legacy = "3".repeat(64),
+            stable = "4".repeat(64),
+            other = "5".repeat(64);
+         await mkdir(join(root, "Game"));
+         await writeFile(join(root, "Game", "Old.mp4"), "old video");
+         await writeFile(join(root, "Other.mp4"), "other video");
+         const service = new CollectionService();
+         await service.open(root);
+         const old = await service.registerRecording(join(root, "Game", "Old.mp4"), "Game", { id: legacy, icon: "" }, true);
+         const unrelated = await service.registerRecording(join(root, "Other.mp4"), "Other", { id: other, icon: "" });
+         await service.enrichApplications([{ id: stable, icon: "", name: "Game", previousIds: [legacy] }]);
+         expect(service.clips.find((clip) => clip.id === old.id)?.applicationId).toBe(stable);
+         expect(service.clips.find((clip) => clip.id === unrelated.id)?.applicationId).toBe(other);
+         expect(service.applicationFolder(stable, "Renamed game")).toBe("Game");
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.clips.find((clip) => clip.id === old.id)?.applicationId).toBe(stable);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("keeps an application's clips in the folder its first clip went to", async () => {
+      const root = await temporaryDirectory("acroclip-app-folder-");
+      try {
+         const id = "2".repeat(64);
+         await mkdir(join(root, "Valorant-Win64-Shipping"));
+         const first = join(root, "Valorant-Win64-Shipping", "First.mp4");
+         await writeFile(first, "first video");
+         const service = new CollectionService();
+         await service.open(root);
+         expect(service.applicationFolder(id, "VALORANT")).toBe("VALORANT");
+         await service.registerRecording(first, "Valorant-Win64-Shipping", { id, icon: "" }, true);
+         // The name resolved later, but new clips still join the first folder.
+         expect(service.applicationFolder(id, "VALORANT")).toBe("Valorant-Win64-Shipping");
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.applicationFolder(id, "VALORANT")).toBe("Valorant-Win64-Shipping");
+         // A folder the user removed or renamed starts over under the current name.
+         await rm(join(root, "Valorant-Win64-Shipping"), { recursive: true });
+         expect(reopened.applicationFolder(id, "VALORANT")).toBe("VALORANT");
+         // Flat saves and nested folders don't count as application folders.
+         await writeFile(join(root, "Flat.mp4"), "flat video");
+         await reopened.registerRecording(join(root, "Flat.mp4"), "VALORANT", { id, icon: "" }, true);
+         expect(reopened.applicationFolder(id, "VALORANT")).toBe("VALORANT");
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
    it("retains rapid category toggles without opening a separate editor", async () => {
       const root = await temporaryDirectory("acroclip-category-toggles-");
       try {

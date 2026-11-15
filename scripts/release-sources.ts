@@ -107,6 +107,8 @@ export async function validateRecorderBuild(parsed: RecorderBuildProvenance, sta
    const blockers: string[] = [];
    const ownBinaries = ["acroclip-recorder.exe"];
    const inputs = ["native/recorder.cpp", "native/clip-writer.cpp", "native/clip-writer.hpp", "native/CMakeLists.txt", "scripts/build-native.ts"];
+   // The clip writer includes this header since clips carry their own tag.
+   if (existsSync(path.join(project, "native/clip-tags.hpp")) || parsed.sourceHashes?.["native/clip-tags.hpp"]) inputs.push("native/clip-tags.hpp");
    if (staged.some((file) => file.path === "recorder/acroclip-notifier.exe") || parsed.sourceHashes?.["native/notifications/windows.cpp"]) {
       ownBinaries.push("acroclip-notifier.exe");
       inputs.push("native/notifications/windows.cpp", "native/notifications/CMakeLists.txt");

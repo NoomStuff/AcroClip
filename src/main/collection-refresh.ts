@@ -31,6 +31,8 @@ export class CollectionRefresh {
    private poll: ReturnType<typeof setInterval> | null = null;
    private running = false;
    private again = false;
+   /** A failure that repeats every poll, such as a deleted folder, is logged once until a refresh succeeds. */
+   private failure = "";
    constructor(options: RefreshOptions) {
       this.options = options;
    }
@@ -96,8 +98,11 @@ export class CollectionRefresh {
       this.running = true;
       try {
          await this.options.refresh();
+         this.failure = "";
       } catch (error) {
-         this.options.log(error instanceof Error ? error.message : String(error));
+         const text = error instanceof Error ? error.message : String(error);
+         if (text !== this.failure) this.options.log(text);
+         this.failure = text;
       } finally {
          this.running = false;
          if (this.again) {

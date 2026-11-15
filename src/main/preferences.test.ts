@@ -102,6 +102,23 @@ describe("settings capture holds back", () => {
       });
    });
 });
+describe("clip folder layout", () => {
+   it("groups new installs by application and keeps flat folders for settings saved before that", async () => {
+      const root = await mkdtemp(join(tmpdir(), "acroclip-layout-migration-"));
+      try {
+         const file = join(root, "preferences.json");
+         const legacy: Record<string, unknown> = { ...defaultPreferences, collection: root };
+         delete legacy["folderLayout"];
+         await writeFile(file, JSON.stringify(legacy));
+         expect((await readPreferences(file, root)).folderLayout).toBe("flat");
+         await writeFile(file, JSON.stringify({ ...legacy, folderLayout: "application" }));
+         expect((await readPreferences(file, root)).folderLayout).toBe("application");
+         expect((await readPreferences(join(root, "missing.json"), root)).folderLayout).toBe("application");
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+});
 describe("overlapping clip choice", () => {
    it("restarts capture only when the recorder's own trimming changes", () => {
       const merge = { ...defaultPreferences, overlapClips: "merge" as const };

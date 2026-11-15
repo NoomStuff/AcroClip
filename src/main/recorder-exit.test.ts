@@ -134,6 +134,21 @@ describe("recorder helper termination", () => {
       helperTestTimeout
    );
    it(
+      "exits a recording helper at once when no save is waiting for footage",
+      async () => {
+         const { child, root, errors } = await fixture("normal");
+         await child.close();
+         const commands = (await readFile(join(root, "commands.jsonl"), "utf8"))
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line) as { action: string });
+         expect(commands.filter((command) => command.action === "stop")).toHaveLength(0);
+         expect(commands.at(-1)?.action).toBe("exit");
+         expect(errors).toEqual([]);
+      },
+      helperTestTimeout
+   );
+   it(
       "does not label earlier footage with a newly selected application's artwork",
       async () => {
          const { child, root, saved } = await fixture("saved-source-mismatch");

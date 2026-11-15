@@ -150,6 +150,7 @@ try {
    results["playback copy MB after opening clips"] = playbackBytes.reduce((sum, size) => sum + size, 0) / 1e6;
    const state: AppState = {
       windowVisible: true,
+      background: false,
       preferences: defaultPreferences,
       clips: collection.clips,
       collectionStatus: { root: collectionRoot, phase: "ready" },

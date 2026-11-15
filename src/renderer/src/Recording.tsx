@@ -21,12 +21,15 @@ import { autoCapturePresentation } from "./auto-capture-presentation";
 export function Recording({
    state,
    visible,
+   background,
    run,
    pulse,
    openGames,
 }: {
    state: Pick<AppState, "preferences" | "recorder" | "platform">;
    visible: boolean;
+   /** AcroClip is unfocused or behind a fullscreen app, so the page stops its own polling and previews. */
+   background: boolean;
    run: Run;
    pulse: number;
    openGames: () => void;
@@ -57,6 +60,9 @@ export function Recording({
    const [monitorError, setMonitorError] = useState("");
    const [monitorSetupError, setMonitorSetupError] = useState("");
    const active = state.recorder.state === "recording" || state.recorder.state === "waiting";
+   // Source lists, the game scan, the preview and the meters only refresh while someone may be looking.
+   // Each refresh enumerates windows or spawns the helper, and a game in front pays for it.
+   const live = visible && !background;
    const auto = autoCapturePresentation(games, state.recorder, gamesLoaded);
    const findingGames = auto.finding;
    useEffect(() => {
@@ -102,13 +108,13 @@ export function Recording({
    const nativeScreenPreview = state.platform === "win32" && source?.kind === "screen";
    const preview = useSourcePreview(
       previewUnavailable ? undefined : source?.id,
-      visible && state.preferences.setupComplete,
+      live && state.preferences.setupComplete,
       nativeScreenPreview,
       state.preferences.collection,
       String(source?.processId ?? "")
    );
    useEffect(() => {
-      if (!visible || state.preferences.sourceKind !== "auto" || !state.recorder.supported) return;
+      if (!live || state.preferences.sourceKind !== "auto" || !state.recorder.supported) return;
       let disposed = false;
       const update = async () => {
          try {
@@ -131,7 +137,7 @@ export function Recording({
          disposed = true;
          window.clearInterval(timer);
       };
-   }, [visible, state.preferences.sourceKind, state.preferences.customGames, state.recorder.supported, gameScope]);
+   }, [live, state.preferences.sourceKind, state.preferences.customGames, state.recorder.supported, gameScope]);
    useEffect(() => {
       if (!visible) return;
       let gone = false;
@@ -146,7 +152,7 @@ export function Recording({
       };
    }, [visible, sourceRequest]);
    useEffect(() => {
-      if (!visible) return;
+      if (!live) return;
       let gone = false;
       let fetching = false;
       const fetch = async () => {
@@ -178,7 +184,7 @@ export function Recording({
          window.removeEventListener("focus", focus);
          window.clearInterval(timer);
       };
-   }, [visible, sourceRequest]);
+   }, [live, sourceRequest]);
    useEffect(() => {
       if (!pulse) return;
       setPulsing(true);
@@ -358,7 +364,7 @@ export function Recording({
                               captureAvailable={captureAvailable}
                               preferences={state.preferences}
                               active={active || state.recorder.state === "starting"}
-                              visible={visible}
+                              visible={live}
                               save={preferences}
                            />
                         </AudioListening>

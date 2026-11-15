@@ -1,5 +1,6 @@
 import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clapperboard, LibraryBig, Play, Minus, Settings as Gear, Square, Video, X } from "lucide-react";
+import { PageBoundary } from "./PageBoundary";
 import { AppLogo } from "./AppLogo";
 import type { AppEvent, AppState, Clip, NoticeOptions } from "../../shared/types";
 import { applyStatePatch } from "../../shared/state-patch";
@@ -335,53 +336,62 @@ export function App() {
             {state && libraryState && recordingState && viewerState && settingsState ? (
                <>
                   <section className="page" hidden={page !== "recording"}>
-                     <RecordingPage
-                        state={recordingState}
-                        visible={page === "recording" && windowVisible && state.preferences.setupComplete}
-                        run={run}
-                        pulse={clipPulse}
-                        openGames={openGames}
-                     />
+                     <PageBoundary>
+                        <RecordingPage
+                           state={recordingState}
+                           visible={page === "recording" && windowVisible && state.preferences.setupComplete}
+                           background={state.background}
+                           run={run}
+                           pulse={clipPulse}
+                           openGames={openGames}
+                        />
+                     </PageBoundary>
                   </section>
                   <section className="page" hidden={page !== "library"}>
                      {visited.includes("library") && (
-                        <Suspense fallback={null}>
-                           <LibraryPage
-                              state={libraryState}
-                              visible={page === "library" && windowVisible}
-                              run={run}
-                              ask={ask}
-                              openClip={openClip}
-                              openSettings={openCollectionSettings}
-                              openGames={openGames}
-                           />
-                        </Suspense>
+                        <PageBoundary>
+                           <Suspense fallback={null}>
+                              <LibraryPage
+                                 state={libraryState}
+                                 visible={page === "library" && windowVisible}
+                                 run={run}
+                                 ask={ask}
+                                 openClip={openClip}
+                                 openSettings={openCollectionSettings}
+                                 openGames={openGames}
+                              />
+                           </Suspense>
+                        </PageBoundary>
                      )}
                   </section>
                   <section className="page" hidden={page !== "viewer"}>
                      {visited.includes("viewer") && (
-                        <Suspense fallback={null}>
-                           <ViewerPage
-                              ask={ask}
-                              state={viewerState}
-                              clip={clip}
-                              queue={position}
-                              autoplay={!!clip && autoplay === clip.id}
-                              stepClip={stepClip}
-                              visible={page === "viewer" && windowVisible}
-                              run={run}
-                              openLibrary={openLibrary}
-                              trimRequest={trimRequest}
-                              showClip={showClip}
-                           />
-                        </Suspense>
+                        <PageBoundary>
+                           <Suspense fallback={null}>
+                              <ViewerPage
+                                 ask={ask}
+                                 state={viewerState}
+                                 clip={clip}
+                                 queue={position}
+                                 autoplay={!!clip && autoplay === clip.id}
+                                 stepClip={stepClip}
+                                 visible={page === "viewer" && windowVisible}
+                                 run={run}
+                                 openLibrary={openLibrary}
+                                 trimRequest={trimRequest}
+                                 showClip={showClip}
+                              />
+                           </Suspense>
+                        </PageBoundary>
                      )}
                   </section>
                   <section className="page" hidden={page !== "settings"}>
                      {visited.includes("settings") && (
-                        <Suspense fallback={null}>
-                           <SettingsPage state={settingsState} run={run} ask={ask} target={settingsTarget} showShortcuts={() => setShortcutSheet(true)} />
-                        </Suspense>
+                        <PageBoundary>
+                           <Suspense fallback={null}>
+                              <SettingsPage state={settingsState} run={run} ask={ask} target={settingsTarget} showShortcuts={() => setShortcutSheet(true)} />
+                           </Suspense>
+                        </PageBoundary>
                      )}
                   </section>
                </>

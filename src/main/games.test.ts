@@ -27,6 +27,14 @@ describe("automatic game selection", () => {
          )?.id
       ).toBe("two");
    });
+   test("follows another game only after it stays in front, so an alt-tab keeps the buffer", () => {
+      const games = [detected("one"), detected("two", { foreground: true })];
+      expect(selectGame(games, "one", new Map(), { id: "two", at: 10_000 }, 12_999)?.id).toBe("one");
+      expect(selectGame(games, "one", new Map(), { id: "two", at: 10_000 }, 13_000)?.id).toBe("two");
+      // Nothing to keep, so the game in front starts capture at once.
+      expect(selectGame(games, null, new Map(), { id: "two", at: 10_000 }, 10_000)?.id).toBe("two");
+      expect(selectGame([games[1]!], "one", new Map(), { id: "two", at: 10_000 }, 10_000)?.id).toBe("two");
+   });
    test("uses previous game focus, then fullscreen, and waits with no games", () => {
       const games = [detected("one"), detected("two", { fullscreen: true })];
       expect(selectGame(games, null, new Map())?.id).toBe("two");

@@ -133,7 +133,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await page.waitForTimeout(300);
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences)
-         .toMatchObject({ filenamePreset: "custom", filenameTemplate: "Moment {source} {date} {time}", folderLayout: "flat" });
+         .toMatchObject({ filenamePreset: "custom", filenameTemplate: "Moment {source} {date} {time}", folderLayout: "application" });
    } finally {
       await desktop.close();
    }

@@ -32,6 +32,19 @@ describe("collection free-space warning", () => {
          await rm(root, { recursive: true, force: true });
       }
    });
+   it("reads the volume of a collection folder that doesn't exist yet", async () => {
+      const root = await mkdtemp(join(tmpdir(), "acroclip-space-missing-"));
+      try {
+         const stats = await statfs(root, { bigint: true });
+         const { value } = monitor();
+         const missing = join(root, "deleted", "Clips");
+         value.setActivity(missing, false);
+         await value.check(missing);
+         expect(value.warning).toBe(stats.bavail * stats.bsize < 1024n ** 3n ? "Low storage in clip folder" : "");
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
    it("warns below 1 GiB, deduplicates, and clears only when space recovers", async () => {
       let bytes = 1024n ** 3n;
       const { value, messages, changes } = monitor(async () => bytes);

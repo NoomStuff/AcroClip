@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { parseClipTag } from "../shared/clip-tag";
+import type { ClipTag } from "../shared/clip-tag";
 import { existsSync } from "node:fs";
 import { rename, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -95,9 +97,22 @@ export function runMedia(name: "ffmpeg" | "ffprobe", args: string[], options: Me
          if (options.signal?.aborted) reject(new Error("Cancelled"));
          else if (error) reject(error);
          else if (code === 0) resolve(stdout);
-         else reject(new Error(stderr.trim() || `${name} exited with code ${code}.`));
+         else reject(new Error(mediaFailure(stderr) || `${name} exited with code ${code}.`));
       });
    });
+}
+
+/**
+ * The lines of ffmpeg's error output that say why it stopped. A damaged video makes the decoder
+ * report every broken frame, and hundreds of those say less than the last one or two.
+ */
+export function mediaFailure(stderr: string): string {
+   const lines = stderr
+      .split(/\r?\n/)
+      // "[h264 @ 0000020b707b0c40]" names a decoder instance. It differs per run and says nothing.
+      .map((line) => line.replace(/^(?:\[[^\]]*@ [0-9a-fx]+\]\s*)+/i, "").trim())
+      .filter((line) => line && !/^Last message repeated|^Task finished with error code|^Terminating thread with return code/i.test(line));
+   return [...new Set(lines)].slice(-2).join(" ").slice(0, 500);
 }
 
 interface ProbeStream {
@@ -110,7 +125,7 @@ interface ProbeStream {
    tags?: { title?: string; name?: string; handler_name?: string };
 }
 interface ProbeResult {
-   format?: { duration?: string };
+   format?: { duration?: string; tags?: Record<string, string> };
    streams?: ProbeStream[];
 }
 export function audioTrackTitle(tags: ProbeStream["tags"], ordinal: number): string {
@@ -129,6 +144,8 @@ export interface MediaInfo {
    frameRate: number;
    videoCodec: string;
    tracks: AudioTrack[];
+   /** What the file says about itself, when AcroClip saved it. */
+   tag?: ClipTag;
 }
 
 export async function createThumbnail(source: string, output: string, duration: number): Promise<void> {
@@ -202,7 +219,9 @@ export async function probe(path: string, options: Pick<MediaOptions, "signal" |
    if (!video || !Number.isFinite(duration) || duration <= 0 || !video.width || !video.height) throw new Error("The file contains no playable video.");
    const rate = video.avg_frame_rate?.split("/").map(Number);
    const frameRate = rate?.[1] ? (rate[0] ?? 30) / rate[1] : 30;
+   const tag = parseClipTag(result.format?.tags?.["acroclip"]);
    return {
+      ...(tag ? { tag } : {}),
       ...(durationFromPackets ? { durationFromPackets: true } : {}),
       duration,
       width: video.width,
@@ -265,6 +284,10 @@ export async function createKeyframeStrip(source: string, output: string, durati
             "6",
             "-filter_threads",
             "1",
+            // A long recording writes nothing until its single image is done. Progress lines show it
+            // is still reading, so the stall timeout only catches an ffmpeg that has actually stopped.
+            "-progress",
+            "pipe:1",
             "-f",
             "image2",
             temporary,

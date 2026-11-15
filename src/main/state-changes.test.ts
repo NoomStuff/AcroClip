@@ -7,6 +7,7 @@ import type { AppEvent, AppState, Clip } from "../shared/types";
 function snapshot(): AppState {
    return {
       windowVisible: true,
+      background: false,
       storageWarning: "",
       preferences: structuredClone(defaultPreferences),
       clips: [],

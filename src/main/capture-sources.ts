@@ -7,8 +7,8 @@ import { join } from "node:path";
 import type { CaptureSource, GameCandidate } from "../shared/types";
 import { portalSources } from "../shared/capture-policy";
 import type { Recorder } from "./recorder";
-import { applicationLabel, executableLabel } from "./application-identity";
-type SourceRecorder = Pick<Recorder, "capabilities" | "applicationCandidates" | "capturableApplications">;
+import { applicationId as stableApplicationId, applicationLabel, executableLabel, previousApplicationIds } from "./application-identity";
+type SourceRecorder = Pick<Recorder, "capabilities" | "applicationCandidates" | "capturableApplications"> & Partial<Pick<Recorder, "identifyGames">>;
 
 export class CaptureSources {
    private sources: CaptureSource[] = [];
@@ -86,9 +86,12 @@ export class CaptureSources {
          if (isWaylandSession()) return (this.cached = []);
       }
       // Discovery needs identities, not captured images. Executable icons are fetched afterwards.
-      const [nativeWindows, list] = await this.enumerate(
-         ["win32", "linux"].includes(process.platform) ? this.recorder.capturableApplications() : this.recorder.applicationCandidates().catch(() => [])
-      );
+      const discovered = ["win32", "linux"].includes(process.platform)
+         ? this.recorder.capturableApplications()
+         : this.recorder.applicationCandidates().catch(() => []);
+      // A catalog that can't load only means ids fall back to the executable.
+      const identified = discovered.then((items) => this.recorder.identifyGames?.(items).catch(() => items) ?? items);
+      const [nativeWindows, list] = await this.enumerate(identified);
       const previous = new Map(this.cached.map((source) => [source.id, source]));
       const windowsByHandle = new Map(nativeWindows.map((item) => [item.id.split(":")[1], item]));
       const displays = new Map(screen.getAllDisplays().map((display) => [String(display.id), display]));
@@ -114,10 +117,7 @@ export class CaptureSources {
             const prior = previous.get(s.id);
             let applicationId: string | undefined;
             if (s.id.startsWith("window:")) {
-               if (candidate?.executable)
-                  applicationId = createHash("sha256")
-                     .update(process.platform === "win32" ? candidate.executable.toLowerCase() : candidate.executable)
-                     .digest("hex");
+               if (candidate?.executable) applicationId = stableApplicationId(candidate.executable, candidate.gameId);
                else if (candidate && prior?.processId === candidate.pid) applicationId = prior.applicationId;
                applicationId ??= createHash("sha256").update(`window:${s.id}:${randomUUID()}`).digest("hex");
             }
@@ -145,6 +145,7 @@ export class CaptureSources {
                   : s.thumbnail.toDataURL();
             return {
                ...(applicationId ? { applicationId } : {}),
+               ...(applicationId && candidate?.executable ? { previousApplicationIds: previousApplicationIds(candidate.executable, candidate.gameId) } : {}),
                ...(candidate?.executable ? { applicationName: candidate.gameName ?? executableLabel(candidate.executable) } : {}),
                ...(appIcon ? { appIcon } : {}),
                id: s.id,
@@ -209,12 +210,7 @@ export class CaptureSources {
             .filter((candidate) => candidate.executable)
             .map(
                async (candidate) =>
-                  [
-                     createHash("sha256")
-                        .update(process.platform === "win32" ? candidate.executable.toLowerCase() : candidate.executable)
-                        .digest("hex"),
-                     candidate.gameName ?? (await applicationLabel(candidate.executable)),
-                  ] as const
+                  [stableApplicationId(candidate.executable, candidate.gameId), candidate.gameName ?? (await applicationLabel(candidate.executable))] as const
             )
       ).then((entries) => {
          const names = new Map(entries);
@@ -284,7 +280,7 @@ export class CaptureSources {
                });
                while (this.icons.size > 128) this.icons.delete(this.icons.keys().next().value!);
             }
-            return [createHash("sha256").update(executable).digest("hex"), await icon] as const;
+            return [stableApplicationId(candidate.executable, candidate.gameId), await icon] as const;
          })
       ).then(async (entries) => {
          const icons = new Map(entries);

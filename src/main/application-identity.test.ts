@@ -2,7 +2,16 @@ import { expect, it } from "vitest";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { applicationLabel, executableLabel, normalizeApplicationLabel } from "./application-identity";
+import { applicationId, applicationLabel, executableLabel, normalizeApplicationLabel, previousApplicationIds } from "./application-identity";
+
+it("keeps an application's id when its library moves, and keeps same-named executables apart", () => {
+   const steam = applicationId("C:/Program Files (x86)/Steam/steamapps/common/Demo/bin/demo.exe");
+   expect(applicationId("E:/SteamLibrary/steamapps/common/Demo/bin/demo.exe")).toBe(steam);
+   expect(applicationId("E:/Games/Other/game.exe")).not.toBe(applicationId("E:/Games/Demo/game.exe"));
+   // A recognized game follows its catalog entry, wherever and however it's installed.
+   expect(applicationId("C:/A/one.exe", "123")).toBe(applicationId("D:/B/two.exe", "123"));
+   expect(previousApplicationIds("C:/A/one.exe", "123")).toEqual([applicationId("C:/A/one.exe"), expect.stringMatching(/^[\da-f]{64}$/)]);
+});
 
 it("uses the executable rather than the window title and normalizes known legacy captions", () => {
    expect(executableLabel("C:\\Windows\\explorer.exe")).toBe("Explorer");

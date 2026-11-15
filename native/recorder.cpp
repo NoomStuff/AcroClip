@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <filesystem>
@@ -287,7 +289,9 @@ json captureCandidates() {
              {"arguments", arguments},
              {"pixelSize", [&] { RECT area{}; GetClientRect(window, &area); return json{{"width", area.right - area.left}, {"height", area.bottom - area.top}}; }()},
              {"foreground", window == GetForegroundWindow()},
-             {"fullscreen", fullscreen}});
+             {"fullscreen", fullscreen},
+             // Which screen the window fills, so a desktop capture only credits a game on that screen.
+             {"monitor", fullscreen ? json{{"left", monitor.rcMonitor.left}, {"top", monitor.rcMonitor.top}, {"right", monitor.rcMonitor.right}, {"bottom", monitor.rcMonitor.bottom}} : json(nullptr)}});
         return TRUE;
       },
       reinterpret_cast<LPARAM>(&windows));
@@ -471,6 +475,9 @@ private:
   std::atomic<bool> windowCompatibility{false};
   uint64_t gameStarted = 0;
   json gameConfig;
+  std::string refreshFailure;
+  // The first audio source that couldn't open, for the audio warning. Its track stays silent.
+  std::string audioSetupWarning;
   // After a hook timeout, a hidden game capture keeps trying to hook while
   // window capture records. Games that load slowly return to game capture.
   obs_source_t *hookProbe = nullptr;
@@ -552,6 +559,8 @@ public:
                   {"message", result.error}});
         });
   }
+  /** Waits for queued clip writes. Exiting straight after keeps every saved file complete. */
+  void finishWrites() { clipWriter->finish(); }
   ~Recorder() {
     blog(LOG_INFO, "Recorder shutdown: stopping capture");
     stop(true);
@@ -868,6 +877,10 @@ private:
       }
       return;
     }
+    // A chosen window that closed is the app's to follow: Auto moves on to the next game or
+    // waits. Trying another capture method on it would only fail.
+    if (const auto window = reinterpret_cast<HWND>(targetWindow.load()); window && !IsWindow(window))
+      return;
     if (!gameCapture) {
       if (hookProbe) {
         checkHookProbe();
@@ -1134,15 +1147,6 @@ private:
         if (device == obs_property_list_item_string(devices, index) &&
             !obs_property_list_item_disabled(devices, index)) found = true;
     if (!found) throw std::runtime_error("The microphone is unavailable. Choose an available input device");
-#ifdef _WIN32
-    if (sessionConfiguration.value("automaticMaster", false)) {
-      acroclip::windows::ListenRouting routing;
-      const auto endpoint = acroclip::windows::ListenRouting::identity(routing.device(device, eCapture).Get());
-      for (const auto &extra : additionalAudio)
-        if (extra.kind == "input" && extra.source && endpoint == acroclip::windows::ListenRouting::identity(routing.device(extra.deviceId, eCapture).Get()))
-          throw std::runtime_error("This microphone is already included by another audio source");
-    }
-#endif
     std::unique_ptr<obs_data_t, decltype(&obs_data_release)> settings(obs_data_create(), &obs_data_release);
     obs_data_set_string(settings.get(), "device_id", device.c_str());
     auto *source = obs_source_create_private(type, name.c_str(), settings.get());
@@ -1364,6 +1368,122 @@ private:
     return {};
 #endif
   }
+  std::shared_ptr<ExtraMeter> createMeter(const std::string &id) {
+    auto metering = std::make_shared<ExtraMeter>();
+    metering->owner = this;
+    metering->id = id;
+    metering->meter = obs_volmeter_create(OBS_FADER_LOG);
+    obs_volmeter_add_callback(
+        metering->meter,
+        [](void *data, const float *, const float *peak, const float *) {
+          auto *meter = static_cast<ExtraMeter *>(data);
+          float value = 0;
+          for (size_t channel = 0; channel < 2; channel++)
+            if (std::isfinite(peak[channel]))
+              value = std::max(
+                  value, std::clamp((peak[channel] + 60.f) / 60.f, 0.f, 1.f));
+          accumulatePeak(meter->pendingPeak, value);
+          uint64_t now = os_gettime_ns(), last = meter->lastEvent.load();
+          if ((meter->owner->active || meter->owner->monitoring) && now - last >= 33000000 &&
+              meter->lastEvent.compare_exchange_strong(last, now))
+            emit({{"event", "audio-levels"},
+                  {"capture", meter->owner->captureLevel.load()},
+                  {"microphone", meter->owner->microphoneLevel.load()},
+                  {"additional", {{meter->id, meter->pendingPeak.exchange(0)}}}});
+        },
+        metering.get());
+    return metering;
+  }
+#ifdef _WIN32
+  /** The window match OBS's process audio capture expects, refused when another window could match it. */
+  static std::string applicationAudioWindow(uintptr_t handle, uint32_t pid) {
+    auto window = reinterpret_cast<HWND>(handle);
+    DWORD actual = 0;
+    GetWindowThreadProcessId(window, &actual);
+    if (!IsWindow(window) || actual != pid)
+      throw std::runtime_error("The application audio target changed");
+    dstr title{}, klass{}, exe{};
+    ms_get_window_title(&title, window);
+    ms_get_window_class(&klass, window);
+    bool identified =
+        ms_get_window_exe(&exe, window) &&
+        ms_find_window(INCLUDE_MINIMIZED, WINDOW_PRIORITY_TITLE,
+                       klass.array, title.array, exe.array) == window;
+    for (auto *part : {&title, &klass, &exe}) {
+      dstr_replace(part, "#", "#22");
+      dstr_replace(part, ":", "#3A");
+    }
+    std::string match = std::string(title.array ? title.array : "") + ":" +
+                        (klass.array ? klass.array : "") + ":" +
+                        (exe.array ? exe.array : "");
+    dstr_free(&title);
+    dstr_free(&klass);
+    dstr_free(&exe);
+    if (!identified)
+      throw std::runtime_error(
+          "The application audio target cannot be distinguished safely");
+    return match;
+  }
+#endif
+public:
+  /**
+   * Fills the silent track of an application source that wasn't open when capture started, once
+   * the app is. The track already exists, so the buffer keeps running. Windows only.
+   */
+  void attachAudio(const json &c) {
+#ifdef _WIN32
+    // Commands run one at a time on this thread, so start and stop can't interleave. The packet
+    // lock stays free, since opening the source can take a moment.
+    if (!active) throw std::runtime_error("Capture isn't running");
+    const json &settings = c.at("settings");
+    const std::string id = settings.at("id").get<std::string>();
+    const std::string identity = settings.value("sourceId", "");
+    if (identity.rfind("window:", 0) != 0) throw std::runtime_error("Choose an available application audio source");
+    const uintptr_t handle = std::stoull(identity.substr(7));
+    const uint32_t pid = settings.at("pid").get<uint32_t>();
+    AdditionalAudio *extra = nullptr;
+    for (auto &value : additionalAudio)
+      if (value.id == id) extra = &value;
+    if (!extra || extra->kind != "application") throw std::runtime_error("Unknown audio source");
+    if (extra->source) return;
+    const std::string match = applicationAudioWindow(handle, pid);
+    std::unique_ptr<obs_data_t, decltype(&obs_data_release)> data(obs_data_create(), &obs_data_release);
+    obs_data_set_string(data.get(), "window", match.c_str());
+    obs_data_set_int(data.get(), "priority", 0);
+    obs_source_t *created = obs_source_create_private("wasapi_process_output_capture", extra->name.c_str(), data.get());
+    if (!created) throw std::runtime_error("The additional audio source could not be opened");
+    {
+      std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+      extra->window = handle;
+      extra->pid = pid;
+      extra->source = created;
+      obs_source_set_audio_mixers(created, extra->mixerMask);
+      audioHealth.watch(created);
+      if (!extra->metering) extra->metering = createMeter(extra->id);
+      obs_volmeter_attach_source(extra->metering->meter, created);
+    }
+    // Desktop audio now leaves this app to its own track, so Master doesn't hear it twice.
+    if (sessionConfiguration.contains("audioSources") && sessionConfiguration["audioSources"].is_array())
+      for (auto &configured : sessionConfiguration["audioSources"])
+        if (configured.value("id", std::string()) == id) {
+          configured["enabled"] = true;
+          configured["pid"] = pid;
+          configured["sourceId"] = identity;
+        }
+    configureDesktopExclusions(sessionConfiguration);
+    routeMaster();
+    obs_set_output_source(extra->outputChannel, created);
+    setAudio({{"source", id},
+              {"volume", settings.value("volume", 1.f)},
+              {"muted", settings.value("muted", false)},
+              {"filters", settings.value("filters", json::array())}});
+    blog(LOG_INFO, "Audio source %s attached after its app opened", extra->name.c_str());
+#else
+    (void)c;
+    throw std::runtime_error("Attaching application audio during capture is available on Windows only");
+#endif
+  }
+private:
   void configureDesktopExclusions(const json &config) {
 #if defined(_WIN32) || defined(__linux__) || defined(__APPLE__)
     std::vector<uint32_t> excluded;
@@ -1387,241 +1507,250 @@ private:
     if (!sources.is_array() || sources.size() > (monitoring ? 5u : automatic ? (config.value("sourceAudioPresent",false)?4u:5u) : 3u))
       throw std::runtime_error("The recorder supports up to five audio sources");
     std::set<std::string> identities;
-    std::set<uint32_t> processIdentities;
-    if(automatic && !screenCapture && captureAudioEnabled && targetProcess)processIdentities.insert(targetProcess);
-#ifdef _WIN32
-    std::set<std::wstring> endpointIdentities;
-    if(automatic && screenCapture && captureAudioEnabled){acroclip::windows::ListenRouting routing;endpointIdentities.insert(L"output:"+acroclip::windows::ListenRouting::identity(routing.device("default").Get()));}
-#endif
     audioNames = {"Master"};
     if(!automatic || config.value("sourceAudioPresent",false))audioNames.emplace_back(config.value("sourceKind",std::string("screen")) == "screen" ? "Desktop" : "Application");
     if (config.value("microphone", false))
       audioNames.emplace_back("Microphone");
+    audioSetupWarning.clear();
     for (const auto &settings : sources) {
-      AdditionalAudio extra;
-      auto discard = [this](AdditionalAudio *value) {
+      auto add = [&]() {
+        AdditionalAudio extra;
+        auto discard = [this](AdditionalAudio *value) {
 #ifdef __linux__
-        if (value->application) {
-          destroyApplicationAudio(value->application);
+          if (value->application) {
+            destroyApplicationAudio(value->application);
+            return;
+          }
+#endif
+          if (value->source) {
+#ifdef __APPLE__
+            acroclip::macos::forgetInput(value->source);
+#endif
+#ifdef _WIN32
+            audioHealth.forget(value->source);
+#endif
+            obs_source_release(value->source);
+          }
+        };
+        std::unique_ptr<AdditionalAudio, decltype(discard)> extraOwner(&extra, discard);
+        extra.id = settings.at("id").get<std::string>();
+        extra.name = settings.at("name").get<std::string>();
+        if (extra.id.empty() || extra.id == "capture" ||
+            extra.id == "microphone" || !identities.insert(extra.id).second ||
+            extra.name.empty() || extra.name.size() > 400)
+          throw std::runtime_error(
+              "The additional audio source identity is invalid");
+        extra.kind=settings.at("kind").get<std::string>();
+        uint32_t mixer = uint32_t(audioNames.size());
+        if(!monitoring && mixer>=6)throw std::runtime_error("The recorder audio track limit was reached");
+        extra.isolatedMask=1u<<mixer;
+        audioNames.push_back(extra.name);
+        uint32_t mask = monitoring
+                            ? 0u
+                            : (((automatic || settings.value("includeInMaster", true)) ? 1u : 0u) |
+                               extra.isolatedMask);
+        extra.mixerMask = mask;
+        extra.outputChannel = uint32_t(additionalAudio.size() + 3);
+        extra.deviceId = settings.value("deviceId", "default");
+        extra.managedInput = extra.kind == "input" && settings.value("enabled", true);
+        if (!settings.value("enabled", true)) {
+          additionalAudio.push_back(std::move(extra));
+          extraOwner.release();
           return;
         }
+        std::string kind = settings.at("kind");
+        extra.kind = kind;
+        extra.deviceId = settings.value("deviceId", "default");
+        std::unique_ptr<obs_data_t, decltype(&obs_data_release)> data(
+            obs_data_create(), &obs_data_release);
+        const char *type = nullptr;
+        if (kind == "application") {
+          std::string identity = settings.value("sourceId", "");
+          if (identity.rfind("window:", 0) != 0) {
+            data.reset();
+            throw std::runtime_error(
+                "Choose an available application audio source");
+          }
+          extra.window = std::stoull(identity.substr(7));
+          extra.pid = settings.at("pid");
+#ifdef _WIN32
+          const std::string match = applicationAudioWindow(extra.window, extra.pid);
+          obs_data_set_string(data.get(), "window", match.c_str());
+          obs_data_set_int(data.get(), "priority", 0);
+          type = "wasapi_process_output_capture";
+#elif defined(__linux__)
+          data.reset();
+          if (!x11Available(extra.window, extra.pid, false))
+            throw std::runtime_error("The application audio target changed");
+          extra.application = createApplicationAudio(extra.pid, mask);
+          extra.source = applicationAudioSource(extra.application);
+#elif defined(__APPLE__)
+          data.reset();
+          extra.source = acroclip::macos::createApplicationAudio(
+              extra.window, extra.pid, extra.name);
+#else
+          data.reset();
+          throw std::runtime_error("Additional application audio is not "
+                                   "available on this platform yet");
 #endif
-        if (value->source) {
+        } else if (kind == "input") {
+          // Reserve the track without opening a microphone while muted.
+          if (!settings.value("muted", false)) {
+            extra.source = openMicrophone(extra.deviceId, extra.name);
+            extra.openedAt = os_gettime_ns();
+          }
+        } else if (kind == "output") {
 #ifdef __APPLE__
-          acroclip::macos::forgetInput(value->source);
+          data.reset();
+          if (extra.deviceId != "system")
+            throw std::runtime_error("Choose System audio. Individual output-device capture is unavailable on macOS");
+          extra.source = acroclip::macos::createSystemAudio(extra.name);
+#else
+          type = desktopType();
+          auto *properties = obs_get_source_properties(
+#ifdef _WIN32
+              "wasapi_output_capture"
+#elif defined(__linux__)
+              linuxOutputAudioType()
+#else
+              type
+#endif
+          );
+          auto *devices = properties ? obs_properties_get(properties, "device_id") : nullptr;
+          bool found = false;
+          if (devices)
+            for (size_t index = 0; index < obs_property_list_item_count(devices); ++index)
+              if (extra.deviceId == obs_property_list_item_string(devices, index) &&
+                  !obs_property_list_item_disabled(devices, index)) found = true;
+          obs_properties_destroy(properties);
+          if (!found) throw std::runtime_error("The additional audio device is unavailable");
+          obs_data_set_string(data.get(), "device_id", extra.deviceId.c_str());
+#endif
+        } else {
+          data.reset();
+          throw std::runtime_error("The additional audio source kind is invalid");
+        }
+        if (type) {
+          bool registered = false;
+          const char *candidate = nullptr;
+          for (size_t index = 0; obs_enum_input_types(index, &candidate); index++)
+            if (std::string(candidate) == type)
+              registered = true;
+          if (!registered) {
+            data.reset();
+            throw std::runtime_error(
+                "This additional audio source is unavailable on this platform");
+          }
+          extra.source =
+              obs_source_create_private(type, extra.name.c_str(), data.get());
+          data.reset();
+          if (!extra.source)
+            throw std::runtime_error(
+                "The additional audio source could not be opened");
+          obs_source_set_audio_mixers(extra.source, mask);
+        }
+        if (extra.source) obs_source_set_audio_mixers(extra.source, mask);
+#ifdef __APPLE__
+        if (extra.source) {
+          acroclip::macos::watchInput(extra.source);
+        }
 #endif
 #ifdef _WIN32
-          audioHealth.forget(value->source);
+        audioHealth.watch(extra.source);
 #endif
-          obs_source_release(value->source);
-        }
-      };
-      std::unique_ptr<AdditionalAudio, decltype(discard)> extraOwner(&extra, discard);
-      extra.id = settings.at("id").get<std::string>();
-      extra.name = settings.at("name").get<std::string>();
-      if (extra.id.empty() || extra.id == "capture" ||
-          extra.id == "microphone" || !identities.insert(extra.id).second ||
-          extra.name.empty() || extra.name.size() > 400)
-        throw std::runtime_error(
-            "The additional audio source identity is invalid");
-      extra.kind=settings.at("kind").get<std::string>();
-      uint32_t mixer = uint32_t(audioNames.size());
-      if(!monitoring && mixer>=6)throw std::runtime_error("The recorder audio track limit was reached");
-      extra.isolatedMask=1u<<mixer;
-      audioNames.push_back(extra.name);
-      uint32_t mask = monitoring
-                          ? 0u
-                          : (((automatic || settings.value("includeInMaster", true)) ? 1u : 0u) |
-                             extra.isolatedMask);
-      extra.mixerMask = mask;
-      extra.outputChannel = uint32_t(additionalAudio.size() + 3);
-      extra.deviceId = settings.value("deviceId", "default");
-      extra.managedInput = extra.kind == "input" && settings.value("enabled", true);
-      if (!settings.value("enabled", true)) {
         additionalAudio.push_back(std::move(extra));
         extraOwner.release();
-        continue;
-      }
-      std::string kind = settings.at("kind");
-      extra.kind = kind;
-      extra.deviceId = settings.value("deviceId", "default");
-      std::unique_ptr<obs_data_t, decltype(&obs_data_release)> data(
-          obs_data_create(), &obs_data_release);
-      const char *type = nullptr;
-      if (kind == "application") {
-        std::string identity = settings.value("sourceId", "");
-        if (identity.rfind("window:", 0) != 0) {
-          data.reset();
-          throw std::runtime_error(
-              "Choose an available application audio source");
-        }
-        extra.window = std::stoull(identity.substr(7));
-        extra.pid = settings.at("pid");
-        if(automatic && !processIdentities.insert(extra.pid).second)throw std::runtime_error("This application is already included by another audio source");
-#ifdef _WIN32
-        auto window = reinterpret_cast<HWND>(extra.window);
-        DWORD actual = 0;
-        GetWindowThreadProcessId(window, &actual);
-        if (!IsWindow(window) || actual != extra.pid) {
-          data.reset();
-          throw std::runtime_error("The application audio target changed");
-        }
-        dstr title{}, klass{}, exe{};
-        ms_get_window_title(&title, window);
-        ms_get_window_class(&klass, window);
-        bool identified =
-            ms_get_window_exe(&exe, window) &&
-            ms_find_window(INCLUDE_MINIMIZED, WINDOW_PRIORITY_TITLE,
-                           klass.array, title.array, exe.array) == window;
-        for (auto *part : {&title, &klass, &exe}) {
-          dstr_replace(part, "#", "#22");
-          dstr_replace(part, ":", "#3A");
-        }
-        std::string match = std::string(title.array ? title.array : "") + ":" +
-                            (klass.array ? klass.array : "") + ":" +
-                            (exe.array ? exe.array : "");
-        dstr_free(&title);
-        dstr_free(&klass);
-        dstr_free(&exe);
-        if (!identified) {
-          data.reset();
-          throw std::runtime_error(
-              "The application audio target cannot be distinguished safely");
-        }
-        obs_data_set_string(data.get(), "window", match.c_str());
-        obs_data_set_int(data.get(), "priority", 0);
-        type = "wasapi_process_output_capture";
-#elif defined(__linux__)
-        data.reset();
-        if (!x11Available(extra.window, extra.pid, false))
-          throw std::runtime_error("The application audio target changed");
-        extra.application = createApplicationAudio(extra.pid, mask);
-        extra.source = applicationAudioSource(extra.application);
-#elif defined(__APPLE__)
-        data.reset();
-        extra.source = acroclip::macos::createApplicationAudio(
-            extra.window, extra.pid, extra.name);
-#else
-        data.reset();
-        throw std::runtime_error("Additional application audio is not "
-                                 "available on this platform yet");
-#endif
-      } else if (kind == "input") {
-        // Reserve the track without opening a microphone while muted.
-        if (!settings.value("muted", false)) {
-          extra.source = openMicrophone(extra.deviceId, extra.name);
-          extra.openedAt = os_gettime_ns();
-        }
-      } else if (kind == "output") {
-#ifdef _WIN32
-        if(automatic){acroclip::windows::ListenRouting routing;const auto key=L"output:"+acroclip::windows::ListenRouting::identity(routing.device(extra.deviceId).Get());if(!endpointIdentities.insert(key).second)throw std::runtime_error("This audio device is already included by another source");}
-#endif
-#ifdef __APPLE__
-        data.reset();
-        if (automatic && screenCapture && captureAudioEnabled) throw std::runtime_error("System audio is already included by Source audio");
-        if (extra.deviceId != "system")
-          throw std::runtime_error("Choose System audio. Individual output-device capture is unavailable on macOS");
-        extra.source = acroclip::macos::createSystemAudio(extra.name);
-#else
-        type = desktopType();
-        auto *properties = obs_get_source_properties(
-#ifdef _WIN32
-            "wasapi_output_capture"
-#elif defined(__linux__)
-            linuxOutputAudioType()
-#else
-            type
-#endif
-        );
-        auto *devices = properties ? obs_properties_get(properties, "device_id") : nullptr;
-        bool found = false;
-        if (devices)
-          for (size_t index = 0; index < obs_property_list_item_count(devices); ++index)
-            if (extra.deviceId == obs_property_list_item_string(devices, index) &&
-                !obs_property_list_item_disabled(devices, index)) found = true;
-        obs_properties_destroy(properties);
-        if (!found) throw std::runtime_error("The additional audio device is unavailable");
-        obs_data_set_string(data.get(), "device_id", extra.deviceId.c_str());
-#endif
-      } else {
-        data.reset();
-        throw std::runtime_error("The additional audio source kind is invalid");
-      }
-      if (type) {
-        bool registered = false;
-        const char *candidate = nullptr;
-        for (size_t index = 0; obs_enum_input_types(index, &candidate); index++)
-          if (std::string(candidate) == type)
-            registered = true;
-        if (!registered) {
-          data.reset();
-          throw std::runtime_error(
-              "This additional audio source is unavailable on this platform");
-        }
-        extra.source =
-            obs_source_create_private(type, extra.name.c_str(), data.get());
-        data.reset();
-        if (!extra.source)
-          throw std::runtime_error(
-              "The additional audio source could not be opened");
-        obs_source_set_audio_mixers(extra.source, mask);
-      }
-      if (extra.source) obs_source_set_audio_mixers(extra.source, mask);
-#ifdef __APPLE__
-      if (extra.source) {
-        acroclip::macos::watchInput(extra.source);
-      }
-#endif
-#ifdef _WIN32
-      audioHealth.watch(extra.source);
-#endif
-      additionalAudio.push_back(std::move(extra));
-      extraOwner.release();
 #ifdef __linux__
-      if (additionalAudio.back().application) {
-        std::string identity = additionalAudio.back().id;
-        setApplicationAudioLevelCallback(
-            additionalAudio.back().application, [this, identity](float value) {
-              if (active || monitoring)
-                emit({{"event", "audio-levels"},
-                      {"capture", captureLevel.load()},
-                      {"microphone", microphoneLevel.load()},
-                      {"additional", {{identity, value}}}});
-            });
-      }
+        if (additionalAudio.back().application) {
+          std::string identity = additionalAudio.back().id;
+          setApplicationAudioLevelCallback(
+              additionalAudio.back().application, [this, identity](float value) {
+                if (active || monitoring)
+                  emit({{"event", "audio-levels"},
+                        {"capture", captureLevel.load()},
+                        {"microphone", microphoneLevel.load()},
+                        {"additional", {{identity, value}}}});
+              });
+        }
 #endif
-      auto metering = std::make_shared<ExtraMeter>();
-      metering->owner = this;
-      metering->id = additionalAudio.back().id;
-      metering->meter = obs_volmeter_create(OBS_FADER_LOG);
-      obs_volmeter_add_callback(
-          metering->meter,
-          [](void *data, const float *, const float *peak, const float *) {
-            auto *meter = static_cast<ExtraMeter *>(data);
-            float value = 0;
-            for (size_t channel = 0; channel < 2; channel++)
-              if (std::isfinite(peak[channel]))
-                value = std::max(
-                    value, std::clamp((peak[channel] + 60.f) / 60.f, 0.f, 1.f));
-            accumulatePeak(meter->pendingPeak, value);
-            uint64_t now = os_gettime_ns(), last = meter->lastEvent.load();
-            if ((meter->owner->active || meter->owner->monitoring) && now - last >= 33000000 &&
-                meter->lastEvent.compare_exchange_strong(last, now))
-              emit({{"event", "audio-levels"},
-                    {"capture", meter->owner->captureLevel.load()},
-                    {"microphone", meter->owner->microphoneLevel.load()},
-                    {"additional", {{meter->id, meter->pendingPeak.exchange(0)}}}});
-          },
-          metering.get());
-      if (additionalAudio.back().source)
-        obs_volmeter_attach_source(metering->meter, additionalAudio.back().source);
-      additionalAudio.back().metering = std::move(metering);
-      obs_set_output_source(uint32_t(additionalAudio.size() + 2),
-                            additionalAudio.back().source);
-      setAudio({{"source", additionalAudio.back().id},
-                {"volume", settings.value("volume", 1.f)},
-                {"muted", settings.value("muted", false)},
-                {"filters", settings.value("filters", json::array())}});
+        auto metering = createMeter(additionalAudio.back().id);
+        if (additionalAudio.back().source)
+          obs_volmeter_attach_source(metering->meter, additionalAudio.back().source);
+        additionalAudio.back().metering = std::move(metering);
+        obs_set_output_source(uint32_t(additionalAudio.size() + 2),
+                              additionalAudio.back().source);
+        setAudio({{"source", additionalAudio.back().id},
+                  {"volume", settings.value("volume", 1.f)},
+                  {"muted", settings.value("muted", false)},
+                  {"filters", settings.value("filters", json::array())}});
+      };
+      const size_t named = audioNames.size(), added = additionalAudio.size();
+      try {
+        add();
+      } catch (const std::exception &error) {
+        // A source rejected before it got a track is a bad request, and capture refuses it.
+        if (audioNames.size() == named) {
+          if (!monitoring) throw;
+          blog(LOG_WARNING, "Monitoring skipped an audio source: %s", error.what());
+          continue;
+        }
+        // A device or app that can't open, like an unplugged microphone, must not cost the
+        // footage or the other sources. Its track stays silent and the warning names it.
+        const std::string name = settings.value("name", std::string("An audio source"));
+        blog(LOG_WARNING, "Audio source %s is silent: %s", name.c_str(), error.what());
+        if (audioSetupWarning.empty()) audioSetupWarning = name + ": " + error.what();
+        if (additionalAudio.size() != added) continue;
+        AdditionalAudio silent;
+        silent.id = settings.at("id").get<std::string>();
+        silent.name = name;
+        silent.kind = settings.at("kind").get<std::string>();
+        silent.deviceId = settings.value("deviceId", "default");
+        silent.isolatedMask = 1u << uint32_t(named);
+        silent.mixerMask = monitoring ? 0u : silent.isolatedMask | 1u;
+        silent.outputChannel = uint32_t(additionalAudio.size() + 3);
+        // Unmuting a microphone opens it again, so one plugged back in recovers.
+        silent.managedInput = silent.kind == "input";
+        additionalAudio.push_back(std::move(silent));
+      }
+    }
+    routeMaster();
+  }
+  // Which device or process a source hears, so two sources that hear the same thing are known.
+  std::string audioIdentity(const std::string &kind, const std::string &deviceId) {
+#ifdef _WIN32
+    try {
+      acroclip::windows::ListenRouting routing;
+      return kind + ":" + utf8(acroclip::windows::ListenRouting::identity(routing.device(deviceId, kind == "input" ? eCapture : eRender).Get()));
+    } catch (const std::exception &) {
+      // An unavailable device is silent anyway. Its own id still tells it apart.
+    }
+#endif
+    return kind + ":" + deviceId;
+  }
+  /**
+   * Master holds every source once. A source that hears what Source audio or an earlier source
+   * already holds, such as Discord added while capturing Discord, keeps its own track and stays
+   * out of Master, so nothing plays twice there.
+   */
+  void routeMaster() {
+    if (monitoring || !sessionConfiguration.value("automaticMaster", false)) return;
+    std::set<std::string> heard;
+    if (captureEnabled && captureAudioEnabled) {
+      if (screenCapture) heard.insert(audioIdentity("output",
+#ifdef __APPLE__
+                                                   "system"
+#else
+                                                   "default"
+#endif
+                                                   ));
+      else if (targetProcess) heard.insert("application:" + std::to_string(targetProcess.load()));
+    }
+    for (auto &extra : additionalAudio) {
+      const std::string identity = extra.kind == "application" ? "application:" + std::to_string(extra.pid) : audioIdentity(extra.kind, extra.deviceId);
+      const bool duplicate = !heard.insert(identity).second;
+      if (duplicate) blog(LOG_INFO, "Audio source %s repeats another source. It keeps its own track outside Master", extra.name.c_str());
+      extra.mixerMask = extra.isolatedMask | (duplicate ? 0u : 1u);
+      if (extra.source) obs_source_set_audio_mixers(extra.source, extra.mixerMask);
     }
   }
 public:
@@ -1890,6 +2019,7 @@ private:
     j.request = r;
     j.request.source = bufferedSourceName;
     j.request.sourceId = bufferedSourceId;
+    j.request.tag = clipTag(r.tag, bufferedSourceName, bufferedSourceId);
     j.end = end;
     j.reduceOverlap = avoidOverlap;
     j.width = width;
@@ -1912,6 +2042,23 @@ private:
     if ((!sessionConfiguration.value("automaticMaster", false) || sessionConfiguration.value("sourceAudioPresent", false)) && j.audioNames.size() > 1)
       j.audioNames[1] = bufferedScreen ? "Desktop" : "Application";
     clipWriter->submit(std::move(j));
+  }
+  /**
+   * The app describes the application it expects. The footage may predate a source switch, so the
+   * application only stays when the buffered source is the one the app named, and the source name
+   * always comes from the footage itself.
+   */
+  static std::string clipTag(const std::string &requested, const std::string &source, const std::string &sourceId) {
+    try {
+      json tag = json::parse(requested, nullptr, false);
+      if (!tag.is_object()) return {};
+      if (tag.value("sourceId", std::string()) != sourceId) tag.erase("application");
+      tag.erase("sourceId");
+      tag["source"] = source;
+      return tag.dump();
+    } catch (const std::exception &) {
+      return {};
+    }
   }
 public:
   void save(const json &c) {
@@ -1940,6 +2087,7 @@ public:
             : c.value("requestAgeMs", int64_t(0));
     Request r{c.at("requestId"), c.at("path"), sourceName,
               int64_t(os_gettime_ns() / 1000) - age * 1000};
+    r.tag = c.value("tag", std::string());
     clipWriter->accept();
     requests.push_back(r);
     emit({{"event", "saving"}, {"requestId", r.id}});
@@ -2322,16 +2470,6 @@ public:
 #ifdef __APPLE__
     if (target) targetPid = acroclip::macos::captureProcess(target);
 #endif
-    if(sessionConfiguration.value("automaticMaster",false) && c.value("captureAudio",sessionConfiguration.value("captureAudio",true))) {
-      try {
-        for(const auto &extra:additionalAudio)if(extra.source) {
-          if(kind=="app" && extra.kind=="application" && extra.pid==targetPid)throw std::runtime_error("This application is already included by another audio source");
-#ifdef _WIN32
-          if(kind=="screen" && extra.kind=="output"){acroclip::windows::ListenRouting routing;if(routing.same("default",extra.deviceId))throw std::runtime_error("This output is already included by Source audio");}
-#endif
-        }
-      }catch(...){obs_source_release(next);throw;}
-    }
 #ifdef __linux__
     std::unique_ptr<ApplicationAudio, decltype(&destroyApplicationAudio)> nextAudio(
         nullptr, &destroyApplicationAudio);
@@ -2458,10 +2596,7 @@ public:
 #else
         screenCapture ? desktop : capture;
 #endif
-    if(sessionConfiguration.value("automaticMaster",false))for(auto &extra:additionalAudio) {
-      extra.mixerMask = extra.isolatedMask | 1u;
-      if(extra.source)obs_source_set_audio_mixers(extra.source, extra.mixerMask);
-    }
+    routeMaster();
     configureDesktopExclusions(sessionConfiguration);
     if (audioSource) {
       obs_source_set_volume(audioSource, captureVolume);
@@ -2709,7 +2844,16 @@ public:
     // Destruction belongs to the command thread, never an encoder callback.
     if (encoderFailed.exchange(false))
       stop();
-    refreshCapture();
+    // A capture method fallback can fail when its source vanishes mid-switch. Status still
+    // answers, so the app sees what capture is doing now rather than a failed poll.
+    try {
+      refreshCapture();
+      refreshFailure.clear();
+    } catch (const std::exception &error) {
+      if (refreshFailure != error.what())
+        blog(LOG_WARNING, "Capture refresh failed: %s", error.what());
+      refreshFailure = error.what();
+    }
     std::lock_guard<std::mutex> lock(mutex);
     checkDeliveryGap();
     // Audio can arrive before the video encoder delivers usable footage.
@@ -2765,6 +2909,7 @@ public:
     }
 #endif
     std::string audioWarning = additionalAudioError();
+    if (audioWarning.empty()) audioWarning = audioSetupWarning;
 #ifdef __linux__
     const auto sourceAudioError = captureAudioError();
     if (audioWarning.empty()) audioWarning = sourceAudioError;
@@ -2808,6 +2953,10 @@ public:
     if (captureError.empty() && active && captureEnabled && !captureImageReady)
       captureError = "Waiting for an image from the selected source";
 #endif
+    // The canvas settles on the first frames' size before footage starts. That is still startup,
+    // not a lost screen.
+    if (captureError.empty() && active && waitingForPresetSize)
+      captureError = "Waiting for an image from the selected source";
     if (captureError.empty() && active && screenCapture &&
         !targetAvailable())
       captureError = "The selected screen is unavailable";
@@ -3131,14 +3280,24 @@ int main(int argc, char **argv) {
             r.monitorAudio(c);
           else if (action == "audio")
             r.setAudio(c);
+          else if (action == "attach-audio")
+            r.attachAudio(c);
 #ifdef __linux__
           else if (action == "test-close-portal" &&
                    std::getenv("ACROCLIP_NATIVE_TEST_PORTAL")) {
             r.closePortalSession();
           }
 #endif
-          else if (action == "exit")
-            break;
+          else if (action == "exit") {
+            // The app sends this once every save has reported back. Tearing OBS down takes 3 to 4 s
+            // (capture, encoders, devices, the game hook, obs_shutdown), and the system releases all
+            // of it with the process anyway. Only clip writes still in flight need to finish.
+            r.finishWrites();
+            blog(LOG_INFO, "Recorder shutdown: clip writes finished, exiting");
+            std::cout.flush();
+            std::fflush(stderr);
+            std::_Exit(0);
+          }
           else if (action == "candidates") {
 #if defined(_WIN32) || defined(__linux__)
             emit({{"event", "candidates"}, {"windows", captureCandidates()}});

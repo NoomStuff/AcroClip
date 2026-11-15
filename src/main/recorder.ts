@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { stoppedRecorder } from "../shared/defaults";
 import type {
+   AdditionalAudioSource,
    ApplicationArtwork,
    AudioLevels,
    CaptureSource,
@@ -20,15 +21,20 @@ import type {
    SourceKind,
 } from "../shared/types";
 import { GameCatalog, selectGame } from "./games";
+import type { ClipTag } from "../shared/clip-tag";
 import { nativeAudioPreferences } from "../shared/audio-model";
 import type { AudioFilter } from "../shared/audio-filters";
-import { resolveAudioSources } from "./audio-sources";
+import { missingAudioWarning, resolveAudioSources } from "./audio-sources";
 import { resolveReplayMemoryMB } from "../shared/replay-memory";
 
 export type RecorderErrorContext = "capture" | "save" | "saved-clip";
 /** The helper never answered. Unlike a refusal, the request may still complete. */
 export class CaptureTimeout extends Error {
    override readonly name = "CaptureTimeout";
+}
+/** AcroClip closed the helper on purpose, such as to exit or update, while a request was waiting. */
+export class CaptureClosed extends Error {
+   override readonly name = "CaptureClosed";
 }
 
 interface RecorderOptions {
@@ -44,6 +50,8 @@ interface RecorderOptions {
       capture: { previousFootage: boolean; secondsSinceCapture: number; application?: ApplicationArtwork }
    ) => void | Promise<void>;
    onError: (message: string, context: RecorderErrorContext) => void;
+   /** A problem worth a line in the app log that changes nothing for the user. */
+   onWarning?: (message: string) => void;
    onAudioMonitorError?: (message: string, listeningError?: string) => void;
    onAudioLevels?: (levels: AudioLevels) => void;
    /** The helper's own log (OBS's), for the local recorder log. Never shown to the user. */
@@ -90,6 +98,8 @@ interface NativeMessage {
    bufferedSourceKind?: "screen" | "app";
 }
 
+/** Requests the app repeats on its own. Their errors are never answered by the user. */
+const pollActions = new Set(["status", "windows", "candidates", "audio-devices"]);
 /** How long one application discovery answers repeated questions. */
 const APPLICATION_REUSE_MS = 500;
 /** How long the helper may take to exit after every save has finished. */
@@ -106,6 +116,12 @@ export class Recorder {
    private readyResolve: (() => void) | null = null;
    private readyReject: ((reason: Error) => void) | null = null;
    private source = "Screen";
+   private pollWarning = "";
+   /** Application audio sources that weren't open when capture started. Their tracks stay silent. */
+   private missingAudio = "";
+   /** Application sources that weren't open when capture started. Windows attaches each once its app opens. */
+   private pendingAudio: AdditionalAudioSource[] = [];
+   private attachingAudio = false;
    private requests = new Map<string, string>();
    private fullscreen = false;
    private windowsResolve: (() => void) | null = null;
@@ -127,6 +143,8 @@ export class Recorder {
    private autoFailure = "";
    private autoGeneration = 0;
    private focused = new Map<string, number>();
+   /** The game in front and since when, so capture waits before following a quick alt-tab. */
+   private foregroundSince: { id: string; at: number } | undefined;
    private encoders: string[] = [];
    private captureBackend: "wayland-portal" | undefined;
    private applicationBackend: "xwayland" | undefined;
@@ -140,6 +158,7 @@ export class Recorder {
    private monitorGeneration = 0;
    private monitorLevels: AudioLevels = { capture: 0, microphone: 0 };
    private fastStatusUntil = 0;
+   private background = false;
    constructor(options: RecorderOptions) {
       this.options = options;
       this.catalog = new GameCatalog(options.gameCatalogPath ?? path.join(process.cwd(), ".cache", "game-catalog.json"), options.onCatalogWarning);
@@ -164,8 +183,12 @@ export class Recorder {
    updatePreferences(preferences: Preferences): void {
       if (this.autoPreferences && preferences.sourceKind === "auto") this.autoPreferences = preferences;
    }
+   /** While AcroClip is in the background, status and game checks run every 2 s instead of every second. */
+   setBackground(background: boolean): void {
+      this.background = background;
+   }
    async foregroundFullscreen(): Promise<boolean> {
-      if (this.process) this.send({ action: "status" });
+      this.poll();
       return this.fullscreen;
    }
    async audioDevices(kind: "input" | "output" = "input"): Promise<Array<{ id: string; name: string }>> {
@@ -233,8 +256,17 @@ export class Recorder {
       const candidates = (await this.capturableApplications()).filter((candidate) => candidate.pid !== process.pid);
       const games = this.catalog.match(candidates, additions);
       return candidates.map((candidate) => {
-         const gameName = games.find((game) => game.id === candidate.id)?.gameName;
-         return { ...candidate, ...(gameName ? { gameName } : {}) };
+         const game = games.find((item) => item.id === candidate.id);
+         return game ? { ...candidate, gameId: game.gameId, gameName: game.gameName } : candidate;
+      });
+   }
+   /** Adds the catalog game to each recognized window, so clips can follow the game rather than its install path. */
+   async identifyGames(candidates: GameCandidate[]): Promise<GameCandidate[]> {
+      await this.catalog.load();
+      const games = this.catalog.match(candidates, []);
+      return candidates.map((candidate) => {
+         const game = games.find((item) => item.id === candidate.id);
+         return game ? { ...candidate, gameId: game.gameId, gameName: game.gameName } : candidate;
       });
    }
    async capturableApplications(): Promise<GameCandidate[]> {
@@ -310,7 +342,9 @@ export class Recorder {
       const candidates = (await this.capturableApplications()).filter((candidate) => candidate.pid !== process.pid);
       const games = this.catalog.match(candidates, preferences.customGames);
       for (const game of games) if (game.foreground) this.focused.set(game.id, Date.now());
-      const selected = selectGame(games, this.current.sourceKind === "app" ? (this.current.sourceId ?? null) : null, this.focused);
+      const foreground = games.find((game) => game.foreground);
+      if (foreground?.id !== this.foregroundSince?.id) this.foregroundSince = foreground ? { id: foreground.id, at: Date.now() } : undefined;
+      const selected = selectGame(games, this.current.sourceKind === "app" ? (this.current.sourceId ?? null) : null, this.focused, this.foregroundSince);
       if (selected)
          return {
             ...nativeAudioPreferences(preferences),
@@ -358,6 +392,35 @@ export class Recorder {
          this.autoBusy = false;
       }
    }
+   /**
+    * Gives a silent application track its audio once the app opens, without restarting capture. Only
+    * runs while a source is still waiting, so it costs nothing otherwise. A source the helper refuses
+    * stays silent for the rest of the session instead of being retried every tick.
+    */
+   private async attachPendingAudio(): Promise<void> {
+      if (this.attachingAudio || !this.pendingAudio.length || process.platform !== "win32" || !["recording", "waiting"].includes(this.current.state)) return;
+      this.attachingAudio = true;
+      try {
+         const { sources } = resolveAudioSources(this.pendingAudio, await this.capturableApplications());
+         for (const source of sources.filter((item) => item.enabled)) {
+            this.pendingAudio = this.pendingAudio.filter((item) => item.id !== source.id);
+            try {
+               await this.command({ action: "attach-audio", settings: source });
+            } catch (error) {
+               this.options.onWarning?.(`${source.name} opened, but its audio couldn't be added: ${error instanceof Error ? error.message : String(error)}`);
+            }
+         }
+         // The next status report carries the shorter list.
+         this.missingAudio = missingAudioWarning(
+            this.pendingAudio.map((source) => source.name),
+            true
+         );
+      } catch {
+         /* Discovery failing just waits for the next tick. */
+      } finally {
+         this.attachingAudio = false;
+      }
+   }
    private configurationKey(configuration: Record<string, unknown>): string {
       return `${configuration["resolvedKind"]}:${configuration["sourceId"]}:${configuration["pid"] ?? ""}`;
    }
@@ -368,9 +431,26 @@ export class Recorder {
    private error(message: string, context: RecorderErrorContext = "capture"): void {
       this.options.onError(message, context);
    }
+   /**
+    * Asks for status without expecting an answer. A timer can fire while the helper exits, and a
+    * throw from a timer would crash the app, so a closed pipe just skips this poll.
+    */
+   private poll(): void {
+      if (this.process?.stdin.writable) this.send({ action: "status" });
+   }
    private send(value: Record<string, unknown>): void {
       if (!this.process?.stdin.writable) throw new Error("Capture isn't running. Start capturing and try again.");
       this.process.stdin.write(`${JSON.stringify(value)}\n`);
+   }
+   /** Answers every waiting request once the helper is gone. */
+   private rejectCommands(): void {
+      for (const command of this.commands.values()) {
+         clearTimeout(command.timeout);
+         command.reject(
+            this.expectedExit ? new CaptureClosed("Capture closed before this finished.") : new Error("Capture stopped unexpectedly. Start capturing again.")
+         );
+      }
+      this.commands.clear();
    }
    private command(value: Record<string, unknown>, onNotAccepted: () => void = () => undefined): Promise<void> {
       const id = randomUUID();
@@ -414,11 +494,7 @@ export class Recorder {
       const ready = this.ready;
       child.stdin.on("error", (error: Error) => {
          this.readyReject?.(error);
-         for (const command of this.commands.values()) {
-            clearTimeout(command.timeout);
-            command.reject(new Error("Capture stopped unexpectedly. Start capturing again."));
-         }
-         this.commands.clear();
+         this.rejectCommands();
          // A write racing a deliberate exit or kill breaks the pipe; that is not a capture failure.
          if (!this.expectedExit) this.error("Capture stopped unexpectedly. Start capturing again.");
       });
@@ -476,11 +552,7 @@ export class Recorder {
             if (unexpected && this.current.state !== "error") this.error(message);
             this.requests.clear();
             this.requestArtwork.clear();
-            for (const command of this.commands.values()) {
-               clearTimeout(command.timeout);
-               command.reject(new Error("Capture stopped unexpectedly. Start capturing again."));
-            }
-            this.commands.clear();
+            this.rejectCommands();
             this.update({ state: unexpected ? "error" : "stopped", message, availableSeconds: 0, startedAt: null, pendingSaves: 0 });
             resolve();
          })
@@ -501,11 +573,13 @@ export class Recorder {
       await this.refreshWindows();
       // Status polls also advance the native canvas fit. Poll quickly while a
       // source is starting so footage begins sooner, then settle to once a second.
+      // In the background the steady rate halves, so a running game keeps the machine.
       let tick = 0;
       this.timer = setInterval(() => {
-         const steady = tick++ % 4 === 0;
-         if (this.process && (steady || Date.now() < this.fastStatusUntil)) this.send({ action: "status" });
+         const steady = tick++ % (this.background ? 8 : 4) === 0;
+         if (steady || Date.now() < this.fastStatusUntil) this.poll();
          if (steady) void this.followGame();
+         if (steady) void this.attachPendingAudio();
       }, 250);
    }
    private message(value: NativeMessage): void {
@@ -621,6 +695,7 @@ export class Recorder {
          if (typeof value.monitorMessage === "string") this.options.onAudioMonitorError?.(value.monitorMessage, value.listeningMessage ?? "");
          this.fullscreen = value.fullscreen === true;
          this.update({
+            foregroundFullscreen: this.fullscreen,
             ...(value.active && this.current.state !== "error"
                ? {
                     state: value.waiting ? ("waiting" as const) : ("recording" as const),
@@ -628,7 +703,7 @@ export class Recorder {
                        ? // The helper's default waiting text names a game, which is wrong for a chosen application.
                          (value.message && (this.autoPreferences || value.message !== "Waiting for game") ? value.message : "") ||
                          this.autoFailure ||
-                         (this.autoPreferences ? "Waiting for game" : "Waiting for application")
+                         (this.autoPreferences ? "Waiting for game" : value.sourceKind === "screen" ? "Waiting for the screen" : "Waiting for application")
                        : this.autoFailure
                          ? `Capturing current source. ${this.autoFailure}`
                          : value.sourceKind === "screen" && this.autoPreferences
@@ -641,7 +716,7 @@ export class Recorder {
             ...(value.sourceId !== undefined ? { sourceId: value.sourceId } : {}),
             ...(value.source !== undefined ? { sourceName: value.source } : {}),
             ...(value.sourceKind !== undefined ? { sourceKind: value.sourceKind } : {}),
-            ...(value.audioWarning !== undefined ? { audioWarning: value.audioWarning } : {}),
+            ...(value.audioWarning !== undefined ? { audioWarning: value.audioWarning || this.missingAudio } : {}),
             ...(value.historyWarning !== undefined ? { historyWarning: value.historyWarning } : {}),
             ...(value.bufferedSource !== undefined ? { bufferedSourceName: value.bufferedSource } : {}),
             ...(value.bufferedSourceId !== undefined ? { bufferedSourceId: value.bufferedSourceId } : {}),
@@ -670,6 +745,16 @@ export class Recorder {
                this.update({ pendingSaves: this.requests.size });
             });
       }
+      // Status polls and queries carry no command id. Their next answer reports the real state, so a
+      // failure in one, like a source that closed between polls, is not a capture failure.
+      if (value.event === "error" && !value.id && !value.requestId && value.action && pollActions.has(value.action)) {
+         const warning = `${value.action}: ${value.message ?? "failed"}`;
+         // A poll repeats every second. The log keeps one line per new problem.
+         if (warning !== this.pollWarning) this.options.onWarning?.(warning);
+         this.pollWarning = warning;
+         return;
+      }
+      if (value.event === "status") this.pollWarning = "";
       if (value.event === "error") {
          if (value.requestId) {
             this.requests.delete(value.requestId);
@@ -750,10 +835,13 @@ export class Recorder {
          await this.initialize();
          if (!this.audioMonitor) throw new Error("Restart AcroClip to enable audio monitoring.");
          const candidates = await this.applicationCandidates();
+         // An application that isn't open has nothing to meter. The rest still move.
          const sources: Array<Record<string, unknown>> = resolveAudioSources(
             audio.audioSources.filter((source) => source.enabled),
             candidates
-         ).map((source) => ({ ...source }));
+         )
+            .sources.filter((source) => source.enabled)
+            .map((source) => ({ ...source }));
          if (audio.microphone)
             sources.push({
                id: "monitor-microphone",
@@ -771,7 +859,7 @@ export class Recorder {
                   : preferences.sourceKind === "auto"
                     ? selectGame(this.catalog.match(candidates, preferences.customGames), null, this.focused)
                     : undefined;
-            if (preferences.sourceKind === "app" && !target) throw new Error("Capture audio source unavailable. Choose an application.");
+            // A chosen app that isn't open has no audio to meter. The other sources still move.
             if (target)
                sources.push({
                   id: "monitor-capture",
@@ -825,6 +913,8 @@ export class Recorder {
    }
    async start(preferences: Preferences, sources: CaptureSource[] = []): Promise<void> {
       this.autoFailure = "";
+      this.missingAudio = "";
+      this.pendingAudio = [];
       this.monitorGeneration++;
       this.monitorKey = "";
       this.monitorLevels = { capture: 0, microphone: 0 };
@@ -832,9 +922,15 @@ export class Recorder {
       try {
          await this.initialize();
          const configuration = await this.configuration(preferences, sources);
-         configuration["audioSources"] = resolveAudioSources(
+         const audio = resolveAudioSources(
             nativeAudioPreferences(preferences).audioSources,
             preferences.audioSources.some((source) => source.enabled && source.kind === "application") ? await this.capturableApplications() : []
+         );
+         configuration["audioSources"] = audio.sources;
+         this.missingAudio = missingAudioWarning(audio.missing, process.platform === "win32");
+         const silent = new Set(audio.sources.filter((source) => !source.enabled).map((source) => source.id));
+         this.pendingAudio = nativeAudioPreferences(preferences).audioSources.filter(
+            (source) => source.enabled && source.kind === "application" && silent.has(source.id)
          );
          this.fastStatusUntil = Date.now() + 8000;
          await this.command({
@@ -885,9 +981,18 @@ export class Recorder {
       if (!file) throw new Error("A destination path is required for the clip");
       const requestId = randomUUID();
       this.requests.set(requestId, file);
-      if (application) this.requestArtwork.set(requestId, { application, sourceId: this.current.bufferedSourceId || this.current.sourceId || "" });
+      const sourceId = this.current.bufferedSourceId || this.current.sourceId || "";
+      if (application) this.requestArtwork.set(requestId, { application, sourceId });
       this.update({ pendingSaves: this.requests.size });
-      await this.command({ action: "save", path: file, requestId, requestedAt, requestAgeMs: Math.max(0, Date.now() - requestedAt) }, () => {
+      // The recorder adds the footage's source name and drops the application if the footage predates it.
+      const tag = {
+         version: 1,
+         savedAt: Math.round(requestedAt),
+         ...(application ? { application: { id: application.id, ...(application.name ? { name: application.name } : {}) } } : {}),
+         sourceId,
+      } satisfies ClipTag & { sourceId: string };
+      const command = { action: "save", path: file, requestId, requestedAt, requestAgeMs: Math.max(0, Date.now() - requestedAt), tag: JSON.stringify(tag) };
+      await this.command(command, () => {
          this.requests.delete(requestId);
          this.requestArtwork.delete(requestId);
          this.update({ pendingSaves: this.requests.size });
@@ -909,7 +1014,8 @@ export class Recorder {
          await exited;
          return;
       }
-      if (this.current.state !== "stopped" || this.requests.size) this.send({ action: "stop" });
+      // Stopping drains saves still waiting for their footage. With none, the helper can exit as it is.
+      if (this.requests.size) this.send({ action: "stop" });
       while (this.requests.size && this.process) await new Promise<void>((resolve) => setTimeout(resolve, 100));
       if (this.process) {
          this.expectedExit = true;

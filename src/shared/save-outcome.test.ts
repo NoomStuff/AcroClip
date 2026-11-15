@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { saveOutcomeNotice } from "./save-outcome";
+import { saveOutcomeNotice, savingNotice } from "./save-outcome";
 
 describe("save outcome notices", () => {
+   it("says up front when a save will extend the last clip", () => {
+      expect(savingNotice()).toBe("Saving clip…");
+      expect(savingNotice(150.4)).toBe("Extending clip to 2:30");
+   });
    it("says what a save did", () => {
       expect(saveOutcomeNotice({ kind: "saved", previousFootage: false })).toEqual({ message: "Clip saved" });
       expect(saveOutcomeNotice({ kind: "saved", previousFootage: true })).toEqual({ message: "Saved the footage that was still available" });

@@ -9,10 +9,13 @@ export interface ApplicationArtwork {
    id: string;
    icon: string;
    name?: string;
+   /** Ids this application had under older schemes. Clips saved under them move to `id`. */
+   previousIds?: string[];
 }
 export interface CaptureSource {
    applicationName?: string;
    applicationId?: string;
+   previousApplicationIds?: string[];
    appIcon?: string;
    id: string;
    name: string;
@@ -31,10 +34,16 @@ export interface GameCandidate {
    pixelSize?: { width: number; height: number };
    foreground: boolean;
    fullscreen: boolean;
+   /** The screen a fullscreen window fills, in physical pixels. Windows only. */
+   monitor?: { left: number; top: number; right: number; bottom: number } | null;
    arguments?: string;
    runtime?: "wine";
    runtimeExecutable?: string;
+   /** The catalog or custom game this window belongs to. */
+   gameId?: string;
    gameName?: string;
+   /** The short name the library uses for this app, like "Discord" rather than its window title. */
+   applicationName?: string;
 }
 export interface GameCatalogSnapshot {
    source: "saved" | "built-in";
@@ -198,6 +207,8 @@ export interface RecorderState {
    bufferedSourceName?: string;
    bufferedSourceId?: string;
    bufferedSourceKind?: "screen" | "app";
+   /** A fullscreen window, usually a game, is in front. */
+   foregroundFullscreen?: boolean;
 }
 export interface AvailableUpdate {
    version: string;
@@ -226,6 +237,8 @@ export interface UpdateState {
 export interface AppState {
    storageWarning?: string;
    windowVisible: boolean;
+   /** AcroClip has been unfocused for a while or sits behind a fullscreen app, so pages pause their own polling. */
+   background: boolean;
    preferences: Preferences;
    clips: Clip[];
    collectionStatus: {

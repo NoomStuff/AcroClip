@@ -1,4 +1,5 @@
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import type { BigIntStats } from "node:fs";
 import { copyFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
@@ -10,6 +11,7 @@ import type { ApplicationArtwork } from "../shared/types";
 import type { Category, Clip, FolderContents, Job, Shareable } from "../shared/types";
 import { collectionFolder, folderContents, folderName } from "./collection-folders";
 import { normalizeApplicationLabel } from "./application-identity";
+import { safeFileStem } from "../shared/filename";
 import { createKeyframeStrip, createThumbnail, encodeShareable, keyframeStripColumns, keyframeStripFrames, probe } from "./media";
 import type { MediaInfo } from "./media";
 import { PlaybackCache } from "./playback";
@@ -28,6 +30,15 @@ type StripJob = {
    run: () => Promise<KeyframeStrip | null>;
    settle: (result: Promise<KeyframeStrip | null>) => void;
 };
+/**
+ * Explorer shows dot folders, so on Windows the metadata folder gets the Hidden attribute. Anyone
+ * tidying their clips would otherwise see an unknown folder and delete their tags with it.
+ * Other platforms already hide dot folders. A failure only leaves the folder visible.
+ */
+function hideFolder(path: string): void {
+   if (process.platform !== "win32") return;
+   spawn("attrib", ["+h", path], { windowsHide: true, stdio: "ignore" }).on("error", () => undefined);
+}
 const thumbnailName = (identity: string) => `${identity}.last-keyframe-v1.jpg`;
 const fileSchema = z.object({ relativePath: z.string(), absolutePath: z.string(), identity: z.string() });
 const shareSchema = fileSchema.extend({
@@ -78,6 +89,8 @@ const metadataSchema = z
       clips: z.array(clipSchema),
       // When this collection started recording views. Older clips count as watched.
       viewsTrackedSince: z.number().optional(),
+      // The folder each application's clips go to when they're grouped by application, by application id.
+      applicationFolders: z.record(z.string().max(512), z.string().max(255)).optional(),
    })
    .superRefine((metadata, context) => {
       const unique = (ids: string[], path: (string | number)[]) => {
@@ -237,6 +250,24 @@ export class CollectionService {
       const root = this.root;
       let changed = false;
       for (const art of artworks) {
+         // Clips saved under an older id scheme join the stable id, keeping their own name and icon file.
+         const previous = new Set(art.previousIds ?? []);
+         previous.delete(art.id);
+         const moved = new Set<string>();
+         for (const clip of this.metadata.clips)
+            if (clip.application && previous.has(clip.application.id)) {
+               if (!this.applicationIcons[art.id] && this.applicationIcons[clip.application.id])
+                  this.applicationIcons = { ...this.applicationIcons, [art.id]: this.applicationIcons[clip.application.id]! };
+               clip.application = { ...clip.application, id: art.id };
+               moved.add(clip.id);
+            }
+         const folders = this.metadata.applicationFolders;
+         const folder = folders && !folders[art.id] ? [...previous].map((id) => folders[id]).find((value) => value !== undefined) : undefined;
+         if (folder) this.metadata.applicationFolders = { ...folders, [art.id]: folder };
+         if (moved.size || folder) {
+            this.clips = this.clips.map((entry) => (moved.has(entry.id) ? { ...entry, applicationId: art.id } : entry));
+            changed = true;
+         }
          const clips = this.metadata.clips.filter((clip) => clip.application?.id === art.id);
          if (
             !clips.length ||
@@ -244,7 +275,8 @@ export class CollectionService {
          )
             continue;
          const saved = await storeApplicationArtwork(root, art);
-         if (this.root !== root || !saved) return;
+         if (this.root !== root) return;
+         if (!saved) continue;
          for (const clip of clips) clip.application = { ...clip.application!, ...saved };
          this.clips = this.clips.map((clip) => (clip.applicationId === art.id && art.name ? { ...clip, source: art.name } : clip));
          if (saved.iconFile) this.applicationIcons = { ...this.applicationIcons, [art.id]: art.icon };
@@ -447,6 +479,7 @@ export class CollectionService {
       this.playbackLifetime = new AbortController();
       this.root = nextRoot;
       await this.safeDirectory(join(this.root, ".acroclip"));
+      hideFolder(join(this.root, ".acroclip"));
       this.playbackCache.cancelAll();
       this.cache.clear();
       this.identities.clear();
@@ -928,6 +961,7 @@ export class CollectionService {
                const rel = relative(this.root, actual);
                let stored = byPath.get(rel)?.find((clip) => clip.identity === identity && !used.has(clip.id));
                stored ??= byIdentity.get(identity)?.find((clip) => !used.has(clip.id) && !currentRelativePaths.has(clip.relativePath));
+               const discovered = !stored;
                if (!stored) {
                   stored = {
                      id: randomUUID(),
@@ -946,8 +980,16 @@ export class CollectionService {
                stored.relativePath = rel;
                stored.absolutePath = actual;
                const cached = await this.cachedMedia(actual, identity, fileStat, thumbnails, stored.preview);
+               const { tag, ...info } = cached.info;
+               // A clip this collection hasn't seen, like one moved in from elsewhere or one whose
+               // metadata was lost, takes its game and save time from the tag AcroClip wrote into it.
+               if (discovered && tag) {
+                  if (tag.source) stored.source = tag.source;
+                  if (tag.application) stored.application = { id: tag.application.id, ...(tag.application.name ? { name: tag.application.name } : {}) };
+                  if (tag.savedAt) stored.createdAt = tag.savedAt;
+               }
                stored.previewUnavailable = undefined;
-               stored.preview = { stamp: fileStamp(fileStat), size: Number(fileStat.size), info: cached.info };
+               stored.preview = { stamp: fileStamp(fileStat), size: Number(fileStat.size), info };
                const recordingSource = this.registeringSources.get(normal(actual));
                if (recordingSource !== undefined) stored.source = recordingSource;
                result.push(
@@ -1253,19 +1295,41 @@ export class CollectionService {
       await this.writeMetadata();
       await this.scan();
    }
-   async registerRecording(path: string, source: string, application?: ApplicationArtwork): Promise<Clip> {
+   /** `grouped` says the clip went to its application's folder, which new clips of that application then keep using. */
+   async registerRecording(path: string, source: string, application?: ApplicationArtwork, grouped = false): Promise<Clip> {
       const actual = await realpath(path);
       if (!withinRoot(this.root, actual)) throw new Error("The saved clip is outside the collection.");
       // Registration scans publish library updates before this method returns.
       // Give those scans the known source before they expose the new recording.
       this.registeringSources.set(normal(actual), source);
       try {
-         return await this.registerKnownRecording(actual, source, application);
+         return await this.registerKnownRecording(actual, source, application, grouped);
       } finally {
          this.registeringSources.delete(normal(actual));
       }
    }
-   private async registerKnownRecording(actual: string, source: string, application?: ApplicationArtwork): Promise<Clip> {
+   /**
+    * The folder, relative to the collection, that new clips of an application go to when clips are
+    * grouped by application. An application keeps the folder its first clip went to, so a name that
+    * resolves differently later, or a renamed game, doesn't split its clips. If that folder is gone,
+    * the current name starts a new one.
+    */
+   applicationFolder(applicationId: string | undefined, name: string): string {
+      const remembered = applicationId ? this.metadata.applicationFolders?.[applicationId] : undefined;
+      if (remembered && this.root && existsSync(join(this.root, remembered))) return remembered;
+      return safeFileStem(name);
+   }
+   private rememberApplicationFolder(applicationId: string, path: string): void {
+      const folder = relative(this.root, dirname(path));
+      // Only a folder directly inside the collection is an application folder.
+      if (!folder || folder.startsWith("..") || isAbsolute(folder) || folder.includes(sep)) return;
+      const remembered = this.metadata.applicationFolders?.[applicationId];
+      if (remembered === folder || (remembered && existsSync(join(this.root, remembered)))) return;
+      // Windows without a known executable get a new id each session, so the oldest entries make way.
+      const entries = Object.entries(this.metadata.applicationFolders ?? {}).filter(([id]) => id !== applicationId);
+      this.metadata.applicationFolders = Object.fromEntries([...entries.slice(-499), [applicationId, folder]]);
+   }
+   private async registerKnownRecording(actual: string, source: string, application?: ApplicationArtwork, grouped = false): Promise<Clip> {
       await this.scan();
       let clip = this.clips.find((entry) => normal(entry.path) === normal(actual));
       if (!clip) {
@@ -1276,6 +1340,7 @@ export class CollectionService {
       }
       if (!clip) throw new Error("The capture finished, but could not be opened. Its file has been kept.");
       this.stored(clip.id).source = source;
+      if (application && grouped) this.rememberApplicationFolder(application.id, actual);
       if (application) {
          try {
             const stored = await storeApplicationArtwork(this.root, application);

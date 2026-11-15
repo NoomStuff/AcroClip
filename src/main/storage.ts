@@ -1,4 +1,5 @@
 import { statfs } from "node:fs/promises";
+import { dirname } from "node:path";
 
 const lowStorageBytes = 1024n * 1024n * 1024n;
 const checkInterval = 30_000;
@@ -9,9 +10,21 @@ interface StorageOptions {
    onWarning: (message: string) => void;
    readSpace?: SpaceReader;
 }
-async function availableSpace(directory: string): Promise<bigint> {
-   const stats = await statfs(directory, { bigint: true });
-   return stats.bavail * stats.bsize;
+/**
+ * Free space on the volume that holds `directory`. A collection folder that was deleted, or not
+ * made yet, is recreated by the next save on the same volume, so its nearest existing parent answers.
+ */
+export async function availableSpace(directory: string): Promise<bigint> {
+   for (let current = directory; ;) {
+      try {
+         const stats = await statfs(current, { bigint: true });
+         return stats.bavail * stats.bsize;
+      } catch (error) {
+         const parent = dirname(current);
+         if ((error as NodeJS.ErrnoException).code !== "ENOENT" || parent === current) throw error;
+         current = parent;
+      }
+   }
 }
 
 /** A free-space warning never changes capture state or estimates whether a clip will fit. */

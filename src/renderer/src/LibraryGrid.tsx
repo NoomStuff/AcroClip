@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { gridPlaces, gridRows, measuredSizes, rowOffsets, rowsInView } from "./grid-window";
-import type { GridItemKind, GridPlace, GridSizes } from "./grid-window";
+import { gridPlaces, gridRows, measuredRows, rowKey, rowOffsets, rowsInView } from "./grid-window";
+import type { GridItemKind, GridMeasure, GridPlace, GridSizes } from "./grid-window";
 
 // Rows this far outside the viewport stay mounted, so scrolling and Tab always land on a real card.
 const overscan = 600;
@@ -40,25 +40,29 @@ export function LibraryGrid<Item>({
    /** The mounted rows are laid out at their real sizes. Runs before paint, with where every item's slot sits. */
    onSettled: (place: (key: string) => GridPlace | undefined) => void;
 }) {
-   const [measured, setMeasured] = useState<{ view: "grid" | "list"; sizes: GridSizes } | null>(null);
-   const sizes = measured?.view === view ? measured.sizes : estimates[view];
+   // `layout` names the column tracks the heights were measured at. Other widths give other heights.
+   const [measured, setMeasured] = useState<(GridMeasure & { view: "grid" | "list"; layout: string }) | null>(null);
+   const measure = measured?.view === view ? measured : null;
+   const sizes = measure?.sizes ?? estimates[view];
    const rows = useMemo(() => gridRows(items.map(kind), sizes.columns), [items, kind, sizes.columns]);
-   const offsets = useMemo(() => rowOffsets(rows, sizes), [rows, sizes]);
+   const keys = useMemo(() => rows.map((row, index) => rowKey(row, index, (item) => itemKey(items[item]!))), [rows, items, itemKey]);
+   const heights = measure?.heights;
+   const offsets = useMemo(() => rowOffsets(rows, sizes, heights && ((index) => heights.get(keys[index]!))), [rows, sizes, heights, keys]);
    const [range, setRange] = useState({ first: 0, end: 0 });
    const first = Math.min(range.first, rows.length);
    const end = Math.min(Math.max(range.end, first), rows.length);
    const before = offsets[first]! - sizes.gap;
    const after = offsets[rows.length]! - offsets[end]! - sizes.gap;
-   const current = useRef({ items, itemKey, rows, offsets, sizes, view, first, end, before, natural, onSettled });
-   current.current = { items, itemKey, rows, offsets, sizes, view, first, end, before, natural, onSettled };
+   const current = useRef({ items, itemKey, rows, keys, offsets, measure, sizes, view, first, end, before, natural, onSettled });
+   current.current = { items, itemKey, rows, keys, offsets, measure, sizes, view, first, end, before, natural, onSettled };
    /** Reads the grid's real layout and corrects the sizes or the window. Reports once neither needed correcting. */
    const update = useCallback(() => {
       const element = grid.current,
          viewport = scroller.current;
       // A hidden page has no layout to read. Its last window stays as it was.
       if (!element || !viewport || !viewport.clientHeight) return;
-      const { items, itemKey, rows, offsets, sizes, view, first, end, before, natural, onSettled } = current.current;
-      const { next, columns } = natural(() => {
+      const { items, itemKey, rows, keys, offsets, measure, sizes, view, first, end, before, natural, onSettled } = current.current;
+      const { layout, columns, gap, mounted } = natural(() => {
          const style = getComputedStyle(element);
          // The browser's own row tracks: one per mounted row, after the spacer.
          const tracks = style.gridTemplateRows.split(" ").map(Number.parseFloat);
@@ -66,19 +70,23 @@ export function LibraryGrid<Item>({
          const widths = style.gridTemplateColumns.split(" ").map(Number.parseFloat);
          const columnGap = Number.parseFloat(style.columnGap) || 0;
          return {
-            next: measuredSizes(
-               { ...sizes, columns: Math.max(1, widths.length), gap: Number.parseFloat(style.rowGap) || 0 },
-               rows,
-               first,
-               mounted.every(Number.isFinite) ? mounted : []
-            ),
+            layout: widths.map((width) => Math.round(width * 2) / 2).join(" "),
+            gap: Number.parseFloat(style.rowGap) || 0,
+            mounted: mounted.every(Number.isFinite) ? mounted : [],
             // Where each column starts.
             columns: widths.every(Number.isFinite) ? widths.map((_, index) => widths.slice(0, index).reduce((left, width) => left + width + columnGap, 0)) : [],
          };
       });
-      if ((Object.keys(next) as Array<keyof GridSizes>).some((key) => Math.abs(next[key] - sizes[key]) > 0.5)) {
-         // The rows are placed again with these sizes, and the pass after that render picks the window.
-         setMeasured({ view, sizes: next });
+      // New column widths make every known height stale, so they start over from the estimates.
+      const base: GridMeasure =
+         measure?.layout === layout && measure.sizes.gap === gap
+            ? measure
+            : { sizes: { ...sizes, columns: Math.max(1, columns.length), gap }, learned: new Set(), heights: new Map() };
+      // Rows are packed by the measured column count, so a different count is placed again before its rows are read.
+      const next = base.sizes.columns === sizes.columns ? measuredRows(base, rows, keys, first, mounted) : base;
+      if (next !== measure) {
+         // The rows are placed again with these heights, and the pass after that render picks the window.
+         setMeasured({ ...next, view, layout });
          return;
       }
       // Where the viewport sits over the grid, which starts below the heading and breadcrumb.

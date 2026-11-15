@@ -1,4 +1,5 @@
 import type { AdditionalAudioSource, Preferences } from "./types";
+import { normalizeApplicationLabel } from "./application-label";
 const sourceBase = { deviceId: "", sourceId: "", executable: "", volume: 1, muted: false, includeInMaster: false, filters: [] };
 function isDefaultMicrophone(source: Pick<AdditionalAudioSource, "id" | "kind">): boolean {
    return /^microphone-default(?:-\d+)?$/.test(source.id) && source.kind === "input";
@@ -47,7 +48,9 @@ export function nativeAudioPreferences(value: Preferences) {
          .filter((source) => source.kind !== "source")
          .map((source) => {
             const normalized = normalizeMicrophone(source);
-            return isDefaultMicrophone(normalized) ? { ...normalized, name: "Microphone" } : normalized;
+            if (isDefaultMicrophone(normalized)) return { ...normalized, name: "Microphone" };
+            // Sources saved from a window title keep a short track name, like "Discord".
+            return normalized.kind === "application" ? { ...normalized, name: normalizeApplicationLabel(normalized.name) } : normalized;
          }),
       automaticMaster: true,
       sourceAudioPresent: !!source,

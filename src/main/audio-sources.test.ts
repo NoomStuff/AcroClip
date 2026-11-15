@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdditionalAudioSource, GameCandidate } from "../shared/types";
-import { resolveAudioSources, assertDistinctAudioSources } from "./audio-sources";
+import { missingAudioWarning, resolveAudioSources } from "./audio-sources";
 import { requiresCaptureRestart } from "./preferences";
 import { defaultPreferences } from "../shared/defaults";
 import { preferencesSchema } from "../shared/validation";
@@ -21,12 +21,21 @@ const source: AdditionalAudioSource = {
 const candidate: GameCandidate = { id: "window:new", name: "Game", executable: "Game.exe", pid: 42, foreground: true, fullscreen: false };
 describe("additional audio bindings", () => {
    it("resolves a restarted application's current identity without mutating preferences", () => {
-      expect(resolveAudioSources([source], [candidate])).toEqual([{ ...source, sourceId: "window:new", pid: 42 }]);
+      expect(resolveAudioSources([source], [candidate])).toEqual({ sources: [{ ...source, sourceId: "window:new", pid: 42 }], missing: [] });
       expect(source.sourceId).toBe("window:old");
    });
-   it("rejects a missing application instead of capturing another process or desktop", () => {
-      expect(() => resolveAudioSources([source], [{ ...candidate, executable: "Other.exe" }])).toThrow("Game is unavailable");
-      expect(resolveAudioSources([{ ...source, enabled: false }], [])).toEqual([{ ...source, enabled: false }]);
+   it("leaves a missing application silent instead of capturing another process or desktop", () => {
+      expect(resolveAudioSources([source], [{ ...candidate, executable: "Other.exe" }])).toEqual({
+         sources: [{ ...source, enabled: false }],
+         missing: ["Game"],
+      });
+      expect(resolveAudioSources([{ ...source, enabled: false }], [])).toEqual({ sources: [{ ...source, enabled: false }], missing: [] });
+      expect(missingAudioWarning(["Discord"])).toBe("Discord isn't open, so its track is silent. Restart capture after opening it.");
+      expect(missingAudioWarning(["Discord"], true)).toBe("Discord isn't open, so its track is silent until it opens.");
+      expect(missingAudioWarning(["Discord", "Spotify"], true)).toBe("Discord and Spotify aren't open, so their tracks are silent until they open.");
+      expect(missingAudioWarning(["Discord", "Spotify", "Game"])).toBe(
+         "Discord, Spotify and Game aren't open, so their tracks are silent. Restart capture after opening them."
+      );
    });
    it("permits live gain and mute but requires stopping to change track layout or master inclusion", () => {
       const original = { ...defaultPreferences, collection: "test", audioSources: [source] };
@@ -45,14 +54,4 @@ describe("additional audio bindings", () => {
          }).success
       ).toBe(false);
    });
-});
-
-it("rejects macOS System audio when Desktop already captures that output", () => {
-   const desktop = defaultPreferences.audioSources.find((item) => item.kind === "source")!;
-   expect(() =>
-      assertDistinctAudioSources(
-         { ...defaultPreferences, sourceKind: "screen", audioSources: [desktop, { ...source, kind: "output", deviceId: "system" }] },
-         []
-      )
-   ).toThrow("already included");
 });

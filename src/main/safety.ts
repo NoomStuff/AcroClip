@@ -3,9 +3,15 @@ import { extname, join } from "node:path";
 import type { Preferences } from "../shared/types";
 import { previewFilename, safeFileStem } from "../shared/filename";
 
-export function recordingDestination(preferences: Preferences, source: string, now = new Date(), pendingPaths: readonly string[] = []): string {
-   const label = safeFileStem(source);
-   const folder = preferences.folderLayout === "application" ? join(preferences.collection, label) : preferences.collection;
+/** `applicationFolder` is the folder this application's clips already use, when clips are grouped by application. */
+export function recordingDestination(
+   preferences: Preferences,
+   source: string,
+   now = new Date(),
+   pendingPaths: readonly string[] = [],
+   applicationFolder = safeFileStem(source)
+): string {
+   const folder = preferences.folderLayout === "application" ? join(preferences.collection, applicationFolder) : preferences.collection;
    const filename = previewFilename(preferences, source, now);
    const pathKey = (path: string) => (process.platform === "linux" ? path : path.normalize("NFC").toLowerCase());
    const pendingNames = new Set(pendingPaths.map(pathKey));

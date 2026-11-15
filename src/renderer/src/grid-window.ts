@@ -48,27 +48,60 @@ function rowHeight(row: GridRow, index: number, sizes: GridSizes): number {
 }
 
 /**
- * Sizes corrected by the heights the browser gave the mounted rows, `first` onwards. Rows that
- * mix cards and placeholders say nothing about either, so they are skipped.
+ * What the grid knows about row heights. Mounted rows report their real height, kept by what
+ * they hold, so a row scrolled away keeps its place. Rows never mounted use the estimates.
  */
-export function measuredSizes(sizes: GridSizes, rows: readonly GridRow[], first: number, heights: readonly number[]): GridSizes {
-   const next = { ...sizes };
-   heights.forEach((height, offset) => {
-      const row = rows[first + offset];
-      if (!row) return;
-      if (row.header) next[first + offset === 0 ? "firstHeader" : "header"] = height;
-      else if (row.cards !== row.placeholders) next[row.cards ? "card" : "placeholder"] = height;
-   });
-   return next;
+export interface GridMeasure {
+   sizes: GridSizes;
+   /** Estimates taken from a real row. Each is learned once per layout, so a window that moves can't move them again. */
+   learned: ReadonlySet<keyof GridSizes>;
+   heights: ReadonlyMap<string, number>;
 }
 
-/** Where each row starts, with one more entry for where a row after the last would start. */
-export function rowOffsets(rows: readonly GridRow[], sizes: GridSizes): number[] {
+/** Identifies a row by the items it holds. The grid's first row has no space above it, so it is told apart. */
+export function rowKey(row: GridRow, index: number, keyAt: (index: number) => string): string {
+   const keys: string[] = index === 0 ? ["^"] : [];
+   for (let item = row.start; item < row.end; item++) keys.push(keyAt(item));
+   return keys.join("\n");
+}
+
+function estimateFor(row: GridRow, index: number): keyof GridSizes | undefined {
+   if (row.header) return index === 0 ? "firstHeader" : "header";
+   // Rows that mix cards and placeholders say nothing about either.
+   if (row.cards !== row.placeholders) return row.cards ? "card" : "placeholder";
+   return undefined;
+}
+
+/**
+ * The measure with the heights the browser gave the mounted rows, `first` onwards. Returns the
+ * same measure when nothing moved by more than half a pixel, which is when the layout has settled.
+ */
+export function measuredRows(measure: GridMeasure, rows: readonly GridRow[], keys: readonly string[], first: number, heights: readonly number[]): GridMeasure {
+   let sizes: GridSizes | undefined, learned: Set<keyof GridSizes> | undefined, known: Map<string, number> | undefined;
+   heights.forEach((height, offset) => {
+      const index = first + offset,
+         row = rows[index],
+         key = keys[index];
+      if (!row || key === undefined || !Number.isFinite(height)) return;
+      const previous = (known ?? measure.heights).get(key);
+      if (previous === undefined || Math.abs(previous - height) > 0.5) (known ??= new Map(measure.heights)).set(key, height);
+      const estimate = estimateFor(row, index);
+      if (estimate && !(learned ?? measure.learned).has(estimate)) {
+         (learned ??= new Set(measure.learned)).add(estimate);
+         if (Math.abs(measure.sizes[estimate] - height) > 0.5) (sizes ??= { ...measure.sizes })[estimate] = height;
+      }
+   });
+   if (!sizes && !learned && !known) return measure;
+   return { sizes: sizes ?? measure.sizes, learned: learned ?? measure.learned, heights: known ?? measure.heights };
+}
+
+/** Where each row starts, with one more entry for where a row after the last would start. A row's known height wins over the estimate. */
+export function rowOffsets(rows: readonly GridRow[], sizes: GridSizes, known?: (index: number) => number | undefined): number[] {
    const offsets = new Array<number>(rows.length + 1);
    let top = 0;
    rows.forEach((row, index) => {
       offsets[index] = top;
-      top += rowHeight(row, index, sizes) + sizes.gap;
+      top += (known?.(index) ?? rowHeight(row, index, sizes)) + sizes.gap;
    });
    offsets[rows.length] = top;
    return offsets;

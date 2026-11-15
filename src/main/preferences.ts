@@ -41,9 +41,16 @@ function dropRetiredPreferences(stored: Partial<Preferences>): Partial<Preferenc
    delete rest.stats;
    return rest;
 }
+/**
+ * New installs group clips by application. Settings saved before that default keep the flat layout
+ * they were using, so existing collections don't change shape.
+ */
+function keepFolderLayout(stored: Partial<Preferences>): Partial<Preferences> {
+   return stored.folderLayout === undefined ? { ...stored, folderLayout: "flat" } : stored;
+}
 /** Every rename of a stored setting, applied before the schema sees the file. */
 function migrateStoredPreferences(stored: unknown): Partial<Preferences> {
-   return dropRetiredPreferences(migrateOverlapPreference(migrateNotificationPreferences(stored)));
+   return keepFolderLayout(dropRetiredPreferences(migrateOverlapPreference(migrateNotificationPreferences(stored))));
 }
 export async function readPreferences(path: string, collection: string): Promise<Preferences> {
    for (const candidate of [path, `${path}.bak`]) {

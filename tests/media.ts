@@ -674,6 +674,34 @@ try {
    await assert.rejects(damaged.createCategory("Do not overwrite recovery data"), /locked while collection info is damaged/);
    assert.equal(await readFile(movedMetadataPath, "utf8"), "broken", "unrecoverable metadata remains untouched");
 
+   // A clip AcroClip saved carries its own tag, so a collection without metadata still knows its game.
+   const taggedRoot = join(workspace, "tagged-collection");
+   await mkdir(taggedRoot);
+   const tag = { version: 1, savedAt: 1_700_000_000_000, source: "Demo game", application: { id: "a".repeat(64), name: "Demo game" } };
+   // The collection moved above, and this is where its clip ended up.
+   const untagged = join(external, "moved-original.mp4");
+   await runMedia("ffmpeg", [
+      ...ffmpegBase,
+      "-y",
+      "-i",
+      untagged,
+      "-c",
+      "copy",
+      "-movflags",
+      "+use_metadata_tags",
+      "-metadata",
+      `acroclip=${JSON.stringify(tag)}`,
+      join(taggedRoot, "Untitled.mp4"),
+   ]);
+   await writeFile(join(taggedRoot, "Plain.mp4"), await readFile(untagged));
+   const tagged = new CollectionService();
+   await tagged.open(taggedRoot);
+   const taggedClip = tagged.clips.find((entry) => entry.name === "Untitled");
+   assert.equal(taggedClip?.source, "Demo game", "a clip's own tag restores its source");
+   assert.equal(taggedClip?.applicationId, tag.application.id, "a clip's own tag restores its application");
+   assert.equal(taggedClip?.createdAt, tag.savedAt, "a clip's own tag restores when it was saved");
+   assert.equal(tagged.clips.find((entry) => entry.name === "Plain")?.applicationId, undefined, "an untagged clip stays unassigned");
+
    // Overlapping saves from one capture session merge losslessly.
    const mergeRoot = join(workspace, "merge-collection");
    const mergeTrash = join(workspace, "merge-trash");

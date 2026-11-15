@@ -1,6 +1,6 @@
 import { notificationDelivery, type NotificationAction } from "../shared/notifications";
 import { shareableTargetAllowed } from "../shared/shareable-target";
-import { normalizeApplicationLabel } from "./application-identity";
+import { applicationId, applicationLabel, normalizeApplicationLabel } from "./application-identity";
 import { isPackagedApp, registerWindowsIdentity, windowsAppId } from "./identity";
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, nativeImage, protocol, shell, Tray, session, systemPreferences, screen } from "electron";
 import { mkdirSync, realpathSync } from "node:fs";
@@ -31,15 +31,14 @@ import {
    rendererErrorSchema,
    resetPartsSchema,
 } from "../shared/validation";
-import { assertDistinctAudioSources } from "./audio-sources";
-import { audioTopology, synchronizeLegacyAudio, monitoringPreferences } from "../shared/audio-model";
+import { synchronizeLegacyAudio, monitoringPreferences } from "../shared/audio-model";
 import { mergePreferenceChanges, readPreferences, requiresCaptureRestart, splitHeldPreferences, writePreferences } from "./preferences";
 import type { PreferenceCapture } from "./preferences";
 import { CollectionService, withinRoot } from "./collection";
 import { isValidShortcut, recordingDestination, recordingSourceLabel, samePath } from "./safety";
 import { bindingFor, globalShortcutProblem, shortcutRegistry, shortcutConflict } from "../shared/shortcuts";
 import type { ShortcutAction } from "../shared/shortcuts";
-import { CaptureTimeout, Recorder } from "./recorder";
+import { CaptureClosed, CaptureTimeout, Recorder } from "./recorder";
 import { CaptureSources } from "./capture-sources";
 import { serveMedia } from "./serve";
 import { StatsLog } from "./stats";
@@ -73,8 +72,10 @@ import { trayStatus } from "./tray";
 import { CollectionRefresh } from "./collection-refresh";
 import { footageWindow, mergeCandidate } from "./merge-policy";
 import type { SavedFootage } from "./merge-policy";
-import { saveOutcomeNotice } from "../shared/save-outcome";
+import { saveOutcomeNotice, savingNotice } from "../shared/save-outcome";
 import type { SaveOutcome } from "../shared/save-outcome";
+import { ActivityTracker } from "./activity";
+import { desktopGame } from "./desktop-game";
 import { copyFileToClipboard } from "./clipboard-file";
 
 // CORS lets the renderer read back images it asks for with crossOrigin, such as hover strips it
@@ -144,7 +145,14 @@ const windowShown = () => !!mainWindow && !mainWindow.isDestroyed() && mainWindo
 const applicationArtwork = (sources: CaptureSource[]): ApplicationArtwork[] =>
    sources.flatMap((source) =>
       source.applicationId
-         ? [{ id: source.applicationId, icon: source.appIcon ?? "", ...(source.applicationName ? { name: source.applicationName } : {}) }]
+         ? [
+              {
+                 id: source.applicationId,
+                 icon: source.appIcon ?? "",
+                 ...(source.applicationName ? { name: source.applicationName } : {}),
+                 ...(source.previousApplicationIds ? { previousIds: source.previousApplicationIds } : {}),
+              },
+           ]
          : []
    );
 function assertFolderChangesAllowed(): void {
@@ -352,6 +360,20 @@ const libraryRefresh = new CollectionRefresh({
    busy: () => collections.pendingJobs.length > 0,
    log: (message) => log(message),
 });
+const activity = new ActivityTracker((background) => {
+   recorder.setBackground(background);
+   libraryRefresh.update(collections.root, libraryInView());
+   emitState();
+});
+/** Outside changes reach the library while it can be seen. In the background they wait until focus returns. */
+function libraryInView(): boolean {
+   return windowShown() && !activity.background;
+}
+/** UI tests drive an unfocused window, so they keep it active unless a test covers the background itself. */
+function updateActivity(): void {
+   if (process.env["ACROCLIP_TEST"] === "1" && process.env["ACROCLIP_TEST_ACTIVITY"] !== "1") return;
+   activity.update({ visible: windowShown(), focused: !!mainWindow?.isFocused(), fullscreen: recorder.status.foregroundFullscreen === true });
+}
 const updates = new Updates(
    () => emitState(),
    (message) => log(message)
@@ -419,6 +441,7 @@ const storage = new StorageMonitor({
 const recorder = new Recorder({
    gameCatalogPath: join(app.getPath("userData"), "game-catalog.json"),
    onCatalogWarning: (message) => log(message),
+   onWarning: (message) => log(`recorder: ${message}`, "warn"),
    onAudioMonitorError: (monitorError, listeningError) =>
       send({ type: "audio-monitor", monitorError, ...(listeningError !== undefined ? { listeningError } : {}) }),
    onAudioLevels: (levels) => {
@@ -447,6 +470,7 @@ const recorder = new Recorder({
    },
    onState: (current) => {
       logCaptureState(current);
+      updateActivity();
       const footage = bufferedCaptureSource(current);
       if (current.state === "recording") lastRecordingArtwork = recordingArtwork(footage, captureSources.cached, lastRecordingArtwork);
       trackCaptureSession(current);
@@ -468,7 +492,7 @@ const recorder = new Recorder({
          );
       }),
    onSaved: async (path, source, _requestId, capture) => {
-      const clip = await collections.registerRecording(path, source, capture.application);
+      const clip = await collections.registerRecording(path, source, capture.application, preferences.folderLayout === "application");
       emitState();
       const request = [...savesRequested].find(([requested]) => samePath(requested, path));
       if (request) savesRequested.delete(request[0]);
@@ -539,6 +563,7 @@ function recorderState(): RecorderState {
 function state(): AppState {
    return {
       windowVisible: windowShown(),
+      background: activity.background,
       storageWarning: storage.warning,
       preferences,
       clips: collections.clips,
@@ -568,7 +593,7 @@ function emitState() {
    if (!preferences) return;
    updateStorageActivity();
    applyPendingPreferences();
-   libraryRefresh.update(collections.root, windowShown());
+   libraryRefresh.update(collections.root, libraryInView());
    // Do not advance the baseline while the renderer cannot receive updates.
    if (!windowShown()) return;
    const event = stateChanges.event(state());
@@ -737,7 +762,8 @@ function createWindow() {
    const visibilityChanged = () => {
       const visible = windowShown();
       trackWindow(visible);
-      libraryRefresh.update(collections.root, visible);
+      updateActivity();
+      libraryRefresh.update(collections.root, libraryInView());
       if (!visible) {
          suspendShortcuts(false);
          previewSourceId = null;
@@ -747,6 +773,8 @@ function createWindow() {
       send({ type: "visibility", visible });
       if (visible) emitState();
    };
+   mainWindow.on("focus", updateActivity);
+   mainWindow.on("blur", updateActivity);
    mainWindow.on("show", visibilityChanged);
    mainWindow.on("hide", visibilityChanged);
    mainWindow.on("minimize", visibilityChanged);
@@ -847,6 +875,25 @@ async function stopRecording() {
       throw error;
    }
 }
+/** The recognized game filling the captured screen, if any. A slow or failed lookup just saves as Desktop. */
+async function desktopCaptureGame(screenId: string | undefined): Promise<ApplicationArtwork | undefined> {
+   try {
+      const candidates = await Promise.race([
+         recorder.games(preferences.customGames),
+         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Game lookup took too long")), 1000)),
+      ]);
+      const game = desktopGame(
+         candidates,
+         captureSources.cached.find((source) => source.id === screenId),
+         screen.getAllDisplays().length
+      );
+      if (!game?.gameName) return undefined;
+      const id = applicationId(game.executable, game.gameId);
+      return { id, icon: captureSources.cached.find((source) => source.applicationId === id)?.appIcon ?? "", name: game.gameName };
+   } catch {
+      return undefined;
+   }
+}
 async function saveClip(trigger: SaveTrigger) {
    const requestedAt = Date.now();
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to save another clip.");
@@ -859,16 +906,20 @@ async function saveClip(trigger: SaveTrigger) {
    try {
       send({ type: "clip-action" });
       const footage = bufferedCaptureSource(recorder.status);
+      const shownGame = footage.kind === "screen" ? desktopCaptureGame(footage.id) : Promise.resolve(undefined);
       await collections.finishFileChanges();
       lastRecordingArtwork = recordingArtwork(footage, captureSources.cached, lastRecordingArtwork);
+      // A desktop capture of a fullscreen game files under that game. The clip's source stays Desktop.
+      const application = lastRecordingArtwork?.application ?? (await shownGame);
       const applicationName =
-         lastRecordingArtwork?.application.name ??
+         application?.name ??
          normalizeApplicationLabel(footage.name || (preferences.sourceKind === "auto" ? "Game" : recordingSourceLabel(preferences, captureSources.cached)));
       const destination = recordingDestination(
          { ...preferences, collection: collections.root },
          applicationName,
          new Date(requestedAt),
-         recorder.pendingSavePaths
+         recorder.pendingSavePaths,
+         collections.applicationFolder(application?.id, applicationName)
       );
       mkdirSync(dirname(destination), { recursive: true });
       if (!withinRoot(collections.root, realpathSync(dirname(destination))))
@@ -881,19 +932,32 @@ async function saveClip(trigger: SaveTrigger) {
       savesRequested.set(destination, { requestedAt, session, trigger });
       log(`save: requested by ${trigger}, ${preferences.clipSeconds} s, ${status.availableSeconds.toFixed(1)} s available from ${footage.kind ?? "unknown"}`);
       try {
-         await recorder.save(destination, requestedAt, lastRecordingArtwork?.application);
+         await recorder.save(destination, requestedAt, application);
       } catch (error) {
          savesRequested.delete(destination);
          throw error;
       }
-      // The status bar shows saves in progress, so this only reaches the desktop banner.
+      // The status bar shows saves in progress, so this only reaches the desktop banner. A save that
+      // will extend the last clip says so up front. Behind another pending save, the outcome isn't known yet.
+      const extending =
+         savesRequested.size === 1
+            ? mergeCandidate(
+                 previousSave,
+                 { clipId: "", session, ...footageWindow(requestedAt, 0, Math.min(preferences.clipSeconds, status.availableSeconds)) },
+                 {
+                    mode: preferences.overlapClips,
+                    clipSeconds: preferences.clipSeconds,
+                    previousUntouched: !!previousSave && collections.untouched(previousSave.clipId),
+                 }
+              )
+            : { merge: false as const };
       notice(
-         "Saving clip…",
+         savingNotice(extending.merge ? extending.seconds : undefined),
          false,
          "saving",
          "native",
          { detail: applicationName },
-         bannerArtwork(captureSources.cached.find((source) => source.id === footage.id)?.thumbnail, lastRecordingArtwork?.application.icon)
+         bannerArtwork(captureSources.cached.find((source) => source.id === footage.id)?.thumbnail, application?.icon)
       );
    } catch (error) {
       log(`save: refused: ${errorMessage(error)}`, "error");
@@ -1167,8 +1231,10 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown) {
       } catch (e) {
          // Capture errors reach the banner even from a click, and the renderer leaves them to main.
          if (channel === "record-start" || channel === "record-stop" || channel === "record-save") captureActionError(e, "action");
-         else if (locallyReported.has(channel)) log(`${channel}: ${errorMessage(e)}`, "warn");
-         else notice(errorMessage(e), true, "info", "action");
+         else if (locallyReported.has(channel)) {
+            // A request cut short by AcroClip closing capture itself, to exit or update, is not a problem.
+            if (!(e instanceof CaptureClosed)) log(`${channel}: ${errorMessage(e)}`, "warn");
+         } else notice(errorMessage(e), true, "info", "action");
          throw e;
       }
    });
@@ -1232,7 +1298,15 @@ function registerIPC() {
    handle("sources", (options) =>
       captureSources.list(z.object({ thumbnails: z.boolean().optional() }).strict().optional().parse(options)?.thumbnails ?? false)
    );
-   handle("games", () => recorder.games(preferences.customGames));
+   handle("games", async () =>
+      Promise.all(
+         (await recorder.games(preferences.customGames)).map(async (candidate) => ({
+            ...candidate,
+            applicationName:
+               candidate.gameName ?? (candidate.executable ? await applicationLabel(candidate.executable) : normalizeApplicationLabel(candidate.name)),
+         }))
+      )
+   );
    handle("game-catalog", () => recorder.gameCatalog());
    handle("preview-source", async (id, token) => {
       const owner = z.string().max(100).optional().parse(token);
@@ -1325,8 +1399,6 @@ function registerIPC() {
             const next = build(capture);
             if (capture.starting && JSON.stringify(next) !== JSON.stringify(preferences))
                throw new Error("Capture is starting. Wait before applying settings.");
-            if (audioTopology(next) !== audioTopology(preferences) || next.sourceKind !== preferences.sourceKind || next.sourceId !== preferences.sourceId)
-               assertDistinctAudioSources(next, captureSources.cached);
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
             if (!isValidShortcut(next.shortcut)) throw new Error("That key combination is not supported. Try a letter, number, or function key.");
             if (recorder.status.state !== "stopped" && recorder.status.state !== "error" && requiresCaptureRestart(preferences, next))
