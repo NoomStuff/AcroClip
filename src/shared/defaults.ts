@@ -17,6 +17,8 @@ export const defaultPreferences: Preferences = {
    replayMemoryMB: 0,
    sourceKind: "screen",
    sourceId: "",
+   sourceApplicationId: "",
+   sourceApplicationName: "",
    microphone: false,
    microphoneDevice: "default",
    captureAudio: true,

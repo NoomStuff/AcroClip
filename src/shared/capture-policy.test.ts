@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { bufferedCaptureSource, portalScreenId, portalSources, sourceChoices, selectedCaptureSource, previewCaptureSource } from "./capture-policy";
+import {
+   bufferedCaptureSource,
+   captureSourceFor,
+   portalScreenId,
+   portalSources,
+   sourceChoices,
+   selectedCaptureSource,
+   previewCaptureSource,
+} from "./capture-policy";
 import { defaultPreferences, stoppedRecorder } from "./defaults";
 import type { RecordingCapabilities } from "./types";
 
@@ -73,6 +81,22 @@ describe("system picker capture policy", () => {
 });
 
 describe("saved capture selection", () => {
+   it("finds an app source's application in a new window once the saved window is gone", () => {
+      const sources = [
+         { id: "screen:1:0", kind: "screen" as const, name: "Screen 1", thumbnail: "" },
+         { id: "window:20:0", kind: "app" as const, name: "Game", thumbnail: "", applicationId: "game" },
+         { id: "window:30:0", kind: "app" as const, name: "Chat", thumbnail: "", applicationId: "chat" },
+      ];
+      const saved = { sourceKind: "app" as const, sourceId: "window:10:0", sourceApplicationId: "game" };
+      expect(captureSourceFor(sources, saved)?.id).toBe("window:20:0");
+      // The saved window still wins while it's open, even beside another window of the same app.
+      expect(captureSourceFor([...sources, { ...sources[1]!, id: "window:10:0" }], saved)?.id).toBe("window:10:0");
+      expect(captureSourceFor(sources, { ...saved, sourceApplicationId: "editor" })).toBeUndefined();
+      // Without a saved application only the exact window matches, as before.
+      expect(captureSourceFor(sources, { ...saved, sourceApplicationId: "" })).toBeUndefined();
+      expect(captureSourceFor(sources, { sourceKind: "screen", sourceId: "screen:9:0", sourceApplicationId: "game" })).toBeUndefined();
+      expect(previewCaptureSource(sources, { ...saved, desktopFallback: false }, stoppedRecorder)?.id).toBe("window:20:0");
+   });
    const sources = [
       { id: "screen:0", kind: "screen" as const, name: "Screen", thumbnail: "" },
       { id: "window:1:0", kind: "app" as const, name: "App", thumbnail: "" },

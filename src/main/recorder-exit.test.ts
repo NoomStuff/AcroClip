@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Recorder, RECORDER_EXIT_TIMEOUT_MS, type RecorderErrorContext } from "./recorder";
 import { defaultPreferences } from "../shared/defaults";
+import { applicationId } from "./application-identity";
 import type { ApplicationArtwork, RecorderState } from "../shared/types";
 
 const roots: string[] = [];
@@ -27,7 +28,8 @@ async function fixture(
       | "saved-source-mismatch"
       | "hang-exit"
       | "save-failure"
-      | "slow-save",
+      | "slow-save"
+      | "app-opens",
    invalidExecutable = false,
    rejectRegistration = false
 ) {
@@ -56,7 +58,13 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  const v = JSON.parse(line);
  fs.appendFileSync('commands.jsonl',JSON.stringify(v)+'\\n');
  if(v.action==='windows') emit({event:'windows',windows:[]});
- if(v.action==='candidates'&&!mode.startsWith('candidates-')) emit({event:'candidates',windows:[]});
+ if(v.action==='candidates'&&mode==='app-opens'){
+  // The app opens on the third look.
+  const looks=require('node:path').join(process.argv[1],'app-looks');
+  fs.appendFileSync(looks,'look\\n');
+  const opened=fs.readFileSync(looks,'utf8').trim().split('\\n').length>=3;
+  emit({event:'candidates',windows:opened?[{id:'window:4242:0',name:'Fixture game',executable:'C:/Games/fixture/game.exe',pid:4242,foreground:true,fullscreen:false,pixelSize:{width:1280,height:720}}]:[]});
+ } else if(v.action==='candidates'&&!mode.startsWith('candidates-')) emit({event:'candidates',windows:[]});
  if(v.action==='save'&&mode==='slow-save') {setTimeout(()=>emit({event:'response',id:v.id}),400);return;}
  if(v.action==='start') {
   active=true; emit({event:'recording'});
@@ -192,6 +200,40 @@ describe("recorder helper termination", () => {
          expect((await readFile(join(root, "discovery-attempts"), "utf8")).trim().split("\n")).toHaveLength(3);
          expect(child.status.state).toBe("recording");
          expect(errors).toEqual([]);
+      },
+      helperTestTimeout
+   );
+   it(
+      "waits for an app source's app instead of failing, and captures it once it opens",
+      async () => {
+         const { child, root } = await fixture("app-opens");
+         await child.stop();
+         const preferences = {
+            ...defaultPreferences,
+            collection: root,
+            captureAudio: false,
+            sourceKind: "app" as const,
+            // A window from before the app restarted.
+            sourceId: "window:1111:0",
+            sourceApplicationId: applicationId("C:/Games/fixture/game.exe"),
+            sourceApplicationName: "Fixture game",
+         };
+         await child.start(preferences, []);
+         const commands = async () =>
+            (await readFile(join(root, "commands.jsonl"), "utf8"))
+               .trim()
+               .split("\n")
+               .map((line) => JSON.parse(line) as { action: string; resolvedKind?: string; sourceName?: string; pixelSize?: unknown });
+         const started = (await commands()).filter((command) => command.action === "start").at(-1);
+         expect(started).toMatchObject({ resolvedKind: "waiting", sourceName: "Waiting for Fixture game" });
+         await vi.waitFor(
+            async () =>
+               expect((await commands()).find((command) => command.action === "source")).toMatchObject({
+                  sourceName: "Fixture game",
+                  pixelSize: { width: 1280, height: 720 },
+               }),
+            { timeout: 8000, interval: 100 }
+         );
       },
       helperTestTimeout
    );

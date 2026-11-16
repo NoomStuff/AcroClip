@@ -93,6 +93,8 @@ export const preferencesSchema = z
          .default(0),
       sourceKind: z.enum(["screen", "app", "auto"]),
       sourceId: z.string().max(1000),
+      sourceApplicationId: z.string().max(200).default(""),
+      sourceApplicationName: z.string().max(300).default(""),
       microphone: z.boolean(),
       microphoneDevice: z.string().max(1000),
       captureAudio: z.boolean(),

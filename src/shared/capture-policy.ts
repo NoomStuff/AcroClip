@@ -40,12 +40,25 @@ export function selectedCaptureSource(sources: CaptureSource[], preferences: Pic
    );
 }
 
+/**
+ * The window to capture for the saved source. An app source whose window has closed matches the
+ * same application's current window, so restarting the app doesn't lose the choice.
+ */
+export function captureSourceFor(
+   sources: CaptureSource[],
+   preferences: Pick<Preferences, "sourceKind" | "sourceId" | "sourceApplicationId">
+): CaptureSource | undefined {
+   const exact = selectedCaptureSource(sources, preferences);
+   if (exact || preferences.sourceKind !== "app" || !preferences.sourceApplicationId) return exact;
+   return sources.find((source) => source.kind === "app" && source.applicationId === preferences.sourceApplicationId);
+}
+
 export function previewCaptureSource(
    sources: CaptureSource[],
-   preferences: Pick<Preferences, "sourceKind" | "sourceId" | "desktopFallback">,
+   preferences: Pick<Preferences, "sourceKind" | "sourceId" | "sourceApplicationId" | "desktopFallback">,
    recorder: RecorderState
 ): CaptureSource | undefined {
-   if (preferences.sourceKind !== "auto") return selectedCaptureSource(sources, preferences);
+   if (preferences.sourceKind !== "auto") return captureSourceFor(sources, preferences);
    if ((recorder.state !== "recording" && recorder.state !== "waiting") || (recorder.sourceKind !== "app" && !preferences.desktopFallback)) return undefined;
    return sources.find(
       (source) => source.id === recorder.sourceId || (source.id.startsWith("window:") && source.id.split(":")[1] === recorder.sourceId?.split(":")[1])

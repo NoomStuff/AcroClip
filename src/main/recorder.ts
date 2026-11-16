@@ -1,5 +1,6 @@
 import { linuxRecorderEnvironment } from "./linux-runtime";
-import { selectedCaptureSource } from "../shared/capture-policy";
+import { captureSourceFor } from "../shared/capture-policy";
+import { applicationId } from "./application-identity";
 import { promisify } from "node:util";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -144,6 +145,8 @@ export class Recorder {
    private recentApplications: { at: number; items: GameCandidate[] } | null = null;
    private candidatesResolve: ((items: GameCandidate[]) => void) | null = null;
    private autoPreferences: Preferences | null = null;
+   /** An app source whose app isn't open yet. Capture waits and starts once it opens. */
+   private waitingApp: Preferences | null = null;
    private autoSources: CaptureSource[] = [];
    private autoKey = "";
    private autoBusy = false;
@@ -414,6 +417,7 @@ export class Recorder {
       return { ...nativeAudioPreferences(preferences), resolvedKind: "waiting", sourceId: "", sourceName: "Waiting for game" };
    }
    private async followGame(): Promise<void> {
+      if (!this.autoPreferences) return this.followApplication();
       if (this.autoBusy || !this.autoPreferences || !["recording", "waiting"].includes(this.current.state)) return;
       const generation = this.autoGeneration;
       this.autoBusy = true;
@@ -429,6 +433,42 @@ export class Recorder {
          if (generation === this.autoGeneration) this.autoFailure = "";
       } catch (error) {
          if (generation === this.autoGeneration) this.autoFailure = error instanceof Error ? error.message : "Waiting for game";
+      } finally {
+         this.autoBusy = false;
+      }
+   }
+   /** Starts an app source's capture once its app opens, the way Auto capture finds a game. */
+   private async followApplication(): Promise<void> {
+      const preferences = this.waitingApp;
+      if (this.autoBusy || !preferences || !preferences.sourceApplicationId || !["recording", "waiting"].includes(this.current.state)) return;
+      const generation = this.autoGeneration;
+      this.autoBusy = true;
+      try {
+         const candidates = await this.identifyGames((await this.capturableApplications()).filter((candidate) => candidate.pid !== process.pid));
+         const found = candidates.find(
+            (candidate) => !!candidate.executable && applicationId(candidate.executable, candidate.gameId) === preferences.sourceApplicationId
+         );
+         if (!found || generation !== this.autoGeneration) return;
+         await this.refreshWindows();
+         const source: CaptureSource = {
+            id: found.id,
+            kind: "app",
+            name: found.name,
+            thumbnail: "",
+            applicationId: preferences.sourceApplicationId,
+            applicationName: found.gameName ?? preferences.sourceApplicationName,
+            ...(found.pixelSize ? { pixelSize: found.pixelSize } : {}),
+         };
+         const configuration = await this.configuration(preferences, [source]);
+         if (generation !== this.autoGeneration || configuration["resolvedKind"] === "waiting") return;
+         this.fastStatusUntil = Date.now() + 8000;
+         await this.command({ action: "source", ...configuration });
+         if (generation === this.autoGeneration) {
+            this.waitingApp = null;
+            this.autoKey = this.configurationKey(configuration);
+         }
+      } catch (error) {
+         this.options.onWarning?.(`Waiting for ${preferences.sourceApplicationName || "the app"}: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
          this.autoBusy = false;
       }
@@ -627,8 +667,8 @@ export class Recorder {
          background: this.background,
          fastStatus: Date.now() < this.fastStatusUntil,
          capturing,
-         following: !!this.autoPreferences,
-         searching: !!this.autoPreferences && (this.current.state === "waiting" || !!this.autoFailure),
+         following: !!this.autoPreferences || !!this.waitingApp,
+         searching: (!!this.autoPreferences && (this.current.state === "waiting" || !!this.autoFailure)) || !!this.waitingApp,
          pendingAudio: this.pendingAudio.length > 0,
       };
    }
@@ -839,7 +879,14 @@ export class Recorder {
       if (!this.sourceKinds.includes(preferences.sourceKind))
          throw new Error("Application and Auto capture are unavailable in this Wayland session. Choose Screen to use the system picker.");
       if (preferences.sourceKind === "auto") return this.autoConfiguration(preferences, sources);
-      const selected = selectedCaptureSource(sources, preferences);
+      const selected = captureSourceFor(sources, preferences);
+      if (!selected && preferences.sourceKind === "app" && preferences.sourceApplicationId)
+         return {
+            ...nativeAudioPreferences(preferences),
+            resolvedKind: "waiting",
+            sourceId: "",
+            sourceName: `Waiting for ${preferences.sourceApplicationName || "the app"}`,
+         };
       if (!selected) throw new Error("The selected source is gone. Choose another one.");
       this.source = selected.kind === "screen" ? "Desktop" : (selected.applicationName ?? selected.name);
       const screenIndex = sources.filter((s) => s.kind === "screen").findIndex((s) => s.id === selected.id);
@@ -994,6 +1041,7 @@ export class Recorder {
          });
          this.autoGeneration++;
          this.autoPreferences = preferences.sourceKind === "auto" ? preferences : null;
+         this.waitingApp = configuration["resolvedKind"] === "waiting" && preferences.sourceKind === "app" ? preferences : null;
          this.autoSources = sources;
          this.autoKey = this.configurationKey(configuration);
       } catch (error) {
@@ -1004,6 +1052,7 @@ export class Recorder {
    async stop(): Promise<void> {
       this.autoFailure = "";
       this.autoPreferences = null;
+      this.waitingApp = null;
       this.autoGeneration++;
       if (this.process) await this.command({ action: "stop" });
    }
@@ -1016,12 +1065,14 @@ export class Recorder {
       this.autoFailure = "";
       if (this.process) {
          this.autoPreferences = null;
+         this.waitingApp = null;
          this.autoGeneration++;
          await this.refreshWindows();
          const configuration = await this.configuration(preferences, sources);
          this.fastStatusUntil = Date.now() + 8000;
          await this.command({ action: "source", ...configuration });
          this.autoPreferences = preferences.sourceKind === "auto" ? preferences : null;
+         this.waitingApp = configuration["resolvedKind"] === "waiting" && preferences.sourceKind === "app" ? preferences : null;
          this.autoSources = sources;
          this.autoKey = this.configurationKey(configuration);
       }

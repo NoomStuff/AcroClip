@@ -102,6 +102,13 @@ export interface Preferences {
    replayMemoryMB: number;
    sourceKind: SourceKind;
    sourceId: string;
+   /**
+    * The application behind an app source. `sourceId` names one window, which is gone once the
+    * app restarts, so capture finds the app's current window by this, or waits for the app.
+    */
+   sourceApplicationId: string;
+   /** Its name, for "Waiting for" while it isn't open. */
+   sourceApplicationName: string;
    microphone: boolean;
    microphoneDevice: string;
    captureAudio: boolean;

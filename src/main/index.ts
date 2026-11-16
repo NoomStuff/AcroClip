@@ -63,7 +63,7 @@ import { Feedback, type FeedbackDetails } from "./feedback";
 import { captureErrorReport, feedbackRequest, routeNotice, type NoticeKind, type NoticeSurface } from "./notice-routing";
 import { RecordingNotices, type RecordingNoticeKind } from "./recording-notices";
 import { SaveFailure } from "./save-failure";
-import { bufferedCaptureSource, portalScreenId, selectedCaptureSource, previewCaptureSource } from "../shared/capture-policy";
+import { bufferedCaptureSource, captureSourceFor, portalScreenId, previewCaptureSource } from "../shared/capture-policy";
 import { attaCutEnvironment, findAttaCut } from "./attacut";
 import { needsMicrophonePermission } from "../shared/audio-policy";
 import { StorageMonitor } from "./storage";
@@ -829,6 +829,35 @@ async function ensureMicrophoneAccess(value: Preferences): Promise<void> {
          throw new Error("Allow microphone access in System Settings, or mute microphone sources.");
    }
 }
+/** Keeps an app source's application with it, so the same app's next window still matches. */
+function withSourceApplication(next: Preferences): Preferences {
+   if (next.sourceKind !== "app" || !next.sourceId) return next;
+   if (next.sourceId === preferences.sourceId && next.sourceApplicationId) return next;
+   const source = captureSources.cached.find((item) => item.id === next.sourceId);
+   // A window AcroClip can't name gets no application, rather than the previous choice's.
+   if (!source?.applicationId) return { ...next, sourceApplicationId: "", sourceApplicationName: "" };
+   return { ...next, sourceApplicationId: source.applicationId, sourceApplicationName: source.applicationName ?? source.name };
+}
+/**
+ * After capture found an app source's window, saves that window and its application. A choice
+ * saved before AcroClip kept the application learns it here, and the Capture page keeps showing
+ * the choice as selected after the app restarted.
+ */
+function rememberSourceApplication(available: CaptureSource[]): void {
+   if (preferences.sourceKind !== "app") return;
+   const source = captureSourceFor(available, preferences);
+   if (!source?.applicationId || (source.id === preferences.sourceId && source.applicationId === preferences.sourceApplicationId)) return;
+   preferences = {
+      ...preferences,
+      sourceId: source.id,
+      sourceApplicationId: source.applicationId,
+      sourceApplicationName: source.applicationName ?? source.name,
+   };
+   const written = preferences;
+   preferenceWrites = preferenceWrites.catch(() => undefined).then(() => writePreferences(preferencePath, written));
+   recorder.updatePreferences(written);
+   emitState();
+}
 /** `quiet` is for starts AcroClip makes itself, like capturing on launch. Only failures speak up. */
 async function startRecording(options: { quiet?: boolean } = {}) {
    if (!preferences.setupComplete) throw new Error("Finish setup before capturing.");
@@ -845,6 +874,7 @@ async function startRecording(options: { quiet?: boolean } = {}) {
       const available = await captureSources.list();
       if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to capture.");
       await recorder.start(preferences, available);
+      rememberSourceApplication(available);
    })();
    emitState();
    updateTray();
@@ -1386,7 +1416,7 @@ function registerIPC() {
    handle("monitor-audio", (enabled) =>
       recorder.monitorAudio(
          z.boolean().parse(enabled) && preferences.setupComplete && windowShown()
-            ? monitoringPreferences(preferences, preferences.sourceKind === "auto" || !!selectedCaptureSource(captureSources.cached, preferences))
+            ? monitoringPreferences(preferences, preferences.sourceKind === "auto" || !!captureSourceFor(captureSources.cached, preferences))
             : null
       )
    );
@@ -1447,7 +1477,7 @@ function registerIPC() {
          .catch(() => undefined)
          .then(async () => {
             const capture = currentPreferenceCapture();
-            const next = build(capture);
+            const next = withSourceApplication(build(capture));
             if (capture.starting && JSON.stringify(next) !== JSON.stringify(preferences))
                throw new Error("Capture is starting. Wait before applying settings.");
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
