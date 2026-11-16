@@ -66,6 +66,15 @@ jobs:
            run: bun scripts/run-interactive-tests.ts audio-filters
          - run: bun run test:capture-loss
            if: matrix.suite == 'capture'
+         # Last, because the second output it adds would change what the earlier checks hear.
+         - name: Add a second private output
+           if: matrix.suite == 'capture'
+           env:
+              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
+           run: pwsh -File scripts/setup-windows-runner-audio.ps1 -SecondOutput
+         - name: Verify desktop audio across a default output change
+           if: matrix.suite == 'capture'
+           run: bun scripts/run-interactive-tests.ts default-output
          - uses: actions/upload-artifact@v7
            if: always()
            with:
@@ -77,6 +86,8 @@ jobs:
                  .cache/native-loss/**/native.log
                  .cache/native-audio-filters/**/measurements.json
                  .cache/native-audio-filters/**/native.log
+                 .cache/native-default-output/**/events.json
+                 .cache/native-default-output/**/native.log
               include-hidden-files: true
               if-no-files-found: ignore
               retention-days: 7

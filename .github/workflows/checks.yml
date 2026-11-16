@@ -166,6 +166,10 @@ jobs:
               } else {
                  pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
               }
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              if ($env:ACROCLIP_INTERACTIVE_SUITE -eq 'default-output') {
+                 pwsh -File scripts/setup-windows-runner-audio.ps1 -SecondOutput
+              }
          - name: Prepare executable packages when requested
            if: contains(fromJSON('["packaged","portable","installer","update"]'), inputs.interactive_suite)
            run: bunx electron-builder --win --x64 --publish never

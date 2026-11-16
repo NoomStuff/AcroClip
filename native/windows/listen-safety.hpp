@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <map>
 #include <stdexcept>
+#include <vector>
 namespace acroclip::windows {
 class ListenRouting {
   using Device = Microsoft::WRL::ComPtr<IMMDevice>;
@@ -30,6 +31,15 @@ public:
     DWORD state=0;
     if(FAILED(result)||FAILED(value->GetState(&state))||state!=DEVICE_STATE_ACTIVE)throw std::runtime_error("The listening output is unavailable");
     return value;
+  }
+  /** Every active output device. */
+  std::vector<Device> outputs() {
+    Microsoft::WRL::ComPtr<IMMDeviceCollection> collection;
+    UINT count=0;
+    if(FAILED(enumerator->EnumAudioEndpoints(eRender,DEVICE_STATE_ACTIVE,&collection))||FAILED(collection->GetCount(&count)))throw std::runtime_error("Audio outputs could not be listed");
+    std::vector<Device> result;
+    for(UINT index=0;index<count;index++){Device value;if(SUCCEEDED(collection->Item(index,&value)))result.push_back(value);}
+    return result;
   }
   static std::wstring identity(IMMDevice *device) { LPWSTR raw=nullptr;if(FAILED(device->GetId(&raw)))throw std::runtime_error("The listening output cannot be identified");std::wstring result(raw);CoTaskMemFree(raw);return result; }
   bool same(const std::string&a,const std::string&b){return identity(device(a).Get())==identity(device(b).Get());}

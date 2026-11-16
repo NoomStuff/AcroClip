@@ -75,20 +75,14 @@ struct DesktopAudio {
     }
     children.clear();
   }
-  std::string update() {
-    ListenRouting routing;
-    auto endpoint = routing.device(device.empty() ? "default" : device);
+  struct Session { DWORD pid; AudioSessionState state; };
+  /** Every live session on one output, by process. */
+  static std::vector<Session> sessionsOn(IMMDevice *endpoint) {
     Microsoft::WRL::ComPtr<IAudioSessionManager2> manager;
     Microsoft::WRL::ComPtr<IAudioSessionEnumerator> sessions;
     if (FAILED(endpoint->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, reinterpret_cast<void **>(manager.GetAddressOf()))) ||
         FAILED(manager->GetSessionEnumerator(&sessions)))
       throw std::runtime_error("Desktop audio sessions could not be enumerated");
-    std::vector<uint32_t> excluded;
-    { std::lock_guard<std::mutex> lock(exclusionsMutex); excluded = exclusions; }
-    // The app supplies its PID. Native-only fixtures exclude the recorder,
-    // without treating their test launcher and sibling tone processes as AcroClip.
-    excluded.push_back(GetCurrentProcessId());
-    struct Session { DWORD pid; AudioSessionState state; };
     std::vector<Session> listed;
     int count = 0;
     if (FAILED(sessions->GetCount(&count))) throw std::runtime_error("Desktop audio sessions could not be read");
@@ -102,6 +96,35 @@ struct DesktopAudio {
         throw std::runtime_error("A desktop audio session could not be identified");
       if (!pid || state == AudioSessionStateExpired) continue;
       listed.push_back({pid, state});
+    }
+    return listed;
+  }
+  std::string update() {
+    ListenRouting routing;
+    auto endpoint = routing.device(device.empty() ? "default" : device);
+    std::vector<uint32_t> excluded;
+    { std::lock_guard<std::mutex> lock(exclusionsMutex); excluded = exclusions; }
+    // The app supplies its PID. Native-only fixtures exclude the recorder,
+    // without treating their test launcher and sibling tone processes as AcroClip.
+    excluded.push_back(GetCurrentProcessId());
+    std::vector<Session> listed = sessionsOn(endpoint.Get());
+    // Many games stay on the output they started on when the default changes, and they're still
+    // audible there. A process that's already captured stays captured while it has a session on
+    // any output. New captures still come only from the default output, because a mixer like
+    // Voicemeeter replays every app onto the real headset and capturing it would double them all.
+    std::set<DWORD> moved;
+    for (const auto &[pid, child] : children)
+      if (std::none_of(listed.begin(), listed.end(), [&](const Session &item) { return item.pid == pid; })) moved.insert(pid);
+    if (!moved.empty()) {
+      const auto current = ListenRouting::identity(endpoint.Get());
+      for (const auto &output : routing.outputs()) {
+        if (ListenRouting::identity(output.Get()) == current) continue;
+        // Another output failing to list only costs its moved processes, never the default mix.
+        try {
+          for (const auto &item : sessionsOn(output.Get()))
+            if (moved.count(item.pid)) listed.push_back(item);
+        } catch (const std::exception &) {}
+      }
     }
     const auto now = std::chrono::steady_clock::now();
     // A PID the last snapshot already lacked, like an excluded app that closed, waits for the 2 s retake.

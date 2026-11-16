@@ -1,7 +1,47 @@
-param([switch]$PlayTone, [string]$TonePath, [switch]$EndpointOnly)
+param([switch]$PlayTone, [string]$TonePath, [switch]$EndpointOnly, [switch]$SecondOutput)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:ACROCLIP_HOSTED_WINDOWS_FIXTURE -ne 'github-hosted') {
     throw 'This audio fixture may run only in a disposable GitHub-hosted Windows job'
+}
+if ($SecondOutput) {
+    # A second output, after the first fixture is in place, so a check can move the default
+    # between two real devices. VB-Audio Hi-Fi Cable is donationware from the same vendor.
+    if (-not $env:ACROCLIP_TEST_RENDER_ENDPOINT_ID) { throw 'Set up the first private output before the second' }
+    $fixture = Join-Path $env:RUNNER_TEMP ('acroclip-audio-second-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $fixture | Out-Null
+    $archive = Join-Path $fixture 'HiFiCableAsioBridgeSetup_v1007.zip'
+    Invoke-WebRequest -Uri 'https://download.vb-audio.com/Download_CABLE/HiFiCableAsioBridgeSetup_v1007.zip' -OutFile $archive -TimeoutSec 60
+    if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne '3ECF204BFD8579D36BB918F9856EB1EADDD49C75146F5E8A8F59DCB8375AE89A') {
+        throw 'The pinned second audio fixture archive differs'
+    }
+    $driver = Join-Path $fixture 'driver'
+    Expand-Archive -LiteralPath $archive -DestinationPath $driver
+    $installer = Join-Path $driver 'HiFiCableAsioBridgeSetup.exe'
+    $signature = Get-AuthenticodeSignature -LiteralPath $installer
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne '1EC834D910706BDA99DAE3A78B84C4E5EBEA441A') {
+        throw 'The second audio fixture installer signature differs'
+    }
+    $installation = Start-Process -FilePath $installer -ArgumentList '-i', '-h' -WorkingDirectory $driver -WindowStyle Hidden -PassThru
+    if (-not $installation.WaitForExit(60000)) { $installation.Kill(); throw 'Second audio fixture installation timed out' }
+    Write-Output "Second audio fixture installer exited $($installation.ExitCode)"
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+        # Render endpoints are SWD\MMDEVAPI\{0.0.0.00000000}.{guid}.
+        $endpoints = @(Get-CimInstance Win32_PnPEntity | Where-Object {
+            $_.PNPDeviceID -like 'SWD\MMDEVAPI\{0.0.0.00000000}.*' -and $_.PNPDeviceID -ne "SWD\MMDEVAPI\$env:ACROCLIP_TEST_RENDER_ENDPOINT_ID" -and
+            $_.Name -like '*Hi-Fi Cable*' -and $_.ConfigManagerErrorCode -eq 0
+        })
+        if ($endpoints.Count -gt 0) { break }
+        Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if ($endpoints.Count -eq 0) {
+        Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -like 'SWD\MMDEVAPI\*' } | Format-Table Status, Name, PNPDeviceID
+        throw 'The second virtual audio output did not become active'
+    }
+    $endpoints | Format-Table Status, Name, PNPDeviceID
+    $second = $endpoints[0].PNPDeviceID.Substring('SWD\MMDEVAPI\'.Length)
+    "ACROCLIP_TEST_SECOND_RENDER_ENDPOINT_ID=$second" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+    exit 0
 }
 if ($PlayTone) {
     $player = [System.Media.SoundPlayer]::new($TonePath)
