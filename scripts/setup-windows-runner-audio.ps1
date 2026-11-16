@@ -1,7 +1,32 @@
-param([switch]$PlayTone, [string]$TonePath, [switch]$EndpointOnly)
+param([switch]$PlayTone, [string]$TonePath, [switch]$EndpointOnly, [switch]$SecondOutput)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:ACROCLIP_HOSTED_WINDOWS_FIXTURE -ne 'github-hosted') {
     throw 'This audio fixture may run only in a disposable GitHub-hosted Windows job'
+}
+if ($SecondOutput) {
+    # A second output, after the first fixture is in place, so a check can move the default
+    # between two real devices. VB-CABLE already adds a second render endpoint, its 16 channel
+    # input, so nothing else is installed. Windows lists it as disabled until the check enables it.
+    if (-not $env:ACROCLIP_TEST_RENDER_ENDPOINT_ID) { throw 'Set up the first private output before the second' }
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+        # Render endpoints are SWD\MMDEVAPI\{0.0.0.00000000}.{guid}.
+        $endpoints = @(Get-CimInstance Win32_PnPEntity | Where-Object {
+            $_.PNPDeviceID -like 'SWD\MMDEVAPI\{0.0.0.00000000}.*' -and $_.PNPDeviceID -ne "SWD\MMDEVAPI\$env:ACROCLIP_TEST_RENDER_ENDPOINT_ID" -and
+            $_.Name -like 'CABLE In 16 Ch (VB-Audio Virtual Cable)*' -and $_.ConfigManagerErrorCode -eq 0
+        })
+        if ($endpoints.Count -gt 0) { break }
+        Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if ($endpoints.Count -eq 0) {
+        Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -like 'SWD\MMDEVAPI\*' } | Format-Table Status, Name, PNPDeviceID
+        throw 'The second virtual audio output did not become active'
+    }
+    $endpoints | Format-Table Status, Name, PNPDeviceID
+    # PnP spells the id in upper case, Core Audio in lower case.
+    $second = $endpoints[0].PNPDeviceID.Substring('SWD\MMDEVAPI\'.Length).ToLowerInvariant()
+    "ACROCLIP_TEST_SECOND_RENDER_ENDPOINT_ID=$second" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+    exit 0
 }
 if ($PlayTone) {
     $player = [System.Media.SoundPlayer]::new($TonePath)

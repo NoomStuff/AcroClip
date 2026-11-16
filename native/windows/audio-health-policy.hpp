@@ -2,9 +2,13 @@
 #pragma once
 #include <atomic>
 #include <chrono>
+#include <algorithm>
 #include <cstdint>
-#include <string>
+#include <exception>
 #include <optional>
+#include <set>
+#include <string>
+#include <vector>
 
 namespace acroclip::windows {
 class InputDelivery {
@@ -63,4 +67,34 @@ public:
 private:
   std::optional<Clock::time_point> waiting;
 };
+
+/**
+ * The sessions Desktop audio works from, given the default output's sessions and the processes it
+ * already captures. Many games stay on the output they started on when the default changes, and
+ * they're still audible there, so a captured process stays while it has a session on any output.
+ * New captures still come only from the default output, because a mixer like Voicemeeter replays
+ * every app onto the real headset and capturing it there would double them all.
+ *
+ * `others` returns the other outputs, each as a callable that lists its sessions. It only runs when
+ * a captured process has left the default output. Failing to find or list other outputs only costs
+ * the processes that moved, never the default mix.
+ */
+template <class Session, class Others>
+std::vector<Session> followCapturedSessions(std::vector<Session> listed, const std::set<uint32_t> &captured, const Others &others) {
+  std::set<uint32_t> moved;
+  for (const uint32_t pid : captured)
+    if (std::none_of(listed.begin(), listed.end(), [&](const Session &item) { return item.pid == pid; })) moved.insert(pid);
+  if (moved.empty()) return listed;
+  std::vector<Session> found;
+  try {
+    for (const auto &list : others()) {
+      try {
+        for (const Session &item : list())
+          if (moved.count(item.pid)) found.push_back(item);
+      } catch (const std::exception &) {}
+    }
+  } catch (const std::exception &) {}
+  listed.insert(listed.end(), found.begin(), found.end());
+  return listed;
+}
 }
