@@ -26,7 +26,8 @@ async function fixture(
       | "candidates-retry"
       | "saved-source-mismatch"
       | "hang-exit"
-      | "save-failure",
+      | "save-failure"
+      | "slow-save",
    invalidExecutable = false,
    rejectRegistration = false
 ) {
@@ -55,6 +56,8 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  const v = JSON.parse(line);
  fs.appendFileSync('commands.jsonl',JSON.stringify(v)+'\\n');
  if(v.action==='windows') emit({event:'windows',windows:[]});
+ if(v.action==='candidates'&&!mode.startsWith('candidates-')) emit({event:'candidates',windows:[]});
+ if(v.action==='save'&&mode==='slow-save') {setTimeout(()=>emit({event:'response',id:v.id}),400);return;}
  if(v.action==='start') {
   active=true; emit({event:'recording'});
   if(mode==='crash') setTimeout(()=>process.exit(17),80);
@@ -189,6 +192,28 @@ describe("recorder helper termination", () => {
          expect((await readFile(join(root, "discovery-attempts"), "utf8")).trim().split("\n")).toHaveLength(3);
          expect(child.status.state).toBe("recording");
          expect(errors).toEqual([]);
+      },
+      helperTestTimeout
+   );
+   it.skipIf(process.platform !== "win32")(
+      "lists apps through the idle running recorder without starting another process",
+      async () => {
+         const { child, root } = await fixture("normal");
+         await expect(child.applicationCandidates()).resolves.toEqual([]);
+         expect((await readFile(join(root, "commands.jsonl"), "utf8")).includes('"action":"candidates"')).toBe(true);
+         await expect(readFile(join(root, "discovery-attempts"), "utf8")).rejects.toThrow();
+      },
+      helperTestTimeout
+   );
+   it.skipIf(process.platform !== "win32")(
+      "lists apps with its own process while the running recorder is busy with a command",
+      async () => {
+         const { child, root } = await fixture("slow-save");
+         const saving = child.save(join(root, "busy.mkv")).catch(() => undefined);
+         await expect(child.applicationCandidates()).resolves.toEqual([]);
+         expect((await readFile(join(root, "discovery-attempts"), "utf8")).trim().split("\n")).toHaveLength(1);
+         expect((await readFile(join(root, "commands.jsonl"), "utf8")).includes('"action":"candidates"')).toBe(false);
+         await saving;
       },
       helperTestTimeout
    );

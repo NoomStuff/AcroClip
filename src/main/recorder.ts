@@ -26,6 +26,7 @@ import { nativeAudioPreferences } from "../shared/audio-model";
 import type { AudioFilter } from "../shared/audio-filters";
 import { missingAudioWarning, resolveAudioSources } from "./audio-sources";
 import { resolveReplayMemoryMB } from "../shared/replay-memory";
+import { POLL_TICK_MS, pollDue, type PollState } from "./poll-plan";
 
 export type RecorderErrorContext = "capture" | "save" | "saved-clip";
 /** The helper never answered. Unlike a refusal, the request may still complete. */
@@ -57,6 +58,8 @@ interface RecorderOptions {
    /** The helper's own log (OBS's), for the local recorder log. Never shown to the user. */
    onOutput?: (text: string) => void;
    /** The helper started or ended, for the app log. */
+   /** The shared poll clock's turn to sample which game fills a desktop capture. */
+   onDesktopGameTick?: () => void;
    onLifecycle?: (event: { kind: "started"; executable: string } | { kind: "closed"; code: number | null; signal: string | null; expected: boolean }) => void;
 }
 interface NativeMessage {
@@ -102,6 +105,8 @@ interface NativeMessage {
 const pollActions = new Set(["status", "windows", "candidates", "audio-devices"]);
 /** How long one application discovery answers repeated questions. */
 const APPLICATION_REUSE_MS = 500;
+/** The running recorder lists apps in about 0.5 ms. Past this, discovery starts its own process. */
+const RECORDER_LISTING_TIMEOUT_MS = 1000;
 /** How long the helper may take to exit after every save has finished. */
 export const RECORDER_EXIT_TIMEOUT_MS = 5000;
 
@@ -293,7 +298,19 @@ export class Recorder {
    private async queryApplications(): Promise<GameCandidate[]> {
       if (!this.current.supported) return [];
       if (process.platform === "win32") {
-         // Discovery must not wait behind capture startup or audio commands.
+         // The running recorder answers in about 0.5 ms. A new recorder process costs about 28 ms
+         // and 24 ms of CPU, with spikes past 100 ms, which a game would feel every second.
+         // Discovery must not wait behind capture startup or audio commands, so a busy or
+         // missing recorder still gets its own process.
+         const asked = this.process;
+         if (asked && this.recorderIdle() && this.listingProcess !== asked) {
+            try {
+               return await this.candidates(RECORDER_LISTING_TIMEOUT_MS);
+            } catch {
+               // A recorder that doesn't answer gets no second chance to slow discovery down.
+               this.listingProcess = asked;
+            }
+         }
          const executable = existsSync(this.executable) ? this.executable : this.developmentExecutable;
          try {
             const { stdout } = await promisify(execFile)(executable, [path.dirname(executable), "--candidates"], {
@@ -315,17 +332,23 @@ export class Recorder {
       await this.initialize();
       return this.candidates();
    }
+   /** A running recorder that once failed to list apps in time, so discovery uses its own process. */
+   private listingProcess: ChildProcessWithoutNullStreams | null = null;
+   /** The recorder is running, ready, and has no command in flight that discovery could wait behind. */
+   private recorderIdle(): boolean {
+      return !!this.process?.stdin.writable && !!this.ready && !this.readyResolve && this.commands.size === 0;
+   }
    async applicationCandidates(): Promise<GameCandidate[]> {
       if (!this.current.supported) return [];
       return (await this.capturableApplications()).filter((candidate) => candidate.pid !== process.pid);
    }
-   private candidates(): Promise<GameCandidate[]> {
+   private candidates(timeoutMs = 3000): Promise<GameCandidate[]> {
       if (this.candidatesPending) return this.candidatesPending;
       this.candidatesPending = new Promise<GameCandidate[]>((resolve, reject) => {
          const timeout = setTimeout(() => {
             this.candidatesResolve = null;
             reject(new Error("Finding open apps took too long. Refresh the source list."));
-         }, 3000);
+         }, timeoutMs);
          this.candidatesResolve = (items) => {
             clearTimeout(timeout);
             resolve(items);
@@ -569,16 +592,27 @@ export class Recorder {
          clearTimeout(timeout);
       }
       await this.refreshWindows();
-      // Status polls also advance the native canvas fit. Poll quickly while a
-      // source is starting so footage begins sooner, then settle to once a second.
-      // In the background the steady rate halves, so a running game keeps the machine.
+      // Status polls also advance the native canvas fit, so they run quickly while a source is
+      // starting. poll-plan.ts sets every rate and keeps status and app listings on separate ticks.
       let tick = 0;
       this.timer = setInterval(() => {
-         const steady = tick++ % (this.background ? 8 : 4) === 0;
-         if (steady || Date.now() < this.fastStatusUntil) this.poll();
-         if (steady) void this.followGame();
-         if (steady) void this.attachPendingAudio();
-      }, 250);
+         const due = new Set(pollDue(tick++, this.pollState()));
+         if (due.has("status")) this.poll();
+         if (due.has("followGame")) void this.followGame();
+         if (due.has("pendingAudio")) void this.attachPendingAudio();
+         if (due.has("desktopGame")) this.options.onDesktopGameTick?.();
+      }, POLL_TICK_MS);
+   }
+   private pollState(): PollState {
+      const capturing = ["recording", "waiting"].includes(this.current.state);
+      return {
+         background: this.background,
+         fastStatus: Date.now() < this.fastStatusUntil,
+         capturing,
+         following: !!this.autoPreferences,
+         searching: !!this.autoPreferences && (this.current.state === "waiting" || !!this.autoFailure),
+         pendingAudio: this.pendingAudio.length > 0,
+      };
    }
    private message(value: NativeMessage): void {
       if (value.id && (value.event === "response" || value.event === "error")) {

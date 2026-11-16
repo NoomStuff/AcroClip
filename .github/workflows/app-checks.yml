@@ -66,6 +66,9 @@ jobs:
            run: bun scripts/run-interactive-tests.ts audio-filters
          - run: bun run test:capture-loss
            if: matrix.suite == 'capture'
+         - name: Keep recurring checks within their measured budgets
+           if: matrix.suite == 'capture'
+           run: bun scripts/run-interactive-tests.ts polling
          # Last, because enabling a second output and moving the default would change what the earlier checks hear.
          - name: Find the second private output
            if: matrix.suite == 'capture'

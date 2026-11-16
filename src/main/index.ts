@@ -441,6 +441,7 @@ const storage = new StorageMonitor({
 });
 const recorder = new Recorder({
    gameCatalogPath: join(app.getPath("userData"), "game-catalog.json"),
+   onDesktopGameTick: () => void watchDesktopGame().catch(() => undefined),
    onCatalogWarning: (message) => log(message),
    onWarning: (message) => log(`recorder: ${message}`, "warn"),
    onAudioMonitorError: (monitorError, listeningError) =>
@@ -895,8 +896,6 @@ async function desktopCaptureGame(screenId: string | undefined): Promise<Applica
       return undefined;
    }
 }
-/** How often a desktop capture notes which game is in front. Each look asks the helper for the open windows, so it stays slow. */
-const DESKTOP_WATCH_INTERVAL = 5000;
 /** Long enough to cover the longest merged clip. */
 const desktopWatch = new DesktopGameWatch<ApplicationArtwork>(11 * 60_000);
 let desktopWatchSource = "";
@@ -2009,7 +2008,6 @@ else {
             const problem = globalShortcutProblem(bindingFor(preferences, item.id));
             if (problem) notice(`${item.label}: ${problem} Change it in Settings.`, true);
          }
-         setInterval(() => void watchDesktopGame().catch(() => undefined), DESKTOP_WATCH_INTERVAL).unref();
          if (process.argv.includes("--clip")) void saveClip("command").catch(captureActionError);
          if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
             void startRecording({ quiet: true }).catch(captureActionError);

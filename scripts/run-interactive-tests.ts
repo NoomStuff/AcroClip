@@ -22,6 +22,7 @@ const commands = {
    "additional-audio": [["scripts/smoke-additional-audio.ts"]],
    "audio-filters": [["scripts/smoke-audio-filters.ts"]],
    "default-output": [["scripts/smoke-default-output.ts"]],
+   polling: [["scripts/benchmark-polling.ts", "--check"]],
    "game-capture": [["scripts/smoke-game-capture.ts"]],
    overlap: [["scripts/smoke-overlap.ts"]],
    merge: [["scripts/smoke-merge.ts"]],
