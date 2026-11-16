@@ -392,6 +392,8 @@ describe("collection folder operations", () => {
          await collection.createCategory("Used");
          const [unused, used] = collection.categories.map((category) => category.id);
          const clip = collection.clips[0]!.id;
+         // Thumbnails publish on their own timer, which would count as one more change.
+         await collection.thumbnailsSettled();
          io.identities = 0;
          onChange.mockClear();
          await collection.toggleCategory(clip, used!);
@@ -746,6 +748,8 @@ describe("collection scan cost and fresh action checks", () => {
          console.log(
             `Collection filesystem profile, 200 synthetic files with media probe mocked: initial ${initialMs.toFixed(0)}ms, warm ${warmMs.toFixed(0)}ms, restart ${restartMs.toFixed(0)}ms.`
          );
+         // Thumbnail workers still writing into the folder would make removing it fail.
+         await Promise.all([collection.thumbnailsSettled(), restarted.thumbnailsSettled()]);
       } finally {
          await rm(root, { recursive: true, force: true });
       }
