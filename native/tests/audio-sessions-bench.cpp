@@ -85,13 +85,14 @@ int main(int argc, char **argv) {
         }
       }));
     }
-    // A cheaper way to notice reused process ids: each session process's start time.
+    // A cheaper way to notice reused process ids: each session process's start time. Twenty
+    // running processes stand in for the sessions, so a machine with few sessions still measures.
     {
-      ListenRouting routing;
-      auto endpoint = routing.device("default");
-      const auto listed = ListenRouting::sessions(endpoint.Get());
+      std::vector<DWORD> sample;
+      for (const auto &[pid, parent] : processParents())
+        if (sample.size() < 20 && processStarted(pid)) sample.push_back(pid);
       timings.push_back(measure("sessionStartTimes", rounds, [&] {
-        for (const auto &item : listed) (void)processStarted(item.pid);
+        for (DWORD pid : sample) (void)processStarted(pid);
       }));
     }
     // Every 2 s, or when an unknown process appears.
