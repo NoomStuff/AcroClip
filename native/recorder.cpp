@@ -456,6 +456,9 @@ private:
   int64_t recoveryBoundary = 0;
   std::atomic<bool> active{false};
   std::atomic<bool> monitoring{false};
+  /** The app shows level meters. Level messages are only sent while it does, since reading and
+   *  dropping thirty a second cost its main process 3 to 6 ms of CPU a second during a game. */
+  std::atomic<bool> metersWanted{true};
   std::string listeningSource, listeningDevice, listeningRequestedDevice, listeningFailure;
   json sessionConfiguration = json::object();
   std::atomic<bool> waitingForPresetSize{false};
@@ -533,7 +536,7 @@ public:
       (context->microphone ? r->microphoneLevel : r->captureLevel) = value;
       accumulatePeak(context->microphone ? r->microphonePendingPeak : r->capturePendingPeak, value);
       uint64_t now = os_gettime_ns(), last = r->lastMeterEvent.load();
-      if (r->active && now - last >= 33000000 &&
+      if (r->active && r->metersWanted && now - last >= 33000000 &&
           r->lastMeterEvent.compare_exchange_strong(last, now)) {
         emit({{"event", "audio-levels"},
               {"capture", std::max(r->captureLevel.load(), r->capturePendingPeak.exchange(0))},
@@ -1384,7 +1387,7 @@ private:
                   value, std::clamp((peak[channel] + 60.f) / 60.f, 0.f, 1.f));
           accumulatePeak(meter->pendingPeak, value);
           uint64_t now = os_gettime_ns(), last = meter->lastEvent.load();
-          if ((meter->owner->active || meter->owner->monitoring) && now - last >= 33000000 &&
+          if ((meter->owner->active || meter->owner->monitoring) && meter->owner->metersWanted && now - last >= 33000000 &&
               meter->lastEvent.compare_exchange_strong(last, now))
             emit({{"event", "audio-levels"},
                   {"capture", meter->owner->captureLevel.load()},
@@ -1669,7 +1672,7 @@ private:
           std::string identity = additionalAudio.back().id;
           setApplicationAudioLevelCallback(
               additionalAudio.back().application, [this, identity](float value) {
-                if (active || monitoring)
+                if ((active || monitoring) && metersWanted)
                   emit({{"event", "audio-levels"},
                         {"capture", captureLevel.load()},
                         {"microphone", microphoneLevel.load()},
@@ -2618,7 +2621,7 @@ public:
     if (applicationAudio)
       setApplicationAudioLevelCallback(applicationAudio, [this](float value) {
         captureLevel = value;
-        if (active)
+        if (active && metersWanted)
           emit({{"event", "audio-levels"},
                 {"capture", value},
                 {"microphone", microphoneLevel.load()}});
@@ -3000,6 +3003,7 @@ public:
     return true;
   }
   void endEncodedOutput() { obs_output_end_data_capture(output); }
+  void showMeters(bool shown) { metersWanted = shown; }
 #ifdef _WIN32
   json desktopActivity(const std::string &id) {
     const auto activity = acroclip::windows::desktopAudioActivity(desktop);
@@ -3292,6 +3296,8 @@ int main(int argc, char **argv) {
             r.setAudio(c);
           else if (action == "attach-audio")
             r.attachAudio(c);
+          else if (action == "meters")
+            r.showMeters(c.value("shown", true));
 #ifdef __linux__
           else if (action == "test-close-portal" &&
                    std::getenv("ACROCLIP_NATIVE_TEST_PORTAL")) {

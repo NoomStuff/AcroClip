@@ -195,6 +195,25 @@ describe("recorder helper termination", () => {
       },
       helperTestTimeout
    );
+   it(
+      "tells the recorder to send level messages only while meters are shown",
+      async () => {
+         const { child, root } = await fixture("normal");
+         child.setMeters(true);
+         child.setMeters(true);
+         child.setMeters(false);
+         await child.applicationCandidates().catch(() => []);
+         const meters = (await readFile(join(root, "commands.jsonl"), "utf8"))
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line) as { action: string; shown?: boolean })
+            .filter((command) => command.action === "meters")
+            .map((command) => command.shown);
+         // Hidden from the start, then each change once.
+         expect(meters).toEqual([false, true, false]);
+      },
+      helperTestTimeout
+   );
    it.skipIf(process.platform !== "win32")(
       "lists apps through the idle running recorder without starting another process",
       async () => {

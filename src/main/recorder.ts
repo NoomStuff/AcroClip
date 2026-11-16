@@ -334,6 +334,19 @@ export class Recorder {
    }
    /** A running recorder that once failed to list apps in time, so discovery uses its own process. */
    private listingProcess: ChildProcessWithoutNullStreams | null = null;
+   /** Whether the app shows level meters, so the recorder sends level messages. */
+   private metersWanted = false;
+   private metersSent: boolean | null = null;
+   /** Tells the recorder whether anyone sees the level meters. It sends no level messages otherwise. */
+   setMeters(shown: boolean): void {
+      this.metersWanted = shown;
+      this.sendMeters();
+   }
+   private sendMeters(): void {
+      if (!this.process?.stdin.writable || this.readyResolve || this.metersSent === this.metersWanted) return;
+      this.metersSent = this.metersWanted;
+      this.send({ action: "meters", shown: this.metersWanted });
+   }
    /** The recorder is running, ready, and has no command in flight that discovery could wait behind. */
    private recorderIdle(): boolean {
       return !!this.process?.stdin.writable && !!this.ready && !this.readyResolve && this.commands.size === 0;
@@ -646,6 +659,9 @@ export class Recorder {
          this.readyResolve?.();
          this.readyResolve = null;
          this.readyReject = null;
+         // A new recorder sends level messages until it hears otherwise.
+         this.metersSent = null;
+         this.sendMeters();
       }
       if (value.event === "windows" && Array.isArray(value.windows)) {
          this.windows = value.windows;

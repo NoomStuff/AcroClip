@@ -760,9 +760,11 @@ function createWindow() {
    mainWindow.webContents.on("did-start-loading", () => {
       stateChanges.reset();
       metersShown = false;
+      recorder.setMeters(false);
    });
    const visibilityChanged = () => {
       const visible = windowShown();
+      recorder.setMeters(metersShown && visible);
       trackWindow(visible);
       updateActivity();
       libraryRefresh.update(collections.root, libraryInView());
@@ -1848,7 +1850,9 @@ function registerIPC() {
       }
    });
    ipcMain.on("meters", (event, shown) => {
-      if (event.sender === mainWindow?.webContents) metersShown = shown === true;
+      if (event.sender !== mainWindow?.webContents) return;
+      metersShown = shown === true;
+      recorder.setMeters(metersShown && windowShown());
    });
    ipcMain.on("drag", (event, path) => {
       if (event.sender !== mainWindow?.webContents) return;

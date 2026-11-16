@@ -86,6 +86,33 @@ try {
    if (helper.exitCode === null) helper.kill();
 }
 
+// 2b. What the app's main process pays to read audio level messages it may only throw away:
+// a sender writes one level line every 33 ms, as the recorder does while capturing, and this
+// process reads and parses each, as Recorder does. Compared with the same time without them.
+async function levelReading(perSecond: number): Promise<number> {
+   const line = JSON.stringify({ event: "audio-levels", capture: 0.42, microphone: 0.1, additional: { "source-audio": 0.3 } });
+   const sender = spawn(
+      process.execPath,
+      [
+         "-e",
+         `const t=setInterval(()=>process.stdout.write(${JSON.stringify(line + "\n")}),${perSecond ? Math.round(1000 / perSecond) : 1e9});setTimeout(()=>{clearInterval(t)},5000)`,
+      ],
+      {
+         stdio: ["ignore", "pipe", "ignore"],
+      }
+   );
+   const kinds = new Set<string>();
+   createInterface({ input: sender.stdout! }).on("line", (text) => {
+      const value = JSON.parse(text) as { event?: string };
+      if (value.event) kinds.add(value.event);
+   });
+   const before = process.cpuUsage();
+   await new Promise((resolve) => sender.once("exit", resolve));
+   const used = process.cpuUsage(before);
+   return Number(((used.user + used.system) / 1000 / 5).toFixed(2));
+}
+results["levelMessagesCpuMsPerSecond"] = { none: await levelReading(0), thirtyPerSecond: await levelReading(30) };
+
 // 3. Desktop audio rounds, from the native benchmark when the test fixtures are built.
 const sessions = path.resolve(".cache/native-tests/Release/acroclip-audio-sessions-bench.exe");
 if (existsSync(sessions)) {
