@@ -85,6 +85,15 @@ int main(int argc, char **argv) {
         }
       }));
     }
+    // A cheaper way to notice reused process ids: each session process's start time.
+    {
+      ListenRouting routing;
+      auto endpoint = routing.device("default");
+      const auto listed = ListenRouting::sessions(endpoint.Get());
+      timings.push_back(measure("sessionStartTimes", rounds, [&] {
+        for (const auto &item : listed) (void)processStarted(item.pid);
+      }));
+    }
     // Every 2 s, or when an unknown process appears.
     timings.push_back(measure("processSnapshot", rounds, [] { (void)processParents(); }));
   } catch (const std::exception &problem) {

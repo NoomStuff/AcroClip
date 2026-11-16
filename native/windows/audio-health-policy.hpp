@@ -92,6 +92,32 @@ std::vector<Session> followCapturedSessions(std::vector<Session> listed, const s
   return listed;
 }
 
+/** One process Desktop audio needs a parent for, as the last process snapshot and Windows see it. */
+struct SnapshotCheck {
+  uint32_t pid;
+  /** The snapshot listed it, or knew it was missing. */
+  bool known;
+  /** When it started, in FILETIME units, or 0 when Windows won't say. */
+  uint64_t started;
+};
+
+/**
+ * Whether the process snapshot behind Desktop audio's parent lookups must be retaken. A snapshot
+ * walks every process on the system, about 9 ms of CPU, so it used to be retaken every 2 s to
+ * catch process ids Windows had reused. Now only a reused id costs one: a process that started
+ * after the snapshot. Those still wait for the snapshot to be 2 s old, as before. A process
+ * Windows won't describe keeps the old 2 s retake, and every snapshot is retaken after 30 s.
+ */
+inline bool snapshotStale(uint64_t takenAt, std::chrono::steady_clock::duration age, const std::vector<SnapshotCheck> &wanted) {
+  using namespace std::chrono_literals;
+  if (!takenAt || age >= 30s) return true;
+  for (const auto &item : wanted) {
+    if (!item.known) return true;
+    if ((!item.started || item.started >= takenAt) && age >= 2s) return true;
+  }
+  return false;
+}
+
 /** Every session from a set of outputs. One that fails to list only loses its own sessions. */
 template <class Session, class Lists>
 std::vector<Session> collectSessions(const Lists &lists) {

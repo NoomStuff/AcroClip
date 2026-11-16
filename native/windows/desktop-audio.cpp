@@ -40,9 +40,10 @@ struct DesktopAudio {
   std::map<DWORD, Child> children;
   // A process snapshot walks every process on the system, which is most of an update's cost.
   // Parents never change after a process starts, so the snapshot is reused until a session or
-  // excluded app names a process it hasn't seen, and is retaken every 2 s to catch reused PIDs.
+  // excluded app names a process it hasn't seen or one that started after it. See snapshotStale.
   std::map<DWORD, DWORD> parents;
   std::chrono::steady_clock::time_point parentsAt{};
+  uint64_t parentsTakenAt = 0;
   std::set<DWORD> absent;
 
   DesktopAudio(obs_data_t *settings, obs_source_t *owner) : source(owner), device(obs_data_get_string(settings, "device_id")) {
@@ -105,12 +106,16 @@ struct DesktopAudio {
       });
     };
     const std::vector<Session> listed = followCapturedSessions(sessionsOn(endpoint.Get()), captured, others);
-    // A PID the last snapshot already lacked, like an excluded app that closed, waits for the 2 s retake.
     std::set<DWORD> wanted(excluded.begin(), excluded.end());
     for (const auto &item : listed) wanted.insert(item.pid);
-    const bool unseen = std::any_of(wanted.begin(), wanted.end(), [&](DWORD pid) { return !parents.count(pid) && !absent.count(pid); });
-    if (unseen || now - parentsAt >= std::chrono::seconds(2)) {
+    // About 2 us per process, against 9 ms for a snapshot of all of them.
+    std::vector<SnapshotCheck> checks;
+    for (DWORD pid : wanted) checks.push_back({pid, parents.count(pid) > 0 || absent.count(pid) > 0, processStarted(pid)});
+    if (snapshotStale(parentsTakenAt, now - parentsAt, checks)) {
+      FILETIME taken{};
+      GetSystemTimeAsFileTime(&taken);
       parents = processParents();
+      parentsTakenAt = (uint64_t(taken.dwHighDateTime) << 32) | taken.dwLowDateTime;
       parentsAt = now;
       absent.clear();
       for (DWORD pid : wanted) if (!parents.count(pid)) absent.insert(pid);

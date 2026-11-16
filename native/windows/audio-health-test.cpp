@@ -101,5 +101,22 @@ int main() {
     require(threw && listings == 3);
     require(cache.get(start + 2500ms, broken).empty() && listings == 3);
   }
-  std::cout << "Input delivery, endpoint state, access denial, capture recovery and output change policy passed\n";
+  {
+    const uint64_t taken = 1000;
+    const std::vector<SnapshotCheck> settled{{10, true, 500}, {20, true, 900}};
+    // Nothing new: the snapshot holds for 30 s instead of being retaken every 2 s.
+    require(!snapshotStale(taken, 2s, settled));
+    require(!snapshotStale(taken, 29s, settled));
+    require(snapshotStale(taken, 30s, settled));
+    require(snapshotStale(0, 0s, settled));
+    // A process the snapshot never saw is looked up at once, as before.
+    require(snapshotStale(taken, 100ms, {{10, true, 500}, {30, false, 1200}}));
+    // A reused id, so a process that started after the snapshot, waits for the 2 s retake as before.
+    require(!snapshotStale(taken, 1999ms, {{10, true, 1500}}));
+    require(snapshotStale(taken, 2s, {{10, true, 1500}}));
+    // A process Windows won't describe keeps the old 2 s retake.
+    require(!snapshotStale(taken, 1s, {{10, true, 0}}));
+    require(snapshotStale(taken, 2s, {{10, true, 0}}));
+  }
+  std::cout << "Input delivery, endpoint state, access denial, capture recovery, output change and process snapshot policy passed\n";
 }

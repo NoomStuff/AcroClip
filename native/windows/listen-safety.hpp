@@ -25,6 +25,15 @@ inline std::map<DWORD, DWORD> processParents() {
   CloseHandle(snapshot);
   return result;
 }
+/** When a process started, in FILETIME units, or 0 if Windows won't say. A reused id starts later. */
+inline uint64_t processStarted(DWORD pid) {
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+  if (!process) return 0;
+  FILETIME created{}, exited{}, kernel{}, user{};
+  const bool known = GetProcessTimes(process, &created, &exited, &kernel, &user);
+  CloseHandle(process);
+  return known ? (uint64_t(created.dwHighDateTime) << 32) | created.dwLowDateTime : 0;
+}
 class ListenRouting {
   using Device = Microsoft::WRL::ComPtr<IMMDevice>;
   Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
