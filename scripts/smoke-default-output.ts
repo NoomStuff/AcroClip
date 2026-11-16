@@ -27,6 +27,9 @@ type Event = {
    audioWarning?: string;
    processes?: number[];
    listings?: number;
+   framePacing?: string;
+   totalFrames?: number;
+   laggedFrames?: number;
 };
 const events: Event[] = [],
    logs: string[] = [],
@@ -229,10 +232,29 @@ try {
    const shownLevels = await levelsDuring(true);
    assert.equal(hiddenLevels, 0, `No level messages may be sent while meters are hidden: ${hiddenLevels} in 1 s`);
    assert.ok(shownLevels > 5, `Level messages must flow again once meters are shown: ${shownLevels} in 1 s`);
+   // libOBS paces frames on a timer wait instead of spinning, without making frames late.
+   const pacingId = randomUUID();
+   const pacingMark = events.length;
+   helper.stdin.write(`${JSON.stringify({ action: "test-lifecycle", id: pacingId })}\n`);
+   const pacing = await wait((event) => event.event === "lifecycle" && event.id === pacingId, pacingMark);
+   assert.equal(pacing.framePacing, "timer", `Frame pacing must wait on the timer: ${pacing.framePacing}`);
+   const laggedShare = (pacing.laggedFrames ?? 0) / Math.max(1, pacing.totalFrames ?? 0);
+   assert.ok((pacing.totalFrames ?? 0) > 100 && laggedShare < 0.02, `Frames must stay on time: ${pacing.laggedFrames} of ${pacing.totalFrames} lagged`);
    await command("stop");
    console.log(
       "Desktop audio kept an app across a default output change, and new captures still come from the default",
-      JSON.stringify({ original, kept, lateTones, freshTone, joins, quietListings, hiddenLevels, shownLevels })
+      JSON.stringify({
+         original,
+         kept,
+         lateTones,
+         freshTone,
+         joins,
+         quietListings,
+         hiddenLevels,
+         shownLevels,
+         laggedFrames: pacing.laggedFrames,
+         totalFrames: pacing.totalFrames,
+      })
    );
 } finally {
    if (statusTimer) clearInterval(statusTimer);

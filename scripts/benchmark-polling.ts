@@ -151,6 +151,11 @@ if (process.argv.includes("--check")) {
    if (!audio?.["round"] || !audio["oldRound"] || !audio["watchedList"] || !audio["sessionStartTimes"] || !audio["processSnapshot"])
       failures.push("The desktop audio benchmark didn't run");
    else {
+      if (audio["otherOutputsKept"] && audio["otherOutputs"])
+         expectThat(
+            audio["otherOutputsKept"].medianUs < audio["otherOutputs"].medianUs,
+            `Listing kept outputs (${audio["otherOutputsKept"].medianUs} us) must stay under opening them each time (${audio["otherOutputs"].medianUs} us)`
+         );
       expectThat(
          audio["watchedList"].medianUs < audio["oldRound"].medianUs,
          `Listing watched sessions (${audio["watchedList"].medianUs} us) must stay under the old round (${audio["oldRound"].medianUs} us)`

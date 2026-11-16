@@ -80,7 +80,9 @@ struct DesktopAudio {
   }
   using Session = ListenRouting::Session;
   SessionCache<Session> otherSessions;
-  static std::vector<Session> sessionsOn(IMMDevice *endpoint) { return ListenRouting::sessions(endpoint); }
+  /** Session managers of every output but the default, until outputs change. */
+  std::vector<Microsoft::WRL::ComPtr<IAudioSessionManager2>> otherManagers;
+  bool otherManagersStale = true;
   // Windows reports when sessions start, stop or end and when outputs change, so the sessions are
   // only listed after a change. That used to happen ten times a second whether or not anything
   // changed. A listing every 2 s, or every second while a captured app plays on another output,
@@ -107,6 +109,8 @@ struct DesktopAudio {
   static constexpr std::chrono::milliseconds round{250};
   void forgetRouting() {
     sessions.stop();
+    otherManagers.clear();
+    otherManagersStale = true;
     if (routing && outputsWatched) routing->unwatch(changes.Get());
     outputsWatched = false;
     endpoint.Reset();
@@ -121,6 +125,7 @@ struct DesktopAudio {
       outputsWatched = true;
       pending.outputs = true;
     }
+    if (pending.outputs) otherManagersStale = true;
     if (pending.outputs || !endpoint || now - endpointAt >= endpointInterval) {
       auto found = routing->device(device.empty() ? "default" : device);
       const auto id = ListenRouting::identity(found.Get());
@@ -130,6 +135,7 @@ struct DesktopAudio {
         endpointId = id;
         // Its other-output listing left out the new default and included the old one.
         otherSessions.clear();
+        otherManagersStale = true;
         sessions.start(endpoint.Get(), changes.Get());
         pending.sessions = true;
       }
@@ -154,9 +160,19 @@ struct DesktopAudio {
     for (const auto &[pid, child] : children) captured.insert(pid);
     const auto others = [&]() -> const std::vector<Session> & {
       return otherSessions.get(now, [&] {
+        // Listing the outputs and opening each one's manager took 2.1 ms with one other output,
+        // once a second for as long as a game stays on the old output. They're kept until
+        // Windows reports an output change, so a listing only reads the sessions.
+        if (otherManagersStale) {
+          otherManagers.clear();
+          for (auto &output : routing->outputs()) {
+            if (ListenRouting::identity(output.Get()) == endpointId) continue;
+            try { otherManagers.push_back(ListenRouting::manager(output.Get())); } catch (const std::exception &) {}
+          }
+          otherManagersStale = false;
+        }
         std::vector<std::function<std::vector<Session>()>> lists;
-        for (auto &output : routing->outputs())
-          if (ListenRouting::identity(output.Get()) != endpointId) lists.push_back([output] { return sessionsOn(output.Get()); });
+        for (const auto &manager : otherManagers) lists.push_back([manager] { return ListenRouting::sessions(manager.Get()); });
         return collectSessions<Session>(lists);
       });
     };

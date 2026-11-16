@@ -67,11 +67,17 @@ public:
   }
   struct Session { DWORD pid; AudioSessionState state; };
   /** Every live session on one output, by process. */
-  static std::vector<Session> sessions(IMMDevice *endpoint) {
-    Microsoft::WRL::ComPtr<IAudioSessionManager2> manager;
+  static std::vector<Session> sessions(IMMDevice *endpoint) { return sessions(manager(endpoint).Get()); }
+  /** One output's session manager, which can be kept and listed again cheaply. */
+  static Microsoft::WRL::ComPtr<IAudioSessionManager2> manager(IMMDevice *endpoint) {
+    Microsoft::WRL::ComPtr<IAudioSessionManager2> value;
+    if (FAILED(endpoint->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, reinterpret_cast<void **>(value.GetAddressOf()))))
+      throw std::runtime_error("Desktop audio sessions could not be enumerated");
+    return value;
+  }
+  static std::vector<Session> sessions(IAudioSessionManager2 *manager) {
     Microsoft::WRL::ComPtr<IAudioSessionEnumerator> enumerated;
-    if (FAILED(endpoint->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, reinterpret_cast<void **>(manager.GetAddressOf()))) ||
-        FAILED(manager->GetSessionEnumerator(&enumerated)))
+    if (FAILED(manager->GetSessionEnumerator(&enumerated)))
       throw std::runtime_error("Desktop audio sessions could not be enumerated");
     std::vector<Session> listed;
     int count = 0;

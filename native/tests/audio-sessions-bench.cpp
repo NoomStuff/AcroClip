@@ -84,6 +84,16 @@ int main(int argc, char **argv) {
           try { (void)ListenRouting::sessions(output.Get()); } catch (const std::exception &) {}
         }
       }));
+      // Now: their session managers are kept until outputs change, so a listing only reads sessions.
+      std::vector<Microsoft::WRL::ComPtr<IAudioSessionManager2>> managers;
+      const auto current = ListenRouting::identity(endpoint.Get());
+      for (auto &output : routing.outputs())
+        if (ListenRouting::identity(output.Get()) != current) managers.push_back(ListenRouting::manager(output.Get()));
+      timings.push_back(measure("otherOutputsKept", rounds, [&] {
+        for (const auto &manager : managers) {
+          try { (void)ListenRouting::sessions(manager.Get()); } catch (const std::exception &) {}
+        }
+      }));
     }
     // Now: sessions are listed after Windows reports a change, or every 2 s, through a kept
     // session manager that also watches each session for changes.

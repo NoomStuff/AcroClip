@@ -28,6 +28,7 @@
 #include "windows/audio-health.hpp"
 #include "windows/desktop-audio.hpp"
 #include "windows/listen-safety.hpp"
+#include "windows/frame-pacing.hpp"
 #endif
 #ifdef __APPLE__
 #include "macos/platform.hpp"
@@ -377,6 +378,10 @@ void idleVideo() {
   info.range = VIDEO_RANGE_PARTIAL;
   obs_reset_video(&info);
 }
+#ifdef _WIN32
+/** Why libOBS kept its own frame pacing, or empty when the timer wait replaced it. */
+std::string framePacing = "not installed";
+#endif
 void emit(json value) {
   std::lock_guard<std::mutex> lock(stdoutMutex);
   std::cout << value.dump() << std::endl;
@@ -3046,6 +3051,12 @@ public:
           {"videoEncoder", this->video != nullptr},
           {"audioEncoders", audio.size()},
           {"historyPackets", ring.size()},
+          // libOBS's own count of frames rendered late, for frame pacing checks.
+          {"totalFrames", obs_get_total_frames()},
+          {"laggedFrames", obs_get_lagged_frames()},
+#ifdef _WIN32
+          {"framePacing", framePacing.empty() ? "timer" : framePacing},
+#endif
           {"width", video.output_width},
           {"height", video.output_height},
           {"fps", video.fps_num}};
@@ -3105,6 +3116,9 @@ int main(int argc, char **argv) {
 #endif
 #ifdef _WIN32
     if (argc > 2 && std::string(argv[2]) == "--candidates") { emit({{"event","candidates"},{"windows",captureCandidates()}}); return 0; }
+    // Before libOBS starts its video thread, which is the only caller.
+    framePacing = acroclip::windows::installFramePacing(ACROCLIP_OBS_VERSION);
+    blog(LOG_INFO, "Frame pacing: %s", framePacing.empty() ? "waits on a high-resolution timer" : framePacing.c_str());
 #endif
     // win-capture starts an upstream network updater when its cache directory
     // is writable. Reserve that path as a file. The upstream updater returns
