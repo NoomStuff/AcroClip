@@ -166,10 +166,12 @@ jobs:
               } else {
                  pwsh -File scripts/setup-windows-runner-audio.ps1 -EndpointOnly
               }
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              if ($env:ACROCLIP_INTERACTIVE_SUITE -eq 'default-output') {
-                 pwsh -File scripts/setup-windows-runner-audio.ps1 -SecondOutput
-              }
+         # A separate step, since the first output's id only reaches the steps after the one that sets it up.
+         - name: Add a second private output
+           if: inputs.interactive_suite == 'default-output'
+           env:
+              ACROCLIP_HOSTED_WINDOWS_FIXTURE: ${{ runner.environment }}
+           run: pwsh -File scripts/setup-windows-runner-audio.ps1 -SecondOutput
          - name: Prepare executable packages when requested
            if: contains(fromJSON('["packaged","portable","installer","update"]'), inputs.interactive_suite)
            run: bunx electron-builder --win --x64 --publish never
