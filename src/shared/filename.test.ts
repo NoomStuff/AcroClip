@@ -51,6 +51,14 @@ describe("custom recording filenames", () => {
       ).toBe("Thursday 08.10.2026 09h05m07s Game.mp4");
       for (const field of filenameFields) expect(validFilenameTemplate(`Clip ${field.token}`)).toBe(true);
    });
+   it("keeps a trailing period in the source when a date follows it", () => {
+      const at = new Date(2026, 9, 8, 12, 0, 0);
+      expect(previewFilename(defaultPreferences, "R.E.P.O.", at)).toBe("R.E.P.O. 2026-10-08 12-00-00.mp4");
+      expect(previewFilename({ filenamePreset: "custom", filenameTemplate: "{source} {date}" }, "R.E.P.O.", at)).toBe("R.E.P.O. 2026-10-08.mp4");
+      // The whole name still can't end in a period, so the source loses it when it comes last.
+      expect(previewFilename({ filenamePreset: "date-source", filenameTemplate: "" }, "R.E.P.O.", at)).toBe("2026-10-08 12-00-00 R.E.P.O.mp4");
+      expect(previewFilename(defaultPreferences, "...", at)).toBe("Clip 2026-10-08 12-00-00.mp4");
+   });
    it("sanitizes captured window titles without adding IDs", () => {
       const preferences = { ...defaultPreferences, filenamePreset: "custom" as const, filenameTemplate: "{date} - {source}" };
       const filename = previewFilename(preferences, "../../Game: title", new Date(2026, 9, 8, 12, 0, 0));

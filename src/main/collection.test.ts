@@ -209,6 +209,60 @@ describe("collection folder operations", () => {
          await rm(root, { recursive: true, force: true });
       }
    });
+   it("adopts untagged clips of a known application by their source name, with its icon", async () => {
+      const root = await temporaryDirectory("acroclip-app-adopt-");
+      try {
+         const id = "6".repeat(64),
+            icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=";
+         await writeFile(join(root, "Old.mp4"), "old video");
+         await writeFile(join(root, "New.mp4"), "new video");
+         await writeFile(join(root, "Other.mp4"), "other video");
+         await writeFile(join(root, "Moment.mp4"), "desktop video");
+         const service = new CollectionService();
+         await service.open(root);
+         await service.registerRecording(join(root, "Old.mp4"), "Idols Of Ash");
+         const old = await service.registerRecording(join(root, "Other.mp4"), "Another game");
+         await service.registerRecording(join(root, "Moment.mp4"), "Desktop");
+         const fresh = await service.registerRecording(join(root, "New.mp4"), "Idols of ash", { id, icon, name: "Idols of ash" });
+         await service.enrichApplications([{ id, icon, name: "Idols of ash" }]);
+         const byName = (name: string) => service.clips.find((clip) => clip.path.endsWith(name))!;
+         expect(byName("Old.mp4")).toMatchObject({ applicationId: id, source: "Idols of ash" });
+         expect(byName("New.mp4").applicationId).toBe(fresh.applicationId);
+         expect(service.applicationIcons[id]).toBe(icon);
+         // Other sources, and ones that only name the capture mode, stay as they were.
+         expect(byName("Other.mp4")).toMatchObject({ id: old.id, source: "Another game" });
+         expect(byName("Other.mp4").applicationId).toBeUndefined();
+         expect(byName("Moment.mp4").applicationId).toBeUndefined();
+         // The adoption is saved, with the icon file the application already had.
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.clips.find((clip) => clip.path.endsWith("Old.mp4"))).toMatchObject({ applicationId: id });
+         expect(reopened.applicationIcons[id]).toBe(icon);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("takes a new name from a file renamed outside the app, and keeps the clip", async () => {
+      const root = await temporaryDirectory("acroclip-outside-rename-");
+      try {
+         await writeFile(join(root, "Unknown 2026-10-18 19-39-27.mp4"), "isolated video");
+         const service = new CollectionService();
+         await service.open(root);
+         const id = service.clips[0]!.id;
+         await service.createCategory("Keep");
+         await service.assignCategories(id, [service.categories[0]!.id]);
+         await mkdir(join(root, "Desktop"));
+         await rename(join(root, "Unknown 2026-10-18 19-39-27.mp4"), join(root, "Desktop", "Desktop 2026-10-18 19-39-27.mp4"));
+         await service.scan();
+         expect(service.clips).toHaveLength(1);
+         expect(service.clips[0]).toMatchObject({ id, name: "Desktop 2026-10-18 19-39-27", categories: [service.categories[0]!.id] });
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.clips[0]).toMatchObject({ id, name: "Desktop 2026-10-18 19-39-27" });
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
    it("moves clips saved under an older application id to the stable one", async () => {
       const root = await temporaryDirectory("acroclip-app-migration-");
       try {
@@ -902,7 +956,7 @@ describe("collection change polling", () => {
          const id = collection.clips.find((clip) => clip.path === added)!.id;
          await rename(added, join(root, "Moved.mp4"));
          await collection.refresh();
-         expect(collection.clips.find((clip) => clip.name === "Second")?.id).toBe(id);
+         expect(collection.clips.find((clip) => clip.name === "Moved")?.id).toBe(id);
          await writeFile(file, "changed in place without changing directory entries");
          await collection.refresh();
          expect(collection.clips.find((clip) => clip.path === file)?.size).toBe(51);
