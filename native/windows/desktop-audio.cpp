@@ -17,6 +17,8 @@ namespace acroclip::windows {
 namespace {
 std::mutex exclusionsMutex;
 std::vector<uint32_t> exclusions;
+/** Bumped when the app changes its exclusions, so the next round lists sessions again. */
+std::atomic<uint64_t> exclusionGeneration{0};
 bool within(DWORD pid, DWORD root, const std::map<DWORD, DWORD> &parents) {
   for (unsigned depth = 0; pid && depth < 128; ++depth) {
     if (pid == root) return true;
@@ -36,6 +38,9 @@ struct DesktopAudio {
   std::thread thread;
   std::mutex mutex;
   std::string failure = "Audio capture is starting";
+  /** Shared under `mutex` after every round, for native checks. */
+  DesktopAudioActivity activity;
+  uint64_t listings = 0;
   struct Child { obs_source_t *source; obs_sceneitem_t *item; ProcessCaptureHealth health; };
   std::map<DWORD, Child> children;
   // A process snapshot walks every process on the system, which is most of an update's cost.
@@ -50,10 +55,12 @@ struct DesktopAudio {
     scene = obs_scene_create_private("Desktop audio streams");
     if (!scene) throw std::runtime_error("Desktop audio could not be opened");
     obs_source_add_active_child(source, obs_scene_get_source(scene));
+    changes.Attach(new AudioChanges());
     thread = std::thread([this] { run(); });
   }
   ~DesktopAudio() {
     quit = true;
+    changes->stop();
     if (thread.joinable()) thread.join();
     clear();
     obs_source_remove_active_child(source, obs_scene_get_source(scene));
@@ -69,26 +76,68 @@ struct DesktopAudio {
   using Session = ListenRouting::Session;
   SessionCache<Session> otherSessions;
   static std::vector<Session> sessionsOn(IMMDevice *endpoint) { return ListenRouting::sessions(endpoint); }
-  // Setting up COM and the device enumerator cost about 2 ms of CPU, and looking up the default
-  // output another 2 ms of waiting on the audio service. Both used to happen every round, ten
-  // times a second. Now the routing lives as long as this thread, and the output is looked up
-  // again once a second or after any error. Apps on a new default join within that second, and
-  // apps already captured stay in meanwhile, because they still play on the old output.
+  // Windows reports when sessions start, stop or end and when outputs change, so the sessions are
+  // only listed after a change. That used to happen ten times a second whether or not anything
+  // changed. A listing every 2 s, or every second while a captured app plays on another output,
+  // catches anything a report could miss. The routing and the default output's session manager
+  // live as long as this thread, and the output is looked up again after a change or every 10 s.
+  Microsoft::WRL::ComPtr<AudioChanges> changes;
   std::unique_ptr<ListenRouting> routing;
+  bool outputsWatched = false;
+  SessionWatch sessions;
   Microsoft::WRL::ComPtr<IMMDevice> endpoint;
+  std::wstring endpointId;
   std::chrono::steady_clock::time_point endpointAt{};
-  static constexpr std::chrono::seconds endpointInterval{1};
+  std::chrono::steady_clock::time_point listedAt{};
+  uint64_t listedExclusions = 0;
+  /** A captured app was last found on another output, which Windows doesn't report changes for. */
+  bool moved = false;
+  /** A child was dropped between listings, so the next round lists again. */
+  bool relist = false;
+  std::set<DWORD> active;
+  static constexpr std::chrono::seconds endpointInterval{10};
+  static constexpr std::chrono::seconds listInterval{2};
+  static constexpr std::chrono::seconds movedListInterval{1};
+  /** Child health and anything Windows reported are handled at least this often. */
+  static constexpr std::chrono::milliseconds round{250};
   void forgetRouting() {
+    sessions.stop();
+    if (routing && outputsWatched) routing->unwatch(changes.Get());
+    outputsWatched = false;
     endpoint.Reset();
+    endpointId.clear();
     routing.reset();
   }
-  std::string update() {
+  std::string update(AudioChanges::Pending pending) {
     const auto now = std::chrono::steady_clock::now();
-    if (!routing) routing = std::make_unique<ListenRouting>();
-    if (!endpoint || now - endpointAt >= endpointInterval) {
-      endpoint = routing->device(device.empty() ? "default" : device);
-      endpointAt = now;
+    if (!routing) {
+      routing = std::make_unique<ListenRouting>();
+      routing->watch(changes.Get());
+      outputsWatched = true;
+      pending.outputs = true;
     }
+    if (pending.outputs || !endpoint || now - endpointAt >= endpointInterval) {
+      auto found = routing->device(device.empty() ? "default" : device);
+      const auto id = ListenRouting::identity(found.Get());
+      endpointAt = now;
+      if (id != endpointId || !sessions.started()) {
+        endpoint = found;
+        endpointId = id;
+        sessions.start(endpoint.Get(), changes.Get());
+        pending.sessions = true;
+      }
+    }
+    const uint64_t exclusionsNow = exclusionGeneration.load();
+    if (pending.sessions || relist || exclusionsNow != listedExclusions || now - listedAt >= (moved ? movedListInterval : listInterval)) {
+      listedExclusions = exclusionsNow;
+      relist = false;
+      select(now);
+      listedAt = now;
+      ++listings;
+    }
+    return health();
+  }
+  void select(std::chrono::steady_clock::time_point now) {
     std::vector<uint32_t> excluded;
     { std::lock_guard<std::mutex> lock(exclusionsMutex); excluded = exclusions; }
     // The app supplies its PID. Native-only fixtures exclude the recorder,
@@ -99,13 +148,16 @@ struct DesktopAudio {
     const auto others = [&]() -> const std::vector<Session> & {
       return otherSessions.get(now, [&] {
         std::vector<std::function<std::vector<Session>()>> lists;
-        const auto current = ListenRouting::identity(endpoint.Get());
         for (auto &output : routing->outputs())
-          if (ListenRouting::identity(output.Get()) != current) lists.push_back([output] { return sessionsOn(output.Get()); });
+          if (ListenRouting::identity(output.Get()) != endpointId) lists.push_back([output] { return sessionsOn(output.Get()); });
         return collectSessions<Session>(lists);
       });
     };
-    const std::vector<Session> listed = followCapturedSessions(sessionsOn(endpoint.Get()), captured, others);
+    const std::vector<Session> onDefault = sessions.list();
+    moved = std::any_of(captured.begin(), captured.end(), [&](uint32_t pid) {
+      return std::none_of(onDefault.begin(), onDefault.end(), [&](const Session &item) { return item.pid == pid; });
+    });
+    const std::vector<Session> listed = followCapturedSessions(onDefault, captured, others);
     std::set<DWORD> wanted(excluded.begin(), excluded.end());
     for (const auto &item : listed) wanted.insert(item.pid);
     // About 2 us per process, against 9 ms for a snapshot of all of them.
@@ -121,7 +173,7 @@ struct DesktopAudio {
       for (DWORD pid : wanted) if (!parents.count(pid)) absent.insert(pid);
     }
     std::set<DWORD> selected;
-    std::set<DWORD> active;
+    active.clear();
     for (const auto &[pid, state] : listed) {
       // An inactive session has no running streams. Only retain an existing
       // capture through silence; never open a new one for an idle application.
@@ -164,22 +216,25 @@ struct DesktopAudio {
       if (!item) { obs_source_release(child); throw std::runtime_error("A desktop audio stream could not be added"); }
       children.emplace(pid, Child{child, item, ProcessCaptureHealth{}});
     }
+  }
+  std::string health() {
     std::string healthFailure;
     for (auto it = children.begin(); it != children.end();) {
       auto &[pid, child] = *it;
-      calldata_t health{};
-      calldata_init(&health);
-      const bool queried = proc_handler_call(obs_source_get_proc_handler(child.source), "get_capture_health", &health);
-      const auto phase = calldata_int(&health, "state");
-      const auto version = calldata_int(&health, "version");
-      const bool ready = calldata_bool(&health, "ready");
-      const auto result = static_cast<uint32_t>(calldata_int(&health, "hresult"));
-      calldata_free(&health);
+      calldata_t report{};
+      calldata_init(&report);
+      const bool queried = proc_handler_call(obs_source_get_proc_handler(child.source), "get_capture_health", &report);
+      const auto phase = calldata_int(&report, "state");
+      const auto version = calldata_int(&report, "version");
+      const bool ready = calldata_bool(&report, "ready");
+      const auto result = static_cast<uint32_t>(calldata_int(&report, "hresult"));
+      calldata_free(&report);
       const bool audible = std::any_of(active.begin(), active.end(), [&](DWORD process) { return within(process, pid, parents); });
       if ((!queried || phase != 1 || !ready) && !audible) {
         obs_sceneitem_remove(child.item);
         obs_source_release(child.source);
         it = children.erase(it);
+        relist = true;
         continue;
       }
       const auto error = child.health.error(queried, int(version), int(phase), ready, result, ProcessCaptureHealth::Clock::now());
@@ -189,9 +244,10 @@ struct DesktopAudio {
     return healthFailure;
   }
   void run() {
+    AudioChanges::Pending pending{true, true};
     while (!quit) {
       std::string error;
-      try { error = update(); } catch (const std::exception &problem) {
+      try { error = update(pending); } catch (const std::exception &problem) {
         error = problem.what();
         // Routing errors invalidate the mix. A reconnecting process does not:
         // keep healthy children and let WASAPI retry its own failed client.
@@ -199,9 +255,15 @@ struct DesktopAudio {
         // A removed output or a restarted audio service leaves the kept routing unusable.
         forgetRouting();
       }
-      { std::lock_guard<std::mutex> lock(mutex); failure = error; }
-      // Failure must never fall back to an unfiltered device mix.
-      for (int i = 0; i < 10 && !quit; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        failure = error;
+        activity.processes.clear();
+        for (const auto &[pid, child] : children) activity.processes.push_back(pid);
+        activity.listings = listings;
+      }
+      // Failure must never fall back to an unfiltered device mix. A report from Windows ends the wait early.
+      pending = changes->wait(round);
     }
     // COM was set up on this thread, so it's released here too.
     forgetRouting();
@@ -226,7 +288,16 @@ std::string desktopAudioError(obs_source_t *source) {
   std::lock_guard<std::mutex> lock(state->mutex);
   return state->failure;
 }
-void setDesktopExclusions(const std::vector<uint32_t> &pids) { std::lock_guard<std::mutex> lock(exclusionsMutex); exclusions = pids; }
+DesktopAudioActivity desktopAudioActivity(obs_source_t *source) {
+  if (!filteredDesktop(source)) return {};
+  auto *state = static_cast<DesktopAudio *>(obs_obj_get_data(source));
+  std::lock_guard<std::mutex> lock(state->mutex);
+  return state->activity;
+}
+void setDesktopExclusions(const std::vector<uint32_t> &pids) {
+  { std::lock_guard<std::mutex> lock(exclusionsMutex); exclusions = pids; }
+  ++exclusionGeneration;
+}
 void registerDesktopAudio() {
   obs_source_info info{};
   info.id = "acroclip_desktop_audio";

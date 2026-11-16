@@ -85,6 +85,20 @@ int main(int argc, char **argv) {
         }
       }));
     }
+    // Now: sessions are listed after Windows reports a change, or every 2 s, through a kept
+    // session manager that also watches each session for changes.
+    {
+      ListenRouting routing;
+      auto endpoint = routing.device("default");
+      Microsoft::WRL::ComPtr<AudioChanges> changes;
+      changes.Attach(new AudioChanges());
+      SessionWatch watch;
+      watch.start(endpoint.Get(), changes.Get());
+      timings.push_back(measure("watchedList", rounds, [&] { (void)watch.list(); }));
+      // What a quiet round costs: waiting for a report that doesn't come.
+      timings.push_back(measure("quietWait", std::min(rounds, 40), [&] { (void)changes->wait(std::chrono::milliseconds(0)); }));
+      watch.stop();
+    }
     // A cheaper way to notice reused process ids: each session process's start time. Twenty
     // running processes stand in for the sessions, so a machine with few sessions still measures.
     {

@@ -8,7 +8,11 @@
 #include <wrl/client.h>
 #include <string>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <map>
+#include <mutex>
 #include <stdexcept>
 #include <vector>
 namespace acroclip::windows {
@@ -78,6 +82,11 @@ public:
     }
     return listed;
   }
+  /** Calls `client` when outputs come, go or the default changes, until unwatch. */
+  void watch(IMMNotificationClient *client) {
+    if (FAILED(enumerator->RegisterEndpointNotificationCallback(client))) throw std::runtime_error("Audio output changes could not be followed");
+  }
+  void unwatch(IMMNotificationClient *client) { enumerator->UnregisterEndpointNotificationCallback(client); }
   /** Every active output device. */
   std::vector<Device> outputs() {
     Microsoft::WRL::ComPtr<IMMDeviceCollection> collection;
@@ -105,5 +114,147 @@ public:
     for(int i=0;i<count;i++){Microsoft::WRL::ComPtr<IAudioSessionControl> control;Microsoft::WRL::ComPtr<IAudioSessionControl2> session;if(FAILED(sessions->GetSession(i,&control))||FAILED(control.As(&session)))continue;DWORD actual=0;AudioSessionState state=AudioSessionStateInactive;if(FAILED(session->GetProcessId(&actual))||FAILED(session->GetState(&state))||state!=AudioSessionStateActive)continue;for(int depth=0;actual&&depth<128;depth++){if(actual==pid)return true;if(!descendants)break;auto found=parents.find(actual);if(found==parents.end()||found->second==actual)break;actual=found->second;}}
     return false;
   }
+};
+/**
+ * Hears from Windows when Desktop audio's sources may have changed: a session starts, stops or
+ * goes away, an output comes or goes, or the default output changes. Windows calls it on its own
+ * threads, so it only sets flags and wakes the waiting thread, and it owns everything it touches.
+ * Volume and property changes fire often and never change who is captured, so they're ignored.
+ */
+class AudioChanges final : public IMMNotificationClient, public IAudioSessionNotification, public IAudioSessionEvents {
+public:
+  struct Pending { bool sessions = false; bool outputs = false; };
+  /** Waits up to `timeout` for a change, and returns and clears what changed. */
+  Pending wait(std::chrono::milliseconds timeout) {
+    std::unique_lock<std::mutex> lock(mutex);
+    woken.wait_for(lock, timeout, [&] { return pending.sessions || pending.outputs || stopping; });
+    const Pending result = pending;
+    pending = {};
+    return result;
+  }
+  /** Ends a wait at once, for shutting down. */
+  void stop() {
+    { std::lock_guard<std::mutex> lock(mutex); stopping = true; }
+    woken.notify_all();
+  }
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++references; }
+  ULONG STDMETHODCALLTYPE Release() override {
+    const ULONG left = --references;
+    if (!left) delete this;
+    return left;
+  }
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void **out) override {
+    if (!out) return E_POINTER;
+    if (id == __uuidof(IUnknown) || id == __uuidof(IMMNotificationClient)) *out = static_cast<IMMNotificationClient *>(this);
+    else if (id == __uuidof(IAudioSessionNotification)) *out = static_cast<IAudioSessionNotification *>(this);
+    else if (id == __uuidof(IAudioSessionEvents)) *out = static_cast<IAudioSessionEvents *>(this);
+    else { *out = nullptr; return E_NOINTERFACE; }
+    AddRef();
+    return S_OK;
+  }
+  // Outputs.
+  HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR, DWORD) override { return mark(false, true); }
+  HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override { return mark(false, true); }
+  HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR) override { return mark(false, true); }
+  HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR) override {
+    return flow == eRender && role == eConsole ? mark(false, true) : S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override { return S_OK; }
+  // A new session on the watched output.
+  HRESULT STDMETHODCALLTYPE OnSessionCreated(IAudioSessionControl *) override { return mark(true, false); }
+  // One watched session.
+  HRESULT STDMETHODCALLTYPE OnStateChanged(AudioSessionState) override { return mark(true, false); }
+  HRESULT STDMETHODCALLTYPE OnSessionDisconnected(AudioSessionDisconnectReason) override { return mark(true, false); }
+  HRESULT STDMETHODCALLTYPE OnDisplayNameChanged(LPCWSTR, LPCGUID) override { return S_OK; }
+  HRESULT STDMETHODCALLTYPE OnIconPathChanged(LPCWSTR, LPCGUID) override { return S_OK; }
+  HRESULT STDMETHODCALLTYPE OnSimpleVolumeChanged(float, BOOL, LPCGUID) override { return S_OK; }
+  HRESULT STDMETHODCALLTYPE OnChannelVolumeChanged(DWORD, float[], DWORD, LPCGUID) override { return S_OK; }
+  HRESULT STDMETHODCALLTYPE OnGroupingParamChanged(LPCGUID, LPCGUID) override { return S_OK; }
+private:
+  ~AudioChanges() = default;
+  HRESULT mark(bool sessions, bool outputs) {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      pending.sessions = pending.sessions || sessions;
+      pending.outputs = pending.outputs || outputs;
+    }
+    woken.notify_all();
+    return S_OK;
+  }
+  std::atomic<ULONG> references{1};
+  std::mutex mutex;
+  std::condition_variable woken;
+  Pending pending;
+  bool stopping = false;
+};
+
+/**
+ * One output's sessions through a session manager that's kept, with every listed session's state
+ * changes reported to `events`. Sessions are watched once each, by their instance id, so listing
+ * again only registers the new ones.
+ */
+class SessionWatch {
+public:
+  using Session = ListenRouting::Session;
+  SessionWatch() = default;
+  SessionWatch(const SessionWatch &) = delete;
+  SessionWatch &operator=(const SessionWatch &) = delete;
+  ~SessionWatch() { stop(); }
+  void start(IMMDevice *endpoint, AudioChanges *changes) {
+    stop();
+    if (FAILED(endpoint->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, reinterpret_cast<void **>(manager.GetAddressOf()))))
+      throw std::runtime_error("Desktop audio sessions could not be enumerated");
+    listener = changes;
+    if (FAILED(manager->RegisterSessionNotification(listener.Get()))) {
+      manager.Reset();
+      listener.Reset();
+      throw std::runtime_error("Desktop audio sessions could not be followed");
+    }
+  }
+  void stop() {
+    for (auto &[id, control] : watched) control->UnregisterAudioSessionNotification(listener.Get());
+    watched.clear();
+    if (manager && listener) manager->UnregisterSessionNotification(listener.Get());
+    manager.Reset();
+    listener.Reset();
+  }
+  bool started() const { return !!manager; }
+  /** Every live session, as ListenRouting::sessions lists them. Windows only reports new sessions after a listing. */
+  std::vector<Session> list() {
+    Microsoft::WRL::ComPtr<IAudioSessionEnumerator> enumerated;
+    int count = 0;
+    if (!manager || FAILED(manager->GetSessionEnumerator(&enumerated)) || FAILED(enumerated->GetCount(&count)))
+      throw std::runtime_error("Desktop audio sessions could not be read");
+    std::vector<Session> listed;
+    std::map<std::wstring, Microsoft::WRL::ComPtr<IAudioSessionControl>> seen;
+    for (int index = 0; index < count; ++index) {
+      Microsoft::WRL::ComPtr<IAudioSessionControl> control;
+      Microsoft::WRL::ComPtr<IAudioSessionControl2> session;
+      DWORD pid = 0;
+      AudioSessionState state = AudioSessionStateExpired;
+      if (FAILED(enumerated->GetSession(index, &control)) || FAILED(control.As(&session)) ||
+          FAILED(session->GetProcessId(&pid)) || FAILED(session->GetState(&state)))
+        throw std::runtime_error("A desktop audio session could not be identified");
+      if (!pid || state == AudioSessionStateExpired) continue;
+      listed.push_back({pid, state});
+      LPWSTR raw = nullptr;
+      if (FAILED(session->GetSessionInstanceIdentifier(&raw)) || !raw) continue;
+      std::wstring id(raw);
+      CoTaskMemFree(raw);
+      auto known = watched.find(id);
+      if (known != watched.end()) {
+        seen.emplace(id, known->second);
+        watched.erase(known);
+      } else if (SUCCEEDED(control->RegisterAudioSessionNotification(listener.Get()))) seen.emplace(id, control);
+    }
+    // Whatever is left has ended.
+    for (auto &[id, control] : watched) control->UnregisterAudioSessionNotification(listener.Get());
+    watched = std::move(seen);
+    return listed;
+  }
+private:
+  Microsoft::WRL::ComPtr<IAudioSessionManager2> manager;
+  Microsoft::WRL::ComPtr<AudioChanges> listener;
+  std::map<std::wstring, Microsoft::WRL::ComPtr<IAudioSessionControl>> watched;
 };
 }

@@ -90,8 +90,18 @@ try {
 const sessions = path.resolve(".cache/native-tests/Release/acroclip-audio-sessions-bench.exe");
 if (existsSync(sessions)) {
    const run = spawnSync(sessions, [String(rounds * 25)], { encoding: "utf8", windowsHide: true });
-   if (run.status === 0) results["desktopAudio"] = JSON.parse(run.stdout) as unknown;
-   else results["desktopAudio"] = { error: run.stderr.trim() };
+   if (run.status === 0) {
+      const audio = JSON.parse(run.stdout) as Record<string, { medianUs: number; cpuUs: number }>;
+      results["desktopAudio"] = audio;
+      // What desktop audio costs per second while nothing changes, in CPU microseconds of the recorder.
+      const cost = (name: string, perSecond: number) => (audio[name]?.cpuUs ?? 0) * perSecond;
+      results["desktopAudioCpuUsPerSecond"] = {
+         // Ten rounds a second, and a snapshot every 2 s.
+         polled: Math.round(cost("oldRound", 10) + cost("processSnapshot", 0.5)),
+         // A safety listing every 2 s with its start time checks, and a snapshot every 30 s.
+         eventDriven: Math.round(cost("watchedList", 0.5) + cost("sessionStartTimes", 0.5) + cost("processSnapshot", 1 / 30)),
+      };
+   } else results["desktopAudio"] = { error: run.stderr.trim() };
 }
 console.log(JSON.stringify(results, null, 2));
 
@@ -111,9 +121,13 @@ if (process.argv.includes("--check")) {
    );
    expectThat(listing.p90Ms < 20, `Listing apps through the recorder must stay under 20 ms at p90, took ${listing.p90Ms} ms`);
    expectThat(status.medianMs < 5, `A status report must stay under 5 ms, took ${status.medianMs} ms`);
-   if (!audio?.["round"] || !audio["oldRound"] || !audio["sessionStartTimes"] || !audio["processSnapshot"])
+   if (!audio?.["round"] || !audio["oldRound"] || !audio["watchedList"] || !audio["sessionStartTimes"] || !audio["processSnapshot"])
       failures.push("The desktop audio benchmark didn't run");
    else {
+      expectThat(
+         audio["watchedList"].medianUs < audio["oldRound"].medianUs,
+         `Listing watched sessions (${audio["watchedList"].medianUs} us) must stay under the old round (${audio["oldRound"].medianUs} us)`
+      );
       expectThat(
          // 0.64 of the old round on a hosted runner, 0.15 on a desktop PC with more audio drivers.
          audio["round"].medianUs < audio["oldRound"].medianUs * 0.85,

@@ -3000,6 +3000,12 @@ public:
     return true;
   }
   void endEncodedOutput() { obs_output_end_data_capture(output); }
+#ifdef _WIN32
+  json desktopActivity(const std::string &id) {
+    const auto activity = acroclip::windows::desktopAudioActivity(desktop);
+    return {{"event", "desktop-audio"}, {"id", id}, {"processes", activity.processes}, {"listings", activity.listings}};
+  }
+#endif
   json lifecycle(const std::string &id) {
     size_t sources = 0, attached = 0;
     obs_enum_all_sources([](void *count, obs_source_t *) {
@@ -3367,7 +3373,13 @@ int main(int argc, char **argv) {
           } else if (action == "test-encoder-failure" &&
                      std::getenv("ACROCLIP_NATIVE_TEST_LIFECYCLE")) {
             emit(r.encoderFailure(c.value("id", "")));
-          } else if (action == "status") {
+          }
+#ifdef _WIN32
+          else if (action == "test-desktop-audio" && std::getenv("ACROCLIP_NATIVE_TEST_LIFECYCLE")) {
+            emit(r.desktopActivity(c.value("id", "")));
+          }
+#endif
+          else if (action == "status") {
             emit(r.status());
           }
           emit({{"event", "response"}, {"id", c.value("id", "")}});

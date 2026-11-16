@@ -18,7 +18,16 @@ const fixture = path.resolve(".cache/native-tests/Release/acroclip-endpoint-tone
 const folder = path.resolve(".cache/native-default-output", randomUUID());
 await mkdir(folder, { recursive: true });
 
-type Event = { event: string; id?: string; requestId?: string; message?: string; availableSeconds?: number; audioWarning?: string };
+type Event = {
+   event: string;
+   id?: string;
+   requestId?: string;
+   message?: string;
+   availableSeconds?: number;
+   audioWarning?: string;
+   processes?: number[];
+   listings?: number;
+};
 const events: Event[] = [],
    logs: string[] = [],
    tones: Array<ReturnType<typeof spawn>> = [];
@@ -183,10 +192,35 @@ try {
    const fresh = await save("new-default");
    const freshTone = toneAt(1, 1499, fresh);
    assert.ok(freshTone > -60, `Desktop must carry an app on the new default: ${freshTone}`);
+   // Desktop audio lists sessions when Windows reports a change, not on a timer. A new app must
+   // join well before the 2 s safety listing, every time, and a quiet stretch must stay quiet.
+   const activity = async () => {
+      const id = randomUUID();
+      const mark = events.length;
+      helper.stdin.write(`${JSON.stringify({ action: "test-desktop-audio", id })}\n`);
+      const found = await wait((event) => event.event === "desktop-audio" && event.id === id, mark);
+      return { processes: found.processes ?? [], listings: found.listings ?? 0 };
+   };
+   const joins: number[] = [];
+   for (const frequency of [601, 701, 907]) {
+      const started = performance.now();
+      await tone(second, frequency);
+      const pid = tones.at(-1)!.pid!;
+      while (!(await activity()).processes.includes(pid)) {
+         assert.ok(performance.now() - started < 3000, `A ${frequency} Hz tone never joined Desktop audio`);
+         await delay(10);
+      }
+      joins.push(Math.round(performance.now() - started));
+   }
+   assert.ok(Math.max(...joins) < 600, `New apps must join Desktop audio as Windows reports them: ${JSON.stringify(joins)} ms`);
+   const quietStart = (await activity()).listings;
+   await delay(4000);
+   const quietListings = (await activity()).listings - quietStart;
+   assert.ok(quietListings <= 4, `Desktop audio must not list sessions while nothing changes: ${quietListings} listings in 4 s`);
    await command("stop");
    console.log(
       "Desktop audio kept an app across a default output change, and new captures still come from the default",
-      JSON.stringify({ original, kept, lateTones, freshTone })
+      JSON.stringify({ original, kept, lateTones, freshTone, joins, quietListings })
    );
 } finally {
    if (statusTimer) clearInterval(statusTimer);
