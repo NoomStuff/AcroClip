@@ -56,7 +56,7 @@ import { bindingFor, formatBinding } from "../../shared/shortcuts";
 import { dailyLine, emptyTitles, noMatchTitle } from "./empty-flavor";
 import type { Run } from "./desktop";
 import { ApplicationIcon } from "./ApplicationIcon";
-import { ClipCard } from "./ClipCard";
+import { ClipCard, ClipPlaceholder } from "./ClipCard";
 import { FolderCard } from "./FolderCard";
 import { FolderTree } from "./FolderTree";
 import { categoryColors, categoryStyle } from "./category-color";
@@ -82,7 +82,7 @@ type LibraryItem =
    | { type: "folder"; key: string; path: string }
    | { type: "group"; key: string; group: ClipGroup; open: boolean }
    | { type: "clip"; key: string; clip: Clip }
-   | { type: "pending"; key: string };
+   | { type: "pending"; key: string; index: number };
 const itemKey = (item: LibraryItem) => item.key;
 const itemKind = (item: LibraryItem): GridItemKind => (item.type === "group" ? "header" : item.type === "pending" ? "placeholder" : "card");
 
@@ -197,14 +197,16 @@ export function Library({
          const { width, height } = entry.contentRect;
          if (view === "list") {
             setGridMetrics((current) => (current.width === width ? current : { ...current, width }));
-            setPlaceholderFit(Math.max(1, Math.ceil(height / ((thumbnailSizes.list * 9) / 16 + 20))));
+            // A row is its 16:9 thumbnail plus padding, its border and the gap below it.
+            setPlaceholderFit(Math.max(1, Math.ceil(height / ((thumbnailSizes.list * 9) / 16 + 23))));
             return;
          }
          const gridElement = node.querySelector<HTMLElement>(".clip-grid");
          const gap = gridElement ? Number.parseFloat(getComputedStyle(gridElement).columnGap) || 0 : 18;
          setGridMetrics((current) => (current.width === width && current.gap === gap ? current : { width, gap }));
          const columns = Math.max(1, Math.floor((width + gap) / (thumbnailSizes.grid + gap)));
-         const cardHeight = Math.max(205, (((width - (columns - 1) * gap) / columns) * 9) / 16 + 68);
+         // A card is its 16:9 thumbnail plus the title and details under it.
+         const cardHeight = (((width - (columns - 1) * gap) / columns) * 9) / 16 + 56;
          setPlaceholderFit(columns * Math.max(1, Math.ceil(height / (cardHeight + gap))));
       });
       observer.observe(node);
@@ -477,7 +479,7 @@ export function Library({
             if (open) for (const clip of group.clips) result.push(card(clip));
          }
       else for (const clip of clips) result.push(card(clip));
-      for (let index = 0; index < remainingSlots; index++) result.push({ type: "pending", key: `pending:${index}` });
+      for (let index = 0; index < remainingSlots; index++) result.push({ type: "pending", key: `pending:${index}`, index });
       return result;
    }, [childFolders, groups, foldedKeys, clips, remainingSlots]);
    const itemKeys = useMemo(() => new Set(items.map((item) => item.key)), [items]);
@@ -519,10 +521,7 @@ export function Library({
             </button>
          </h2>
       ) : item.type === "pending" ? (
-         <div className="clip-placeholder" key={item.key} aria-hidden="true">
-            <div />
-            <span />
-         </div>
+         <ClipPlaceholder key={item.key} index={item.index} />
       ) : (
          renderClip(item.clip)
       );
@@ -891,12 +890,9 @@ export function Library({
                   </nav>
                )}
                {showPlaceholders ? (
-                  <div className="clip-grid library-skeleton" data-view={view} aria-label="Opening collection">
-                     {Array.from({ length: slots }, (_, key) => (
-                        <div className="clip-placeholder" key={key}>
-                           <div />
-                           <span />
-                        </div>
+                  <div className="clip-grid library-skeleton skeleton-reveal" data-view={view} role="status" aria-label="Opening collection">
+                     {Array.from({ length: slots }, (_, index) => (
+                        <ClipPlaceholder key={index} index={index} />
                      ))}
                   </div>
                ) : clips.length || childFolders.length ? (

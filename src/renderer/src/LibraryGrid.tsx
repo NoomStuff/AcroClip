@@ -5,10 +5,11 @@ import type { GridItemKind, GridMeasure, GridPlace, GridSizes } from "./grid-win
 
 // Rows this far outside the viewport stay mounted, so scrolling and Tab always land on a real card.
 const overscan = 600;
-// Until the first rows are measured. One render later the real sizes replace these.
+// Until the first rows are measured. One render later the real sizes replace these. Placeholders are laid
+// out like cards, so they share a height.
 const estimates: Record<"grid" | "list", GridSizes> = {
-   grid: { columns: 3, gap: 18, card: 240, placeholder: 215, header: 23, firstHeader: 9 },
-   list: { columns: 1, gap: 2, card: 92, placeholder: 92, header: 35, firstHeader: 21 },
+   grid: { columns: 3, gap: 18, card: 225, placeholder: 225, header: 23, firstHeader: 9 },
+   list: { columns: 1, gap: 2, card: 93, placeholder: 93, header: 35, firstHeader: 21 },
 };
 
 /**

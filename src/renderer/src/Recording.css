@@ -106,8 +106,18 @@
    transition: filter 0.6s ease-in-out;
 }
 
+/* Not a .preview-message: it stays mounted while hidden so it can fade out as well as in. */
 .preview-paused {
+   z-index: 4;
+   position: absolute;
+   inset: 0;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
    gap: 8px;
+   padding: 25px;
+   text-align: center;
    color: var(--text);
    pointer-events: none;
    opacity: 0;
@@ -129,6 +139,11 @@
 .preview-paused svg {
    margin-bottom: 4px;
    color: var(--muted);
+}
+
+.preview-paused h3,
+.preview-paused p {
+   margin: 0;
 }
 
 .preview-paused p {
@@ -356,20 +371,8 @@
    min-height: 0;
 }
 
-.source-loading {
-   animation: delayed-placeholder 200ms 150ms both;
-}
-
 .source-row.source-skeleton {
    pointer-events: none;
-}
-
-.source-skeleton-icon,
-.source-skeleton-name {
-   display: block;
-   background: var(--raised);
-   border-radius: 6px;
-   corner-shape: squircle;
 }
 
 .source-skeleton-icon {
@@ -378,20 +381,10 @@
    flex-shrink: 0;
 }
 
+/* The name is 12px text on an 18px line, beside the icon. */
 .source-skeleton-name {
-   height: 12px;
-   width: 64%;
-}
-
-.source-skeleton:nth-child(2) .source-skeleton-name {
-   width: 46%;
-}
-
-@media (prefers-reduced-motion: reduce) {
-   .source-loading {
-      animation: none;
-      opacity: 0.35;
-   }
+   height: 10px;
+   width: var(--source-skeleton-width, 60%);
 }
 
 .source-row {

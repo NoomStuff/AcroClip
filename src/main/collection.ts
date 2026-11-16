@@ -117,6 +117,7 @@ type StoredClip = Metadata["clips"][number];
 type StoredFile = z.infer<typeof fileSchema>;
 /** One listing of the thumbnail folder per scan. Undefined when the folder is unusable. */
 type ThumbnailIndex = { directory: string; files: Set<string> } | undefined;
+type ThumbnailJob = { identity: string; source: string; duration: number; order: number };
 // Anything ffmpeg reads. Formats the player can't open directly play from a converted copy.
 const supported = new Set([".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".ts", ".flv", ".m2ts", ".mts", ".3gp", ".mpg", ".mpeg", ".wmv", ".ogv"]);
 const normal = (path: string) => (process.platform === "win32" ? path.toLowerCase() : path);
@@ -192,7 +193,10 @@ export interface CollectionOptions {
    /** `log` only reaches the app log; the others reach the user at that tone. */
    onWarning?: (message: string, level: "log" | "warning" | "error") => void;
    mediaUrl?: (path: string) => string;
+   /** Files read at once while scanning. Asked again before each file, so capture starting mid-scan slows it down. */
    scanConcurrency?: () => number;
+   /** Thumbnails made at once. Asked again before each one starts. */
+   thumbnailConcurrency?: () => number;
    /** Prepare hover strips for the whole library after scans. The app turns this on; tests don't. */
    backgroundStrips?: boolean;
 }
@@ -224,7 +228,21 @@ export class CollectionService {
    private metadataWritable = true;
    private fileChanges: Promise<void> = Promise.resolve();
    private fileMutation: Promise<void> | undefined;
-   private cache = new Map<string, { stamp: string; info: MediaInfo; thumbnail: string }>();
+   private cache = new Map<string, { stamp: string; info: MediaInfo }>();
+   // The thumbnail folder as last listed, plus every thumbnail made since. Undefined when it is unusable.
+   private thumbnailFiles: ThumbnailIndex;
+   // Which file identity each clip's thumbnail is made from. A clip whose original is gone uses its shareable.
+   private thumbnailSources = new Map<string, string>();
+   // Thumbnails are made after the scan, beside it, so the library opens without waiting for ffmpeg.
+   // Newest clips go first, since the library opens on them.
+   private thumbnailJobs = new Map<string, ThumbnailJob>();
+   private thumbnailsRunning = new Map<string, Promise<void>>();
+   // Files that couldn't make a thumbnail aren't tried again until the collection reopens.
+   private thumbnailFailed = new Set<string>();
+   private thumbnailLifetime = new AbortController();
+   private thumbnailPublish: ReturnType<typeof setTimeout> | undefined;
+   // Renames, moves and deletions wait for ffmpeg to let go of the files, since Windows can't change an open file.
+   private thumbnailsPaused = 0;
    // Scanning may reuse sampled identities. Export, rename and deletion always
    // read a fresh identity through resolveFile instead of trusting this cache.
    private identities = new Map<string, { stamp: string; identity: string }>();
@@ -380,6 +398,11 @@ export class CollectionService {
    private async fillStrips(): Promise<void> {
       const root = this.root;
       if (!root || this.phase !== "ready" || this.scanRetryNeeded) return;
+      // Thumbnails are what the library shows. Hover previews wait until they're done.
+      if (this.thumbnailJobs.size || this.thumbnailsRunning.size) {
+         this.scheduleStripFill();
+         return;
+      }
       const directory = join(root, ".acroclip", "thumbnails");
       const names = new Set(await readdir(directory).catch(() => [] as string[]));
       if (root !== this.root) return;
@@ -451,6 +474,7 @@ export class CollectionService {
       this.playbackLifetime = new AbortController();
       this.playbackCache.cancelAll();
       this.stripFailed.clear();
+      await this.stopThumbnails();
       for (const folder of ["thumbnails", "playback"]) await rm(join(root, ".acroclip", folder), { recursive: true, force: true });
       await this.open(root);
    }
@@ -483,6 +507,10 @@ export class CollectionService {
       await this.safeDirectory(join(this.root, ".acroclip"));
       hideFolder(join(this.root, ".acroclip"));
       this.playbackCache.cancelAll();
+      await this.stopThumbnails();
+      this.thumbnailFiles = undefined;
+      this.thumbnailSources.clear();
+      this.thumbnailFailed.clear();
       this.cache.clear();
       this.identities.clear();
       this.writtenMetadata = undefined;
@@ -522,13 +550,15 @@ export class CollectionService {
       if (this.metadataWritable && this.metadata.viewsTrackedSince === undefined) this.metadata.viewsTrackedSince = Date.now();
       this.seedIdentities();
       // Render the collection's own indexed previews before touching the video files.
-      const thumbnails = await this.thumbnailIndex();
-      this.clips = thumbnails
+      this.thumbnailFiles = await this.thumbnailIndex();
+      this.clips = this.thumbnailFiles
          ? this.metadata.clips.flatMap((stored) => {
-              const clip = this.previewClip(stored, thumbnails.files);
+              const clip = this.previewClip(stored);
               return clip ? [clip] : [];
            })
          : [];
+      // Icons come from the collection's own folder too, so they show with the first clips.
+      this.applicationIcons = await this.applicationArtwork(new Set(this.clips.map((clip) => clip.id)));
       this.notify();
       await this.scan();
       // Copies from earlier sessions only cost disk space until they are played again.
@@ -544,6 +574,41 @@ export class CollectionService {
             if (stamp && safeRelative(file.relativePath)) this.identities.set(resolve(this.root, file.relativePath), { stamp, identity: file.identity });
    }
 
+   /** Each visible clip's application icon, read once per icon file. */
+   private async applicationArtwork(visibleIds: ReadonlySet<string>): Promise<Record<string, string>> {
+      const reads = new Map<string, Promise<string | undefined>>();
+      const owners: Array<[id: string, file: string]> = [];
+      for (const stored of this.metadata.clips) {
+         const application = stored.application;
+         if (!application?.iconFile || !visibleIds.has(stored.id)) continue;
+         const file = application.iconFile;
+         if (!reads.has(file)) {
+            if (reads.size >= 512) continue;
+            const cached = this.artworkCache.get(file);
+            reads.set(
+               file,
+               cached
+                  ? Promise.resolve(cached)
+                  : readApplicationArtwork(this.root, application).then((image) => {
+                       if (image) {
+                          if (this.artworkCache.size >= 512) this.artworkCache.delete(this.artworkCache.keys().next().value!);
+                          this.artworkCache.set(file, image);
+                       }
+                       return image;
+                    })
+            );
+         }
+         owners.push([application.id, file]);
+      }
+      const images = new Map(await Promise.all([...reads].map(async ([file, read]) => [file, await read] as const)));
+      const artwork: Record<string, string> = {};
+      for (const [id, file] of owners) {
+         const image = images.get(file);
+         if (image) artwork[id] = image;
+      }
+      return artwork;
+   }
+
    private async thumbnailIndex(): Promise<ThumbnailIndex> {
       const directory = join(this.root, ".acroclip", "thumbnails");
       try {
@@ -556,7 +621,7 @@ export class CollectionService {
       }
    }
 
-   private previewClip(stored: StoredClip, thumbnailFiles: ReadonlySet<string>): Clip | undefined {
+   private previewClip(stored: StoredClip): Clip | undefined {
       if (stored.previewUnavailable || !safeRelative(stored.relativePath) || !/^[a-f0-9]{64}$/i.test(stored.identity)) return;
       const path = resolve(this.root, stored.relativePath);
       if (!withinRoot(this.root, path)) return;
@@ -570,14 +635,14 @@ export class CollectionService {
             targetMB: share.targetMB,
             createdAt: share.createdAt,
          }));
-      const thumbnail = [thumbnailName(stored.identity), ...legacyThumbnailNames(stored.identity)].find((name) => thumbnailFiles.has(name));
+      this.thumbnailSources.set(stored.id, stored.identity);
       return clipRecord(
          stored,
          {
             path,
             relativePath: stored.relativePath,
             size: stored.preview?.size ?? 0,
-            thumbnail: thumbnail ? this.url(join(this.root, ".acroclip", "thumbnails", thumbnail)) : "",
+            thumbnail: this.thumbnailUrl(stored.identity),
             playbackUrl: this.url(path),
             shareables: shares,
             availability: "unverified",
@@ -675,35 +740,141 @@ export class CollectionService {
       return identity;
    }
 
-   private async cachedMedia(actual: string, identity: string, fileStat: BigIntStats, thumbnails: ThumbnailIndex, preview?: z.infer<typeof previewSchema>) {
+   private async cachedMedia(actual: string, fileStat: BigIntStats, preview?: z.infer<typeof previewSchema>) {
       const stamp = fileStamp(fileStat);
       let cached = this.cache.get(actual);
       if (!cached || cached.stamp !== stamp) {
-         const info = preview?.stamp === stamp ? preview.info : await probe(actual);
-         cached = { stamp, info, thumbnail: await this.thumbnail(actual, identity, info.duration, thumbnails) };
+         cached = { stamp, info: preview?.stamp === stamp ? preview.info : await probe(actual) };
          this.cache.set(actual, cached);
       }
       return cached;
    }
-   private async thumbnail(actual: string, identity: string, duration: number, thumbnails: ThumbnailIndex): Promise<string> {
-      if (!thumbnails) return "";
-      const name = thumbnailName(identity);
-      const legacy = legacyThumbnailNames(identity);
+   /** The best thumbnail on disk for a file identity: the current kind, else an older one until it's replaced. */
+   private thumbnailUrl(identity: string | undefined): string {
+      const thumbnails = this.thumbnailFiles;
+      if (!thumbnails || !identity) return "";
+      const name = [thumbnailName(identity), ...legacyThumbnailNames(identity)].find((file) => thumbnails.files.has(file));
+      return name ? this.url(join(thumbnails.directory, name)) : "";
+   }
+   /** Records which file a clip's thumbnail comes from, and queues one when it lacks the current kind. */
+   private wantThumbnail(clipId: string, identity: string, source: string, duration: number, createdAt: number): string {
+      this.thumbnailSources.set(clipId, identity);
+      const thumbnails = this.thumbnailFiles;
+      if (thumbnails && !thumbnails.files.has(thumbnailName(identity)) && !this.thumbnailFailed.has(identity) && !this.thumbnailsRunning.has(identity)) {
+         const queued = this.thumbnailJobs.get(identity);
+         if (queued) Object.assign(queued, { source, duration, order: Math.max(queued.order, createdAt) });
+         else this.thumbnailJobs.set(identity, { identity, source, duration, order: createdAt });
+         this.makeThumbnails();
+      }
+      return this.thumbnailUrl(identity);
+   }
+   /** Clips with the thumbnails made since they were built. Returns the same array when none changed. */
+   private withThumbnails(clips: Clip[]): Clip[] {
+      let changed = false;
+      const next = clips.map((clip) => {
+         const thumbnail = this.thumbnailUrl(this.thumbnailSources.get(clip.id));
+         if (!thumbnail || thumbnail === clip.thumbnail) return clip;
+         changed = true;
+         return { ...clip, thumbnail };
+      });
+      return changed ? next : clips;
+   }
+   private thumbnailLimit(): number {
+      return Math.max(1, Math.min(8, this.options.thumbnailConcurrency?.() ?? 2));
+   }
+   /** Starts queued thumbnails up to the current limit. Each one that finishes starts the next. */
+   private makeThumbnails(): void {
+      const thumbnails = this.thumbnailFiles;
+      if (!thumbnails || this.thumbnailsPaused) return;
+      while (this.thumbnailsRunning.size < this.thumbnailLimit()) {
+         let next: ThumbnailJob | undefined;
+         for (const job of this.thumbnailJobs.values()) if (!next || job.order > next.order) next = job;
+         if (!next) return;
+         this.thumbnailJobs.delete(next.identity);
+         const { identity } = next;
+         this.thumbnailsRunning.set(
+            identity,
+            this.makeThumbnail(next, thumbnails, this.thumbnailLifetime.signal).finally(() => {
+               this.thumbnailsRunning.delete(identity);
+               this.makeThumbnails();
+            })
+         );
+      }
+   }
+   private async makeThumbnail(job: ThumbnailJob, thumbnails: NonNullable<ThumbnailIndex>, signal: AbortSignal): Promise<void> {
+      const name = thumbnailName(job.identity);
       const path = join(thumbnails.directory, name);
-      if (thumbnails.files.has(name)) return path;
       const temporary = `${path}.${randomUUID()}.jpg`;
       try {
-         await createThumbnail(actual, temporary, duration);
+         await createThumbnail(job.source, temporary, job.duration, { signal });
+         if (signal.aborted) return;
          await rename(temporary, path);
          thumbnails.files.add(name);
-         for (const old of legacy) if (thumbnails.files.delete(old)) await rm(join(thumbnails.directory, old), { force: true }).catch(() => undefined);
-         return path;
+         for (const old of legacyThumbnailNames(job.identity))
+            if (thumbnails.files.delete(old)) await rm(join(thumbnails.directory, old), { force: true }).catch(() => undefined);
+         this.publishThumbnails();
       } catch (error) {
-         this.warn(`Preview thumbnail unavailable for ${basename(actual)}: ${message(error)}`, "log");
-         const kept = legacy.find((old) => thumbnails.files.has(old));
-         return kept ? join(thumbnails.directory, kept) : "";
+         if (signal.aborted) return;
+         // A file moved or deleted meanwhile is queued again from where the next scan finds it.
+         if (!existsSync(job.source)) return;
+         this.thumbnailFailed.add(job.identity);
+         this.warn(`Preview thumbnail unavailable for ${basename(job.source)}: ${message(error)}`, "log");
       } finally {
-         await rm(temporary, { force: true });
+         await rm(temporary, { force: true }).catch(() => undefined);
+      }
+   }
+   /** Thumbnails finish many times a second when the machine is free. The library hears about them in batches. */
+   private publishThumbnails(): void {
+      if (this.thumbnailPublish) return;
+      this.thumbnailPublish = setTimeout(() => {
+         this.thumbnailPublish = undefined;
+         const clips = this.withThumbnails(this.clips);
+         if (clips === this.clips) return;
+         this.clips = clips;
+         this.notify();
+      }, 120);
+      this.thumbnailPublish.unref?.();
+   }
+   /** Stops every thumbnail, queued or running, and waits for running ones to let go of their files. */
+   private async stopThumbnails(): Promise<void> {
+      this.thumbnailJobs.clear();
+      this.thumbnailLifetime.abort();
+      this.thumbnailLifetime = new AbortController();
+      clearTimeout(this.thumbnailPublish);
+      this.thumbnailPublish = undefined;
+      await Promise.all(this.thumbnailsRunning.values());
+   }
+   /** Makes a clip's thumbnail before any other still waiting, and publishes it once made. */
+   private async thumbnailNow(clipId: string): Promise<void> {
+      const identity = this.thumbnailSources.get(clipId);
+      if (!identity) return;
+      const queued = this.thumbnailJobs.get(identity);
+      if (queued) queued.order = Infinity;
+      // A full set of workers frees a slot as soon as one finishes, and this job takes it.
+      while (this.thumbnailJobs.has(identity) || this.thumbnailsRunning.has(identity)) {
+         this.makeThumbnails();
+         const running = this.thumbnailsRunning.get(identity);
+         if (running) await running;
+         else if (this.thumbnailsPaused || !this.thumbnailFiles || !this.thumbnailsRunning.size) return;
+         else await Promise.race(this.thumbnailsRunning.values());
+      }
+      const clips = this.withThumbnails(this.clips);
+      if (clips !== this.clips) {
+         this.clips = clips;
+         this.notify();
+      }
+   }
+   /** Settles once no thumbnail is queued or being made. */
+   async thumbnailsSettled(): Promise<void> {
+      while (this.thumbnailsRunning.size) await Promise.all(this.thumbnailsRunning.values());
+      if (this.thumbnailPublish) {
+         clearTimeout(this.thumbnailPublish);
+         this.thumbnailPublish = undefined;
+         const clips = this.withThumbnails(this.clips);
+         if (clips !== this.clips) {
+            this.clips = clips;
+            this.notify();
+         }
       }
    }
 
@@ -937,20 +1108,23 @@ export class CollectionService {
          byIdentity.set(clip.identity, identities);
       }
       const prior = this.clips;
-      const thumbnails = await this.thumbnailIndex();
+      // Thumbnails made since the last listing stay known even if the folder can't be listed this time.
+      const listed = await this.thumbnailIndex();
+      if (listed && this.thumbnailFiles?.directory === listed.directory) for (const name of this.thumbnailFiles.files) listed.files.add(name);
+      this.thumbnailFiles = listed;
       let publishedAt = 0;
       const publishProgress = () => {
          if (this.scanned || !result.length || Date.now() - publishedAt < 150) return;
          publishedAt = Date.now();
          const ids = new Set(result.map((clip) => clip.id)),
             paths = new Set(result.map((clip) => normal(clip.path)));
-         this.clips = [...result, ...prior.filter((clip) => !ids.has(clip.id) && !paths.has(normal(clip.path)))].sort(
+         this.clips = this.withThumbnails([...result, ...prior.filter((clip) => !ids.has(clip.id) && !paths.has(normal(clip.path)))]).sort(
             (a, b) => b.createdAt - a.createdAt || a.relativePath.localeCompare(b.relativePath)
          );
          this.notify();
       };
       let cursor = 0;
-      const concurrencyLimit = () => Math.max(1, Math.min(3, this.options.scanConcurrency?.() ?? 1));
+      const concurrencyLimit = () => Math.max(1, Math.min(8, this.options.scanConcurrency?.() ?? 1));
       const readNext = async (worker: number) => {
          while (cursor < files.length) {
             if (worker >= concurrencyLimit()) return;
@@ -982,7 +1156,7 @@ export class CollectionService {
                used.add(stored.id);
                stored.relativePath = rel;
                stored.absolutePath = actual;
-               const cached = await this.cachedMedia(actual, identity, fileStat, thumbnails, stored.preview);
+               const cached = await this.cachedMedia(actual, fileStat, stored.preview);
                const { tag, ...info } = cached.info;
                // A clip this collection hasn't seen, like one moved in from elsewhere or one whose
                // metadata was lost, takes its game and save time from the tag AcroClip wrote into it.
@@ -1002,7 +1176,7 @@ export class CollectionService {
                         path: actual,
                         relativePath: rel,
                         size: Number(fileStat.size),
-                        thumbnail: cached.thumbnail ? this.url(cached.thumbnail) : "",
+                        thumbnail: this.wantThumbnail(stored.id, identity, actual, info.duration, stored.createdAt),
                         playbackUrl: this.url(actual),
                         shareables: await this.verifiedShareables(stored, retainedPaths),
                      },
@@ -1040,7 +1214,7 @@ export class CollectionService {
             }
             const actualStat = await stat(available, { bigint: true });
             const identity = await this.scanIdentity(available, actualStat);
-            const cached = await this.cachedMedia(available, identity, actualStat, thumbnails);
+            const cached = await this.cachedMedia(available, actualStat);
             retainedPaths.add(available);
             used.add(stored.id);
             result.push(
@@ -1050,7 +1224,7 @@ export class CollectionService {
                      path: originalPath,
                      relativePath: stored.relativePath,
                      size: original ? Number(actualStat.size) : 0,
-                     thumbnail: cached.thumbnail ? this.url(cached.thumbnail) : "",
+                     thumbnail: this.wantThumbnail(stored.id, identity, available, cached.info.duration, stored.createdAt),
                      playbackUrl: original ? this.url(original) : "",
                      shareables: shares,
                      ...(!original ? { originalMissing: true } : {}),
@@ -1066,36 +1240,14 @@ export class CollectionService {
             this.warn(`Could not open retained shareables for ${stored.name}: ${message(error)}`, "log");
          }
       }
-      const artwork = new Map<string, string>();
-      const visibleIds = new Set(result.map((clip) => clip.id));
-      const iconReads = new Map<string, Promise<string | undefined>>();
-      for (const stored of this.metadata.clips)
-         if (stored.application?.iconFile && visibleIds.has(stored.id)) {
-            const file = stored.application.iconFile;
-            let pending = iconReads.get(file);
-            if (!pending) {
-               if (iconReads.size >= 512) continue;
-               const cached = this.artworkCache.get(file);
-               pending = cached
-                  ? Promise.resolve(cached)
-                  : readApplicationArtwork(this.root, stored.application).then((image) => {
-                       if (image) {
-                          if (this.artworkCache.size >= 512) this.artworkCache.delete(this.artworkCache.keys().next().value!);
-                          this.artworkCache.set(file, image);
-                       }
-                       return image;
-                    });
-               iconReads.set(file, pending);
-            }
-            const image = await pending;
-            if (image) artwork.set(stored.application.id, image);
-         }
-      this.applicationIcons = Object.fromEntries(artwork);
+      this.applicationIcons = await this.applicationArtwork(new Set(result.map((clip) => clip.id)));
       this.folders = folders.sort((a, b) => a.localeCompare(b));
       // Tags can change while files are read. Publish the memberships as they are now.
       const tags = new Map(this.metadata.clips.map((stored) => [stored.id, stored.categories]));
       for (const clip of result) clip.categories = [...(tags.get(clip.id) ?? clip.categories)];
-      this.clips = result.sort((a, b) => b.createdAt - a.createdAt || a.relativePath.localeCompare(b.relativePath));
+      const visible = new Set(result.map((clip) => clip.id));
+      for (const id of this.thumbnailSources.keys()) if (!visible.has(id)) this.thumbnailSources.delete(id);
+      this.clips = this.withThumbnails(result).sort((a, b) => b.createdAt - a.createdAt || a.relativePath.localeCompare(b.relativePath));
       for (const path of this.identities.keys()) if (!retainedPaths.has(path)) this.identities.delete(path);
       for (const path of this.cache.keys()) if (!retainedPaths.has(path)) this.cache.delete(path);
       if (this.metadataWritable) await this.writeMetadata();
@@ -1119,6 +1271,8 @@ export class CollectionService {
          if (root !== this.root || this.opening || !this.scanned) throw new Error("Wait for the collection to finish opening.");
          if (!this.metadataWritable) throw new Error("Changing files is locked while collection info is damaged.");
          if (this.scanRunning) await this.scanRunning;
+         this.thumbnailsPaused++;
+         await Promise.all(this.thumbnailsRunning.values());
          let release!: () => void;
          this.fileMutation = new Promise<void>((resolve) => {
             release = resolve;
@@ -1130,6 +1284,8 @@ export class CollectionService {
          } finally {
             this.fileMutation = undefined;
             release();
+            this.thumbnailsPaused--;
+            this.makeThumbnails();
             await this.scan();
          }
       });
@@ -1355,6 +1511,8 @@ export class CollectionService {
       await this.writeMetadata();
       if (this.scanRunning) await this.scanRunning;
       await this.scan();
+      // The saved banner shows this clip's thumbnail, so it goes ahead of the rest of the queue.
+      await this.thumbnailNow(clip.id);
       return this.visible(clip.id);
    }
    async createCategory(name: string, color = "#b197fc", icon = "tag"): Promise<void> {

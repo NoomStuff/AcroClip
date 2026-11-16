@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useKeyframeScrub } from "./useKeyframeScrub";
+import { useThumbnailImage } from "./useThumbnailImage";
 import type { CSSProperties } from "react";
 import { Clapperboard, LoaderCircle, MoreHorizontal, Play, Share2, X } from "lucide-react";
 import type { Category, Clip, Job } from "../../shared/types";
@@ -92,6 +93,7 @@ export const ClipCard = memo(function ClipCard({
    // Dragging out shares the same file Copy file would.
    const dragPath = defaultClipFile(clip)?.path;
    const scrub = useKeyframeScrub(clip, clip.duration > 0 && !clip.originalMissing && !job);
+   const thumbnail = useThumbnailImage(clip.thumbnail);
    const card = useRef<HTMLElement>(null);
    const scrubbing = scrub.position !== null;
    const { setPosition } = scrub;
@@ -157,12 +159,20 @@ export const ClipCard = memo(function ClipCard({
             <div className="clip-thumbnail" data-scrubbing={scrub.shown || undefined} data-same-frame={scrub.same || undefined}>
                {/* Under the thumbnail, which zooms and fades away to reveal it. */}
                <canvas ref={scrub.canvas} className="clip-scrub" aria-hidden="true" />
-               {clip.thumbnail ? (
-                  <img src={clip.thumbnail} alt="" decoding="async" className={clip.height > clip.width ? "portrait-thumbnail" : undefined} />
-               ) : (
-                  <div className="thumbnail-fallback">
+               {thumbnail.fallback && (
+                  <div className="thumbnail-fallback" data-under={thumbnail.src ? true : undefined}>
                      <Clapperboard size={34} />
                   </div>
+               )}
+               {thumbnail.src && (
+                  <img
+                     src={thumbnail.src}
+                     alt=""
+                     decoding="async"
+                     data-ready={thumbnail.ready || undefined}
+                     onLoad={thumbnail.onLoad}
+                     className={clip.height > clip.width ? "portrait-thumbnail" : undefined}
+                  />
                )}
                {clip.duration > 0 && (
                   <Duration duration={clip.duration} position={scrub.frame === null ? null : (scrub.frame * clip.duration) / scrub.frames} />
@@ -253,3 +263,37 @@ export const ClipCard = memo(function ClipCard({
       </article>
    );
 });
+
+// Names and details vary in length, so the stand-ins do too.
+const titleWidths = [68, 52, 80, 60, 74, 56];
+const detailWidths = [42, 50, 36, 46];
+
+/** A card still loading, laid out like a clip card in either view so nothing shifts when it arrives. */
+export function ClipPlaceholder({ index }: { index: number }) {
+   return (
+      <div
+         className="clip-placeholder"
+         aria-hidden="true"
+         style={
+            {
+               "--placeholder-title": `${titleWidths[index % titleWidths.length]}%`,
+               "--placeholder-detail": `${detailWidths[index % detailWidths.length]}%`,
+            } as CSSProperties
+         }
+      >
+         <span className="clip-placeholder-thumbnail skeleton" />
+         <span className="clip-placeholder-info">
+            <span className="clip-placeholder-title">
+               <span className="skeleton" />
+            </span>
+            <span className="clip-placeholder-detail">
+               <span className="skeleton" />
+            </span>
+         </span>
+         <span className="clip-placeholder-facts">
+            <span className="skeleton" />
+            <span className="skeleton" />
+         </span>
+      </div>
+   );
+}

@@ -175,12 +175,15 @@ try {
    await copyFile(fallbackThumbnail, legacyThumbnail);
    const migration = new CollectionService();
    await migration.open(migrationRoot);
+   await migration.thumbnailsSettled();
    const migratedThumbnail = fileURLToPath(migration.clips[0]!.thumbnail);
    assert.ok(migratedThumbnail.endsWith(".content-frame-v2.jpg"));
    await checkColor(migratedThumbnail, "blue");
    await assert.rejects(stat(legacyThumbnail), { code: "ENOENT" });
    const generatedAt = (await stat(migratedThumbnail)).mtimeMs;
-   await new CollectionService().open(migrationRoot);
+   const migrationReopened = new CollectionService();
+   await migrationReopened.open(migrationRoot);
+   await migrationReopened.thumbnailsSettled();
    assert.equal((await stat(migratedThumbnail)).mtimeMs, generatedAt, "the migrated thumbnail is reused on reopen");
    const completedRecording = await migration.registerRecording(migrationVideo, "Completed notification fixture");
    await checkColor(fileURLToPath(completedRecording.thumbnail), "blue");
@@ -480,6 +483,7 @@ try {
    }
    const service = new CollectionService();
    await service.open(root);
+   await service.thumbnailsSettled();
    const folderProofRoot = join(workspace, "folder-operations");
    await mkdir(join(folderProofRoot, "Source", "Nested"), { recursive: true });
    await copyFile(original, join(folderProofRoot, "Source", "Nested", "moment.mp4"));

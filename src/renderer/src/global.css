@@ -238,6 +238,35 @@ svg {
    }
 }
 
+/* A stand-in for something still loading, in its shape. It breathes so it reads as on its way, not as empty.
+   Surfaces set --skeleton-color when the default would vanish against them. */
+.skeleton {
+   display: block;
+   background: var(--skeleton-color, var(--raised));
+   border-radius: 6px;
+   corner-shape: squircle;
+   animation: skeleton-breathe 1.6s ease-in-out infinite;
+}
+/* Loading that finishes before anyone would notice never shows its skeleton. */
+.skeleton-reveal {
+   animation: skeleton-reveal 200ms 150ms both;
+}
+@keyframes skeleton-breathe {
+   50% {
+      opacity: 0.45;
+   }
+}
+@keyframes skeleton-reveal {
+   from {
+      opacity: 0;
+   }
+}
+@media (prefers-reduced-motion: reduce) {
+   .skeleton {
+      animation: none;
+   }
+}
+
 progress {
    width: 100%;
    height: 4px;

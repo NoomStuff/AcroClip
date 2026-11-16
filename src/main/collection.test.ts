@@ -65,6 +65,7 @@ describe("collection folder operations", () => {
          await writeFile(video, "isolated video");
          const initial = new CollectionService();
          await initial.open(root);
+         await initial.thumbnailsSettled();
          const latest = fileURLToPath(initial.clips[0]!.thumbnail);
          expect(latest).toContain(".content-frame-v2.jpg");
          const legacy = join(root, ".acroclip", "thumbnails", `${await fileIdentity(video)}.jpg`);
@@ -74,12 +75,17 @@ describe("collection folder operations", () => {
          const shown: string[] = [];
          const upgraded = new CollectionService({ onChange: () => shown.push(...upgraded.clips.map((clip) => clip.thumbnail)) });
          await upgraded.open(root);
+         // The library opens on the old thumbnail. The new one replaces it once it's made.
+         expect(fileURLToPath(upgraded.clips[0]!.thumbnail)).toBe(legacy);
+         await upgraded.thumbnailsSettled();
          expect(shown.some((url) => url && fileURLToPath(url) === legacy)).toBe(true);
          expect(fileURLToPath(upgraded.clips[0]!.thumbnail)).toBe(latest);
          expect(await readFile(latest, "utf8")).toBe("fixture thumbnail");
          await expect(stat(legacy)).rejects.toMatchObject({ code: "ENOENT" });
          expect(io.thumbnails).toBe(before + 1);
-         await new CollectionService().open(root);
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         await reopened.thumbnailsSettled();
          expect(io.thumbnails).toBe(before + 1);
          expect(await readFile(video, "utf8")).toBe("isolated video");
       } finally {
@@ -93,12 +99,14 @@ describe("collection folder operations", () => {
          await writeFile(video, "isolated video");
          const collection = new CollectionService();
          await collection.open(root);
+         await collection.thumbnailsSettled();
          const id = collection.clips[0]!.id;
          const thumbnail = fileURLToPath(collection.clips[0]!.thumbnail);
          await writeFile(thumbnail, "stale preview");
          await mkdir(join(root, ".acroclip", "playback"), { recursive: true });
          await writeFile(join(root, ".acroclip", "playback", "copy.mp4"), "converted");
          await collection.clearCache();
+         await collection.thumbnailsSettled();
          await expect(stat(join(root, ".acroclip", "playback"))).rejects.toMatchObject({ code: "ENOENT" });
          expect(await readFile(fileURLToPath(collection.clips[0]!.thumbnail), "utf8")).toBe("fixture thumbnail");
          // The collection info stays, so the clip keeps its ID, tags and shareables.
@@ -122,8 +130,49 @@ describe("collection folder operations", () => {
          };
          const service = new CollectionService();
          await service.open(root);
+         await service.thumbnailsSettled();
          expect(fileURLToPath(service.clips[0]!.thumbnail)).toBe(legacy);
          expect(await readFile(legacy, "utf8")).toBe("old preview");
+      } finally {
+         io.beforeThumbnail = undefined;
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("opens without waiting for thumbnails, then shows each one once it's made", async () => {
+      const root = await temporaryDirectory("acroclip-thumbnail-queue-");
+      let release = () => {};
+      try {
+         await writeFile(join(root, "Moment.mp4"), "isolated video");
+         const gate = new Promise<void>((resolve) => (release = resolve));
+         io.beforeThumbnail = () => gate;
+         const service = new CollectionService();
+         await service.open(root);
+         expect(service.phase).toBe("ready");
+         expect(service.clips[0]!.thumbnail).toBe("");
+         release();
+         await service.thumbnailsSettled();
+         expect(fileURLToPath(service.clips[0]!.thumbnail)).toContain(".content-frame-v2.jpg");
+      } finally {
+         release();
+         io.beforeThumbnail = undefined;
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("doesn't retry a failed thumbnail on every scan", async () => {
+      const root = await temporaryDirectory("acroclip-thumbnail-failed-");
+      try {
+         await writeFile(join(root, "Moment.mp4"), "isolated video");
+         io.beforeThumbnail = async () => {
+            throw new Error("Thumbnail generation failed");
+         };
+         const service = new CollectionService();
+         const before = io.thumbnails;
+         await service.open(root);
+         await service.thumbnailsSettled();
+         await service.scan();
+         await service.thumbnailsSettled();
+         expect(io.thumbnails).toBe(before + 1);
+         expect(service.clips[0]!.thumbnail).toBe("");
       } finally {
          io.beforeThumbnail = undefined;
          await rm(root, { recursive: true, force: true });
@@ -145,8 +194,15 @@ describe("collection folder operations", () => {
          await service.enrichApplications([{ id, icon, name: "Explorer" }]);
          expect(service.clips[0]).toMatchObject({ id: clip.id, source: "Explorer", categories: [category] });
          expect(service.applicationIcons[id]).toBe(icon);
-         const reopened = new CollectionService();
+         // Icons show with the first clips, before the scan reads any video.
+         const firstIcons: Array<string | undefined> = [];
+         const reopened = new CollectionService({
+            onChange: () => {
+               if (!firstIcons.length && reopened.clips.length) firstIcons.push(reopened.applicationIcons[id]);
+            },
+         });
          await reopened.open(root);
+         expect(firstIcons).toEqual([icon]);
          expect(reopened.clips[0]).toMatchObject({ id: clip.id, source: "Explorer", categories: [category] });
          expect(reopened.applicationIcons[id]).toBe(icon);
       } finally {

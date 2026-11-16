@@ -5,7 +5,7 @@ import { isPackagedApp, registerWindowsIdentity, windowsAppId } from "./identity
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, nativeImage, protocol, shell, Tray, session, systemPreferences, screen } from "electron";
 import { mkdirSync, realpathSync } from "node:fs";
 import { mkdir, realpath, rm, stat, statfs, writeFile } from "node:fs/promises";
-import { arch, cpus, freemem, homedir, release, totalmem, version as kernelVersion } from "node:os";
+import { arch, availableParallelism, cpus, freemem, homedir, release, totalmem, version as kernelVersion } from "node:os";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,6 +75,7 @@ import type { SavedFootage } from "./merge-policy";
 import { saveOutcomeNotice, savingNotice } from "../shared/save-outcome";
 import type { SaveOutcome } from "../shared/save-outcome";
 import { ActivityTracker } from "./activity";
+import { libraryWorkers } from "./library-work";
 import { desktopGame } from "./desktop-game";
 import { copyFileToClipboard } from "./clipboard-file";
 
@@ -163,7 +164,8 @@ const jobStarts = new Map<string, number>();
 const collections = new CollectionService({
    applications: () => applicationArtwork(captureSources.cached),
    beforeFolderChange: assertFolderChangesAllowed,
-   scanConcurrency: () => (captureActive() ? 1 : 3),
+   scanConcurrency: () => libraryWork(),
+   thumbnailConcurrency: () => libraryWork(),
    backgroundStrips: true,
    onChange: () => emitState(),
    onJob: (job) => {
@@ -365,6 +367,9 @@ const activity = new ActivityTracker((background) => {
    libraryRefresh.update(collections.root, libraryInView());
    emitState();
 });
+function libraryWork(): number {
+   return libraryWorkers({ capturing: captureActive(), background: activity.background, processors: availableParallelism() });
+}
 /** Outside changes reach the library while it can be seen. In the background they wait until focus returns. */
 function libraryInView(): boolean {
    return windowShown() && !activity.background;

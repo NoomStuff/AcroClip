@@ -545,19 +545,35 @@
    width: 30px;
    height: 30px;
 }
+/* Mirrors a list row: its padding, thumbnail, one line of title and details, and the file facts on the right. */
 .clip-grid[data-view="list"] .clip-placeholder {
-   min-height: 78px;
    display: flex;
    align-items: center;
    gap: 16px;
-   padding: 10px;
+   padding: 10px 44px 10px 10px;
+   border-bottom: 1px solid #ffffff08;
 }
-.clip-grid[data-view="list"] .clip-placeholder > div {
+.clip-grid[data-view="list"] .clip-placeholder-thumbnail {
    width: var(--list-thumbnail-size, 128px);
-   flex-shrink: 0;
+   flex: 0 0 var(--list-thumbnail-size, 128px);
+   border-radius: 8px;
 }
-.clip-grid[data-view="list"] .clip-placeholder > span {
-   margin: 0;
+.clip-grid[data-view="list"] .clip-placeholder-info {
+   flex: 1;
+   min-width: 0;
+   padding: 0;
+}
+.clip-grid[data-view="list"] .clip-placeholder-title > .skeleton {
+   width: calc(var(--placeholder-title) * 0.5);
+}
+.clip-grid[data-view="list"] .clip-placeholder-detail > .skeleton {
+   width: calc(var(--placeholder-detail) * 0.5);
+}
+.clip-grid[data-view="list"] .clip-placeholder-facts {
+   display: grid;
+   justify-items: end;
+   gap: 7px;
+   min-width: 68px;
 }
 
 .clip-card:hover .clip-thumbnail img {
@@ -619,6 +635,14 @@
    scale: none;
 }
 
+/* A thumbnail fades in once it has loaded. Until then the card shows its surface, or the clapperboard under it. */
+.clip-thumbnail img:not([data-ready]) {
+   opacity: 0;
+}
+.clip-thumbnail .thumbnail-fallback[data-under] {
+   position: absolute;
+   inset: 0;
+}
 .thumbnail-fallback {
    width: 100%;
    height: 100%;
@@ -914,39 +938,55 @@
    margin-right: 6px;
 }
 
+/* Mirrors a grid card: the thumbnail, then a title line and a details line at the card's own line heights. */
 .clip-placeholder {
-   min-height: 205px;
-   border-radius: 16px;
-   corner-shape: squircle;
-   background: var(--surface);
-   overflow: hidden;
+   align-self: start;
+   /* The library sits on the base colour, where the default skeleton tone is too bright. */
+   --skeleton-color: var(--surface);
 }
-.clip-placeholder > div {
+.clip-placeholder-thumbnail {
    aspect-ratio: 16 / 9;
-   background: var(--raised);
-   opacity: 0.35;
+   border-radius: 16px;
 }
-.clip-placeholder > span {
+.clip-placeholder-info {
    display: block;
-   height: 10px;
-   width: 55%;
-   margin: 18px 14px;
-   background: var(--raised);
-   border-radius: 5px;
-   corner-shape: squircle;
+   padding: 10px 0 3px;
+}
+.clip-placeholder-title,
+.clip-placeholder-detail {
+   display: flex;
+   align-items: center;
+}
+/* The card's title is 14px at 1.4 line height, with a 20px minimum. */
+.clip-placeholder-title {
+   height: 20px;
+}
+.clip-placeholder-title > .skeleton {
+   height: 11px;
+   width: var(--placeholder-title);
+}
+/* The details line is 12px at 1.55, 5px under the title. */
+.clip-placeholder-detail {
+   height: 18.6px;
+   margin-top: 5px;
+}
+.clip-placeholder-detail > .skeleton {
+   height: 9px;
+   width: var(--placeholder-detail);
+}
+.clip-placeholder-facts {
+   display: none;
+}
+.clip-placeholder-facts > .skeleton {
+   height: 9px;
+   width: 34px;
+}
+.clip-placeholder-facts > .skeleton + .skeleton {
+   width: 44px;
 }
 .library-skeleton {
-   animation: delayed-placeholder 200ms 150ms both;
    max-height: 100%;
    overflow: hidden;
-}
-@keyframes delayed-placeholder {
-   from {
-      opacity: 0;
-   }
-   to {
-      opacity: 1;
-   }
 }
 
 .library-refresh-status {
@@ -976,9 +1016,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-   .library-skeleton {
-      animation: none;
-   }
    .clip-card::before {
       transition: none;
    }

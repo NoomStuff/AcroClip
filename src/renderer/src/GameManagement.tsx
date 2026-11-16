@@ -12,6 +12,15 @@ import { gameSuggestions, storeGame } from "../../shared/game-suggestions";
 let cachedCatalog: GameCatalogSnapshot | null = null;
 const sameCatalog = (a: GameCatalogSnapshot, b: GameCatalogSnapshot) =>
    a.source === b.source && a.entries.length === b.entries.length && a.entries.every((entry, index) => entry.id === b.entries[index]?.id);
+// Rows for the catalog while it loads: a game's name, then its executables, at varied lengths.
+const gameSkeletonWidths: Array<[name: number, executable: number]> = [
+   [34, 22],
+   [48, 30],
+   [28, 18],
+   [42, 34],
+   [36, 24],
+   [52, 28],
+];
 const executableKey = (value: string) => value.replaceAll("\\", "/").toLowerCase();
 const withAddedGame = (games: CustomGame[], game: CustomGame): CustomGame[] => [
    ...games.filter((item) => executableKey(item.executable) !== executableKey(game.executable)),
@@ -308,6 +317,19 @@ export function GameManagement({
             <MotionList items={visibleEntries.filter((game) => !game.added)} identity={catalog ? "ready" : "loading"}>
                {renderGame}
             </MotionList>
+            {!catalog && !error && (
+               <div className="skeleton-reveal" aria-hidden="true">
+                  {gameSkeletonWidths.map(([name, executable], row) => (
+                     <div key={row} className="game-entry game-skeleton">
+                        <span className="game-skeleton-icon skeleton" />
+                        <div>
+                           <span className="game-skeleton-name skeleton" style={{ width: `${name}%` }} />
+                           <span className="game-skeleton-executable skeleton" style={{ width: `${executable}%` }} />
+                        </div>
+                     </div>
+                  ))}
+               </div>
+            )}
          </div>
          {catalog && !filtered.length && <p className="game-empty">No matching games.</p>}
          <div ref={sentinel} aria-hidden="true" />

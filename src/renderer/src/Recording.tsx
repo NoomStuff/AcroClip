@@ -18,6 +18,29 @@ import { AdditionalAudio } from "./AdditionalAudio";
 import { portalScreenId, sourceChoices, previewCaptureSource } from "../../shared/capture-policy";
 import { autoCapturePresentation } from "./auto-capture-presentation";
 
+// The source list loads once per session. Its skeleton has as many rows as the list had last time, so the
+// panel keeps its height when the sources arrive.
+const sourceCountKey = "acroclip.capture.source-counts";
+const sourceSkeletonWidths = [64, 46, 72, 54, 60];
+function sourceSkeletonRows(kind: SourceKind): number {
+   try {
+      const counts: unknown = JSON.parse(localStorage.getItem(sourceCountKey) ?? "null");
+      const count = counts && typeof counts === "object" && kind in counts ? (counts as Record<string, unknown>)[kind] : undefined;
+      return typeof count === "number" && Number.isFinite(count) ? Math.max(1, Math.min(8, Math.round(count))) : 2;
+   } catch {
+      return 2;
+   }
+}
+function rememberSourceCounts(sources: readonly CaptureSource[]): void {
+   const counts = { screen: 0, app: 0 };
+   for (const source of sources) counts[source.kind]++;
+   try {
+      localStorage.setItem(sourceCountKey, JSON.stringify(counts));
+   } catch {
+      /* The skeleton falls back to two rows. */
+   }
+}
+
 export function Recording({
    state,
    visible,
@@ -166,6 +189,7 @@ export function Recording({
                knownSources.current = result;
                setSources((current) => (JSON.stringify(current) === JSON.stringify(result) ? current : result));
                setSourcePhase("ready");
+               rememberSourceCounts(result);
             }
          } catch {
             if (!gone) setSourcePhase("error");
@@ -324,7 +348,7 @@ export function Recording({
                             It stays mounted so it can fade out as well as in. */}
                         {!previewUnavailable && (
                            <div
-                              className="preview-message preview-paused"
+                              className="preview-paused"
                               data-shown={previewPaused || undefined}
                               role={previewPaused ? "status" : undefined}
                               aria-hidden={!previewPaused || undefined}
@@ -513,11 +537,16 @@ export function Recording({
                            )}
                         </MotionList>
                         {sourcePhase === "loading" && !sources.length && (
-                           <div className="source-loading" role="status" aria-label="Finding capture sources">
-                              {[0, 1].map((row) => (
-                                 <div key={row} className="source-row source-skeleton" aria-hidden="true">
-                                    <span className="source-skeleton-icon" />
-                                    <span className="source-skeleton-name" />
+                           <div className="source-loading skeleton-reveal" role="status" aria-label="Finding capture sources">
+                              {Array.from({ length: sourceSkeletonRows(state.preferences.sourceKind) }, (_, row) => (
+                                 <div
+                                    key={row}
+                                    className="source-row source-skeleton"
+                                    aria-hidden="true"
+                                    style={{ "--source-skeleton-width": `${sourceSkeletonWidths[row % sourceSkeletonWidths.length]}%` } as CSSProperties}
+                                 >
+                                    <span className="source-skeleton-icon skeleton" />
+                                    <span className="source-skeleton-name skeleton" />
                                  </div>
                               ))}
                            </div>

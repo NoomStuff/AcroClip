@@ -71,6 +71,25 @@
    flex-direction: column;
    gap: 3px;
 }
+/* Mirrors a game row: the 20px icon, a 13px name and 11px executables 3px apart. */
+.game-skeleton {
+   /* The list sits on the base colour, where the default skeleton tone is too bright. */
+   --skeleton-color: var(--surface);
+   pointer-events: none;
+}
+.game-skeleton-icon {
+   width: 20px;
+   height: 20px;
+   flex-shrink: 0;
+}
+.game-skeleton-name {
+   height: 10px;
+   margin: 4px 0;
+}
+.game-skeleton-executable {
+   height: 8px;
+   margin: 4px 0;
+}
 .game-entry-name {
    font-size: 13px;
    overflow: hidden;

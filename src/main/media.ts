@@ -179,12 +179,10 @@ export function pickThumbnailFrame(spreads: readonly number[]): number {
 }
 
 /**
- * Decodes only the keyframes from `from` to the end and writes each as a thumbnail candidate, measuring how
- * flat each one is on a tiny copy. Returns the candidates in order.
+ * Decodes only the keyframes from `from` to the end, measuring how flat each one is on a tiny copy. The
+ * keyframes are written with `output`, and their spreads come back in order.
  */
-async function thumbnailCandidates(source: string, directory: string, from: number): Promise<Array<{ file: string; spread: number }>> {
-   await rm(directory, { recursive: true, force: true });
-   await mkdir(directory);
+async function decodeKeyframes(source: string, from: number, output: string[], signal: AbortSignal | undefined): Promise<number[]> {
    const stats = await runMedia(
       "ffmpeg",
       [
@@ -213,11 +211,23 @@ async function thumbnailCandidates(source: string, directory: string, from: numb
          "passthrough",
          "-f",
          "image2",
-         join(directory, "%04d.jpg"),
+         ...output,
       ],
-      { belowNormal: true }
+      { belowNormal: true, ...(signal ? { signal } : {}) }
    );
-   const spreads = frameSpreads(stats);
+   return frameSpreads(stats);
+}
+
+/** Writes each keyframe from `from` to the end as a thumbnail candidate. Returns the candidates in order. */
+async function thumbnailCandidates(
+   source: string,
+   directory: string,
+   from: number,
+   signal: AbortSignal | undefined
+): Promise<Array<{ file: string; spread: number }>> {
+   await rm(directory, { recursive: true, force: true });
+   await mkdir(directory);
+   const spreads = await decodeKeyframes(source, from, [join(directory, "%04d.jpg")], signal);
    const images = new Set(await readdir(directory));
    const files = spreads.map((spread, index) => ({ file: join(directory, `${String(index + 1).padStart(4, "0")}.jpg`), spread }));
    const present = files.filter(({ file }) => images.has(basename(file)));
@@ -225,28 +235,30 @@ async function thumbnailCandidates(source: string, directory: string, from: numb
    return present.filter((_, index) => (sizes[index] ?? 0) > 0);
 }
 
-export async function createThumbnail(source: string, output: string, duration: number): Promise<void> {
+export async function createThumbnail(source: string, output: string, duration: number, options: Pick<MediaOptions, "signal"> = {}): Promise<void> {
    const inputPath = resolve(source),
       outputPath = resolve(output);
    if (process.platform === "win32" ? inputPath.toLowerCase() === outputPath.toLowerCase() : inputPath === outputPath)
       throw new Error("A thumbnail must not overwrite its source video.");
    await rm(output, { force: true });
    const length = Number.isFinite(duration) && duration > 0 ? duration : 0;
-   const latest = `${output}.latest`,
-      earlier = `${output}.earlier`;
+   const earlier = `${output}.earlier`;
+   let candidates = false;
    const fromKeyframes = async () => {
-      // Clips end on the moment, so the last keyframe usually is the thumbnail. Only a flat one, like a
-      // loading screen or a fade to black, is worth looking further back for.
-      let frames = await thumbnailCandidates(source, latest, Math.max(0, length - 1));
-      if (!frames.length) throw new Error("No thumbnail frame was decoded.");
-      if ((frames.at(-1)?.spread ?? 0) <= flatSpread && length > 1.5)
-         frames = await thumbnailCandidates(source, earlier, Math.max(0, length - thumbnailLookBack)).then(
-            (found) => (found.length ? found : frames),
-            () => frames
-         );
+      // Clips end on the moment, so the last keyframe usually is the thumbnail. It is written straight to the
+      // output, each keyframe over the one before. Only a flat one, like a loading screen or a fade to black,
+      // is worth looking further back for.
+      const spreads = await decodeKeyframes(source, Math.max(0, length - 1), ["-update", "1", output], options.signal);
+      if (!spreads.length || !(await stat(output)).size) throw new Error("No thumbnail frame was decoded.");
+      if ((spreads.at(-1) ?? 0) > flatSpread || length <= 1.5) return;
+      candidates = true;
+      const frames = await thumbnailCandidates(source, earlier, Math.max(0, length - thumbnailLookBack), options.signal).catch((error: unknown) => {
+         if (options.signal?.aborted) throw error;
+         return [];
+      });
+      // Without candidates, the flat last keyframe is still a better thumbnail than none.
       const chosen = frames[pickThumbnailFrame(frames.map((frame) => frame.spread))];
-      if (!chosen) throw new Error("No thumbnail frame was decoded.");
-      await rename(chosen.file, output);
+      if (chosen) await rename(chosen.file, output);
    };
    const fromStart = async () => {
       await runMedia(
@@ -278,19 +290,20 @@ export async function createThumbnail(source: string, output: string, duration: 
             "1",
             output,
          ],
-         { belowNormal: true }
+         { ...options, belowNormal: true }
       );
       if ((await stat(output)).size === 0) throw new Error("No thumbnail frame was decoded.");
    };
    try {
       if (length > 0) await fromKeyframes();
       else await fromStart();
-   } catch {
+   } catch (error) {
+      if (options.signal?.aborted) throw error;
       // An incomplete index or unsupported keyframe skip must not leave a clip blank.
       await rm(output, { force: true });
       await fromStart();
    } finally {
-      await Promise.all([latest, earlier].map((directory) => rm(directory, { recursive: true, force: true }).catch(() => undefined)));
+      if (candidates) await rm(earlier, { recursive: true, force: true }).catch(() => undefined);
    }
 }
 export async function probe(path: string, options: Pick<MediaOptions, "signal" | "belowNormal"> = {}): Promise<MediaInfo> {

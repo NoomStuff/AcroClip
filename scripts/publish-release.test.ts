@@ -121,9 +121,7 @@ it("publishes downloads, feeds and sources as one release with no evidence files
    expect(refs.get("tags/v0.3.1")).toBe(sha);
    expect(releases).toHaveLength(1);
    expect(releases[0]).toMatchObject({ name: "AcroClip 0.3.1", prerelease: false, draft: false, target_commitish: sha });
-   expect(releases[0]!.body).toBe(
-      "- Fix the thing (aaaaaaa)\n\nSource code for the GPL and LGPL components bundled with AcroClip is in the AcroClip-sources files, one per platform."
-   );
+   expect(releases[0]!.body).toBe("- Fix the thing (aaaaaaa)");
    expect(
       assets
          .get(1)!

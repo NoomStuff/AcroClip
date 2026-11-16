@@ -3,9 +3,7 @@
 // One release carries the app downloads, updater feeds and corresponding sources.
 // It stays a private draft until every byte matches, then becomes public at once.
 
-const sourceNote = "Source code for the GPL and LGPL components bundled with AcroClip is in the AcroClip-sources files, one per platform.";
-
-/** The included commits, then the source note. Tests pass `notes` instead of reading GitHub. */
+/** The included commits. Tests pass `notes` instead of reading GitHub. */
 async function releaseBody(github, repo, tag, commit, notes) {
    if (notes === undefined) {
       const { pathToFileURL } = await import("node:url");
@@ -14,7 +12,7 @@ async function releaseBody(github, repo, tag, commit, notes) {
       const { releaseNotes } = await import(pathToFileURL(join(module.path, "release-notes.mjs")).href);
       notes = await releaseNotes({ tag, commit, api: async (path) => (await github.request(`GET /repos/${repo.owner}/${repo.repo}/${path}`)).data });
    }
-   return [notes, sourceNote].filter(Boolean).join("\n\n");
+   return notes ?? "";
 }
 
 module.exports = async function publish({ github, context, core, directory = "candidate", notes }) {
