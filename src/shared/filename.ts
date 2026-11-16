@@ -1,5 +1,23 @@
 import type { Preferences } from "./types";
 
+const reservedName = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+
+/**
+ * A source name as one piece of a longer file name. A trailing period only matters at the end of the
+ * whole name, so "R.E.P.O." keeps its last dot when a date follows it.
+ */
+function sourceSegment(value: string): string {
+   const clean = [
+      ...value
+         .replace(/[<>:"/\\|?*]/g, "_")
+         .trim()
+         .slice(0, 100),
+   ]
+      .filter((character) => character.charCodeAt(0) >= 32)
+      .join("");
+   return /^[. ]*$/.test(clean) || reservedName.test(clean) ? "Clip" : clean;
+}
+
 export function safeFileStem(value: string): string {
    const clean = value
       .replace(/[<>:"/\\|?*]/g, "_")
@@ -72,13 +90,13 @@ function localFields(now: Date): Record<Exclude<FilenameField, "source">, string
 }
 
 export function previewFilename(preferences: Pick<Preferences, "filenamePreset" | "filenameTemplate">, source: string, now: Date): string {
-   const values: Record<FilenameField, string> = { source: safeFileStem(source), ...localFields(now) };
+   const values: Record<FilenameField, string> = { source: sourceSegment(source), ...localFields(now) };
    const fill = (pattern: string) => pattern.replace(fieldPattern, (_token: string, key: string) => values[key as FilenameField]);
    let name: string;
    if (preferences.filenamePreset === "custom") {
       if (!validFilenameTemplate(preferences.filenameTemplate)) throw new Error("Use the file name fields without folder separators.");
       name = safeFileStem(fill(preferences.filenameTemplate.trim()));
-   } else name = fill(filenamePatterns[preferences.filenamePreset]);
+   } else name = fill(filenamePatterns[preferences.filenamePreset]).replace(/[. ]+$/, "");
    // MP4 plays inline in chat apps, phones and browsers. MKV clips stay supported.
    return `${name}.mp4`;
 }

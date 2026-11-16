@@ -484,6 +484,7 @@
    width: 32px;
    height: 32px;
    border-radius: 50%;
+   corner-shape: round;
    color: var(--muted);
 }
 .player-skip-button.icon-button:not(:disabled):hover {
@@ -493,6 +494,7 @@
    width: 39px;
    height: 39px;
    border-radius: 50%;
+   corner-shape: round;
    background: #ffffff0d;
    color: var(--text);
 }

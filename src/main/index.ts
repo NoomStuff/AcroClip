@@ -76,7 +76,7 @@ import { saveOutcomeNotice, savingNotice } from "../shared/save-outcome";
 import type { SaveOutcome } from "../shared/save-outcome";
 import { ActivityTracker } from "./activity";
 import { libraryWorkers } from "./library-work";
-import { desktopGame } from "./desktop-game";
+import { desktopGame, DesktopGameWatch } from "./desktop-game";
 import { copyFileToClipboard } from "./clipboard-file";
 
 // CORS lets the renderer read back images it asks for with crossOrigin, such as hover strips it
@@ -895,6 +895,31 @@ async function desktopCaptureGame(screenId: string | undefined): Promise<Applica
       return undefined;
    }
 }
+/** How often a desktop capture notes which game is in front. Each look asks the helper for the open windows, so it stays slow. */
+const DESKTOP_WATCH_INTERVAL = 5000;
+/** Long enough to cover the longest merged clip. */
+const desktopWatch = new DesktopGameWatch<ApplicationArtwork>(11 * 60_000);
+let desktopWatchSource = "";
+let desktopWatching = false;
+/** Starts a fresh watch whenever the capture or the screen changes, so another session's games never leak in. */
+function desktopWatchFor(footage: ReturnType<typeof bufferedCaptureSource>): boolean {
+   const source = capturing() && footage.kind === "screen" ? `${recorder.status.startedAt}:${footage.id ?? ""}` : "";
+   if (source !== desktopWatchSource) {
+      desktopWatch.clear();
+      desktopWatchSource = source;
+   }
+   return source !== "";
+}
+async function watchDesktopGame(): Promise<void> {
+   if (desktopWatching) return;
+   desktopWatching = true;
+   try {
+      const footage = bufferedCaptureSource(recorder.status);
+      if (desktopWatchFor(footage)) desktopWatch.record(Date.now(), await desktopCaptureGame(footage.id));
+   } finally {
+      desktopWatching = false;
+   }
+}
 async function saveClip(trigger: SaveTrigger) {
    const requestedAt = Date.now();
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to save another clip.");
@@ -910,14 +935,25 @@ async function saveClip(trigger: SaveTrigger) {
       const shownGame = footage.kind === "screen" ? desktopCaptureGame(footage.id) : Promise.resolve(undefined);
       await collections.finishFileChanges();
       lastRecordingArtwork = recordingArtwork(footage, captureSources.cached, lastRecordingArtwork);
-      // A desktop capture of a fullscreen game files under that game. The clip's source stays Desktop.
-      const application = lastRecordingArtwork?.application ?? (await shownGame);
-      const applicationName =
-         application?.name ??
-         normalizeApplicationLabel(footage.name || (preferences.sourceKind === "auto" ? "Game" : recordingSourceLabel(preferences, captureSources.cached)));
+      // A desktop clip is credited to the recognized game that filled most of it, or sat in front when it
+      // was saved. It files under that game, but the clip and its name stay Desktop: that is how it was captured.
+      const watched = desktopWatchFor(footage);
+      const application =
+         lastRecordingArtwork?.application ??
+         (watched
+            ? desktopWatch.pick(
+                 footageWindow(requestedAt, 0, Math.min(preferences.clipSeconds, recorder.status.availableSeconds)).start,
+                 requestedAt,
+                 await shownGame
+              )
+            : await shownGame);
+      const captureLabel = normalizeApplicationLabel(
+         footage.name || (preferences.sourceKind === "auto" ? "Game" : recordingSourceLabel(preferences, captureSources.cached))
+      );
+      const applicationName = application?.name ?? captureLabel;
       const destination = recordingDestination(
          { ...preferences, collection: collections.root },
-         applicationName,
+         footage.kind === "screen" ? captureLabel : applicationName,
          new Date(requestedAt),
          recorder.pendingSavePaths,
          collections.applicationFolder(application?.id, applicationName)
@@ -1973,6 +2009,7 @@ else {
             const problem = globalShortcutProblem(bindingFor(preferences, item.id));
             if (problem) notice(`${item.label}: ${problem} Change it in Settings.`, true);
          }
+         setInterval(() => void watchDesktopGame().catch(() => undefined), DESKTOP_WATCH_INTERVAL).unref();
          if (process.argv.includes("--clip")) void saveClip("command").catch(captureActionError);
          if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
             void startRecording({ quiet: true }).catch(captureActionError);

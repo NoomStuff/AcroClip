@@ -42,6 +42,8 @@ function hideFolder(path: string): void {
 const thumbnailName = (identity: string) => `${identity}.content-frame-v2.jpg`;
 // Earlier thumbnails stay on show while their replacement is made, newest first.
 const legacyThumbnailNames = (identity: string) => [`${identity}.last-keyframe-v1.jpg`, `${identity}.jpg`];
+/** Sources that name how a clip was found or captured, not an application, so no application adopts them. */
+const genericSources = new Set(["desktop", "unknown", "game", "clip"]);
 const fileSchema = z.object({ relativePath: z.string(), absolutePath: z.string(), identity: z.string() });
 const shareSchema = fileSchema.extend({
    id: z.string(),
@@ -284,8 +286,27 @@ export class CollectionService {
          const folders = this.metadata.applicationFolders;
          const folder = folders && !folders[art.id] ? [...previous].map((id) => folders[id]).find((value) => value !== undefined) : undefined;
          if (folder) this.metadata.applicationFolders = { ...folders, [art.id]: folder };
-         if (moved.size || folder) {
-            this.clips = this.clips.map((entry) => (moved.has(entry.id) ? { ...entry, applicationId: art.id } : entry));
+         // Clips saved before the application was known only carry its name as their source. Once it is
+         // known, the ones with that name join it, so they show its icon and share its folder.
+         const adopted = new Set<string>();
+         const label = art.name ? normalizeApplicationLabel(art.name) : "";
+         if (art.name && label && !genericSources.has(label.toLowerCase())) {
+            const known = this.metadata.clips.find((clip) => clip.application?.id === art.id && clip.application.iconFile)?.application;
+            for (const clip of this.metadata.clips)
+               if (!clip.application && normalizeApplicationLabel(clip.source).toLowerCase() === label.toLowerCase()) {
+                  clip.application = { id: art.id, name: art.name, ...(known?.iconFile ? { iconFile: known.iconFile } : {}) };
+                  clip.source = art.name;
+                  adopted.add(clip.id);
+               }
+         }
+         if (moved.size || adopted.size || folder) {
+            this.clips = this.clips.map((entry) =>
+               adopted.has(entry.id)
+                  ? { ...entry, applicationId: art.id, source: art.name! }
+                  : moved.has(entry.id)
+                    ? { ...entry, applicationId: art.id }
+                    : entry
+            );
             changed = true;
          }
          const clips = this.metadata.clips.filter((clip) => clip.application?.id === art.id);
@@ -1154,6 +1175,10 @@ export class CollectionService {
                   this.metadata.clips.push(stored);
                }
                used.add(stored.id);
+               // A file renamed outside the app keeps its clip, and the name follows it. The app's own rename
+               // changes both together, so a name that matched the old file name is never a custom one.
+               const renamedFrom = stored.relativePath !== rel ? basename(stored.relativePath, extname(stored.relativePath)) : undefined;
+               if (renamedFrom !== undefined && stored.name === renamedFrom) stored.name = basename(actual, extname(actual));
                stored.relativePath = rel;
                stored.absolutePath = actual;
                const cached = await this.cachedMedia(actual, fileStat, stored.preview);
