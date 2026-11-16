@@ -217,10 +217,22 @@ try {
    await delay(4000);
    const quietListings = (await activity()).listings - quietStart;
    assert.ok(quietListings <= 4, `Desktop audio must not list sessions while nothing changes: ${quietListings} listings in 4 s`);
+   // Level messages only flow while the app shows meters. One already on its way may still arrive.
+   const levelsDuring = async (shown: boolean) => {
+      helper.stdin.write(`${JSON.stringify({ action: "meters", shown })}\n`);
+      await delay(200);
+      const mark = events.length;
+      await delay(1000);
+      return events.slice(mark).filter((event) => event.event === "audio-levels").length;
+   };
+   const hiddenLevels = await levelsDuring(false);
+   const shownLevels = await levelsDuring(true);
+   assert.equal(hiddenLevels, 0, `No level messages may be sent while meters are hidden: ${hiddenLevels} in 1 s`);
+   assert.ok(shownLevels > 5, `Level messages must flow again once meters are shown: ${shownLevels} in 1 s`);
    await command("stop");
    console.log(
       "Desktop audio kept an app across a default output change, and new captures still come from the default",
-      JSON.stringify({ original, kept, lateTones, freshTone, joins, quietListings })
+      JSON.stringify({ original, kept, lateTones, freshTone, joins, quietListings, hiddenLevels, shownLevels })
    );
 } finally {
    if (statusTimer) clearInterval(statusTimer);

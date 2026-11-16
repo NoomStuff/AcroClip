@@ -19,6 +19,9 @@ std::mutex exclusionsMutex;
 std::vector<uint32_t> exclusions;
 /** Bumped when the app changes its exclusions, so the next round lists sessions again. */
 std::atomic<uint64_t> exclusionGeneration{0};
+/** Every running Desktop audio's listener, so a change of exclusions wakes them at once. */
+std::mutex listenersMutex;
+std::set<AudioChanges *> listeners;
 bool within(DWORD pid, DWORD root, const std::map<DWORD, DWORD> &parents) {
   for (unsigned depth = 0; pid && depth < 128; ++depth) {
     if (pid == root) return true;
@@ -56,9 +59,11 @@ struct DesktopAudio {
     if (!scene) throw std::runtime_error("Desktop audio could not be opened");
     obs_source_add_active_child(source, obs_scene_get_source(scene));
     changes.Attach(new AudioChanges());
+    { std::lock_guard<std::mutex> lock(listenersMutex); listeners.insert(changes.Get()); }
     thread = std::thread([this] { run(); });
   }
   ~DesktopAudio() {
+    { std::lock_guard<std::mutex> lock(listenersMutex); listeners.erase(changes.Get()); }
     quit = true;
     changes->stop();
     if (thread.joinable()) thread.join();
@@ -123,6 +128,8 @@ struct DesktopAudio {
       if (id != endpointId || !sessions.started()) {
         endpoint = found;
         endpointId = id;
+        // Its other-output listing left out the new default and included the old one.
+        otherSessions.clear();
         sessions.start(endpoint.Get(), changes.Get());
         pending.sessions = true;
       }
@@ -162,7 +169,10 @@ struct DesktopAudio {
     for (const auto &item : listed) wanted.insert(item.pid);
     // About 2 us per process, against 9 ms for a snapshot of all of them.
     std::vector<SnapshotCheck> checks;
-    for (DWORD pid : wanted) checks.push_back({pid, parents.count(pid) > 0 || absent.count(pid) > 0, processStarted(pid)});
+    for (DWORD pid : wanted) {
+      const auto start = processStarted(pid);
+      checks.push_back({pid, parents.count(pid) > 0 || absent.count(pid) > 0, start.started, start.exists});
+    }
     if (snapshotStale(parentsTakenAt, now - parentsAt, checks)) {
       FILETIME taken{};
       GetSystemTimeAsFileTime(&taken);
@@ -297,6 +307,8 @@ DesktopAudioActivity desktopAudioActivity(obs_source_t *source) {
 void setDesktopExclusions(const std::vector<uint32_t> &pids) {
   { std::lock_guard<std::mutex> lock(exclusionsMutex); exclusions = pids; }
   ++exclusionGeneration;
+  std::lock_guard<std::mutex> lock(listenersMutex);
+  for (auto *listener : listeners) listener->sessionsChanged();
 }
 void registerDesktopAudio() {
   obs_source_info info{};

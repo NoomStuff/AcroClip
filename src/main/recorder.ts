@@ -107,6 +107,8 @@ const pollActions = new Set(["status", "windows", "candidates", "audio-devices"]
 const APPLICATION_REUSE_MS = 500;
 /** The running recorder lists apps in about 0.5 ms. Past this, discovery starts its own process. */
 const RECORDER_LISTING_TIMEOUT_MS = 1000;
+/** How long discovery uses its own process after the recorder missed that timeout. */
+const RECORDER_LISTING_RETRY_MS = 30_000;
 /** How long the helper may take to exit after every save has finished. */
 export const RECORDER_EXIT_TIMEOUT_MS = 5000;
 
@@ -303,12 +305,15 @@ export class Recorder {
          // Discovery must not wait behind capture startup or audio commands, so a busy or
          // missing recorder still gets its own process.
          const asked = this.process;
-         if (asked && this.recorderIdle() && this.listingProcess !== asked) {
+         const cooling = this.listingFailure?.process === asked && Date.now() - this.listingFailure.at < RECORDER_LISTING_RETRY_MS;
+         if (asked && this.recorderIdle() && !cooling) {
             try {
-               return await this.candidates(RECORDER_LISTING_TIMEOUT_MS);
+               const items = await this.candidates(RECORDER_LISTING_TIMEOUT_MS);
+               // A recorder that exited mid-listing answers with nothing, which isn't a real list.
+               if (this.process === asked) return items;
             } catch {
-               // A recorder that doesn't answer gets no second chance to slow discovery down.
-               this.listingProcess = asked;
+               // A recorder busy past the timeout, say restarting an encoder, gets a rest, not a ban.
+               this.listingFailure = { process: asked, at: Date.now() };
             }
          }
          const executable = existsSync(this.executable) ? this.executable : this.developmentExecutable;
@@ -332,8 +337,8 @@ export class Recorder {
       await this.initialize();
       return this.candidates();
    }
-   /** A running recorder that once failed to list apps in time, so discovery uses its own process. */
-   private listingProcess: ChildProcessWithoutNullStreams | null = null;
+   /** A running recorder that failed to list apps in time, so discovery uses its own process for a while. */
+   private listingFailure: { process: ChildProcessWithoutNullStreams; at: number } | null = null;
    /** Whether the app shows level meters, so the recorder sends level messages. */
    private metersWanted = false;
    private metersSent: boolean | null = null;

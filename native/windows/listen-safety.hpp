@@ -29,14 +29,21 @@ inline std::map<DWORD, DWORD> processParents() {
   CloseHandle(snapshot);
   return result;
 }
-/** When a process started, in FILETIME units, or 0 if Windows won't say. A reused id starts later. */
-inline uint64_t processStarted(DWORD pid) {
+/** When a process started, in FILETIME units. A reused id starts later. */
+struct ProcessStart {
+  /** False once the process is gone, so there's nothing to look up. */
+  bool exists = true;
+  /** 0 when Windows won't say, as for some protected processes. */
+  uint64_t started = 0;
+};
+inline ProcessStart processStarted(DWORD pid) {
   HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-  if (!process) return 0;
+  // Windows answers ERROR_INVALID_PARAMETER for an id no process has.
+  if (!process) return {GetLastError() != ERROR_INVALID_PARAMETER, 0};
   FILETIME created{}, exited{}, kernel{}, user{};
   const bool known = GetProcessTimes(process, &created, &exited, &kernel, &user);
   CloseHandle(process);
-  return known ? (uint64_t(created.dwHighDateTime) << 32) | created.dwLowDateTime : 0;
+  return {true, known ? (uint64_t(created.dwHighDateTime) << 32) | created.dwLowDateTime : 0};
 }
 class ListenRouting {
   using Device = Microsoft::WRL::ComPtr<IMMDevice>;
@@ -132,6 +139,8 @@ public:
     pending = {};
     return result;
   }
+  /** Lists sessions again at once, for changes Windows doesn't report. */
+  void sessionsChanged() { mark(true, false); }
   /** Ends a wait at once, for shutting down. */
   void stop() {
     { std::lock_guard<std::mutex> lock(mutex); stopping = true; }
@@ -232,20 +241,28 @@ public:
       Microsoft::WRL::ComPtr<IAudioSessionControl2> session;
       DWORD pid = 0;
       AudioSessionState state = AudioSessionStateExpired;
-      if (FAILED(enumerated->GetSession(index, &control)) || FAILED(control.As(&session)) ||
-          FAILED(session->GetProcessId(&pid)) || FAILED(session->GetState(&state)))
+      if (FAILED(enumerated->GetSession(index, &control)) || FAILED(control.As(&session)) || FAILED(session->GetProcessId(&pid))) {
+        keep(seen);
         throw std::runtime_error("A desktop audio session could not be identified");
-      if (!pid || state == AudioSessionStateExpired) continue;
-      listed.push_back({pid, state});
+      }
+      if (!pid) continue;
+      // Watched before its state is read, so a change in between is still reported.
       LPWSTR raw = nullptr;
-      if (FAILED(session->GetSessionInstanceIdentifier(&raw)) || !raw) continue;
-      std::wstring id(raw);
-      CoTaskMemFree(raw);
-      auto known = watched.find(id);
-      if (known != watched.end()) {
-        seen.emplace(id, known->second);
-        watched.erase(known);
-      } else if (SUCCEEDED(control->RegisterAudioSessionNotification(listener.Get()))) seen.emplace(id, control);
+      if (SUCCEEDED(session->GetSessionInstanceIdentifier(&raw)) && raw) {
+        std::wstring id(raw);
+        CoTaskMemFree(raw);
+        auto known = watched.find(id);
+        if (known != watched.end()) {
+          seen.emplace(id, known->second);
+          watched.erase(known);
+        } else if (SUCCEEDED(control->RegisterAudioSessionNotification(listener.Get()))) seen.emplace(id, control);
+      }
+      if (FAILED(session->GetState(&state))) {
+        keep(seen);
+        throw std::runtime_error("A desktop audio session could not be identified");
+      }
+      if (state == AudioSessionStateExpired) continue;
+      listed.push_back({pid, state});
     }
     // Whatever is left has ended.
     for (auto &[id, control] : watched) control->UnregisterAudioSessionNotification(listener.Get());
@@ -253,6 +270,11 @@ public:
     return listed;
   }
 private:
+  /** Puts watches taken out during a failed listing back, so stop() still unregisters them. */
+  void keep(std::map<std::wstring, Microsoft::WRL::ComPtr<IAudioSessionControl>> &seen) {
+    for (auto &entry : seen) watched.insert(std::move(entry));
+    seen.clear();
+  }
   Microsoft::WRL::ComPtr<IAudioSessionManager2> manager;
   Microsoft::WRL::ComPtr<AudioChanges> listener;
   std::map<std::wstring, Microsoft::WRL::ComPtr<IAudioSessionControl>> watched;

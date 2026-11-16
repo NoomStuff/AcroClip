@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
     }));
     {
       // Now: the routing lives as long as the audio thread, and the output is looked up once a
-      // second, so one round in ten pays for the lookup.
+      // second, so one round in ten pays for the lookup. This was the step before events.
       ListenRouting routing;
       auto endpoint = routing.device("default");
       int round = 0;
@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
     {
       std::vector<DWORD> sample;
       for (const auto &[pid, parent] : processParents())
-        if (sample.size() < 20 && processStarted(pid)) sample.push_back(pid);
+        if (sample.size() < 20 && processStarted(pid).started) sample.push_back(pid);
       timings.push_back(measure("sessionStartTimes", rounds, [&] {
         for (DWORD pid : sample) (void)processStarted(pid);
       }));

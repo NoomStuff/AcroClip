@@ -100,14 +100,20 @@ int main() {
     try { cache.get(start + 2000ms, broken); } catch (const std::exception &) { threw = true; }
     require(threw && listings == 3);
     require(cache.get(start + 2500ms, broken).empty() && listings == 3);
+    // A new default output makes the last listing wrong at once.
+    cache.clear();
+    require(cache.get(start + 2600ms, list).size() == 1 && listings == 4);
   }
   {
     const uint64_t taken = 1000;
     const std::vector<SnapshotCheck> settled{{10, true, 500}, {20, true, 900}};
     // Nothing new: the snapshot holds for 30 s instead of being retaken every 2 s.
     require(!snapshotStale(taken, 2s, settled));
-    require(!snapshotStale(taken, 29s, settled));
-    require(snapshotStale(taken, 30s, settled));
+    require(!snapshotStale(taken, 4min, settled));
+    require(snapshotStale(taken, 5min, settled));
+    // A process that has exited costs nothing, even one Windows never described.
+    require(!snapshotStale(taken, 3s, {{10, true, 0, false}, {20, true, 900}}));
+    require(!snapshotStale(taken, 3s, {{10, false, 0, false}}));
     require(snapshotStale(0, 0s, settled));
     // A process the snapshot never saw is looked up at once, as before.
     require(snapshotStale(taken, 100ms, {{10, true, 500}, {30, false, 1200}}));

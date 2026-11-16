@@ -99,6 +99,8 @@ struct SnapshotCheck {
   bool known;
   /** When it started, in FILETIME units, or 0 when Windows won't say. */
   uint64_t started;
+  /** The process still runs. One that's gone has no parent left to look up. */
+  bool exists = true;
 };
 
 /**
@@ -106,12 +108,15 @@ struct SnapshotCheck {
  * walks every process on the system, about 9 ms of CPU, so it used to be retaken every 2 s to
  * catch process ids Windows had reused. Now only a reused id costs one: a process that started
  * after the snapshot. Those still wait for the snapshot to be 2 s old, as before. A process
- * Windows won't describe keeps the old 2 s retake, and every snapshot is retaken after 30 s.
+ * Windows won't describe keeps the old 2 s retake, one that has exited costs nothing, and every
+ * snapshot is retaken after 5 minutes as a backstop.
  */
 inline bool snapshotStale(uint64_t takenAt, std::chrono::steady_clock::duration age, const std::vector<SnapshotCheck> &wanted) {
   using namespace std::chrono_literals;
-  if (!takenAt || age >= 30s) return true;
+  if (!takenAt || age >= 5min) return true;
   for (const auto &item : wanted) {
+    // A reused id opens again, and then counts as a process that started after the snapshot.
+    if (!item.exists) continue;
     if (!item.known) return true;
     if ((!item.started || item.started >= takenAt) && age >= 2s) return true;
   }
@@ -148,6 +153,11 @@ public:
       try { sessions = list(); } catch (const std::exception &) { sessions.clear(); throw; }
     }
     return sessions;
+  }
+  /** Forgets the last listing, for when the outputs it covered change. */
+  void clear() {
+    listedAt.reset();
+    sessions.clear();
   }
 private:
   std::optional<Clock::time_point> listedAt;
