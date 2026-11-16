@@ -8,6 +8,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -16,18 +17,6 @@ namespace acroclip::windows {
 namespace {
 std::mutex exclusionsMutex;
 std::vector<uint32_t> exclusions;
-std::map<DWORD, DWORD> processParents() {
-  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-  if (snapshot == INVALID_HANDLE_VALUE) throw std::runtime_error("Desktop audio processes could not be identified");
-  std::map<DWORD, DWORD> result;
-  PROCESSENTRY32 entry{};
-  entry.dwSize = sizeof(entry);
-  if (Process32First(snapshot, &entry)) do {
-    result[entry.th32ProcessID] = entry.th32ParentProcessID;
-  } while (Process32Next(snapshot, &entry));
-  CloseHandle(snapshot);
-  return result;
-}
 bool within(DWORD pid, DWORD root, const std::map<DWORD, DWORD> &parents) {
   for (unsigned depth = 0; pid && depth < 128; ++depth) {
     if (pid == root) return true;
@@ -76,33 +65,29 @@ struct DesktopAudio {
     }
     children.clear();
   }
-  struct Session { DWORD pid; AudioSessionState state; };
-  /** Every live session on one output, by process. */
-  static std::vector<Session> sessionsOn(IMMDevice *endpoint) {
-    Microsoft::WRL::ComPtr<IAudioSessionManager2> manager;
-    Microsoft::WRL::ComPtr<IAudioSessionEnumerator> sessions;
-    if (FAILED(endpoint->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, reinterpret_cast<void **>(manager.GetAddressOf()))) ||
-        FAILED(manager->GetSessionEnumerator(&sessions)))
-      throw std::runtime_error("Desktop audio sessions could not be enumerated");
-    std::vector<Session> listed;
-    int count = 0;
-    if (FAILED(sessions->GetCount(&count))) throw std::runtime_error("Desktop audio sessions could not be read");
-    for (int index = 0; index < count; ++index) {
-      Microsoft::WRL::ComPtr<IAudioSessionControl> control;
-      Microsoft::WRL::ComPtr<IAudioSessionControl2> session;
-      DWORD pid = 0;
-      AudioSessionState state = AudioSessionStateExpired;
-      if (FAILED(sessions->GetSession(index, &control)) || FAILED(control.As(&session)) ||
-          FAILED(session->GetProcessId(&pid)) || FAILED(session->GetState(&state)))
-        throw std::runtime_error("A desktop audio session could not be identified");
-      if (!pid || state == AudioSessionStateExpired) continue;
-      listed.push_back({pid, state});
-    }
-    return listed;
+  using Session = ListenRouting::Session;
+  SessionCache<Session> otherSessions;
+  static std::vector<Session> sessionsOn(IMMDevice *endpoint) { return ListenRouting::sessions(endpoint); }
+  // Setting up COM and the device enumerator cost about 2 ms of CPU, and looking up the default
+  // output another 2 ms of waiting on the audio service. Both used to happen every round, ten
+  // times a second. Now the routing lives as long as this thread, and the output is looked up
+  // again once a second or after any error. Apps on a new default join within that second, and
+  // apps already captured stay in meanwhile, because they still play on the old output.
+  std::unique_ptr<ListenRouting> routing;
+  Microsoft::WRL::ComPtr<IMMDevice> endpoint;
+  std::chrono::steady_clock::time_point endpointAt{};
+  static constexpr std::chrono::seconds endpointInterval{1};
+  void forgetRouting() {
+    endpoint.Reset();
+    routing.reset();
   }
   std::string update() {
-    ListenRouting routing;
-    auto endpoint = routing.device(device.empty() ? "default" : device);
+    const auto now = std::chrono::steady_clock::now();
+    if (!routing) routing = std::make_unique<ListenRouting>();
+    if (!endpoint || now - endpointAt >= endpointInterval) {
+      endpoint = routing->device(device.empty() ? "default" : device);
+      endpointAt = now;
+    }
     std::vector<uint32_t> excluded;
     { std::lock_guard<std::mutex> lock(exclusionsMutex); excluded = exclusions; }
     // The app supplies its PID. Native-only fixtures exclude the recorder,
@@ -110,15 +95,16 @@ struct DesktopAudio {
     excluded.push_back(GetCurrentProcessId());
     std::set<uint32_t> captured;
     for (const auto &[pid, child] : children) captured.insert(pid);
-    const auto others = [&] {
-      std::vector<std::function<std::vector<Session>()>> lists;
-      const auto current = ListenRouting::identity(endpoint.Get());
-      for (auto &output : routing.outputs())
-        if (ListenRouting::identity(output.Get()) != current) lists.push_back([output] { return sessionsOn(output.Get()); });
-      return lists;
+    const auto others = [&]() -> const std::vector<Session> & {
+      return otherSessions.get(now, [&] {
+        std::vector<std::function<std::vector<Session>()>> lists;
+        const auto current = ListenRouting::identity(endpoint.Get());
+        for (auto &output : routing->outputs())
+          if (ListenRouting::identity(output.Get()) != current) lists.push_back([output] { return sessionsOn(output.Get()); });
+        return collectSessions<Session>(lists);
+      });
     };
     const std::vector<Session> listed = followCapturedSessions(sessionsOn(endpoint.Get()), captured, others);
-    const auto now = std::chrono::steady_clock::now();
     // A PID the last snapshot already lacked, like an excluded app that closed, waits for the 2 s retake.
     std::set<DWORD> wanted(excluded.begin(), excluded.end());
     for (const auto &item : listed) wanted.insert(item.pid);
@@ -205,11 +191,15 @@ struct DesktopAudio {
         // Routing errors invalidate the mix. A reconnecting process does not:
         // keep healthy children and let WASAPI retry its own failed client.
         clear();
+        // A removed output or a restarted audio service leaves the kept routing unusable.
+        forgetRouting();
       }
       { std::lock_guard<std::mutex> lock(mutex); failure = error; }
       // Failure must never fall back to an unfiltered device mix.
       for (int i = 0; i < 10 && !quit; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+    // COM was set up on this thread, so it's released here too.
+    forgetRouting();
   }
   bool render(uint64_t *timestamp, audio_output_data *output, size_t channels) {
     auto *child = obs_scene_get_source(scene);

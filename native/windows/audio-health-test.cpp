@@ -64,7 +64,7 @@ int main() {
     int asked = 0;
     const auto others = [&] {
       asked++;
-      return Lists{[] { return std::vector<Session>{{10, true}, {30, true}}; }, [] { return std::vector<Session>{{40, true}}; }};
+      return collectSessions<Session>(Lists{[] { return std::vector<Session>{{10, true}, {30, true}}; }, [] { return std::vector<Session>{{40, true}}; }});
     };
     // Nothing captured left the default output, so the other outputs aren't even listed.
     require(pids(followCapturedSessions<Session>({{10, true}, {20, true}}, {10, 20}, others)) == std::set<uint32_t>{10, 20});
@@ -77,16 +77,29 @@ int main() {
     require(pids(followCapturedSessions<Session>({}, {50}, others)).empty());
     // One output failing to list only costs its own processes.
     const auto failing = [] {
-      return Lists{[]() -> std::vector<Session> { throw std::runtime_error("gone"); }, [] { return std::vector<Session>{{40, true}}; }};
+      return collectSessions<Session>(Lists{[]() -> std::vector<Session> { throw std::runtime_error("gone"); }, [] { return std::vector<Session>{{40, true}}; }});
     };
     require(pids(followCapturedSessions<Session>({{20, true}}, {10, 20, 40}, failing)) == std::set<uint32_t>{20, 40});
     // Failing to list the outputs at all never loses the default mix.
-    const auto unlisted = []() -> Lists { throw std::runtime_error("no outputs"); };
+    const auto unlisted = []() -> std::vector<Session> { throw std::runtime_error("no outputs"); };
     require(pids(followCapturedSessions<Session>({{20, true}}, {10, 20}, unlisted)) == std::set<uint32_t>{20});
     // An idle session on the old output keeps its state, so it's only retained, never reopened.
-    const auto idle = [] { return Lists{[] { return std::vector<Session>{{10, false}}; }}; };
+    const auto idle = [] { return std::vector<Session>{{10, false}}; };
     const auto kept = followCapturedSessions<Session>({}, {10}, idle);
     require(kept.size() == 1 && !kept[0].active);
+    // Other outputs are listed at most once a second, however often Desktop audio checks.
+    SessionCache<Session> cache;
+    int listings = 0;
+    const auto list = [&] { listings++; return std::vector<Session>{{10, true}}; };
+    for (int round = 0; round < 10; round++) cache.get(start + round * 100ms, list);
+    require(listings == 1);
+    require(cache.get(start + 1000ms, list).size() == 1 && listings == 2);
+    // A failing listing waits for the next second too, instead of retrying every round.
+    const auto broken = [&]() -> std::vector<Session> { listings++; throw std::runtime_error("gone"); };
+    bool threw = false;
+    try { cache.get(start + 2000ms, broken); } catch (const std::exception &) { threw = true; }
+    require(threw && listings == 3);
+    require(cache.get(start + 2500ms, broken).empty() && listings == 3);
   }
   std::cout << "Input delivery, endpoint state, access denial, capture recovery and output change policy passed\n";
 }

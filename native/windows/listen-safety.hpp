@@ -12,6 +12,19 @@
 #include <stdexcept>
 #include <vector>
 namespace acroclip::windows {
+/** Every process and its parent, from one snapshot. */
+inline std::map<DWORD, DWORD> processParents() {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) throw std::runtime_error("Desktop audio processes could not be identified");
+  std::map<DWORD, DWORD> result;
+  PROCESSENTRY32 entry{};
+  entry.dwSize = sizeof(entry);
+  if (Process32First(snapshot, &entry)) do {
+    result[entry.th32ProcessID] = entry.th32ParentProcessID;
+  } while (Process32Next(snapshot, &entry));
+  CloseHandle(snapshot);
+  return result;
+}
 class ListenRouting {
   using Device = Microsoft::WRL::ComPtr<IMMDevice>;
   Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
@@ -31,6 +44,30 @@ public:
     DWORD state=0;
     if(FAILED(result)||FAILED(value->GetState(&state))||state!=DEVICE_STATE_ACTIVE)throw std::runtime_error("The listening output is unavailable");
     return value;
+  }
+  struct Session { DWORD pid; AudioSessionState state; };
+  /** Every live session on one output, by process. */
+  static std::vector<Session> sessions(IMMDevice *endpoint) {
+    Microsoft::WRL::ComPtr<IAudioSessionManager2> manager;
+    Microsoft::WRL::ComPtr<IAudioSessionEnumerator> enumerated;
+    if (FAILED(endpoint->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, reinterpret_cast<void **>(manager.GetAddressOf()))) ||
+        FAILED(manager->GetSessionEnumerator(&enumerated)))
+      throw std::runtime_error("Desktop audio sessions could not be enumerated");
+    std::vector<Session> listed;
+    int count = 0;
+    if (FAILED(enumerated->GetCount(&count))) throw std::runtime_error("Desktop audio sessions could not be read");
+    for (int index = 0; index < count; ++index) {
+      Microsoft::WRL::ComPtr<IAudioSessionControl> control;
+      Microsoft::WRL::ComPtr<IAudioSessionControl2> session;
+      DWORD pid = 0;
+      AudioSessionState state = AudioSessionStateExpired;
+      if (FAILED(enumerated->GetSession(index, &control)) || FAILED(control.As(&session)) ||
+          FAILED(session->GetProcessId(&pid)) || FAILED(session->GetState(&state)))
+        throw std::runtime_error("A desktop audio session could not be identified");
+      if (!pid || state == AudioSessionStateExpired) continue;
+      listed.push_back({pid, state});
+    }
+    return listed;
   }
   /** Every active output device. */
   std::vector<Device> outputs() {

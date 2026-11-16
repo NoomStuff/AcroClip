@@ -75,26 +75,56 @@ private:
  * New captures still come only from the default output, because a mixer like Voicemeeter replays
  * every app onto the real headset and capturing it there would double them all.
  *
- * `others` returns the other outputs, each as a callable that lists its sessions. It only runs when
- * a captured process has left the default output. Failing to find or list other outputs only costs
- * the processes that moved, never the default mix.
+ * `others` returns the sessions on every other output. It only runs when a captured process has
+ * left the default output. Failing to list other outputs only costs the processes that moved,
+ * never the default mix.
  */
 template <class Session, class Others>
-std::vector<Session> followCapturedSessions(std::vector<Session> listed, const std::set<uint32_t> &captured, const Others &others) {
+std::vector<Session> followCapturedSessions(std::vector<Session> listed, const std::set<uint32_t> &captured, Others &&others) {
   std::set<uint32_t> moved;
   for (const uint32_t pid : captured)
     if (std::none_of(listed.begin(), listed.end(), [&](const Session &item) { return item.pid == pid; })) moved.insert(pid);
   if (moved.empty()) return listed;
-  std::vector<Session> found;
   try {
-    for (const auto &list : others()) {
-      try {
-        for (const Session &item : list())
-          if (moved.count(item.pid)) found.push_back(item);
-      } catch (const std::exception &) {}
-    }
+    for (const Session &item : others())
+      if (moved.count(item.pid)) listed.push_back(item);
   } catch (const std::exception &) {}
-  listed.insert(listed.end(), found.begin(), found.end());
   return listed;
 }
+
+/** Every session from a set of outputs. One that fails to list only loses its own sessions. */
+template <class Session, class Lists>
+std::vector<Session> collectSessions(const Lists &lists) {
+  std::vector<Session> found;
+  for (const auto &list : lists) {
+    try {
+      for (const Session &item : list()) found.push_back(item);
+    } catch (const std::exception &) {}
+  }
+  return found;
+}
+
+/**
+ * The other outputs' sessions, listed at most once a second. The default output is checked every
+ * round so new apps join quickly, but an app moving between outputs is rare, and listing every
+ * output ten times a second would cost the most exactly while a game is running.
+ */
+template <class Session>
+class SessionCache {
+public:
+  using Clock = std::chrono::steady_clock;
+  static constexpr std::chrono::milliseconds interval{1000};
+  template <class List>
+  const std::vector<Session> &get(Clock::time_point now, List &&list) {
+    if (!listedAt || now - *listedAt >= interval) {
+      // A failed listing still counts, so a broken output isn't retried every round.
+      listedAt = now;
+      try { sessions = list(); } catch (const std::exception &) { sessions.clear(); throw; }
+    }
+    return sessions;
+  }
+private:
+  std::optional<Clock::time_point> listedAt;
+  std::vector<Session> sessions;
+};
 }
