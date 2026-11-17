@@ -1,0 +1,307 @@
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { connect, type Socket } from "node:net";
+import { join } from "node:path";
+import { z } from "zod";
+import type { DiscordPresenceMode } from "../shared/types";
+
+/** AcroClip's application in the Discord Developer Portal. Its name is what "Playing" shows without a game. */
+export const DISCORD_CLIENT_ID = "1572245694125842472";
+/** The Rich Presence art asset uploaded to that application. */
+export const DISCORD_LOGO_ASSET = "logo";
+export const ACROCLIP_SITE = "https://acroclip.noomstuff.com";
+
+/** Discord shows the line `status_display_type` names in the member list: 0 is the application's name, 2 is `details`. */
+export interface DiscordActivity {
+   type: 0;
+   status_display_type: 0 | 2;
+   details?: string;
+   state?: string;
+   timestamps?: { start: number };
+   assets: { large_image: string; large_text: string };
+   buttons: Array<{ label: string; url: string }>;
+   instance: false;
+}
+
+export interface PresenceSituation {
+   mode: DiscordPresenceMode;
+   /** Capture is recording, not starting, paused or stopped. */
+   capturing: boolean;
+   /** The game being captured, when AcroClip can name it. */
+   game: string | undefined;
+   /** When that game, or capture without one, started showing. */
+   since: number | undefined;
+}
+
+/** Discord refuses text lines outside 2 to 128 characters. */
+function presenceText(value: string | undefined): string | undefined {
+   const text = value?.trim().replace(/\s+/g, " ");
+   if (!text || text.length < 2) return undefined;
+   return text.length > 128 ? `${text.slice(0, 127)}…` : text;
+}
+
+/**
+ * What AcroClip shows on Discord, or null to leave the user's own status alone. While recording a
+ * game, the member list reads "Playing <game>" and the profile adds "Clipping with AcroClip".
+ * "Always" also shows AcroClip itself when there's no game to name.
+ */
+export function presenceActivity(situation: PresenceSituation): DiscordActivity | null {
+   if (situation.mode === "never") return null;
+   const game = situation.capturing ? presenceText(situation.game) : undefined;
+   if (!game && situation.mode === "recording") return null;
+   const base = {
+      type: 0 as const,
+      assets: { large_image: DISCORD_LOGO_ASSET, large_text: "AcroClip" },
+      buttons: [{ label: "Get AcroClip", url: ACROCLIP_SITE }],
+      instance: false as const,
+      ...(situation.capturing && situation.since !== undefined ? { timestamps: { start: situation.since } } : {}),
+   };
+   if (game) return { ...base, status_display_type: 2, details: game, state: "Clipping with AcroClip" };
+   return situation.capturing ? { ...base, status_display_type: 0, details: "Capturing" } : { ...base, status_display_type: 0 };
+}
+
+const flatpakApps = ["com.discordapp.Discord", "com.discordapp.DiscordCanary", "dev.vencord.Vesktop"];
+const socketFolders = ["", ...flatpakApps.map((id) => `app/${id}`), "snap.discord", "snap.discord-canary", ".flatpak/dev.vencord.Vesktop/xdg-run"];
+
+/**
+ * Where a running Discord listens. Windows uses numbered pipes. Elsewhere each client puts its socket
+ * in the runtime or temp folder, or inside a Flatpak or Snap's own copy of it.
+ */
+export function discordIpcPaths(platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): string[] {
+   const slots = Array.from({ length: 10 }, (_, index) => `discord-ipc-${index}`);
+   if (platform === "win32") return slots.map((slot) => `\\\\?\\pipe\\${slot}`);
+   const bases = [...new Set([env["XDG_RUNTIME_DIR"], env["TMPDIR"], env["TMP"], env["TEMP"], "/tmp"].filter((base): base is string => !!base))];
+   return bases.flatMap((base) => socketFolders.flatMap((folder) => slots.map((slot) => join(base, folder, slot))));
+}
+
+export const Op = { Handshake: 0, Frame: 1, Close: 2, Ping: 3, Pong: 4 } as const;
+export type Op = (typeof Op)[keyof typeof Op];
+
+export function encodeFrame(op: Op, payload: unknown): Buffer {
+   const body = Buffer.from(JSON.stringify(payload), "utf8");
+   const header = Buffer.alloc(8);
+   header.writeUInt32LE(op, 0);
+   header.writeUInt32LE(body.length, 4);
+   return Buffer.concat([header, body]);
+}
+
+/** Discord's frames are small. A larger length means the stream is out of step. */
+const MAX_FRAME_BYTES = 1 << 20;
+
+/** Splits the socket's byte stream back into frames. */
+export class FrameReader {
+   private pending: Buffer = Buffer.alloc(0);
+   push(chunk: Buffer): Array<{ op: number; payload: unknown }> {
+      this.pending = this.pending.length ? Buffer.concat([this.pending, chunk]) : chunk;
+      const frames: Array<{ op: number; payload: unknown }> = [];
+      while (this.pending.length >= 8) {
+         const op = this.pending.readUInt32LE(0);
+         const length = this.pending.readUInt32LE(4);
+         if (length > MAX_FRAME_BYTES) throw new Error(`Discord sent a ${length} byte frame`);
+         if (this.pending.length < 8 + length) break;
+         const body = this.pending.subarray(8, 8 + length).toString("utf8");
+         this.pending = this.pending.subarray(8 + length);
+         frames.push({ op, payload: JSON.parse(body) as unknown });
+      }
+      return frames;
+   }
+}
+
+const messageSchema = z
+   .object({
+      cmd: z.string().optional(),
+      evt: z.string().nullish(),
+      code: z.number().optional(),
+      message: z.string().optional(),
+      data: z.object({ code: z.number().optional(), message: z.string().optional() }).loose().nullish(),
+   })
+   .loose();
+
+export interface DiscordPresenceOptions {
+   clientId: string;
+   pid: number;
+   /** Candidate sockets, tried in order. */
+   paths: () => string[];
+   log: (message: string, level?: "info" | "warn") => void;
+   /** Whether a candidate is worth a connect. Windows pipes can't be checked for, so they always are. */
+   exists?: (path: string) => boolean;
+   /** How long to wait before looking for Discord again. */
+   retryMs?: number;
+   /** Discord allows 5 activity updates per 20 seconds. */
+   minIntervalMs?: number;
+}
+
+/**
+ * Keeps one activity on Discord through its local IPC socket. Nothing connects until there's an
+ * activity to show, and clearing it closes the connection, which also clears it on Discord's side.
+ * If Discord isn't running, it looks again every `retryMs` while an activity is wanted.
+ */
+export class DiscordPresence {
+   private readonly options: Required<DiscordPresenceOptions>;
+   private wanted: DiscordActivity | null = null;
+   private wantedJson = "";
+   private socket: Socket | null = null;
+   private ready = false;
+   private sentJson = "";
+   private lastSentAt = 0;
+   private retry: ReturnType<typeof setTimeout> | null = null;
+   private flushTimer: ReturnType<typeof setTimeout> | null = null;
+   /** Repeated failures log once until the next success. */
+   private reported = new Set<string>();
+   private closed = false;
+   constructor(options: DiscordPresenceOptions) {
+      this.options = {
+         exists: process.platform === "win32" ? () => true : existsSync,
+         retryMs: 30_000,
+         minIntervalMs: 4_000,
+         ...options,
+      };
+   }
+   get connected(): boolean {
+      return this.ready;
+   }
+   set(activity: DiscordActivity | null): void {
+      if (this.closed) return;
+      const json = activity ? JSON.stringify(activity) : "";
+      if (json === this.wantedJson) return;
+      this.wanted = activity;
+      this.wantedJson = json;
+      if (!activity) {
+         this.disconnect();
+         return;
+      }
+      if (!this.options.clientId) {
+         this.report("no-client", "AcroClip has no Discord application ID, so its status stays off");
+         return;
+      }
+      if (this.ready) this.flush();
+      else if (!this.socket && !this.retry) this.connect();
+   }
+   close(): void {
+      this.closed = true;
+      this.wanted = null;
+      this.wantedJson = "";
+      this.disconnect();
+   }
+   private report(key: string, message: string, level: "info" | "warn" = "info"): void {
+      if (this.reported.has(key)) return;
+      this.reported.add(key);
+      this.options.log(message, level);
+   }
+   private connect(): void {
+      const candidates = this.options.paths().filter((path) => {
+         try {
+            return this.options.exists(path);
+         } catch {
+            return false;
+         }
+      });
+      this.attempt(candidates, 0);
+   }
+   private attempt(candidates: string[], index: number): void {
+      if (!this.wanted || this.closed) return;
+      const path = candidates[index];
+      if (path === undefined) {
+         this.report("not-running", "Discord isn't running. AcroClip looks again while it has a status to show");
+         this.scheduleRetry();
+         return;
+      }
+      const socket = connect(path);
+      this.socket = socket;
+      const reader = new FrameReader();
+      let opened = false;
+      socket.once("connect", () => {
+         opened = true;
+         socket.write(encodeFrame(Op.Handshake, { v: 1, client_id: this.options.clientId }));
+      });
+      socket.on("data", (chunk: Buffer) => {
+         try {
+            for (const frame of reader.push(chunk)) this.receive(socket, frame.op, frame.payload);
+         } catch (error) {
+            this.report("bad-frame", `Discord's reply couldn't be read: ${error instanceof Error ? error.message : String(error)}`, "warn");
+            socket.destroy();
+         }
+      });
+      socket.on("error", () => undefined);
+      socket.once("close", () => {
+         if (this.socket !== socket) return;
+         this.socket = null;
+         const wasReady = this.ready;
+         this.ready = false;
+         this.sentJson = "";
+         this.clearFlush();
+         if (!opened) {
+            // That socket was stale. The next one may belong to a running Discord.
+            this.attempt(candidates, index + 1);
+            return;
+         }
+         if (wasReady) this.options.log("disconnected from Discord");
+         this.scheduleRetry();
+      });
+   }
+   private receive(socket: Socket, op: number, payload: unknown): void {
+      if (op === Op.Ping) {
+         socket.write(encodeFrame(Op.Pong, payload));
+         return;
+      }
+      const message = messageSchema.safeParse(payload);
+      if (!message.success) return;
+      if (op === Op.Close) {
+         this.report(
+            `closed:${message.data.code ?? ""}`,
+            `Discord refused the connection: ${message.data.message ?? `code ${message.data.code ?? "unknown"}`}`,
+            "warn"
+         );
+         socket.destroy();
+         return;
+      }
+      if (op !== Op.Frame) return;
+      if (message.data.evt === "READY") {
+         this.ready = true;
+         this.reported.clear();
+         this.options.log("connected to Discord");
+         this.flush();
+      } else if (message.data.evt === "ERROR") {
+         const detail = message.data.data?.message ?? `code ${message.data.data?.code ?? "unknown"}`;
+         this.report(`error:${detail}`, `Discord rejected the status: ${detail}`, "warn");
+      }
+   }
+   private flush(): void {
+      if (!this.ready || !this.socket || !this.wanted || this.wantedJson === this.sentJson || this.flushTimer) return;
+      const wait = this.lastSentAt + this.options.minIntervalMs - Date.now();
+      if (wait > 0) {
+         this.flushTimer = setTimeout(() => {
+            this.flushTimer = null;
+            this.flush();
+         }, wait);
+         this.flushTimer.unref?.();
+         return;
+      }
+      this.socket.write(encodeFrame(Op.Frame, { cmd: "SET_ACTIVITY", args: { pid: this.options.pid, activity: this.wanted }, nonce: randomUUID() }));
+      this.sentJson = this.wantedJson;
+      this.lastSentAt = Date.now();
+   }
+   private scheduleRetry(): void {
+      if (!this.wanted || this.closed || this.retry) return;
+      this.retry = setTimeout(() => {
+         this.retry = null;
+         if (this.wanted && !this.socket) this.connect();
+      }, this.options.retryMs);
+      this.retry.unref?.();
+   }
+   private clearFlush(): void {
+      if (this.flushTimer) clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+   }
+   private disconnect(): void {
+      if (this.retry) clearTimeout(this.retry);
+      this.retry = null;
+      this.clearFlush();
+      const socket = this.socket;
+      this.socket = null;
+      this.ready = false;
+      this.sentJson = "";
+      // Discord clears an application's activity when its connection closes.
+      socket?.destroy();
+   }
+}

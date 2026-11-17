@@ -140,6 +140,7 @@ export const preferencesSchema = z
       updateCheck: z.boolean().default(true),
       startWithOS: z.boolean(),
       autoRecord: z.boolean(),
+      discordPresence: z.enum(["never", "recording", "always"]).default("recording"),
       notificationStartBanner: z.boolean().default(true),
       notificationStartSound: z.boolean().default(true),
       notificationStopBanner: z.boolean().default(true),

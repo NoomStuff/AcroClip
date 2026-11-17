@@ -27,8 +27,9 @@ import {
    FileArchive,
    RotateCcw,
    Eraser,
+   Radio,
 } from "lucide-react";
-import type { AppState, OverlapClips, Preferences } from "../../shared/types";
+import type { AppState, DiscordPresenceMode, OverlapClips, Preferences } from "../../shared/types";
 import { useSettingsAutosave } from "./useSettingsAutosave";
 import { previewFilename, filenameFields, filenamePatterns, filenameTemplateError, filenameTemplateWarning } from "../../shared/filename";
 import { SelectionIndicator } from "./SelectionIndicator";
@@ -67,6 +68,11 @@ const sections = [
 ] as const;
 type Section = (typeof sections)[number]["id"];
 const shareSizes = [10, 20, 50, 100];
+const discordPresenceDetail: Record<DiscordPresenceMode, string> = {
+   recording: "Shows the game you're capturing, with a link to AcroClip.",
+   always: "Also shows AcroClip when you aren't capturing a game.",
+   never: "Leaves your Discord status alone.",
+};
 function LastChecked({ timestamp }: { timestamp: number }) {
    const [now, setNow] = useState(Date.now);
    useEffect(() => {
@@ -614,6 +620,20 @@ export function Settings({
                               checked={draft.autoRecord}
                               onChange={(value) => change("autoRecord", value)}
                            />
+                        </section>
+                        <section className="settings-group">
+                           <h2>Discord</h2>
+                           <Field icon={Radio} label="Show in Discord status" detail={discordPresenceDetail[draft.discordPresence]}>
+                              <Select
+                                 label="Show in Discord status"
+                                 value={draft.discordPresence}
+                                 onChange={(value) => change("discordPresence", value as DiscordPresenceMode)}
+                              >
+                                 <option value="recording">While capturing</option>
+                                 <option value="always">Always</option>
+                                 <option value="never">Never</option>
+                              </Select>
+                           </Field>
                         </section>
                         <section className="settings-group">
                            <h2>Updates</h2>

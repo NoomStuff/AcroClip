@@ -22,6 +22,7 @@ import type {
    RecordingCapabilities,
 } from "../shared/types";
 import { recordingArtwork, type RecordingArtwork } from "./recording-artwork";
+import { DISCORD_CLIENT_ID, DiscordPresence, discordIpcPaths, presenceActivity } from "./discord-presence";
 import {
    categoryRequest,
    historyPartsSchema,
@@ -479,6 +480,7 @@ const recorder = new Recorder({
       recordingNotices.state(current, closingRequested);
       updateStorageActivity();
       applyPendingPreferences();
+      updatePresence();
       // The helper reports every second. Only a change reaches the window.
       const event = windowShown() ? stateChanges.recorder(recorderState()) : undefined;
       if (event) send(event);
@@ -682,6 +684,33 @@ function refreshNotificationVisibility(): void {
    }
 }
 let lastRecordingArtwork: RecordingArtwork | undefined;
+/** Test runs never touch the Discord status of whoever runs them. */
+const presence = new DiscordPresence({
+   clientId: process.env["ACROCLIP_TEST"] === "1" ? "" : DISCORD_CLIENT_ID,
+   pid: process.pid,
+   paths: () => discordIpcPaths(process.platform, process.env),
+   log: (message, level) => log(`discord: ${message}`, level),
+});
+/** The recognized game filling a desktop capture at the last sample. */
+let desktopGameInFront: ApplicationArtwork | undefined;
+let presenceShown: { game: string | undefined; since: number } | undefined;
+/** The game is the captured app, or the recognized game filling a captured screen. */
+function updatePresence() {
+   if (!preferences) return;
+   const capturing = recorder.status.state === "recording";
+   const footage = bufferedCaptureSource(recorder.status);
+   const game = !capturing
+      ? undefined
+      : footage.kind === "app"
+        ? lastRecordingArtwork?.application.name
+        : footage.kind === "screen"
+          ? desktopGameInFront?.name
+          : undefined;
+   // The elapsed time restarts with each game, like Discord's own game status.
+   if (!capturing) presenceShown = undefined;
+   else if (presenceShown?.game !== game) presenceShown = { game, since: Date.now() };
+   presence.set(presenceActivity({ mode: preferences.discordPresence, capturing, game, since: presenceShown?.since }));
+}
 // Saves waiting for the recorder, by destination, and the last clip a new save may merge into.
 const savesRequested = new Map<string, { requestedAt: number; session: string; trigger: SaveTrigger }>();
 let previousSave: SavedFootage | undefined;
@@ -864,6 +893,7 @@ async function startRecording(options: { quiet?: boolean } = {}) {
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to capture.");
    if (captureActive()) throw new Error("Capture is already running.");
    lastRecordingArtwork = undefined;
+   desktopGameInFront = undefined;
    recordingNotices.starting(preferences.sourceKind === "auto" ? "Automatic game detection" : recordingSourceLabel(preferences, captureSources.cached), {
       appKnown: preferences.sourceKind !== "app" || !!preferences.sourceApplicationId,
       mode: preferences.sourceKind,
@@ -939,6 +969,7 @@ function desktopWatchFor(footage: ReturnType<typeof bufferedCaptureSource>): boo
    if (source !== desktopWatchSource) {
       desktopWatch.clear();
       desktopWatchSource = source;
+      desktopGameInFront = undefined;
    }
    return source !== "";
 }
@@ -947,7 +978,15 @@ async function watchDesktopGame(): Promise<void> {
    desktopWatching = true;
    try {
       const footage = bufferedCaptureSource(recorder.status);
-      if (desktopWatchFor(footage)) desktopWatch.record(Date.now(), await desktopCaptureGame(footage.id));
+      if (desktopWatchFor(footage)) {
+         const watched = desktopWatchSource;
+         const game = await desktopCaptureGame(footage.id);
+         desktopWatch.record(Date.now(), game);
+         // A capture that changed during the lookup starts over without this sample.
+         if (watched !== desktopWatchSource) return;
+         desktopGameInFront = game;
+         updatePresence();
+      }
    } finally {
       desktopWatching = false;
    }
@@ -1207,6 +1246,7 @@ function releaseServices() {
    libraryRefresh.close();
    storage.close();
    feedback.close();
+   presence.close();
    globalShortcut.unregisterAll();
 }
 async function requestExit() {
@@ -1539,6 +1579,7 @@ function registerIPC() {
             feedbackUpdates = feedbackUpdates.then(refreshNotificationVisibility).catch(() => undefined);
             if (changed.length) stats.record({ type: "settings", keys: changed.slice(0, 80) });
             recorder.updatePreferences(next);
+            updatePresence();
             emitState();
             return state();
          });
@@ -2029,6 +2070,7 @@ else {
             exit: () => void requestExit(),
          });
          updateTray();
+         updatePresence();
          if (process.platform === "linux" && isPackagedApp() && process.env["ACROCLIP_TEST"] !== "1") {
             await linuxDesktopIdentity(
                xdgDirectory(process.env["XDG_DATA_HOME"], join(app.getPath("home"), ".local", "share")),
