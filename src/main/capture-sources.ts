@@ -147,6 +147,7 @@ export class CaptureSources {
                ...(applicationId ? { applicationId } : {}),
                ...(applicationId && candidate?.executable ? { previousApplicationIds: previousApplicationIds(candidate.executable, candidate.gameId) } : {}),
                ...(candidate?.executable ? { applicationName: candidate.gameName ?? executableLabel(candidate.executable) } : {}),
+               ...(candidate?.gameName ? { gameName: candidate.gameName } : {}),
                ...(appIcon ? { appIcon } : {}),
                id: s.id,
                name: s.id.startsWith("screen:") && /^entire screen$/i.test(s.name.trim()) ? "Desktop" : s.name,

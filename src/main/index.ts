@@ -695,6 +695,20 @@ const presence = new DiscordPresence({
 /** The recognized game filling a desktop capture at the last sample. */
 let desktopGameInFront: ApplicationArtwork | undefined;
 const presenceSession = new PresenceSession();
+/** The last name the status gave each captured window, for while it's missing from the window list. */
+let presenceLabel = { sourceId: "", name: "" };
+/**
+ * What the status calls a captured app: the game's name, or the short name its window shows, as in
+ * the source list. The executable's name reads "electron" or "Steam Client WebHelper" instead.
+ */
+function presenceAppName(footageId: string | undefined): string | undefined {
+   const sourceId = footageId?.split(":")[1];
+   if (!sourceId) return undefined;
+   const source = captureSources.cached.find((item) => item.kind === "app" && item.id.split(":")[1] === sourceId);
+   const name = source && (source.gameName ?? normalizeApplicationLabel(source.name));
+   if (name) presenceLabel = { sourceId, name };
+   return presenceLabel.sourceId === sourceId ? presenceLabel.name : undefined;
+}
 function countRecordingClip() {
    if (presenceSession.countClip()) updatePresence();
 }
@@ -711,9 +725,8 @@ function updatePresence() {
           ? desktopGameInFront
           : undefined;
    const art = application && preferences.discordPresence !== "off" ? recorder.gameIcon(application.id) : undefined;
-   const named: PresenceGame | undefined = application?.name
-      ? { name: application.name, ...(art ? { icon: discordGameIcon(art.id, art.icon) } : {}) }
-      : undefined;
+   const name = !recording ? undefined : footage.kind === "app" ? presenceAppName(footage.id) : application?.name;
+   const named: PresenceGame | undefined = name ? { name, ...(art ? { icon: discordGameIcon(art.id, art.icon) } : {}) } : undefined;
    presence.set(presenceActivity({ level: preferences.discordPresence, ...presenceSession.update(recorder.status.state, named, Date.now()) }));
 }
 // Saves waiting for the recorder, by destination, and the last clip a new save may merge into.

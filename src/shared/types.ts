@@ -14,6 +14,8 @@ export interface ApplicationArtwork {
 }
 export interface CaptureSource {
    applicationName?: string;
+   /** The recognized or added game's name, when this window is one. */
+   gameName?: string;
    applicationId?: string;
    previousApplicationIds?: string[];
    appIcon?: string;
