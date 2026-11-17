@@ -1091,6 +1091,41 @@ private:
       captureImageReady = true;
     }
   }
+  struct ScreenMonitor {
+    std::string identity;
+    acroclip::RecordingSize pixels;
+  };
+  // The app sends the screen's pixel bounds. Match them to a live monitor
+  // and report its own size, since the app's bounds can be a pixel off.
+  static std::optional<ScreenMonitor> screenMonitor(const json &bounds) {
+    std::vector<std::pair<acroclip::ScreenRect, std::string>> monitors;
+    EnumDisplayMonitors(
+        nullptr, nullptr,
+        [](HMONITOR h, HDC, LPRECT, LPARAM data) -> BOOL {
+          auto *found = reinterpret_cast<std::vector<std::pair<acroclip::ScreenRect, std::string>> *>(data);
+          MONITORINFOEXA info{};
+          info.cbSize = sizeof(info);
+          if (!GetMonitorInfoA(h, &info))
+            return TRUE;
+          DISPLAY_DEVICEA device{};
+          device.cb = sizeof(device);
+          const auto &r = info.rcMonitor;
+          found->emplace_back(acroclip::ScreenRect{r.left, r.top, r.right, r.bottom},
+                              EnumDisplayDevicesA(info.szDevice, 0, &device, EDD_GET_DEVICE_INTERFACE_NAME) ? device.DeviceID : info.szDevice);
+          return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&monitors));
+    const long x = bounds.at("x").get<long>(), y = bounds.at("y").get<long>();
+    const acroclip::ScreenRect wanted{x, y, x + bounds.at("width").get<long>(), y + bounds.at("height").get<long>()};
+    std::vector<acroclip::ScreenRect> rects;
+    for (const auto &monitor : monitors)
+      rects.push_back(monitor.first);
+    const int index = acroclip::matchScreenRect(wanted, rects);
+    if (index < 0 || monitors[size_t(index)].second.empty())
+      return std::nullopt;
+    const auto &match = monitors[size_t(index)];
+    return ScreenMonitor{match.second, {int(match.first.right - match.first.left), int(match.first.bottom - match.first.top)}};
+  }
   // OBS's automatic choice uses WGC on any battery-powered multi-GPU system.
   // WGC repeated about 15% of frames at 60 fps where DXGI repeated under 1%,
   // so use DXGI whenever this monitor is attached to libOBS's adapter. A
@@ -2209,35 +2244,8 @@ public:
       int index = c.value("screenIndex", 0);
       std::string monitor;
       if (c.contains("bounds") && c["bounds"].is_object()) {
-        struct Match {
-          RECT wanted;
-          std::string identity;
-        } match;
-        auto b = c["bounds"];
-        match.wanted = {b.at("x"), b.at("y"),
-                        b.at("x").get<long>() + b.at("width").get<long>(),
-                        b.at("y").get<long>() + b.at("height").get<long>()};
-        EnumDisplayMonitors(
-            nullptr, nullptr,
-            [](HMONITOR h, HDC, LPRECT, LPARAM data) -> BOOL {
-              auto *m = reinterpret_cast<Match *>(data);
-              MONITORINFOEXA info{};
-              info.cbSize = sizeof(info);
-              if (GetMonitorInfoA(h, &info) &&
-                  EqualRect(&m->wanted, &info.rcMonitor)) {
-                DISPLAY_DEVICEA device{};
-                device.cb = sizeof(device);
-                if (EnumDisplayDevicesA(info.szDevice, 0, &device,
-                                        EDD_GET_DEVICE_INTERFACE_NAME))
-                  m->identity = device.DeviceID;
-                else
-                  m->identity = info.szDevice;
-                return FALSE;
-              }
-              return TRUE;
-            },
-            reinterpret_cast<LPARAM>(&match));
-        monitor = match.identity;
+        if (const auto match = screenMonitor(c["bounds"]))
+          monitor = match->identity;
         if (monitor.empty()) {
           obs_properties_destroy(props);
           throw std::runtime_error("The selected screen changed or was "
@@ -2685,9 +2693,22 @@ private:
     width=waitingForPresetSize ? 320 : size.width; height=waitingForPresetSize ? 180 : size.height;
     // Start at the size the source reports up front. When the captured image
     // confirms it, refreshCapture keeps these encoders instead of restarting.
-    if (waitingForPresetSize && c.contains("pixelSize") && c["pixelSize"].is_object()) {
+    std::optional<acroclip::RecordingSize> hint;
+    if (c.contains("pixelSize") && c["pixelSize"].is_object())
+      hint = acroclip::RecordingSize{c["pixelSize"].value("width", 0), c["pixelSize"].value("height", 0)};
+#ifdef _WIN32
+    // The app's screen size is scaled and rounded, so a 1920x1080 screen at
+    // 121% arrives as 1920x1081. The monitor's own size avoids a canvas restart.
+    const std::string hintKind = c.value("sourceKind", "screen") == "auto" ? c.value("resolvedKind", "waiting") : c.value("sourceKind", "screen");
+    if (waitingForPresetSize && hintKind == "screen" && c.contains("bounds") && c["bounds"].is_object()) try {
+      if (const auto match = screenMonitor(c["bounds"]))
+        hint = match->pixels;
+    } catch (const std::exception &) {
+    }
+#endif
+    if (waitingForPresetSize && hint) {
       try {
-        const auto hinted = recordingSize(c, {c["pixelSize"].value("width", 0), c["pixelSize"].value("height", 0)});
+        const auto hinted = recordingSize(c, *hint);
         if (hinted.width >= 64 && hinted.height >= 64) { width = hinted.width; height = hinted.height; }
       } catch (const std::exception &) {
       }

@@ -1885,16 +1885,41 @@ function registerIPC() {
    });
    // Envelopes are small and files rarely change during a session, so they stay cached by path and size.
    const loudness = new Map<string, Promise<number[]>>();
+   // Each envelope decodes the clip's whole audio track. The player asks for one clip at a time,
+   // so a newer request cancels an older decode instead of stacking reads of large files on top
+   // of the one playing.
+   let loudnessJob: { key: string; envelope: Promise<number[]>; controller: AbortController } | undefined;
    handle("loudness", async (path) => {
       const source = trustedPath(path);
       const key = `${source}:${(await stat(source)).size}`;
-      let envelope = loudness.get(key);
-      if (!envelope) {
-         envelope = probe(source).then((info) => (info.tracks.length ? loudnessEnvelope(source, info.duration) : []));
-         envelope.catch(() => loudness.delete(key));
-         loudness.set(key, envelope);
+      const cached = loudness.get(key);
+      if (cached) return cached;
+      if (loudnessJob) {
+         loudnessJob.controller.abort();
+         if (loudness.get(loudnessJob.key) === loudnessJob.envelope) loudness.delete(loudnessJob.key);
       }
-      return envelope;
+      const controller = new AbortController();
+      const { signal } = controller;
+      // The library already read most clips, which spares a probe of the file.
+      const known = collections.clips.find((clip) => samePath(clip.path, source));
+      const measured =
+         known && known.duration > 0 && known.tracks.length
+            ? Promise.resolve({ duration: known.duration, tracks: known.tracks.length })
+            : probe(source, { signal, belowNormal: true }).then((info) => ({ duration: info.duration, tracks: info.tracks.length }));
+      const envelope = measured.then(({ duration, tracks }) => (tracks ? loudnessEnvelope(source, duration, 240, { signal }) : []));
+      const job = { key, envelope, controller };
+      loudnessJob = job;
+      loudness.set(key, envelope);
+      try {
+         return await envelope;
+      } catch (error) {
+         if (loudness.get(key) === envelope) loudness.delete(key);
+         // The player moved on to another clip, which has nothing to show for this one.
+         if (signal.aborted) return [];
+         throw error;
+      } finally {
+         if (loudnessJob === job) loudnessJob = undefined;
+      }
    });
    handle("playback", async (path, track, requestId, options) => {
       const source = trustedPath(path);
