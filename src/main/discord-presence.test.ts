@@ -8,9 +8,11 @@ import type { DiscordActivity } from "./discord-presence";
 
 const valorantGame = { name: "Valorant", icon: "https://cdn.discordapp.com/app-icons/1/a.png?size=512" };
 
+const capturing = { capturing: true, startedAt: 1000, clips: 0 };
+
 describe("presenceActivity", () => {
    it("shows the captured game as itself, with AcroClip as a badge, at the minimal level", () => {
-      expect(presenceActivity({ level: "minimal", capturing: true, game: valorantGame, since: 1000 })).toEqual({
+      expect(presenceActivity({ ...capturing, level: "minimal", game: valorantGame, clips: 3 })).toEqual({
          type: 0,
          name: "Valorant",
          status_display_type: 0,
@@ -21,31 +23,42 @@ describe("presenceActivity", () => {
          instance: false,
       });
    });
-   it("names AcroClip in the status itself at the full level", () => {
-      const activity = presenceActivity({ level: "full", capturing: true, game: valorantGame, since: 1000 });
-      expect(activity).toMatchObject({ name: "Valorant with AcroClip", assets: { large_text: "Valorant", small_image: "logo" } });
-      expect(activity).not.toHaveProperty("details");
+   it("names AcroClip in the status and counts this recording's clips at the full level", () => {
+      expect(presenceActivity({ ...capturing, level: "full", game: valorantGame })).toMatchObject({
+         name: "Valorant with AcroClip",
+         details: "Ready to clip",
+         timestamps: { start: 1000 },
+         assets: { large_text: "Valorant", small_image: "logo" },
+      });
+      expect(presenceActivity({ ...capturing, level: "full", game: valorantGame, clips: 1 })?.details).toBe("1 clip saved");
+      expect(presenceActivity({ ...capturing, level: "full", game: valorantGame, clips: 12 })?.details).toBe("12 clips saved");
+   });
+   it("shows AcroClip itself at the full level while capturing without a game", () => {
+      expect(presenceActivity({ ...capturing, level: "full", game: undefined, clips: 2 })).toMatchObject({
+         name: "AcroClip",
+         details: "2 clips saved",
+         timestamps: { start: 1000 },
+         assets: { large_image: "logo", large_text: "AcroClip" },
+      });
+      expect(presenceActivity({ ...capturing, level: "minimal", game: undefined })).toBeNull();
    });
    it("uses AcroClip's logo for a game without a catalog icon", () => {
-      expect(presenceActivity({ level: "minimal", capturing: true, game: { name: "My game" }, since: 1 })).toMatchObject({
+      expect(presenceActivity({ ...capturing, level: "minimal", game: { name: "My game" } })).toMatchObject({
          name: "My game",
          assets: { large_image: "logo", large_text: "AcroClip" },
       });
    });
-   it("leaves the status alone without a game being captured", () => {
-      for (const level of ["minimal", "full"] as const) {
-         expect(presenceActivity({ level, capturing: true, game: undefined, since: 1000 })).toBeNull();
-         expect(presenceActivity({ level, capturing: false, game: valorantGame, since: undefined })).toBeNull();
-      }
-   });
-   it("never shows anything when off", () => {
-      expect(presenceActivity({ level: "off", capturing: true, game: valorantGame, since: 1000 })).toBeNull();
+   it("leaves the status alone unless capturing, or when off", () => {
+      for (const level of ["minimal", "full"] as const)
+         expect(presenceActivity({ level, capturing: false, game: valorantGame, startedAt: undefined, clips: 0 })).toBeNull();
+      expect(presenceActivity({ ...capturing, level: "off", game: valorantGame })).toBeNull();
    });
    it("keeps names inside Discord's 2 to 128 characters", () => {
-      expect(presenceActivity({ level: "minimal", capturing: true, game: { name: " X " }, since: 1 })).toBeNull();
+      expect(presenceActivity({ ...capturing, level: "minimal", game: { name: " X " } })).toBeNull();
+      expect(presenceActivity({ ...capturing, level: "full", game: { name: " X " } })?.name).toBe("AcroClip");
       const long = { name: "a".repeat(200) };
-      expect(presenceActivity({ level: "minimal", capturing: true, game: long, since: 1 })?.name).toHaveLength(128);
-      const full = presenceActivity({ level: "full", capturing: true, game: long, since: 1 })?.name;
+      expect(presenceActivity({ ...capturing, level: "minimal", game: long })?.name).toHaveLength(128);
+      const full = presenceActivity({ ...capturing, level: "full", game: long })?.name;
       expect(full).toHaveLength(128);
       expect(full).toMatch(/… with AcroClip$/);
    });
@@ -159,8 +172,8 @@ async function until(check: () => boolean, ms = 2000): Promise<void> {
 }
 const activities = (fake: FakeDiscord) =>
    fake.frames.filter((frame) => frame.op === Op.Frame).map((frame) => (frame.payload["args"] as { activity: DiscordActivity | null }).activity);
-const valorant = presenceActivity({ level: "minimal", capturing: true, game: valorantGame, since: 1 })!;
-const celeste = presenceActivity({ level: "minimal", capturing: true, game: { name: "Celeste" }, since: 2 })!;
+const valorant = presenceActivity({ level: "minimal", capturing: true, game: valorantGame, startedAt: 1, clips: 0 })!;
+const celeste = presenceActivity({ level: "minimal", capturing: true, game: { name: "Celeste" }, startedAt: 2, clips: 0 })!;
 
 describe("DiscordPresence", () => {
    it("handshakes with the client ID, then sets the activity for this process", async () => {

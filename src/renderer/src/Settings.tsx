@@ -1,61 +1,61 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import {
    AlertCircle,
-   Info,
    Bell,
+   Bug,
    Check,
-   Download,
-   FileText,
-   Folder,
-   FolderOpen,
-   Gamepad2,
-   Keyboard,
-   LoaderCircle,
-   RefreshCw,
-   Settings2,
-   Video,
    Clock3,
    Copy,
-   FileVideo,
-   FolderTree,
-   Power,
-   Scissors,
-   History,
-   Trash2,
-   Bug,
-   FileArchive,
-   RotateCcw,
+   Download,
    Eraser,
+   FileArchive,
+   FileText,
+   FileVideo,
+   Folder,
+   FolderOpen,
+   FolderTree,
+   Gamepad2,
+   History,
+   Info,
+   Keyboard,
+   LoaderCircle,
+   Power,
    Radio,
+   RefreshCw,
+   RotateCcw,
+   Scissors,
+   Settings2,
+   Trash2,
+   Video,
 } from "lucide-react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { filenameFields, filenamePatterns, filenameTemplateError, filenameTemplateWarning, previewFilename } from "../../shared/filename";
+import { preferenceResetCopy, resetPartCopy, resetParts } from "../../shared/maintenance";
+import { bindingFor, formatBinding, shortcutClashes, shortcutConflict, shortcutGroup, shortcutRegistry } from "../../shared/shortcuts";
 import type { AppState, DiscordPresenceLevel, OverlapClips, Preferences } from "../../shared/types";
-import { useSettingsAutosave } from "./useSettingsAutosave";
-import { previewFilename, filenameFields, filenamePatterns, filenameTemplateError, filenameTemplateWarning } from "../../shared/filename";
-import { SelectionIndicator } from "./SelectionIndicator";
-import { SidebarTab } from "./SidebarTab";
-import { MotionList } from "./MotionList";
-import { HeaderActions, Button, Select } from "./ui";
-import { PresetNumberInput } from "./PresetNumberInput";
-import { Field, Toggle } from "./SettingsControls";
-import { NotificationSettings } from "./NotificationSettings";
+import type { Run } from "./desktop";
 import { api, reportFeedback } from "./desktop";
 import type { Ask, DialogRequest } from "./Dialog";
-import { preferenceResetCopy, resetPartCopy, resetParts } from "../../shared/maintenance";
-import type { Run } from "./desktop";
-import { RecordingPresets, customQualityError } from "./RecordingPresets";
-import { shortcutRegistry, shortcutGroup, bindingFor, shortcutClashes, shortcutConflict, formatBinding } from "../../shared/shortcuts";
-import { ShortcutInput } from "./ShortcutInput";
-import { GameManagement } from "./GameManagement";
-import { PaneDivider, usePaneSize } from "./layout";
 import { FolderPicker } from "./FolderPicker";
 import { timeAgo } from "./format";
-import { overlapDetail } from "./overlap-copy";
-import { TimeInput } from "./TimeInput";
-import { initialLocation, reportLocation } from "./navigation-history";
+import { GameManagement } from "./GameManagement";
+import { PaneDivider, usePaneSize } from "./layout";
+import { MotionList } from "./MotionList";
 import type { NavigationLocation } from "./navigation-history";
-import { updateAction, updateDownloading, updateDownloadLabel } from "./update-action";
+import { initialLocation, reportLocation } from "./navigation-history";
+import { NotificationSettings } from "./NotificationSettings";
+import { overlapDetail } from "./overlap-copy";
+import { PresetNumberInput } from "./PresetNumberInput";
+import { customQualityError, RecordingPresets } from "./RecordingPresets";
 import { clipLengthWarning, useInstalledMemory } from "./replay-estimate";
+import { SelectionIndicator } from "./SelectionIndicator";
+import { Field, Toggle } from "./SettingsControls";
+import { ShortcutInput } from "./ShortcutInput";
+import { SidebarTab } from "./SidebarTab";
+import { TimeInput } from "./TimeInput";
+import { Button, HeaderActions, Select } from "./ui";
+import { updateAction, updateDownloading, updateDownloadLabel } from "./update-action";
+import { useSettingsAutosave } from "./useSettingsAutosave";
 import { WarningIcon } from "./WarningIcon";
 
 const sections = [
@@ -69,9 +69,9 @@ const sections = [
 type Section = (typeof sections)[number]["id"];
 const shareSizes = [10, 20, 50, 100];
 const discordPresenceDetail: Record<DiscordPresenceLevel, string> = {
-   off: "Leaves your Discord status alone.",
-   minimal: "Adds AcroClip's logo and a link to the game you're capturing.",
-   full: 'Your status reads "Playing <game> with AcroClip".',
+   off: "Don't change status.",
+   minimal: "Adds AcroClip info to the game you're capturing.",
+   full: "Wow, you wanna do free advertising for me? Thanks :)",
 };
 function LastChecked({ timestamp }: { timestamp: number }) {
    const [now, setNow] = useState(Date.now);

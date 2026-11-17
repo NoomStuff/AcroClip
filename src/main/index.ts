@@ -532,6 +532,7 @@ const recorder = new Recorder({
       if (!candidate.merge || !previous) {
          previousSave = footage;
          record("saved");
+         if (!capture.previousFootage) countRecordingClip();
          reportSave({ kind: "saved", previousFootage: capture.previousFootage, secondsSinceCapture: capture.secondsSinceCapture }, banner);
          autoShare(clip.id);
          return;
@@ -693,7 +694,14 @@ const presence = new DiscordPresence({
 });
 /** The recognized game filling a desktop capture at the last sample. */
 let desktopGameInFront: ApplicationArtwork | undefined;
-let presenceShown: { game: string | undefined; since: number } | undefined;
+/** Clips saved from the recording that started at `startedAt`, for the Discord status. */
+let recordingClips = { startedAt: 0, count: 0 };
+function countRecordingClip() {
+   const startedAt = recorder.status.startedAt;
+   if (startedAt === null) return;
+   recordingClips = { startedAt, count: recordingClips.startedAt === startedAt ? recordingClips.count + 1 : 1 };
+   updatePresence();
+}
 /** The game is the captured app, or the recognized game filling a captured screen. */
 function updatePresence() {
    if (!preferences) return;
@@ -710,10 +718,9 @@ function updatePresence() {
    const game: PresenceGame | undefined = application?.name
       ? { name: application.name, ...(art ? { icon: discordGameIcon(art.id, art.icon) } : {}) }
       : undefined;
-   // The elapsed time restarts with each game, like Discord's own game status.
-   if (!capturing) presenceShown = undefined;
-   else if (presenceShown?.game !== game?.name) presenceShown = { game: game?.name, since: Date.now() };
-   presence.set(presenceActivity({ level: preferences.discordPresence, capturing, game, since: presenceShown?.since }));
+   const startedAt = recorder.status.startedAt ?? undefined;
+   const clips = startedAt !== undefined && recordingClips.startedAt === startedAt ? recordingClips.count : 0;
+   presence.set(presenceActivity({ level: preferences.discordPresence, capturing, game, startedAt, clips }));
 }
 // Saves waiting for the recorder, by destination, and the last clip a new save may merge into.
 const savesRequested = new Map<string, { requestedAt: number; session: string; trigger: SaveTrigger }>();
@@ -743,6 +750,7 @@ async function mergeSaves(olderId: string, newerId: string) {
          if (own) previousSave = { ...previousSave, start: previousSave.end - own.duration * 1000 };
       }
       reportSave({ kind: "kept-both" });
+      countRecordingClip();
    } else if (outcome.previousKept) reportSave({ kind: "extended-previous-kept" });
    else if (windowShown() && mainWindow?.isFocused()) notice("Extended the previous clip. The shorter version is in the trash.", false, "info", "app");
    autoShare(newerId);

@@ -39,8 +39,10 @@ export interface PresenceSituation {
    capturing: boolean;
    /** The game being captured, when AcroClip can name it. */
    game: PresenceGame | undefined;
-   /** When that game started showing. */
-   since: number | undefined;
+   /** When this recording started. Discord counts up from it. */
+   startedAt: number | undefined;
+   /** Clips saved from this recording. A save that extends the previous clip doesn't add one. */
+   clips: number;
 }
 
 /** Discord refuses text lines outside 2 to 128 characters. */
@@ -57,29 +59,35 @@ export function discordGameIcon(applicationId: string, iconHash: string): string
 
 const fullSuffix = " with AcroClip";
 
+function clipsLine(clips: number): string {
+   return clips === 0 ? "Ready to clip" : clips === 1 ? "1 clip saved" : `${clips} clips saved`;
+}
+
 /**
- * What AcroClip shows on Discord, or null to leave the user's own status alone. It only shows while
- * capturing a game it can name, as that game's own status: "Playing <game>" with its icon. Minimal
- * adds AcroClip's logo as a corner badge, "Clipping with AcroClip" and a link. Full also puts
- * AcroClip in the status itself, "Playing <game> with AcroClip".
+ * What AcroClip shows on Discord, or null to leave the user's own status alone. While capturing a
+ * game it can name, the status is that game's own, "Playing <game>" with its icon, and the timer
+ * counts the recording. Minimal adds AcroClip's logo as a corner badge, "Clipping with AcroClip" and
+ * a link. Full names AcroClip in the status, "Playing <game> with AcroClip", lists the clips saved,
+ * and also shows "Playing AcroClip" while capturing without a game.
  */
 export function presenceActivity(situation: PresenceSituation): DiscordActivity | null {
    if (situation.level === "off" || !situation.capturing) return null;
    const full = situation.level === "full";
    // Full keeps its suffix whole and shortens the game's name instead.
    const game = presenceText(situation.game?.name, full ? 128 - fullSuffix.length : 128);
-   if (!game) return null;
-   const icon = situation.game?.icon;
+   if (!game && !full) return null;
+   const icon = game ? situation.game?.icon : undefined;
    return {
       type: 0,
-      name: full ? `${game}${fullSuffix}` : game,
+      name: !game ? "AcroClip" : full ? `${game}${fullSuffix}` : game,
       status_display_type: 0,
-      ...(full ? {} : { details: "Clipping with AcroClip" }),
-      ...(situation.since !== undefined ? { timestamps: { start: situation.since } } : {}),
+      details: full ? clipsLine(situation.clips) : "Clipping with AcroClip",
+      ...(situation.startedAt !== undefined ? { timestamps: { start: situation.startedAt } } : {}),
       // Without the game's icon, AcroClip's logo stands in rather than a badge on an empty square.
-      assets: icon
-         ? { large_image: icon, large_text: game, small_image: DISCORD_LOGO_ASSET, small_text: "AcroClip" }
-         : { large_image: DISCORD_LOGO_ASSET, large_text: "AcroClip" },
+      assets:
+         game && icon
+            ? { large_image: icon, large_text: game, small_image: DISCORD_LOGO_ASSET, small_text: "AcroClip" }
+            : { large_image: DISCORD_LOGO_ASSET, large_text: "AcroClip" },
       buttons: [{ label: "Get AcroClip", url: DISCORD_BUTTON_URL }],
       instance: false,
    };
