@@ -153,7 +153,25 @@ it("calls a chosen application that never appears armed, then says when it is fo
    after(1, lostApp);
    expect(notices.at(-1)).toMatchObject({ kind: "recording-started", detail: "Waiting for application" });
    after(1000, capturing);
-   expect(notices.at(-1)).toMatchObject({ kind: "recording-resumed", detail: "Found HASTE" });
+   expect(notices.at(-1)).toMatchObject({ kind: "recording-resumed", message: "Now capturing", detail: "HASTE" });
+});
+it("says a chosen app isn't open yet when AcroClip starts capture itself, without an error", () => {
+   const { feedback, notices, after, start } = fixture();
+   start("HASTE", "app", true);
+   const closed = { state: "recording", availableSeconds: 0, sourceKind: "waiting", sourceName: "Waiting for HASTE", message: "Waiting for HASTE" } as const;
+   after(0, closed);
+   after(ARMED_AFTER_MS, closed);
+   expect(notices).toEqual([
+      { kind: "recording-paused", message: "Waiting for HASTE", detail: "It isn't open yet. Capture starts when it opens.", error: false },
+   ]);
+   after(1000, capturing);
+   expect(notices.at(-1)).toEqual({ kind: "recording-resumed", message: "Now capturing", detail: "HASTE", error: false });
+   // A choice saved before AcroClip kept its app can't be found again, so the user is asked to pick it.
+   feedback.starting("Application", { mode: "app", quiet: true, appKnown: false });
+   after(0, closed);
+   after(ARMED_AFTER_MS, { ...closed, sourceName: "Waiting for the app", message: "Waiting for the app" });
+   expect(notices.at(-1)).toMatchObject({ kind: "recording-paused", detail: "The window you chose has closed. Choose the app again on the Capture page." });
+   expect(notices.some((notice) => notice.error)).toBe(false);
 });
 it("treats a crash while paused as a stopped capture, not a failed start", () => {
    const { notices, after, start } = fixture();

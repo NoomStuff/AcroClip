@@ -43,6 +43,8 @@ export class RecordingNotices {
    /** Starts from AcroClip's own launch stay quiet unless something fails. */
    private quiet = false;
    private mode: CaptureMode = "screen";
+   /** An app source knows its application, so capture can find the app again once it opens. */
+   private appKnown = true;
    private pendingText = "";
    private source = "";
    /** What the user was last told is being captured: a game in Auto, the chosen source otherwise. Empty while it is missing. */
@@ -69,11 +71,12 @@ export class RecordingNotices {
       this.sourceClosed = sourceClosed;
    }
 
-   starting(source: string, options: { mode: CaptureMode; quiet?: boolean }): void {
+   starting(source: string, options: { mode: CaptureMode; quiet?: boolean; appKnown?: boolean }): void {
       this.active = true;
       this.confirmed = this.stopping = false;
       this.quiet = options.quiet === true;
       this.mode = options.mode;
+      this.appKnown = options.appKnown !== false;
       this.idleSince = this.lostSince = undefined;
       this.pendingText = source;
       this.source = source;
@@ -166,7 +169,14 @@ export class RecordingNotices {
          }
          // The hotkey is answered: capture is on and keeps footage once a source appears.
          this.confirmed = true;
-         this.emit("recording-started", "Capture started", reason);
+         if (this.mode === "app" && current.sourceKind === "waiting") {
+            // The chosen app isn't open. That's worth saying even when AcroClip started capture
+            // itself, because nothing is kept until it opens. It isn't an error.
+            const detail = this.appKnown
+               ? "It isn't open yet. Capture starts when it opens."
+               : "The window you chose has closed. Choose the app again on the Capture page.";
+            this.publish({ kind: this.quiet ? "recording-paused" : "recording-started", message: reason, detail, error: false });
+         } else this.emit("recording-started", "Capture started", reason);
          return;
       }
       this.idleSince = undefined;
@@ -219,7 +229,9 @@ export class RecordingNotices {
       const again = this.seen;
       this.seen = true;
       if (this.mode === "auto") this.emit("game-found", "Now capturing", target);
-      else this.emit("recording-resumed", "Capture resumed", again ? `${target} is back` : `Found ${target}`);
+      else if (again) this.emit("recording-resumed", "Capture resumed", `${target} is back`);
+      // The app capture was waiting for opened.
+      else this.emit("recording-resumed", "Now capturing", target);
    }
 
    private fail(message: string): void {

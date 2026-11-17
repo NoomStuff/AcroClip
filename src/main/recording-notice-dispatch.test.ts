@@ -50,7 +50,7 @@ it.each(["startRecording", "toggleRecording"])("acknowledges the %s bind before 
       captureActionError: failure,
    }) as (action: string) => void;
    trigger(action);
-   expect(acknowledge).toHaveBeenCalledExactlyOnceWith("Screen", { mode: "screen", quiet: false });
+   expect(acknowledge).toHaveBeenCalledExactlyOnceWith("Screen", { appKnown: true, mode: "screen", quiet: false });
    expect(sourceList).not.toHaveBeenCalled();
    expect(capture).not.toHaveBeenCalled();
    releasePreferences();

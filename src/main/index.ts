@@ -865,6 +865,7 @@ async function startRecording(options: { quiet?: boolean } = {}) {
    if (captureActive()) throw new Error("Capture is already running.");
    lastRecordingArtwork = undefined;
    recordingNotices.starting(preferences.sourceKind === "auto" ? "Automatic game detection" : recordingSourceLabel(preferences, captureSources.cached), {
+      appKnown: preferences.sourceKind !== "app" || !!preferences.sourceApplicationId,
       mode: preferences.sourceKind,
       quiet: options.quiet === true,
    });

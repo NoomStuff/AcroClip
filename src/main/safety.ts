@@ -79,5 +79,9 @@ export function isValidShortcut(value: string): boolean {
    );
 }
 export function recordingSourceLabel(preferences: Preferences, sources: Array<{ id: string; name: string }>): string {
-   return sources.find((source) => source.id === preferences.sourceId)?.name ?? (preferences.sourceKind === "screen" ? "Screen" : "Application");
+   const saved = sources.find((source) => source.id === preferences.sourceId)?.name;
+   if (saved) return saved;
+   if (preferences.sourceKind === "screen") return "Screen";
+   // The app's window changes when it restarts. Its name doesn't.
+   return (preferences.sourceKind === "app" && preferences.sourceApplicationId && preferences.sourceApplicationName) || "Application";
 }

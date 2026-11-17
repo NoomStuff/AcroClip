@@ -880,12 +880,14 @@ export class Recorder {
          throw new Error("Application and Auto capture are unavailable in this Wayland session. Choose Screen to use the system picker.");
       if (preferences.sourceKind === "auto") return this.autoConfiguration(preferences, sources);
       const selected = captureSourceFor(sources, preferences);
-      if (!selected && preferences.sourceKind === "app" && preferences.sourceApplicationId)
+      // A closed app is something to wait for, not an error. A choice saved without its app can't be
+      // found again, so capture waits until the user picks it on the Capture page.
+      if (!selected && preferences.sourceKind === "app")
          return {
             ...nativeAudioPreferences(preferences),
             resolvedKind: "waiting",
             sourceId: "",
-            sourceName: `Waiting for ${preferences.sourceApplicationName || "the app"}`,
+            sourceName: `Waiting for ${(preferences.sourceApplicationId && preferences.sourceApplicationName) || "the app"}`,
          };
       if (!selected) throw new Error("The selected source is gone. Choose another one.");
       this.source = selected.kind === "screen" ? "Desktop" : (selected.applicationName ?? selected.name);
@@ -1041,7 +1043,8 @@ export class Recorder {
          });
          this.autoGeneration++;
          this.autoPreferences = preferences.sourceKind === "auto" ? preferences : null;
-         this.waitingApp = configuration["resolvedKind"] === "waiting" && preferences.sourceKind === "app" ? preferences : null;
+         this.waitingApp =
+            configuration["resolvedKind"] === "waiting" && preferences.sourceKind === "app" && preferences.sourceApplicationId ? preferences : null;
          this.autoSources = sources;
          this.autoKey = this.configurationKey(configuration);
       } catch (error) {
@@ -1072,7 +1075,8 @@ export class Recorder {
          this.fastStatusUntil = Date.now() + 8000;
          await this.command({ action: "source", ...configuration });
          this.autoPreferences = preferences.sourceKind === "auto" ? preferences : null;
-         this.waitingApp = configuration["resolvedKind"] === "waiting" && preferences.sourceKind === "app" ? preferences : null;
+         this.waitingApp =
+            configuration["resolvedKind"] === "waiting" && preferences.sourceKind === "app" && preferences.sourceApplicationId ? preferences : null;
          this.autoSources = sources;
          this.autoKey = this.configurationKey(configuration);
       }

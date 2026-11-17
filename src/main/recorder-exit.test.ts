@@ -238,6 +238,23 @@ describe("recorder helper termination", () => {
       helperTestTimeout
    );
    it(
+      "waits instead of failing when an app source saved without its app is closed",
+      async () => {
+         const { child, root, errors } = await fixture("normal");
+         await child.stop();
+         await child.start({ ...defaultPreferences, collection: root, captureAudio: false, sourceKind: "app", sourceId: "window:1111:0" }, []);
+         const started = (await readFile(join(root, "commands.jsonl"), "utf8"))
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line) as { action: string; resolvedKind?: string; sourceName?: string })
+            .filter((command) => command.action === "start")
+            .at(-1);
+         expect(started).toMatchObject({ resolvedKind: "waiting", sourceName: "Waiting for the app" });
+         expect(errors).toEqual([]);
+      },
+      helperTestTimeout
+   );
+   it(
       "tells the recorder to send level messages only while meters are shown",
       async () => {
          const { child, root } = await fixture("normal");
