@@ -21,9 +21,9 @@ test("Discord status defaults to minimal for existing settings and saves a new c
       await page.getByRole("button", { name: "App & updates", exact: true }).click();
       const status = page.getByRole("combobox", { name: "Discord status", exact: true });
       await expect(status).toHaveText(/Minimal/);
-      await expect(status).toHaveAccessibleDescription("Adds AcroClip info to the game you're capturing.");
+      await expect(status).toHaveAccessibleDescription("Adds AcroClip rich presence to the game you're capturing.");
       await selectOption(page, "Discord status", "off");
-      await expect(status).toHaveAccessibleDescription("Don't change status.");
+      await expect(status).toHaveAccessibleDescription("Your rich presence stays untouched.");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.discordPresence).toBe("off");
       await expect
          .poll(async () => (JSON.parse(await readFile(join(profile, "preferences.json"), "utf8")) as { discordPresence?: string }).discordPresence)
