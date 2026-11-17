@@ -11,16 +11,25 @@ export const DISCORD_CLIENT_ID = "1572245694125842472";
 export const DISCORD_LOGO_ASSET = "logo";
 export const ACROCLIP_SITE = "https://acroclip.noomstuff.com";
 
-/** Discord shows the line `status_display_type` names in the member list: 0 is the application's name, 2 is `details`. */
+/**
+ * `name` replaces the application's name as the card's title and the member list's "Playing" line,
+ * which `status_display_type` 0 picks. Images are asset keys or https URLs.
+ */
 export interface DiscordActivity {
    type: 0;
-   status_display_type: 0 | 2;
+   name?: string;
+   status_display_type: 0;
    details?: string;
-   state?: string;
    timestamps?: { start: number };
-   assets: { large_image: string; large_text: string };
+   assets: { large_image: string; large_text: string; small_image?: string; small_text?: string };
    buttons: Array<{ label: string; url: string }>;
    instance: false;
+}
+
+export interface PresenceGame {
+   name: string;
+   /** The game's icon, when Discord's catalog has one. */
+   icon?: string;
 }
 
 export interface PresenceSituation {
@@ -28,7 +37,7 @@ export interface PresenceSituation {
    /** Capture is recording, not starting, paused or stopped. */
    capturing: boolean;
    /** The game being captured, when AcroClip can name it. */
-   game: string | undefined;
+   game: PresenceGame | undefined;
    /** When that game, or capture without one, started showing. */
    since: number | undefined;
 }
@@ -40,24 +49,41 @@ function presenceText(value: string | undefined): string | undefined {
    return text.length > 128 ? `${text.slice(0, 127)}…` : text;
 }
 
+/** Where Discord serves a catalog game's icon. */
+export function discordGameIcon(applicationId: string, iconHash: string): string {
+   return `https://cdn.discordapp.com/app-icons/${applicationId}/${iconHash}.png?size=512`;
+}
+
+const logo = { large_image: DISCORD_LOGO_ASSET, large_text: "AcroClip" };
+
 /**
  * What AcroClip shows on Discord, or null to leave the user's own status alone. While recording a
- * game, the member list reads "Playing <game>" and the profile adds "Clipping with AcroClip".
- * "Always" also shows AcroClip itself when there's no game to name.
+ * game, the status is the game's own: "Playing <game>" with its icon, and AcroClip adds a corner
+ * badge, a "Clipping with AcroClip" line and a link. "Always" also shows AcroClip itself when
+ * there's no game to name.
  */
 export function presenceActivity(situation: PresenceSituation): DiscordActivity | null {
    if (situation.mode === "never") return null;
-   const game = situation.capturing ? presenceText(situation.game) : undefined;
-   if (!game && situation.mode === "recording") return null;
+   const name = situation.capturing ? presenceText(situation.game?.name) : undefined;
+   if (!name && situation.mode === "recording") return null;
    const base = {
       type: 0 as const,
-      assets: { large_image: DISCORD_LOGO_ASSET, large_text: "AcroClip" },
+      status_display_type: 0 as const,
       buttons: [{ label: "Get AcroClip", url: ACROCLIP_SITE }],
       instance: false as const,
       ...(situation.capturing && situation.since !== undefined ? { timestamps: { start: situation.since } } : {}),
    };
-   if (game) return { ...base, status_display_type: 2, details: game, state: "Clipping with AcroClip" };
-   return situation.capturing ? { ...base, status_display_type: 0, details: "Capturing" } : { ...base, status_display_type: 0 };
+   if (name) {
+      const icon = situation.game?.icon;
+      return {
+         ...base,
+         name,
+         details: "Clipping with AcroClip",
+         // Without the game's icon, AcroClip's logo stands in rather than a badge on an empty square.
+         assets: icon ? { large_image: icon, large_text: name, small_image: DISCORD_LOGO_ASSET, small_text: "AcroClip" } : logo,
+      };
+   }
+   return situation.capturing ? { ...base, details: "Capturing", assets: logo } : { ...base, assets: logo };
 }
 
 const flatpakApps = ["com.discordapp.Discord", "com.discordapp.DiscordCanary", "dev.vencord.Vesktop"];

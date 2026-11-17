@@ -25,6 +25,7 @@ test("Auto game management searches the saved catalogue and persists application
    await writeFile(
       join(profile, "game-catalog.json"),
       JSON.stringify({
+         format: 2,
          updated: Date.now(),
          entries: [
             { id: "celeste", name: "Celeste", executables: [{ name: "celeste.exe", os: process.platform }] },

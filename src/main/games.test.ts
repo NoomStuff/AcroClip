@@ -3,6 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GameCatalog, parseCatalog, selectGame, type DetectedGame } from "./games";
+import { applicationId } from "./application-identity";
 import type { GameCandidate } from "../shared/types";
 
 const candidate = (id: string, patch: Partial<GameCandidate> = {}): GameCandidate => ({
@@ -51,7 +52,7 @@ describe("automatic game selection", () => {
          { id: "ambiguous", name: "Other Demo", executables: [{ name: "shared.exe", os: process.platform }] },
          { id: "ambiguous2", name: "Second Demo", executables: [{ name: "shared.exe", os: process.platform }] },
       ];
-      await writeFile(file, JSON.stringify({ entries, updated: Date.now() }));
+      await writeFile(file, JSON.stringify({ format: 2, entries, updated: Date.now() }));
       const catalog = new GameCatalog(file);
       await catalog.load();
       const candidates = [
@@ -75,6 +76,7 @@ describe("automatic game selection", () => {
       await writeFile(
          file,
          JSON.stringify({
+            format: 2,
             updated: Date.now(),
             entries: [
                { id: "windows-game", name: "Windows demo", executables: [{ name: "demo/game.exe", os: "win32" }] },
@@ -99,6 +101,7 @@ test("catalogue views use saved platform entries without downloading and share a
    await writeFile(
       file,
       JSON.stringify({
+         format: 2,
          updated: Date.now(),
          entries: [
             {
@@ -128,4 +131,49 @@ test("catalogue views use saved platform entries without downloading and share a
    } finally {
       fetch.mockRestore();
    }
+});
+
+describe("catalog icons", () => {
+   const hash = "67f35d9429ee338d6f2824163c1b773d";
+   const downloaded = [
+      { id: "356942674672091136", name: "Geometry Dash", executables: [{ name: "geometrydash.exe", os: "win32" }], icon_hash: hash },
+      { id: "2", name: "Odd icon", executables: [{ name: "odd.exe", os: "win32" }], icon_hash: "../../evil" },
+      { id: "3", name: "No icon", executables: [{ name: "none.exe", os: "win32" }] },
+   ];
+   test("keeps Discord's icon hash and finds it by the application id clips use", async () => {
+      const entries = parseCatalog(downloaded);
+      expect(entries.map((entry) => entry.icon)).toEqual([hash, undefined, undefined]);
+      const file = join(await mkdtemp(join(tmpdir(), "acroclip-game-icons-")), "catalog.json");
+      await writeFile(file, JSON.stringify({ format: 2, updated: Date.now(), entries }));
+      const catalog = new GameCatalog(file, undefined, "win32");
+      await catalog.load();
+      expect(catalog.icon(applicationId("C:/Games/geometrydash.exe", "356942674672091136"))).toEqual({ id: "356942674672091136", icon: hash });
+      expect(catalog.icon(applicationId("C:/Games/odd.exe", "2"))).toBeUndefined();
+      expect(catalog.icon(applicationId("C:/Games/geometrydash.exe"))).toBeUndefined();
+   });
+   test("downloads again once when the saved catalog predates icons", async () => {
+      const folder = await mkdtemp(join(tmpdir(), "acroclip-game-icons-"));
+      const stale = join(folder, "stale.json");
+      const current = join(folder, "current.json");
+      const saved = downloaded.map(({ id, name, executables }) => ({ id, name, executables }));
+      await writeFile(stale, JSON.stringify({ updated: Date.now(), entries: saved }));
+      await writeFile(current, JSON.stringify({ format: 2, updated: Date.now(), entries: saved }));
+      const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify(downloaded)));
+      try {
+         const fresh = new GameCatalog(current, undefined, "win32");
+         await fresh.refresh();
+         expect(fetch).not.toHaveBeenCalled();
+         const catalog = new GameCatalog(stale, undefined, "win32");
+         await catalog.load();
+         expect(catalog.icon(applicationId("", "356942674672091136"))).toBeUndefined();
+         await catalog.refresh();
+         expect(fetch).toHaveBeenCalledTimes(1);
+         expect(catalog.icon(applicationId("", "356942674672091136"))?.icon).toBe(hash);
+         const reloaded = new GameCatalog(stale, undefined, "win32");
+         await reloaded.refresh();
+         expect(fetch).toHaveBeenCalledTimes(1);
+      } finally {
+         fetch.mockRestore();
+      }
+   });
 });

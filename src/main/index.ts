@@ -22,7 +22,7 @@ import type {
    RecordingCapabilities,
 } from "../shared/types";
 import { recordingArtwork, type RecordingArtwork } from "./recording-artwork";
-import { DISCORD_CLIENT_ID, DiscordPresence, discordIpcPaths, presenceActivity } from "./discord-presence";
+import { DISCORD_CLIENT_ID, DiscordPresence, discordGameIcon, discordIpcPaths, presenceActivity, type PresenceGame } from "./discord-presence";
 import {
    categoryRequest,
    historyPartsSchema,
@@ -699,16 +699,20 @@ function updatePresence() {
    if (!preferences) return;
    const capturing = recorder.status.state === "recording";
    const footage = bufferedCaptureSource(recorder.status);
-   const game = !capturing
+   const application = !capturing
       ? undefined
       : footage.kind === "app"
-        ? lastRecordingArtwork?.application.name
+        ? lastRecordingArtwork?.application
         : footage.kind === "screen"
-          ? desktopGameInFront?.name
+          ? desktopGameInFront
           : undefined;
+   const art = application && preferences.discordPresence !== "never" ? recorder.gameIcon(application.id) : undefined;
+   const game: PresenceGame | undefined = application?.name
+      ? { name: application.name, ...(art ? { icon: discordGameIcon(art.id, art.icon) } : {}) }
+      : undefined;
    // The elapsed time restarts with each game, like Discord's own game status.
    if (!capturing) presenceShown = undefined;
-   else if (presenceShown?.game !== game) presenceShown = { game, since: Date.now() };
+   else if (presenceShown?.game !== game?.name) presenceShown = { game: game?.name, since: Date.now() };
    presence.set(presenceActivity({ mode: preferences.discordPresence, capturing, game, since: presenceShown?.since }));
 }
 // Saves waiting for the recorder, by destination, and the last clip a new save may merge into.
