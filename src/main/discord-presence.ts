@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { connect, type Socket } from "node:net";
-import { join } from "node:path";
+import { posix } from "node:path";
 import { z } from "zod";
 import type { DiscordPresenceMode } from "../shared/types";
 
@@ -71,7 +71,7 @@ export function discordIpcPaths(platform: NodeJS.Platform, env: Readonly<Record<
    const slots = Array.from({ length: 10 }, (_, index) => `discord-ipc-${index}`);
    if (platform === "win32") return slots.map((slot) => `\\\\?\\pipe\\${slot}`);
    const bases = [...new Set([env["XDG_RUNTIME_DIR"], env["TMPDIR"], env["TMP"], env["TEMP"], "/tmp"].filter((base): base is string => !!base))];
-   return bases.flatMap((base) => socketFolders.flatMap((folder) => slots.map((slot) => join(base, folder, slot))));
+   return bases.flatMap((base) => socketFolders.flatMap((folder) => slots.map((slot) => posix.join(base, folder, slot))));
 }
 
 export const Op = { Handshake: 0, Frame: 1, Close: 2, Ping: 3, Pong: 4 } as const;
