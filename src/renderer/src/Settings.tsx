@@ -69,9 +69,9 @@ const sections = [
 type Section = (typeof sections)[number]["id"];
 const shareSizes = [10, 20, 50, 100];
 const discordPresenceDetail: Record<DiscordPresenceLevel, string> = {
-   off: "Don't change status.",
-   minimal: "Adds AcroClip info to the game you're capturing.",
-   full: "Wow, you wanna do free advertising for me? Thanks :)",
+   off: "Your rich presence stays untouched.",
+   minimal: "Adds AcroClip rich presence to the game you're capturing.",
+   full: "Oh wow! you wanna do free advertising for me? Thanks :)",
 };
 function LastChecked({ timestamp }: { timestamp: number }) {
    const [now, setNow] = useState(Date.now);

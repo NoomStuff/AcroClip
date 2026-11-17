@@ -35,14 +35,47 @@ export interface PresenceGame {
 
 export interface PresenceSituation {
    level: DiscordPresenceLevel;
-   /** Capture is recording, not starting, paused or stopped. */
+   /** A capture session is running: from the first recording until capture stops. */
    capturing: boolean;
+   /** Capture is waiting for its source to come back. */
+   paused: boolean;
    /** The game being captured, when AcroClip can name it. */
    game: PresenceGame | undefined;
-   /** When this recording started. Discord counts up from it. */
+   /** When this capture session started. Discord counts up from it. */
    startedAt: number | undefined;
-   /** Clips saved from this recording. A save that extends the previous clip doesn't add one. */
+   /** Clips saved this session. A save that extends the previous clip doesn't add one. */
    clips: number;
+}
+
+/** How long a recording can go without naming a game before the status lets go of the last one. */
+export const GAME_HOLD_MS = 10_000;
+
+/**
+ * One status for a whole capture session, so switching sources or losing one for a while doesn't
+ * reset the timer, the clip count or the game. It starts at the first recording and ends when
+ * capture stops or fails. The last named game stays through pauses and source switches, and only
+ * goes once recording has run `GAME_HOLD_MS` without naming one, such as on a plain desktop.
+ */
+export class PresenceSession {
+   private current: { startedAt: number; clips: number; game: PresenceGame | undefined; unnamedSince: number | undefined } | undefined;
+   update(state: "stopped" | "starting" | "recording" | "waiting" | "error", named: PresenceGame | undefined, now: number): Omit<PresenceSituation, "level"> {
+      if (state === "stopped" || state === "error") this.current = undefined;
+      else if (!this.current && state === "recording") this.current = { startedAt: now, clips: 0, game: undefined, unnamedSince: undefined };
+      const session = this.current;
+      if (!session) return { capturing: false, paused: false, game: undefined, startedAt: undefined, clips: 0 };
+      if (state === "recording") {
+         if (named) session.game = named;
+         session.unnamedSince = named ? undefined : (session.unnamedSince ?? now);
+         if (session.unnamedSince !== undefined && now - session.unnamedSince >= GAME_HOLD_MS) session.game = undefined;
+      }
+      return { capturing: true, paused: state === "waiting", game: session.game, startedAt: session.startedAt, clips: session.clips };
+   }
+   /** Counts a saved clip, if a session is running. */
+   countClip(): boolean {
+      if (!this.current) return false;
+      this.current.clips++;
+      return true;
+   }
 }
 
 /** Discord refuses text lines outside 2 to 128 characters. */
@@ -59,14 +92,16 @@ export function discordGameIcon(applicationId: string, iconHash: string): string
 
 const fullSuffix = " with AcroClip";
 
-function clipsLine(clips: number): string {
-   return clips === 0 ? "Ready to clip" : clips === 1 ? "1 clip saved" : `${clips} clips saved`;
+function clipsLine(clips: number, paused: boolean): string {
+   const saved = clips === 1 ? "1 clip saved" : `${clips} clips saved`;
+   if (paused) return clips === 0 ? "Paused" : `Paused · ${saved}`;
+   return clips === 0 ? "Ready to clip" : saved;
 }
 
 /**
  * What AcroClip shows on Discord, or null to leave the user's own status alone. While capturing a
  * game it can name, the status is that game's own, "Playing <game>" with its icon, and the timer
- * counts the recording. Minimal adds AcroClip's logo as a corner badge, "Clipping with AcroClip" and
+ * counts the capture session. Minimal adds AcroClip's logo as a corner badge, "Clipping with AcroClip" and
  * a link. Full names AcroClip in the status, "Playing <game> with AcroClip", lists the clips saved,
  * and also shows "Playing AcroClip" while capturing without a game.
  */
@@ -81,7 +116,7 @@ export function presenceActivity(situation: PresenceSituation): DiscordActivity 
       type: 0,
       name: !game ? "AcroClip" : full ? `${game}${fullSuffix}` : game,
       status_display_type: 0,
-      details: full ? clipsLine(situation.clips) : "Clipping with AcroClip",
+      details: full ? clipsLine(situation.clips, situation.paused) : situation.paused ? "Clipping paused" : "Clipping with AcroClip",
       ...(situation.startedAt !== undefined ? { timestamps: { start: situation.startedAt } } : {}),
       // Without the game's icon, AcroClip's logo stands in rather than a badge on an empty square.
       assets:

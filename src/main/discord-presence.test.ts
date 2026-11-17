@@ -3,12 +3,22 @@ import { createServer, type Server, type Socket } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DiscordPresence, FrameReader, Op, discordGameIcon, discordIpcPaths, encodeFrame, presenceActivity } from "./discord-presence";
+import {
+   DiscordPresence,
+   GAME_HOLD_MS,
+   PresenceSession,
+   FrameReader,
+   Op,
+   discordGameIcon,
+   discordIpcPaths,
+   encodeFrame,
+   presenceActivity,
+} from "./discord-presence";
 import type { DiscordActivity } from "./discord-presence";
 
 const valorantGame = { name: "Valorant", icon: "https://cdn.discordapp.com/app-icons/1/a.png?size=512" };
 
-const capturing = { capturing: true, startedAt: 1000, clips: 0 };
+const capturing = { capturing: true, paused: false, startedAt: 1000, clips: 0 };
 
 describe("presenceActivity", () => {
    it("shows the captured game as itself, with AcroClip as a badge, at the minimal level", () => {
@@ -42,6 +52,12 @@ describe("presenceActivity", () => {
       });
       expect(presenceActivity({ ...capturing, level: "minimal", game: undefined })).toBeNull();
    });
+   it("says when capture is paused", () => {
+      const paused = { ...capturing, paused: true, game: valorantGame };
+      expect(presenceActivity({ ...paused, level: "minimal" })).toMatchObject({ name: "Valorant", details: "Clipping paused", timestamps: { start: 1000 } });
+      expect(presenceActivity({ ...paused, level: "full" })?.details).toBe("Paused");
+      expect(presenceActivity({ ...paused, level: "full", clips: 3 })?.details).toBe("Paused · 3 clips saved");
+   });
    it("uses AcroClip's logo for a game without a catalog icon", () => {
       expect(presenceActivity({ ...capturing, level: "minimal", game: { name: "My game" } })).toMatchObject({
          name: "My game",
@@ -50,7 +66,7 @@ describe("presenceActivity", () => {
    });
    it("leaves the status alone unless capturing, or when off", () => {
       for (const level of ["minimal", "full"] as const)
-         expect(presenceActivity({ level, capturing: false, game: valorantGame, startedAt: undefined, clips: 0 })).toBeNull();
+         expect(presenceActivity({ level, capturing: false, paused: false, game: valorantGame, startedAt: undefined, clips: 0 })).toBeNull();
       expect(presenceActivity({ ...capturing, level: "off", game: valorantGame })).toBeNull();
    });
    it("keeps names inside Discord's 2 to 128 characters", () => {
@@ -66,6 +82,42 @@ describe("presenceActivity", () => {
       expect(discordGameIcon("356942674672091136", "67f35d9429ee338d6f2824163c1b773d")).toBe(
          "https://cdn.discordapp.com/app-icons/356942674672091136/67f35d9429ee338d6f2824163c1b773d.png?size=512"
       );
+   });
+});
+
+describe("PresenceSession", () => {
+   const celeste = { name: "Celeste" };
+   it("keeps one timer, clip count and game through pauses and source switches", () => {
+      const session = new PresenceSession();
+      expect(session.update("waiting", undefined, 0)).toMatchObject({ capturing: false });
+      expect(session.countClip()).toBe(false);
+      expect(session.update("recording", valorantGame, 1000)).toMatchObject({ capturing: true, paused: false, game: valorantGame, startedAt: 1000, clips: 0 });
+      expect(session.countClip()).toBe(true);
+      expect(session.update("waiting", undefined, 5000)).toMatchObject({ paused: true, game: valorantGame, startedAt: 1000, clips: 1 });
+      expect(session.update("starting", undefined, 6000)).toMatchObject({ paused: false, game: valorantGame, startedAt: 1000 });
+      // The new source isn't named yet, so the last game holds for a while.
+      expect(session.update("recording", undefined, 7000)).toMatchObject({ game: valorantGame, startedAt: 1000, clips: 1 });
+      expect(session.update("recording", celeste, 9000)).toMatchObject({ game: celeste, startedAt: 1000, clips: 1 });
+   });
+   it("lets go of the game after recording a while without one", () => {
+      const session = new PresenceSession();
+      session.update("recording", valorantGame, 0);
+      session.update("recording", undefined, 1000);
+      expect(session.update("recording", undefined, 1000 + GAME_HOLD_MS - 1).game).toEqual(valorantGame);
+      expect(session.update("recording", undefined, 1000 + GAME_HOLD_MS).game).toBeUndefined();
+      // A pause doesn't run the hold down.
+      session.update("recording", celeste, 20_000);
+      session.update("recording", undefined, 21_000);
+      expect(session.update("waiting", undefined, 21_000 + GAME_HOLD_MS * 3).game).toEqual(celeste);
+   });
+   it("starts over after capture stops or fails", () => {
+      const session = new PresenceSession();
+      session.update("recording", valorantGame, 0);
+      session.countClip();
+      for (const end of ["stopped", "error"] as const) {
+         expect(session.update(end, undefined, 1000)).toEqual({ capturing: false, paused: false, game: undefined, startedAt: undefined, clips: 0 });
+         expect(session.update("recording", undefined, 2000)).toMatchObject({ game: undefined, startedAt: 2000, clips: 0 });
+      }
    });
 });
 
@@ -172,8 +224,8 @@ async function until(check: () => boolean, ms = 2000): Promise<void> {
 }
 const activities = (fake: FakeDiscord) =>
    fake.frames.filter((frame) => frame.op === Op.Frame).map((frame) => (frame.payload["args"] as { activity: DiscordActivity | null }).activity);
-const valorant = presenceActivity({ level: "minimal", capturing: true, game: valorantGame, startedAt: 1, clips: 0 })!;
-const celeste = presenceActivity({ level: "minimal", capturing: true, game: { name: "Celeste" }, startedAt: 2, clips: 0 })!;
+const valorant = presenceActivity({ level: "minimal", capturing: true, paused: false, game: valorantGame, startedAt: 1, clips: 0 })!;
+const celeste = presenceActivity({ level: "minimal", capturing: true, paused: false, game: { name: "Celeste" }, startedAt: 2, clips: 0 })!;
 
 describe("DiscordPresence", () => {
    it("handshakes with the client ID, then sets the activity for this process", async () => {

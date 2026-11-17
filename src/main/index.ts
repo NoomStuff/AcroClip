@@ -22,7 +22,7 @@ import type {
    RecordingCapabilities,
 } from "../shared/types";
 import { recordingArtwork, type RecordingArtwork } from "./recording-artwork";
-import { DISCORD_CLIENT_ID, DiscordPresence, discordGameIcon, discordIpcPaths, presenceActivity, type PresenceGame } from "./discord-presence";
+import { DISCORD_CLIENT_ID, DiscordPresence, PresenceSession, discordGameIcon, discordIpcPaths, presenceActivity, type PresenceGame } from "./discord-presence";
 import {
    categoryRequest,
    historyPartsSchema,
@@ -694,20 +694,16 @@ const presence = new DiscordPresence({
 });
 /** The recognized game filling a desktop capture at the last sample. */
 let desktopGameInFront: ApplicationArtwork | undefined;
-/** Clips saved from the recording that started at `startedAt`, for the Discord status. */
-let recordingClips = { startedAt: 0, count: 0 };
+const presenceSession = new PresenceSession();
 function countRecordingClip() {
-   const startedAt = recorder.status.startedAt;
-   if (startedAt === null) return;
-   recordingClips = { startedAt, count: recordingClips.startedAt === startedAt ? recordingClips.count + 1 : 1 };
-   updatePresence();
+   if (presenceSession.countClip()) updatePresence();
 }
 /** The game is the captured app, or the recognized game filling a captured screen. */
 function updatePresence() {
    if (!preferences) return;
-   const capturing = recorder.status.state === "recording";
+   const recording = recorder.status.state === "recording";
    const footage = bufferedCaptureSource(recorder.status);
-   const application = !capturing
+   const application = !recording
       ? undefined
       : footage.kind === "app"
         ? lastRecordingArtwork?.application
@@ -715,12 +711,10 @@ function updatePresence() {
           ? desktopGameInFront
           : undefined;
    const art = application && preferences.discordPresence !== "off" ? recorder.gameIcon(application.id) : undefined;
-   const game: PresenceGame | undefined = application?.name
+   const named: PresenceGame | undefined = application?.name
       ? { name: application.name, ...(art ? { icon: discordGameIcon(art.id, art.icon) } : {}) }
       : undefined;
-   const startedAt = recorder.status.startedAt ?? undefined;
-   const clips = startedAt !== undefined && recordingClips.startedAt === startedAt ? recordingClips.count : 0;
-   presence.set(presenceActivity({ level: preferences.discordPresence, capturing, game, startedAt, clips }));
+   presence.set(presenceActivity({ level: preferences.discordPresence, ...presenceSession.update(recorder.status.state, named, Date.now()) }));
 }
 // Saves waiting for the recorder, by destination, and the last clip a new save may merge into.
 const savesRequested = new Map<string, { requestedAt: number; session: string; trigger: SaveTrigger }>();
