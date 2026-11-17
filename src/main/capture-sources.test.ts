@@ -84,6 +84,12 @@ describe.skipIf(process.platform !== "win32")("Windows source discovery", () => 
       const sources = await new CaptureSources(recorder(), () => "999").list();
       expect(sources.map((source) => source.name)).toEqual(["Desktop", "Entire Screen"]);
    });
+   it("keeps a recognized game's name apart from its window title", async () => {
+      const native = recorder();
+      native.capturableApplications.mockResolvedValue([{ ...application, gameId: "1", gameName: "Valorant" }]);
+      expect((await new CaptureSources(native, () => "999").list())[1]).toMatchObject({ name: "Application", gameName: "Valorant" });
+      expect((await new CaptureSources(recorder(), () => "999").list())[1]).not.toHaveProperty("gameName");
+   });
    it("retains an unknown executable's identity while its native process is unchanged", async () => {
       const native = recorder();
       native.capturableApplications.mockResolvedValue([{ ...application, executable: "" }]);

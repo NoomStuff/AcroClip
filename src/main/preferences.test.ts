@@ -119,6 +119,40 @@ describe("clip folder layout", () => {
       }
    });
 });
+describe("reading damaged settings", () => {
+   it("resets only the settings it can't read and drops ones it doesn't know", async () => {
+      const root = await mkdtemp(join(tmpdir(), "acroclip-preference-repair-"));
+      try {
+         const file = join(root, "preferences.json");
+         await writeFile(
+            file,
+            JSON.stringify({ ...defaultPreferences, collection: root, clipSeconds: 45, discordPresence: "recording", shareSizeMB: -1, fromNewerVersion: true })
+         );
+         const read = await readPreferences(file, root);
+         expect(read.clipSeconds).toBe(45);
+         expect(read.discordPresence).toBe(defaultPreferences.discordPresence);
+         expect(read.shareSizeMB).toBe(defaultPreferences.shareSizeMB);
+         expect(read).not.toHaveProperty("fromNewerVersion");
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+   it("prefers a valid backup, and starts over only when nothing is readable", async () => {
+      const root = await mkdtemp(join(tmpdir(), "acroclip-preference-repair-"));
+      try {
+         const file = join(root, "preferences.json");
+         await writeFile(file, JSON.stringify({ ...defaultPreferences, collection: root, clipSeconds: 45, shareSizeMB: -1 }));
+         await writeFile(`${file}.bak`, JSON.stringify({ ...defaultPreferences, collection: root, clipSeconds: 30 }));
+         expect((await readPreferences(file, root)).clipSeconds).toBe(30);
+         await writeFile(`${file}.bak`, "{");
+         expect((await readPreferences(file, root)).clipSeconds).toBe(45);
+         await writeFile(file, "not json");
+         expect(await readPreferences(file, root)).toEqual({ ...defaultPreferences, collection: root });
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
+});
 describe("overlapping clip choice", () => {
    it("restarts capture only when the recorder's own trimming changes", () => {
       const merge = { ...defaultPreferences, overlapClips: "merge" as const };

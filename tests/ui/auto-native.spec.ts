@@ -76,6 +76,7 @@ $form.Dispose()
    await writeFile(
       join(profile, "game-catalog.json"),
       JSON.stringify({
+         format: 2,
          updated: Date.now(),
          entries: [{ id: "fixture-unrelated", name: "Unrelated fixture", executables: [{ name: "never-running-fixture.exe", os: process.platform }] }],
       })

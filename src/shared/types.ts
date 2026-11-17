@@ -14,6 +14,8 @@ export interface ApplicationArtwork {
 }
 export interface CaptureSource {
    applicationName?: string;
+   /** The recognized or added game's name, when this window is one. */
+   gameName?: string;
    applicationId?: string;
    previousApplicationIds?: string[];
    appIcon?: string;
@@ -84,6 +86,9 @@ export interface AudioLevels {
    additional?: Record<string, number>;
 }
 export type OverlapClips = "keep" | "trim" | "merge";
+/** When AcroClip shows on Discord: never, while recording a game, or whenever it's open. */
+/** How much AcroClip adds to the Discord status of a game being captured. */
+export type DiscordPresenceLevel = "off" | "minimal" | "full";
 export interface Preferences {
    shortcuts: ShortcutBindings;
    collection: string;
@@ -125,6 +130,7 @@ export interface Preferences {
    updateCheck: boolean;
    startWithOS: boolean;
    autoRecord: boolean;
+   discordPresence: DiscordPresenceLevel;
    notificationStartBanner: boolean;
    notificationStartSound: boolean;
    notificationStopBanner: boolean;

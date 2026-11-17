@@ -39,6 +39,7 @@ it.each(["startRecording", "toggleRecording"])("acknowledges the %s bind before 
       capturing: () => false,
       captureActive: () => false,
       lastRecordingArtwork: undefined,
+      desktopGameInFront: undefined,
       recorder: { status: { state: "stopped" }, start: capture },
       recordingNotices: { starting: acknowledge, startFailed: failure },
       preferenceWrites: pendingPreferences,

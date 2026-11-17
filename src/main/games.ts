@@ -1,17 +1,23 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { GameCandidate, CustomGame, GameCatalogSnapshot } from "../shared/types";
+import { applicationId } from "./application-identity";
 
 export interface GameDefinition {
    id: string;
    name: string;
    executables: { name: string; os: string; arguments?: string; is_launcher?: boolean }[];
+   /** Discord's hash for the game's icon. */
+   icon?: string;
 }
 export interface DetectedGame extends GameCandidate {
    gameId: string;
    gameName: string;
 }
 const endpoint = "https://discord.com/api/v9/applications/detectable";
+/** Saved catalogs from before icons were kept download again on the next refresh. */
+const SAVED_FORMAT = 2;
+const iconHash = /^(a_)?[0-9a-f]{32}$/;
 const normalize = (value: string) => value.replaceAll("\\", "/").toLowerCase();
 // Independently maintained fallback facts, not a redistributed Discord snapshot.
 const fallback: GameDefinition[] = [
@@ -48,7 +54,9 @@ export function parseCatalog(input: unknown): GameDefinition[] {
             (!("arguments" in exe) || typeof exe.arguments === "string") &&
             (!("is_launcher" in exe) || typeof exe.is_launcher === "boolean")
       );
-      if (executables.length) entries.push({ id: item.id, name: item.name, executables });
+      // Discord sends `icon_hash`. Saved catalogs keep it as `icon`.
+      const icon: unknown = "icon" in item ? item.icon : item.icon_hash;
+      if (executables.length) entries.push({ id: item.id, name: item.name, executables, ...(typeof icon === "string" && iconHash.test(icon) ? { icon } : {}) });
    }
    if (!entries.length) throw new Error("The game catalog has no usable entries");
    return entries;
@@ -65,6 +73,8 @@ export class GameCatalog {
    private attempted = 0;
    // The filtered list only changes when the catalog does, so build it once per index.
    private listed: GameCatalogSnapshot | null = null;
+   /** Catalog games with an icon, by the application id their clips use. Built on first use. */
+   private icons: Map<string, { id: string; icon: string }> | null = null;
    private readonly file: string;
    private readonly onWarning: (message: string) => void;
    private readonly platform: NodeJS.Platform;
@@ -76,6 +86,7 @@ export class GameCatalog {
    }
    private reindex(): void {
       this.listed = null;
+      this.icons = null;
       this.index.clear();
       for (const game of this.entries)
          for (const executable of game.executables) {
@@ -96,7 +107,7 @@ export class GameCatalog {
             if (saved && typeof saved === "object" && "entries" in saved) {
                this.entries = parseCatalog(saved.entries);
                this.saved = true;
-               if ("updated" in saved && typeof saved.updated === "number") this.updated = saved.updated;
+               if ("updated" in saved && typeof saved.updated === "number" && "format" in saved && saved.format === SAVED_FORMAT) this.updated = saved.updated;
                this.reindex();
             }
          } catch {
@@ -150,7 +161,7 @@ export class GameCatalog {
             await mkdir(dirname(this.file), { recursive: true });
             const next = `${this.file}.next`;
             const updated = Date.now();
-            await writeFile(next, JSON.stringify({ updated, entries }));
+            await writeFile(next, JSON.stringify({ format: SAVED_FORMAT, updated, entries }));
             await rename(next, this.file);
             this.entries = entries;
             this.saved = true;
@@ -165,6 +176,14 @@ export class GameCatalog {
          this.loading = null;
       });
       return this.loading;
+   }
+   /** The Discord application and icon behind a recognized game's application id, if it has an icon. */
+   icon(application: string): { id: string; icon: string } | undefined {
+      if (!this.icons) {
+         this.icons = new Map();
+         for (const game of this.entries) if (game.icon) this.icons.set(applicationId("", game.id), { id: game.id, icon: game.icon });
+      }
+      return this.icons.get(application);
    }
    match(candidates: GameCandidate[], additions: CustomGame[]): DetectedGame[] {
       return candidates.flatMap((candidate) => {

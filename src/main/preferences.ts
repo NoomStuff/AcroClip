@@ -52,41 +52,71 @@ function keepFolderLayout(stored: Partial<Preferences>): Partial<Preferences> {
 function migrateStoredPreferences(stored: unknown): Partial<Preferences> {
    return keepFolderLayout(dropRetiredPreferences(migrateOverlapPreference(migrateNotificationPreferences(stored))));
 }
-export async function readPreferences(path: string, collection: string): Promise<Preferences> {
-   for (const candidate of [path, `${path}.bak`]) {
-      try {
-         const stored: unknown = JSON.parse(await readFile(candidate, "utf8"));
-         const legacy = migrateStoredPreferences(stored);
-         const candidatePreferences = { ...defaultPreferences, collection, ...legacy };
-         if (legacy.audioSourcesVersion !== 2) {
-            candidatePreferences.audioSources = migrateAudioSources(candidatePreferences, (legacy.audioSources as AdditionalAudioSource[]) ?? []);
-            candidatePreferences.audioSourcesVersion = 2;
-         }
-         const parsed = preferencesSchema.parse(candidatePreferences);
-         const migrated =
-            typeof stored === "object" && stored && !("recordingPresetVersion" in stored) && parsed.quality !== "custom"
-               ? applyRecordingPreset(parsed, parsed.quality)
-               : parsed;
-         if (typeof stored === "object" && stored && !("resolutionLimit" in stored)) {
-            // Retain legacy dimensions as stored metadata. The new screen limit
-            // maps intentional custom geometry to its shorter edge; apps stay original.
-            migrated.resolutionLimit =
-               migrated.quality === "custom"
-                  ? Math.min(migrated.customWidth, migrated.customHeight)
-                  : migrated.quality === "low"
-                    ? 720
-                    : migrated.quality === "high"
-                      ? 1440
-                      : 1080;
-         }
-         // High once used CQ 18. Presets own their values, so only Custom keeps an edited CQ.
-         if (migrated.quality === "high" && migrated.customCQ === 18) migrated.customCQ = 20;
-         return migrated;
-      } catch {
-         /* Keep trying the last good backup. */
+/**
+ * Puts the default back for each setting the schema refuses and drops settings it doesn't know, so
+ * one bad or unfamiliar value, such as one written by a newer or older version, costs only that
+ * setting. Gives up on problems that don't belong to one setting.
+ */
+function repairPreferences(candidate: Record<string, unknown>, collection: string): Preferences {
+   const defaults: Record<string, unknown> = { ...defaultPreferences, collection };
+   let repaired = { ...candidate };
+   // Each pass fixes at least one key, so this ends within one pass per key.
+   for (let pass = 0; pass <= Object.keys(repaired).length; pass++) {
+      const result = preferencesSchema.safeParse(repaired);
+      if (result.success) return result.data;
+      const next = { ...repaired };
+      for (const issue of result.error.issues) {
+         if (issue.code === "unrecognized_keys" && issue.path.length === 0) for (const key of issue.keys) delete next[key];
+         else if (typeof issue.path[0] === "string" && issue.path[0] in defaults) next[issue.path[0]] = defaults[issue.path[0]];
+         else throw result.error;
       }
+      repaired = next;
    }
+   return preferencesSchema.parse(repaired);
+}
+/**
+ * Reads the saved settings, falling back to the last good backup. When neither is valid as a whole,
+ * the newest readable one is kept with its bad settings reset, rather than starting over.
+ */
+export async function readPreferences(path: string, collection: string): Promise<Preferences> {
+   for (const repair of [false, true])
+      for (const candidate of [path, `${path}.bak`]) {
+         try {
+            return await readStoredPreferences(candidate, collection, repair);
+         } catch {
+            /* Try the backup, then the same files with their bad settings reset. */
+         }
+      }
    return { ...defaultPreferences, collection };
+}
+async function readStoredPreferences(file: string, collection: string, repair: boolean): Promise<Preferences> {
+   const stored: unknown = JSON.parse(await readFile(file, "utf8"));
+   const legacy = migrateStoredPreferences(stored);
+   const candidatePreferences = { ...defaultPreferences, collection, ...legacy };
+   if (legacy.audioSourcesVersion !== 2) {
+      candidatePreferences.audioSources = migrateAudioSources(candidatePreferences, (legacy.audioSources as AdditionalAudioSource[]) ?? []);
+      candidatePreferences.audioSourcesVersion = 2;
+   }
+   const parsed = repair ? repairPreferences(candidatePreferences, collection) : preferencesSchema.parse(candidatePreferences);
+   const migrated =
+      typeof stored === "object" && stored && !("recordingPresetVersion" in stored) && parsed.quality !== "custom"
+         ? applyRecordingPreset(parsed, parsed.quality)
+         : parsed;
+   if (typeof stored === "object" && stored && !("resolutionLimit" in stored)) {
+      // Retain legacy dimensions as stored metadata. The new screen limit
+      // maps intentional custom geometry to its shorter edge; apps stay original.
+      migrated.resolutionLimit =
+         migrated.quality === "custom"
+            ? Math.min(migrated.customWidth, migrated.customHeight)
+            : migrated.quality === "low"
+              ? 720
+              : migrated.quality === "high"
+                ? 1440
+                : 1080;
+   }
+   // High once used CQ 18. Presets own their values, so only Custom keeps an edited CQ.
+   if (migrated.quality === "high" && migrated.customCQ === 18) migrated.customCQ = 20;
+   return migrated;
 }
 export async function writePreferences(path: string, value: Preferences): Promise<void> {
    const parsed = preferencesSchema.parse(value);

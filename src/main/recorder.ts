@@ -259,6 +259,10 @@ export class Recorder {
       else void this.catalog.refresh();
       return this.catalog.list();
    }
+   /** Discord's application and icon for a recognized game, from the catalog as loaded so far. */
+   gameIcon(applicationId: string): { id: string; icon: string } | undefined {
+      return this.catalog.icon(applicationId);
+   }
    async games(additions: CustomGame[] = []): Promise<GameCandidate[]> {
       if (!this.current.supported) return [];
       await this.catalog.load();

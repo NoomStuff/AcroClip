@@ -39,7 +39,7 @@ it("downloads the catalogue for the Games page even when no game was ever detect
 it("shows a recent saved catalogue without waiting on the network", async () => {
    const fetch = vi.spyOn(globalThis, "fetch");
    const { instance, file } = await recorder();
-   await writeFile(file, JSON.stringify({ updated: Date.now(), entries: downloaded }));
+   await writeFile(file, JSON.stringify({ format: 2, updated: Date.now(), entries: downloaded }));
    expect((await instance.gameCatalog()).source).toBe("saved");
    expect(fetch).not.toHaveBeenCalled();
 });
