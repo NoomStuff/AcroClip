@@ -381,6 +381,30 @@ describe("collection folder operations", () => {
          await rm(root, { recursive: true, force: true });
       }
    });
+   it("applies a new tag to the clip it was created from in the same change", async () => {
+      const root = await temporaryDirectory("acroclip-tag-create-");
+      try {
+         await writeFile(join(root, "Moment.mp4"), "video");
+         const onChange = vi.fn();
+         const collection = new CollectionService({ onChange });
+         await collection.open(root);
+         await collection.thumbnailsSettled();
+         const clip = collection.clips[0]!.id;
+         onChange.mockClear();
+         const id = await collection.createCategory("Clutch", "#ed9579", "crosshair", clip);
+         expect(onChange).toHaveBeenCalledTimes(1);
+         expect(collection.clips[0]!.categories).toEqual([id]);
+         const reopened = new CollectionService();
+         await reopened.open(root);
+         expect(reopened.clips[0]!.categories).toEqual([id]);
+         // A clip that left the collection while the editor was open still lets the tag exist.
+         await collection.createCategory("Orphan", "#77b9ef", "tag", "gone");
+         expect(collection.categories.map((category) => category.name)).toEqual(["Clutch", "Orphan"]);
+         expect(collection.clips[0]!.categories).toEqual([id]);
+      } finally {
+         await rm(root, { recursive: true, force: true });
+      }
+   });
    it("publishes tag changes without rescanning files, including tags no clip carries", async () => {
       const root = await temporaryDirectory("acroclip-tags-");
       try {

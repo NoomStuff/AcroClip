@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useKeyframeScrub } from "./useKeyframeScrub";
 import { useThumbnailImage } from "./useThumbnailImage";
 import type { CSSProperties } from "react";
-import { Clapperboard, LoaderCircle, MoreHorizontal, Play, Share2, X } from "lucide-react";
+import { Clapperboard, Eye, LoaderCircle, MoreHorizontal, Play, Share2, X } from "lucide-react";
 import type { Category, Clip, Job } from "../../shared/types";
 import { shareableTargetAllowed } from "../../shared/shareable-target";
 import { api, fileDragProps } from "./desktop";
@@ -12,6 +12,8 @@ import { formatSize, formatTime } from "./format";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { IconButton, Menu, MenuItem } from "./ui";
 import { ClipActions } from "./ClipActions";
+import { CategoryMark } from "./CategoryEditor";
+import { TagArrival, useNewTags } from "./tag-arrival";
 import { defaultClipFile } from "./clip-files";
 import type { ContextMenuRequest } from "./ui";
 
@@ -65,6 +67,7 @@ export const ClipCard = memo(function ClipCard({
    trimClip,
    categories,
    createTag,
+   watchedAt,
    moveClip,
    run,
    ask,
@@ -84,25 +87,35 @@ export const ClipCard = memo(function ClipCard({
    openClip: (clip: Clip) => void;
    trimClip: (clip: Clip) => void;
    categories: Category[];
-   createTag: () => void;
+   /** Opens the tag editor, which applies the new tag to this clip. */
+   createTag: (clipId: string) => void;
+   /** Set on the clip just left in the player: how far into it playback was, from 0 to 1. */
+   watchedAt: number | undefined;
    moveClip: (id: string) => void;
    run: Run;
    ask: Ask;
 }) {
    const shareable = clip.shareables.at(-1);
+   // In sidebar order, so a clip's tags always line up the same way.
+   const tags = categories.filter((category) => clip.categories.includes(category.id));
+   const tagNames = tags.map((category) => category.name).join(", ");
+   const newTags = useNewTags(tags.map((category) => category.id));
    // Dragging out shares the same file Copy file would.
    const dragPath = defaultClipFile(clip)?.path;
-   const scrub = useKeyframeScrub(clip, clip.duration > 0 && !clip.originalMissing && !job);
+   // The clip just left in the player rests on the frame it was left at, with that time in its length label.
+   const rest = watchedAt ?? null;
+   const scrub = useKeyframeScrub(clip, clip.duration > 0 && !clip.originalMissing && !job, { eager: rest !== null });
    const thumbnail = useThumbnailImage(clip.thumbnail);
    const card = useRef<HTMLElement>(null);
    const scrubbing = scrub.position !== null;
    const { setPosition } = scrub;
+   useEffect(() => setPosition(rest), [rest, setPosition]);
    useEffect(() => {
       if (!scrubbing) return;
       // Pointer leave misses a card that scrolls out from under a still pointer, a drag taking over,
       // the window losing focus and a click through to the player. Each would leave the scrub and
       // its timecode open, so any of them ends it.
-      const stop = () => setPosition(null);
+      const stop = () => setPosition(rest);
       const moved = (event: PointerEvent) => {
          if (!(event.target instanceof Node && card.current?.contains(event.target))) stop();
       };
@@ -118,7 +131,7 @@ export const ClipCard = memo(function ClipCard({
          window.removeEventListener("blur", stop);
          document.removeEventListener("visibilitychange", stop);
       };
-   }, [scrubbing, setPosition]);
+   }, [scrubbing, setPosition, rest]);
    return (
       <article
          ref={card}
@@ -132,9 +145,9 @@ export const ClipCard = memo(function ClipCard({
             if (event.pointerType !== "mouse" || event.buttons || !frame) return;
             const row = !!event.currentTarget.closest('.clip-grid[data-view="list"]');
             const inside = event.clientY >= frame.top && event.clientY <= frame.bottom && event.clientX >= frame.left && event.clientX <= frame.right;
-            scrub.setPosition(!row || inside ? Math.min(1, Math.max(0, (event.clientX - frame.left) / frame.width)) : null);
+            scrub.setPosition(!row || inside ? Math.min(1, Math.max(0, (event.clientX - frame.left) / frame.width)) : rest);
          }}
-         onPointerLeave={() => scrub.setPosition(null)}
+         onPointerLeave={() => scrub.setPosition(rest)}
          onContextMenu={(event) => {
             event.preventDefault();
             requestMenu(clip.id, event.currentTarget, event.clientX, event.clientY);
@@ -151,7 +164,7 @@ export const ClipCard = memo(function ClipCard({
             className="clip-open"
             {...fileDragProps(dragPath, !clip.originalMissing && !job ? { id: clip.id, collection: collectionRoot } : undefined)}
             onClick={() => {
-               setPosition(null);
+               setPosition(rest);
                openClip(clip);
             }}
             aria-label={`Open ${clip.name}`}
@@ -174,8 +187,23 @@ export const ClipCard = memo(function ClipCard({
                      className={clip.height > clip.width ? "portrait-thumbnail" : undefined}
                   />
                )}
+               {rest !== null && (
+                  <span className="watched-overlay">
+                     <Eye size={26} aria-hidden="true" />
+                     <span>Just watched</span>
+                  </span>
+               )}
                {clip.duration > 0 && (
-                  <Duration duration={clip.duration} position={scrub.frame === null ? null : (scrub.frame * clip.duration) / scrub.frames} />
+                  <Duration
+                     duration={clip.duration}
+                     position={
+                        rest !== null && scrub.position === rest
+                           ? rest * clip.duration
+                           : scrub.frame === null
+                             ? null
+                             : (scrub.frame * clip.duration) / scrub.frames
+                     }
+                  />
                )}
                {shareable && (
                   <span className="copy-indicator" data-tooltip={`${clip.shareables.length} shareable${clip.shareables.length === 1 ? "" : "s"}`}>
@@ -213,6 +241,15 @@ export const ClipCard = memo(function ClipCard({
                         <span className="clip-grid-size">
                            <span aria-hidden="true">&middot;</span> {formatSize(clip.originalMissing ? (shareable?.size ?? clip.size) : clip.size)}
                         </span>
+                        {tags.length > 0 && (
+                           <span className="clip-tags" data-tooltip={tagNames} aria-label={`Tags: ${tagNames}`}>
+                              {tags.map((category) => (
+                                 <TagArrival key={category.id} className="clip-tag" fresh={newTags.has(category.id)}>
+                                    <CategoryMark category={category} size={13} />
+                                 </TagArrival>
+                              ))}
+                           </span>
+                        )}
                      </>
                   )}
                </p>
@@ -237,7 +274,7 @@ export const ClipCard = memo(function ClipCard({
                   Open clip
                </MenuItem>
                <ClipActions
-                  createTag={createTag}
+                  createTag={() => createTag(clip.id)}
                   clip={clip}
                   categories={categories}
                   busy={!!job}

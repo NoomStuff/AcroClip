@@ -659,7 +659,10 @@ label:active > .checkbox {
    color: var(--accent);
 }
 .menu button[aria-checked="true"] {
-   color: var(--accent);
+   color: var(--category-color, var(--accent));
+}
+.menu button[aria-checked="true"] > .menu-item-check {
+   color: inherit;
 }
 /* Checks pop in on the chosen item, in dropdowns and menus alike. */
 .menu-item-check,

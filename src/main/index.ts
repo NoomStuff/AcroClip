@@ -1739,9 +1739,12 @@ function registerIPC() {
       };
       switch (z.enum(["create", "update", "delete", "assign", "toggle"]).parse(operation)) {
          case "create": {
-            const created = await collections.createCategory(request.name ?? "New tag", request.color ?? "#b197fc", request.icon ?? "tag");
+            const clipId = request.clipId === undefined ? undefined : idSchema.parse(request.clipId);
+            const before = clipId === undefined ? undefined : tagsOf(clipId);
+            await collections.createCategory(request.name ?? "New tag", request.color ?? "#b197fc", request.icon ?? "tag", clipId);
             action("tag-create");
-            return created;
+            if (clipId !== undefined && before) recordTags(clipId, before);
+            return;
          }
          case "update":
             return collections.updateCategory(idSchema.parse(request.id), request.name ?? "", request.color ?? "#b197fc", request.icon ?? "tag");

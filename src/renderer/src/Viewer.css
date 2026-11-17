@@ -45,6 +45,23 @@
    color: var(--category-color);
    font-size: 11px;
 }
+/* A new tag grows its own room, so the tags after it slide aside instead of jumping. */
+.viewer-category[data-arriving] {
+   overflow: hidden;
+   animation: viewer-category-arrive 440ms var(--spring) both;
+}
+@keyframes viewer-category-arrive {
+   from {
+      max-width: 0;
+      padding-inline: 0;
+      margin-right: -5px;
+      opacity: 0;
+      scale: 0.6;
+   }
+   50% {
+      opacity: 1;
+   }
+}
 .viewer-category > span:last-child {
    overflow: hidden;
    text-overflow: ellipsis;
@@ -918,6 +935,12 @@
 }
 @media (prefers-reduced-motion: reduce) {
    .confirm-icon[data-bounce] {
+      animation: none;
+   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+   .viewer-category[data-arriving] {
       animation: none;
    }
 }

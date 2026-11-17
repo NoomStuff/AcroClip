@@ -1,4 +1,5 @@
-import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { JustWatched } from "./Library";
 import { Clapperboard, LibraryBig, Play, Minus, Settings as Gear, Square, Video, X } from "lucide-react";
 import { PageBoundary } from "./PageBoundary";
 import { AppLogo } from "./AppLogo";
@@ -84,6 +85,17 @@ export function App() {
       return () => cancelIdleCallback(idle);
    }, [loaded]);
    const [selected, setSelected] = useState<string | null>(null);
+   // The clip the player was showing when it was left for the library. Any later page change forgets it.
+   const [justWatched, setJustWatched] = useState<JustWatched | null>(null);
+   const currentPage = useRef(page);
+   useLayoutEffect(() => {
+      currentPage.current = page;
+   }, [page]);
+   useEffect(() => {
+      if (page !== "library") setJustWatched(null);
+   }, [page]);
+   // The player reports in its effects, which run before this component's, so the page is already the new one.
+   const leftViewer = useCallback((watched: JustWatched) => setJustWatched(currentPage.current === "library" ? watched : null), []);
    const pendingLibraryAction = useRef<string | null>(null);
    useEffect(() => {
       if (page !== "library" || !pendingLibraryAction.current) return;
@@ -356,6 +368,7 @@ export function App() {
                                  run={run}
                                  ask={ask}
                                  openClip={openClip}
+                                 justWatched={justWatched}
                                  openSettings={openCollectionSettings}
                                  openGames={openGames}
                               />
@@ -378,6 +391,7 @@ export function App() {
                                  run={run}
                                  trimRequest={trimRequest}
                                  showClip={showClip}
+                                 left={leftViewer}
                               />
                            </Suspense>
                         </PageBoundary>

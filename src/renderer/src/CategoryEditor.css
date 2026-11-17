@@ -67,7 +67,7 @@
    display: grid;
    grid-template-columns: repeat(6, minmax(0, 1fr));
    width: min(280px, calc(100vw - 24px));
-   max-height: 260px;
+   max-height: 320px;
    overflow-y: auto;
    gap: 4px;
    z-index: 1000;

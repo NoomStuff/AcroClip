@@ -129,7 +129,9 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await expect(categories).toBeVisible();
       await expect(categories.getByRole("separator")).toHaveCount(1);
       await expect(categories.getByRole("menuitem", { name: "Create tag", exact: true })).toBeVisible();
-      await categories.getByRole("menuitemcheckbox", { name: "Best moments", exact: true }).click();
+      // Created from this clip's menu, so it's already on the clip.
+      await expect(categories.getByRole("menuitemcheckbox", { name: "Best moments", exact: true })).toBeChecked();
+      await expect(categories.getByRole("menuitemcheckbox", { name: "Funny", exact: true })).not.toBeChecked();
       await categories.getByRole("menuitemcheckbox", { name: "Funny", exact: true }).click();
       await expect(categories.getByRole("menuitemcheckbox", { name: "Best moments", exact: true })).toBeChecked();
       await expect(categories.getByRole("menuitemcheckbox", { name: "Funny", exact: true })).toBeChecked();

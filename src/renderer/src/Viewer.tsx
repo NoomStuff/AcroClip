@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Check, ChevronDown, Copy, CopyPlus, Film, FolderOpen, LoaderCircle, MoreHorizontal, Save, Scissors, Share2, X } from "lucide-react";
 import { dailyLine, emptyTitles } from "./empty-flavor";
 import type { ReactNode, RefObject } from "react";
-import type { AppState, Clip } from "../../shared/types";
+import type { AppState, Category, Clip } from "../../shared/types";
 import { api, describeError, fileDragProps, reportFeedback } from "./desktop";
 import { clipFiles, copiedMessage } from "./clip-files";
 import { Button, Empty, HeaderActions, IconButton, Menu, NumberInput, Segmented, Select } from "./ui";
@@ -21,6 +21,8 @@ import { useAttaCutAvailable } from "./useAttaCutAvailable";
 import { ClipActions } from "./ClipActions";
 import { CategoryEditor, CategoryMark } from "./CategoryEditor";
 import { categoryStyle } from "./category-color";
+import { TagArrival, useNewTags } from "./tag-arrival";
+import type { JustWatched } from "./Library";
 import { usePlaybackFade } from "./usePlaybackFade";
 import { mediaAudioTracks, nativeAudioTracks, selectAudioTracks } from "./audio-tracks";
 import { restartThreshold } from "./play-queue";
@@ -51,6 +53,7 @@ export function Viewer({
    ask,
    trimRequest,
    showClip,
+   left,
 }: {
    state: Pick<AppState, "applicationIcons" | "jobs" | "preferences" | "categories">;
    clip: Clip | undefined;
@@ -64,6 +67,8 @@ export function Viewer({
    trimRequest: { clipId: string; at: number } | null;
    // Shows another clip in the player, such as a trimmed copy just saved.
    showClip: (id: string) => void;
+   // Told which clip was showing, and how far into it, whenever the player stops showing it.
+   left: (watched: JustWatched) => void;
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const sidebar = usePaneSize(layout, { key: "viewer.sidebar", initial: 300, min: 230, max: 420, reserve: 440, axis: "x" });
@@ -78,7 +83,8 @@ export function Viewer({
    useDirectionalContent(versionActions, version, version === "original" ? 0 : 1, visible, clip?.id ?? "");
    const [shareId, setShareId] = useState("");
    const [url, setUrl] = useState("");
-   const [creatingTag, setCreatingTag] = useState(false);
+   // The clip that asked for a new tag, which gets it once it exists.
+   const [creatingTagFor, setCreatingTagFor] = useState<string | null>(null);
    const [urlOwner, setUrlOwner] = useState("");
    const [urlGeneration, setUrlGeneration] = useState(0);
    const [loading, setLoading] = useState(false);
@@ -187,6 +193,15 @@ export function Viewer({
          finish();
       };
    }, [visible, watchedClip, watchedDuration]);
+   // Read when the player is left, since the video element can mount after this clip starts showing.
+   const playedFraction = useCallback(() => {
+      const media = video.current;
+      return media && media.duration > 0 ? Math.min(1, media.currentTime / media.duration) : 0;
+   }, []);
+   useEffect(() => {
+      if (!visible || !watchedClip) return;
+      return () => left({ clipId: watchedClip, position: playedFraction() });
+   }, [visible, watchedClip, left, playedFraction]);
    const shareable = clip?.shareables.find((item) => item.id === shareId) ?? clip?.shareables.at(-1);
    const path = version === "shareable" ? shareable?.path : clip?.path;
    // Files the player failed to decode, and files whose audio tracks it can't toggle. Both
@@ -630,7 +645,7 @@ export function Viewer({
                         onContextClose={() => setContextMenu(null)}
                      >
                         <ClipActions
-                           createTag={() => setCreatingTag(true)}
+                           createTag={() => setCreatingTagFor(clip.id)}
                            clip={clip}
                            categories={state.categories}
                            busy={!!job || !!trimJob}
@@ -735,18 +750,8 @@ export function Viewer({
                            <p className="muted">No shareables.</p>
                         )}
                      </div>
-                     {clip.categories.length > 0 && (
-                        <div className="viewer-categories" aria-label="Tags">
-                           {state.categories
-                              .filter((category) => clip.categories.includes(category.id))
-                              .map((category) => (
-                                 <span key={category.id} className="viewer-category" style={categoryStyle(category.color)}>
-                                    <CategoryMark category={category} size={13} />
-                                    <span>{category.name}</span>
-                                 </span>
-                              ))}
-                        </div>
-                     )}
+                     {/* Keyed by clip, so switching clips shows their tags in place instead of popping them in. */}
+                     <ViewerTags key={clip.id} tags={state.categories.filter((category) => clip.categories.includes(category.id))} />
                   </div>
                </section>
             </div>
@@ -988,7 +993,7 @@ export function Viewer({
                trim={trim ? { range: trim, frameRate: clip.frameRate, disabled: !!trimJob, onRange: changeTrimRange } : undefined}
             />
          </div>
-         {creatingTag && <CategoryEditor close={() => setCreatingTag(false)} run={run} />}
+         {creatingTagFor !== null && <CategoryEditor clipId={creatingTagFor} close={() => setCreatingTagFor(null)} run={run} />}
       </div>
    );
 }
@@ -1232,5 +1237,21 @@ function ConfirmButton({ label, icon, disabled, action }: { label: string; icon:
             {phase === "done" ? <Check size={16} /> : phase === "working" ? <LoaderCircle size={16} className="spin" /> : icon}
          </span>
       </Button>
+   );
+}
+
+/** The clip's tags in the sidebar. A tag added while the clip is showing pops in. */
+function ViewerTags({ tags }: { tags: Category[] }) {
+   const fresh = useNewTags(tags.map((category) => category.id));
+   if (!tags.length) return null;
+   return (
+      <div className="viewer-categories" aria-label="Tags">
+         {tags.map((category) => (
+            <TagArrival key={category.id} className="viewer-category" style={categoryStyle(category.color)} fresh={fresh.has(category.id)}>
+               <CategoryMark category={category} size={13} />
+               <span>{category.name}</span>
+            </TagArrival>
+         ))}
+      </div>
    );
 }

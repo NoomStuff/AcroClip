@@ -5,6 +5,7 @@ import type { Ask } from "./Dialog";
 import type { Run } from "./desktop";
 import { api, reportFeedback } from "./desktop";
 import { CategoryMark } from "./CategoryEditor";
+import { categoryStyle } from "./category-color";
 import { MenuCheckboxItem, MenuItem, MenuSubmenu } from "./ui";
 import { clipFileLabel, clipFiles, copiedMessage } from "./clip-files";
 import type { ClipFile } from "./clip-files";
@@ -83,6 +84,7 @@ export function ClipActions({
             {categories.map((category) => (
                <MenuCheckboxItem
                   key={category.id}
+                  style={categoryStyle(category.color)}
                   checked={clip.categories.includes(category.id)}
                   onClick={() => void run(() => api.category("toggle", { clipId: clip.id, id: category.id }))}
                >

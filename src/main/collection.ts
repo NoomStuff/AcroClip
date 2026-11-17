@@ -1540,16 +1540,30 @@ export class CollectionService {
       await this.thumbnailNow(clip.id);
       return this.visible(clip.id);
    }
-   async createCategory(name: string, color = "#b197fc", icon = "tag"): Promise<void> {
+   /** Creates a tag. With `clipId`, the same metadata write also applies it to that clip. */
+   async createCategory(name: string, color = "#b197fc", icon = "tag", clipId?: string): Promise<string> {
       if (!this.metadataWritable) throw new Error("Changing tags is locked while collection info is damaged.");
       const cleaned = name.trim();
       if (!cleaned || cleaned.length > 80) throw new Error("Choose a tag name between 1 and 80 characters.");
       if (icon.length > 80) throw new Error("Choose a valid tag icon.");
       if (!/^#[\da-f]{6}$/i.test(color)) throw new Error("Choose a valid tag color.");
       if (this.categories.some((category) => category.name.toLowerCase() === cleaned.toLowerCase())) throw new Error("A tag with that name already exists.");
-      this.metadata.categories.push({ id: randomUUID(), name: cleaned, color, icon });
+      // A clip removed while the editor was open doesn't block creating the tag.
+      const stored = clipId === undefined ? undefined : this.metadata.clips.find((entry) => entry.id === clipId);
+      const id = randomUUID();
+      this.metadata.categories.push({ id, name: cleaned, color, icon });
+      if (stored) {
+         stored.categories = [...stored.categories, id];
+         stored.editedAt ??= Date.now();
+      }
       await this.writeMetadata();
-      this.notify();
+      if (stored)
+         this.retag(
+            (clip) => clip.id === stored.id,
+            () => [...stored.categories]
+         );
+      else this.notify();
+      return id;
    }
    async updateCategory(id: string, name: string, color: string, icon: string): Promise<void> {
       if (!this.metadataWritable) throw new Error("Changing tags is locked while collection info is damaged.");

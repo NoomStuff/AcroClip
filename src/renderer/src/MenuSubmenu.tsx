@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMenuHighlight } from "./MenuHighlight";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import { insidePolygon, submenuAimArea, submenuPosition } from "./menu-position";
 
@@ -254,10 +254,12 @@ export function MenuSubmenu({
       </div>
    );
 }
-export function MenuCheckboxItem({ checked, onClick, children }: { checked: boolean; onClick: () => void; children: ReactNode }) {
+/** A `--category-color` in `style` colors the item and its check while checked. */
+export function MenuCheckboxItem({ checked, onClick, style, children }: { checked: boolean; onClick: () => void; style?: CSSProperties; children: ReactNode }) {
    return (
       <button
          role="menuitemcheckbox"
+         style={style}
          aria-checked={checked}
          tabIndex={-1}
          onClick={(event) => {

@@ -1,44 +1,68 @@
 import { useState } from "react";
 import {
-   Tag,
-   Gamepad2,
-   Star,
-   Heart,
-   Trophy,
+   Bomb,
    Bookmark,
-   Film,
-   Music,
+   Bug,
    Camera,
-   Coffee,
+   Car,
    Cat,
+   ChevronDown,
+   Clapperboard,
+   Coffee,
+   Crosshair,
+   Crown,
    Dog,
+   Eye,
+   Film,
    Flag,
    Flame,
    Flower,
    Folder,
+   Frown,
+   Gamepad2,
+   Ghost,
    Gift,
    Globe,
    Headphones,
+   Heart,
    Home,
+   Joystick,
+   Laugh,
    Lightbulb,
+   Medal,
+   Mic,
+   Mountain,
+   Music,
+   PartyPopper,
+   Pin,
+   Pipette,
+   Puzzle,
    Rocket,
+   Send,
    Shield,
+   Skull,
    Smile,
    Sparkles,
+   Star,
    Sun,
+   Swords,
+   Tag,
    Target,
+   Timer,
+   Trophy,
    Users,
    Video,
+   WandSparkles,
    Zap,
-   ChevronDown,
-   Pipette,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { Category } from "../../shared/types";
 import { Button, Menu } from "./ui";
 import { DialogPanel } from "./Dialog";
 import { api } from "./desktop";
 import type { Run } from "./desktop";
 import { categoryColors } from "./category-color";
+// The picker's icons in order. The first row is always shown; the popup holds all of them.
 const icons = {
    tag: Tag,
    game: Gamepad2,
@@ -46,31 +70,57 @@ const icons = {
    heart: Heart,
    trophy: Trophy,
    bookmark: Bookmark,
+   crosshair: Crosshair,
+   laugh: Laugh,
+   skull: Skull,
+   crown: Crown,
+   swords: Swords,
+   flame: Flame,
+   ghost: Ghost,
+   zap: Zap,
+   sparkles: Sparkles,
+   smile: Smile,
+   frown: Frown,
+   party: PartyPopper,
+   users: Users,
+   mic: Mic,
+   headphones: Headphones,
+   send: Send,
+   clapperboard: Clapperboard,
    film: Film,
-   music: Music,
    camera: Camera,
+   music: Music,
+   video: Video,
+   flag: Flag,
+   pin: Pin,
+   timer: Timer,
+   target: Target,
+   medal: Medal,
+   bomb: Bomb,
+   shield: Shield,
+   bug: Bug,
+   eye: Eye,
+   rocket: Rocket,
+   car: Car,
+   wand: WandSparkles,
+   puzzle: Puzzle,
+   joystick: Joystick,
+   mountain: Mountain,
+};
+// Icon ids are stored in collection metadata. Ones the picker no longer offers keep rendering.
+const retiredIcons = {
    coffee: Coffee,
    cat: Cat,
    dog: Dog,
-   flag: Flag,
-   flame: Flame,
    flower: Flower,
    folder: Folder,
    gift: Gift,
    globe: Globe,
-   headphones: Headphones,
    home: Home,
    idea: Lightbulb,
-   rocket: Rocket,
-   shield: Shield,
-   smile: Smile,
-   sparkles: Sparkles,
    sun: Sun,
-   target: Target,
-   users: Users,
-   video: Video,
-   zap: Zap,
 };
+const markIcons = new Map<string, LucideIcon>(Object.entries({ ...retiredIcons, ...icons }));
 const colorNames: Record<string, string> = {
    "#b197fc": "Lavender",
    "#77b9ef": "Blue",
@@ -81,17 +131,34 @@ const colorNames: Record<string, string> = {
 };
 const colors = ["#b197fc", "#77b9ef", "#73c6a1", "#e3bd68", "#ed9579", "#db8eb9"];
 export function CategoryMark({ category, size = 16 }: { category: Pick<Category, "color" | "icon">; size?: number }) {
-   const Icon = icons[category.icon as keyof typeof icons] ?? Tag;
+   const Icon = markIcons.get(category.icon ?? "") ?? Tag;
    return <Icon size={size} style={{ color: `var(--category-ink, ${categoryColors(category.color).ink})` }} aria-hidden="true" />;
 }
-export function CategoryEditor({ category, close, run }: { category?: Category | undefined; close: () => void; run: Run }) {
+export function CategoryEditor({
+   category,
+   clipId,
+   close,
+   run,
+}: {
+   category?: Category | undefined;
+   /** The clip a new tag was started from. It gets the tag as part of creating it. */
+   clipId?: string | undefined;
+   close: () => void;
+   run: Run;
+}) {
    const [name, setName] = useState(category?.name ?? ""),
       [color, setColor] = useState(category?.color ?? "#b197fc"),
       [icon, setIcon] = useState(category?.icon ?? "tag"),
       [busy, setBusy] = useState(false);
    const save = async () => {
       setBusy(true);
-      if (await run(() => api.category(category ? "update" : "create", { ...(category ? { id: category.id } : {}), name: name.trim(), color, icon }))) close();
+      const request = { name: name.trim(), color, icon };
+      if (
+         await run(() =>
+            category ? api.category("update", { id: category.id, ...request }) : api.category("create", { ...request, ...(clipId ? { clipId } : {}) })
+         )
+      )
+         close();
       setBusy(false);
    };
    return (

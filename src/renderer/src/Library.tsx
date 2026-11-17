@@ -103,12 +103,19 @@ function saveHint(binding: string, clipSeconds: number, mac: boolean): string {
       : `Use Save clip on the Capture page to keep up to the last ${length}.`;
 }
 
+/** The clip just left in the player, and how far into it playback was, from 0 to 1. */
+export interface JustWatched {
+   clipId: string;
+   position: number;
+}
+
 export function Library({
    state,
    visible = true,
    run,
    ask,
    openClip,
+   justWatched,
    openSettings,
    openGames,
 }: {
@@ -117,6 +124,7 @@ export function Library({
    run: Run;
    ask: Ask;
    openClip: (clip: Clip, queue?: PlayQueue, options?: { trim: true }) => void;
+   justWatched: JustWatched | null;
    openSettings: () => void;
    openGames: () => void;
 }) {
@@ -544,6 +552,7 @@ export function Library({
          openClip={openFromView}
          trimClip={trimFromView}
          categories={state.categories}
+         watchedAt={justWatched?.clipId === clip.id ? justWatched.position : undefined}
          moveClip={moveClip}
          run={run}
          ask={ask}
@@ -559,10 +568,16 @@ export function Library({
    useLayoutEffect(() => {
       playQueue.current = { ids: shownClips.map((clip) => clip.id), label: viewLabel };
    }, [shownClips, viewLabel]);
-   const [editingCategory, setEditingCategory] = useState<Category | "new" | null>(null);
-   const createCategory = useCallback(() => {
+   // The player may have moved on through the queue, so bring the clip it ended on into view.
+   useLayoutEffect(() => {
+      if (!visible || !justWatched) return;
+      scrollArea.current?.querySelector(`[data-layout-key="${CSS.escape(justWatched.clipId)}"]`)?.scrollIntoView({ block: "nearest" });
+   }, [visible, justWatched]);
+   // A new tag remembers the clip it was started from, if any, and lands on it.
+   const [editingCategory, setEditingCategory] = useState<Category | { clipId: string | undefined } | null>(null);
+   const createCategory = useCallback((clipId?: string) => {
       setCollapsedSections((current) => current.filter((id) => id !== "tags"));
-      setEditingCategory("new");
+      setEditingCategory({ clipId });
    }, []);
    const removeCategory = async (id: string, name: string) => {
       if (
@@ -593,7 +608,7 @@ export function Library({
       const command = (event: Event) => {
          const id = (event as CustomEvent<string>).detail;
          if (id === "search") searchInput.current?.focus();
-         else if (id === "newCategory") setEditingCategory("new");
+         else if (id === "newCategory") setEditingCategory({ clipId: undefined });
          else if (id === "newFolder") void createFolder(folderPath ?? "");
          else if (id === "newFolderRoot") void createFolder("");
          else if (id === "openClip" && shownClips[0]) openFromView(shownClips[0]);
@@ -1034,7 +1049,11 @@ export function Library({
             />
          )}
          {editingCategory && (
-            <CategoryEditor category={editingCategory === "new" ? undefined : editingCategory} close={() => setEditingCategory(null)} run={run} />
+            <CategoryEditor
+               {...("id" in editingCategory ? { category: editingCategory } : { clipId: editingCategory.clipId })}
+               close={() => setEditingCategory(null)}
+               run={run}
+            />
          )}
       </div>
    );
