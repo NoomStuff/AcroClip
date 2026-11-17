@@ -3,54 +3,51 @@ import { createServer, type Server, type Socket } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ACROCLIP_SITE, DiscordPresence, FrameReader, Op, discordGameIcon, discordIpcPaths, encodeFrame, presenceActivity } from "./discord-presence";
+import { DiscordPresence, FrameReader, Op, discordGameIcon, discordIpcPaths, encodeFrame, presenceActivity } from "./discord-presence";
 import type { DiscordActivity } from "./discord-presence";
 
 const valorantGame = { name: "Valorant", icon: "https://cdn.discordapp.com/app-icons/1/a.png?size=512" };
 
 describe("presenceActivity", () => {
-   it("shows the captured game as itself, with AcroClip as a badge", () => {
-      expect(presenceActivity({ mode: "recording", capturing: true, game: valorantGame, since: 1000 })).toEqual({
+   it("shows the captured game as itself, with AcroClip as a badge, at the minimal level", () => {
+      expect(presenceActivity({ level: "minimal", capturing: true, game: valorantGame, since: 1000 })).toEqual({
          type: 0,
          name: "Valorant",
          status_display_type: 0,
          details: "Clipping with AcroClip",
          timestamps: { start: 1000 },
          assets: { large_image: valorantGame.icon, large_text: "Valorant", small_image: "logo", small_text: "AcroClip" },
-         buttons: [{ label: "Get AcroClip", url: ACROCLIP_SITE }],
+         buttons: [{ label: "Get AcroClip", url: "https://acroclip.noomstuff.com/drpc" }],
          instance: false,
       });
    });
+   it("names AcroClip in the status itself at the full level", () => {
+      const activity = presenceActivity({ level: "full", capturing: true, game: valorantGame, since: 1000 });
+      expect(activity).toMatchObject({ name: "Valorant with AcroClip", assets: { large_text: "Valorant", small_image: "logo" } });
+      expect(activity).not.toHaveProperty("details");
+   });
    it("uses AcroClip's logo for a game without a catalog icon", () => {
-      expect(presenceActivity({ mode: "recording", capturing: true, game: { name: "My game" }, since: 1 })).toMatchObject({
+      expect(presenceActivity({ level: "minimal", capturing: true, game: { name: "My game" }, since: 1 })).toMatchObject({
          name: "My game",
          assets: { large_image: "logo", large_text: "AcroClip" },
       });
    });
-   it("leaves the status alone while recording mode has no game to name", () => {
-      expect(presenceActivity({ mode: "recording", capturing: true, game: undefined, since: 1000 })).toBeNull();
-      expect(presenceActivity({ mode: "recording", capturing: false, game: valorantGame, since: undefined })).toBeNull();
+   it("leaves the status alone without a game being captured", () => {
+      for (const level of ["minimal", "full"] as const) {
+         expect(presenceActivity({ level, capturing: true, game: undefined, since: 1000 })).toBeNull();
+         expect(presenceActivity({ level, capturing: false, game: valorantGame, since: undefined })).toBeNull();
+      }
    });
-   it("never shows anything when turned off", () => {
-      expect(presenceActivity({ mode: "never", capturing: true, game: valorantGame, since: 1000 })).toBeNull();
+   it("never shows anything when off", () => {
+      expect(presenceActivity({ level: "off", capturing: true, game: valorantGame, since: 1000 })).toBeNull();
    });
-   it("always shows AcroClip, capturing or not", () => {
-      expect(presenceActivity({ mode: "always", capturing: false, game: undefined, since: undefined })).toEqual({
-         type: 0,
-         status_display_type: 0,
-         assets: { large_image: "logo", large_text: "AcroClip" },
-         buttons: [{ label: "Get AcroClip", url: ACROCLIP_SITE }],
-         instance: false,
-      });
-      const desktop = presenceActivity({ mode: "always", capturing: true, game: undefined, since: 5 });
-      expect(desktop).toMatchObject({ details: "Capturing", timestamps: { start: 5 } });
-      expect(desktop).not.toHaveProperty("name");
-      expect(presenceActivity({ mode: "always", capturing: true, game: { name: "Celeste" }, since: 5 })).toMatchObject({ name: "Celeste" });
-   });
-   it("keeps game names inside Discord's 2 to 128 characters", () => {
-      expect(presenceActivity({ mode: "recording", capturing: true, game: { name: " X " }, since: 1 })).toBeNull();
-      const long = presenceActivity({ mode: "recording", capturing: true, game: { name: "a".repeat(200) }, since: 1 });
-      expect(long?.name).toHaveLength(128);
+   it("keeps names inside Discord's 2 to 128 characters", () => {
+      expect(presenceActivity({ level: "minimal", capturing: true, game: { name: " X " }, since: 1 })).toBeNull();
+      const long = { name: "a".repeat(200) };
+      expect(presenceActivity({ level: "minimal", capturing: true, game: long, since: 1 })?.name).toHaveLength(128);
+      const full = presenceActivity({ level: "full", capturing: true, game: long, since: 1 })?.name;
+      expect(full).toHaveLength(128);
+      expect(full).toMatch(/… with AcroClip$/);
    });
    it("points at Discord's copy of a catalog game's icon", () => {
       expect(discordGameIcon("356942674672091136", "67f35d9429ee338d6f2824163c1b773d")).toBe(
@@ -162,8 +159,8 @@ async function until(check: () => boolean, ms = 2000): Promise<void> {
 }
 const activities = (fake: FakeDiscord) =>
    fake.frames.filter((frame) => frame.op === Op.Frame).map((frame) => (frame.payload["args"] as { activity: DiscordActivity | null }).activity);
-const valorant = presenceActivity({ mode: "recording", capturing: true, game: valorantGame, since: 1 })!;
-const celeste = presenceActivity({ mode: "recording", capturing: true, game: { name: "Celeste" }, since: 2 })!;
+const valorant = presenceActivity({ level: "minimal", capturing: true, game: valorantGame, since: 1 })!;
+const celeste = presenceActivity({ level: "minimal", capturing: true, game: { name: "Celeste" }, since: 2 })!;
 
 describe("DiscordPresence", () => {
    it("handshakes with the client ID, then sets the activity for this process", async () => {

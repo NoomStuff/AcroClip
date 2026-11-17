@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { defaultPreferences } from "../../src/shared/defaults";
 import { selectOption } from "./select-option";
 
-test("Discord status defaults to while capturing for existing settings and saves a new choice", async () => {
+test("Discord status defaults to minimal for existing settings and saves a new choice", async () => {
    test.setTimeout(60000);
    const profile = await mkdtemp(join(tmpdir(), "acroclip-discord-")),
       collection = join(profile, "clips");
@@ -19,15 +19,15 @@ test("Discord status defaults to while capturing for existing settings and saves
       const page = await app.firstWindow();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page.getByRole("button", { name: "App & updates", exact: true }).click();
-      const status = page.getByRole("combobox", { name: "Show in Discord status", exact: true });
-      await expect(status).toHaveText(/While capturing/);
-      await expect(status).toHaveAccessibleDescription("Shows the game you're capturing, with a link to AcroClip.");
-      await selectOption(page, "Show in Discord status", "never");
+      const status = page.getByRole("combobox", { name: "Discord status", exact: true });
+      await expect(status).toHaveText(/Minimal/);
+      await expect(status).toHaveAccessibleDescription("Adds AcroClip's logo and a link to the game you're capturing.");
+      await selectOption(page, "Discord status", "off");
       await expect(status).toHaveAccessibleDescription("Leaves your Discord status alone.");
-      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.discordPresence).toBe("never");
+      await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.discordPresence).toBe("off");
       await expect
          .poll(async () => (JSON.parse(await readFile(join(profile, "preferences.json"), "utf8")) as { discordPresence?: string }).discordPresence)
-         .toBe("never");
+         .toBe("off");
    } finally {
       await app.close();
    }

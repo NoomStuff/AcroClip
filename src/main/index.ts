@@ -706,14 +706,14 @@ function updatePresence() {
         : footage.kind === "screen"
           ? desktopGameInFront
           : undefined;
-   const art = application && preferences.discordPresence !== "never" ? recorder.gameIcon(application.id) : undefined;
+   const art = application && preferences.discordPresence !== "off" ? recorder.gameIcon(application.id) : undefined;
    const game: PresenceGame | undefined = application?.name
       ? { name: application.name, ...(art ? { icon: discordGameIcon(art.id, art.icon) } : {}) }
       : undefined;
    // The elapsed time restarts with each game, like Discord's own game status.
    if (!capturing) presenceShown = undefined;
    else if (presenceShown?.game !== game?.name) presenceShown = { game: game?.name, since: Date.now() };
-   presence.set(presenceActivity({ mode: preferences.discordPresence, capturing, game, since: presenceShown?.since }));
+   presence.set(presenceActivity({ level: preferences.discordPresence, capturing, game, since: presenceShown?.since }));
 }
 // Saves waiting for the recorder, by destination, and the last clip a new save may merge into.
 const savesRequested = new Map<string, { requestedAt: number; session: string; trigger: SaveTrigger }>();

@@ -85,7 +85,8 @@ export interface AudioLevels {
 }
 export type OverlapClips = "keep" | "trim" | "merge";
 /** When AcroClip shows on Discord: never, while recording a game, or whenever it's open. */
-export type DiscordPresenceMode = "never" | "recording" | "always";
+/** How much AcroClip adds to the Discord status of a game being captured. */
+export type DiscordPresenceLevel = "off" | "minimal" | "full";
 export interface Preferences {
    shortcuts: ShortcutBindings;
    collection: string;
@@ -127,7 +128,7 @@ export interface Preferences {
    updateCheck: boolean;
    startWithOS: boolean;
    autoRecord: boolean;
-   discordPresence: DiscordPresenceMode;
+   discordPresence: DiscordPresenceLevel;
    notificationStartBanner: boolean;
    notificationStartSound: boolean;
    notificationStopBanner: boolean;

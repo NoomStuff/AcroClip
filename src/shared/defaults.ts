@@ -35,7 +35,7 @@ export const defaultPreferences: Preferences = {
    updateCheck: true,
    startWithOS: false,
    autoRecord: false,
-   discordPresence: "recording",
+   discordPresence: "minimal",
    notificationStartBanner: true,
    notificationStartSound: true,
    notificationStopBanner: true,
