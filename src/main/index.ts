@@ -76,7 +76,7 @@ import type { SavedFootage } from "./merge-policy";
 import { saveOutcomeNotice, savingNotice } from "../shared/save-outcome";
 import type { SaveOutcome } from "../shared/save-outcome";
 import { ActivityTracker } from "./activity";
-import { libraryWorkers } from "./library-work";
+import { libraryWorkers, shareableThreads } from "./library-work";
 import { desktopGame, DesktopGameWatch } from "./desktop-game";
 import { copyFileToClipboard } from "./clipboard-file";
 
@@ -167,6 +167,7 @@ const collections = new CollectionService({
    beforeFolderChange: assertFolderChangesAllowed,
    scanConcurrency: () => libraryWork(),
    thumbnailConcurrency: () => libraryWork(),
+   shareableThreads: () => shareableThreads({ background: activity.background, processors: availableParallelism() }),
    backgroundStrips: true,
    onChange: () => emitState(),
    onJob: (job) => {

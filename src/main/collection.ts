@@ -199,6 +199,8 @@ export interface CollectionOptions {
    scanConcurrency?: () => number;
    /** Thumbnails made at once. Asked again before each one starts. */
    thumbnailConcurrency?: () => number;
+   /** Threads for a shareable encode, asked as each one starts. 0 fills the machine. */
+   shareableThreads?: () => number;
    /** Prepare hover strips for the whole library after scans. The app turns this on; tests don't. */
    backgroundStrips?: boolean;
 }
@@ -1706,6 +1708,7 @@ export class CollectionService {
                for (let attempt = 0; attempt < 3; attempt++) {
                   await encodeShareable(original, temporary, passLog, info, targetMB * Math.pow(0.9, attempt), {
                      signal: controller.signal,
+                     threads: this.options.shareableThreads?.() ?? 2,
                      onProgress: (progress) => this.jobUpdate(job, { progress, message: attempt ? "Adjusting to fit size limit" : "Creating shareable" }),
                   });
                   const size = (await stat(temporary)).size;

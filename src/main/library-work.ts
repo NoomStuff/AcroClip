@@ -16,3 +16,12 @@ export function libraryWorkers({ capturing, background, processors }: LibraryWor
    if (capturing || background) return 1;
    return Math.max(2, Math.min(8, Math.floor(processors / 2)));
 }
+
+/**
+ * Threads for one shareable encode, where 0 lets the encoder fill the machine. Someone looking at
+ * AcroClip is waiting on it, so it gets everything. Behind a game it gets a quarter of the processors,
+ * which leaves the game and the recorder theirs. Encodes run below normal priority either way.
+ */
+export function shareableThreads({ background, processors }: Omit<LibraryWorkState, "capturing">): number {
+   return background ? Math.max(2, Math.floor(processors / 4)) : 0;
+}

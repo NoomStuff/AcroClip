@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { audioTrackTitle, flatSpread, frameSpreads, mediaFailure, pickThumbnailFrame } from "./media";
+import {
+   audioTrackTitle,
+   flatSpread,
+   frameSpreads,
+   mediaFailure,
+   chooseShareRung,
+   measuredRung,
+   passQuantizer,
+   pickThumbnailFrame,
+   shareHeights,
+} from "./media";
 
 describe("imported audio track names", () => {
    it("uses ordinal names for generic MP4 handlers", () => {
@@ -52,5 +62,40 @@ describe("thumbnail frame choice", () => {
       expect(pickThumbnailFrame([4, 10, 0])).toBe(1);
       expect(pickThumbnailFrame([flatSpread, 0, flatSpread])).toBe(2);
       expect(pickThumbnailFrame([])).toBe(-1);
+   });
+});
+
+describe("shareable rungs", () => {
+   it("steps down from the clip's height, up to 1080p, to 360p", () => {
+      expect(shareHeights(1440)).toEqual([1080, 720, 540, 360]);
+      expect(shareHeights(1080)).toEqual([1080, 720, 540, 360]);
+      expect(shareHeights(601)).toEqual([600, 540, 360]);
+   });
+   it("measures at 720p, or the clip's own height when smaller, at up to 60 fps", () => {
+      expect(measuredRung({ height: 1080, frameRate: 144 })).toEqual({ height: 720, frameRate: 60 });
+      expect(measuredRung({ height: 480, frameRate: 30 })).toEqual({ height: 480, frameRate: 30 });
+   });
+   it("picks the rung from how hard the measured pass had to quantize", () => {
+      const clip = { height: 1080, frameRate: 60 };
+      expect(chooseShareRung(clip, 27)).toEqual({ height: 1080, frameRate: 60 });
+      expect(chooseShareRung(clip, 37)).toEqual({ height: 720, frameRate: 60 });
+      expect(chooseShareRung(clip, 41)).toEqual({ height: 540, frameRate: 60 });
+      expect(chooseShareRung(clip, 46)).toEqual({ height: 540, frameRate: 30 });
+   });
+   it("keeps a 30 fps clip's frame rate however hard it is", () => {
+      expect(chooseShareRung({ height: 720, frameRate: 30 }, 50)).toEqual({ height: 540, frameRate: 30 });
+      expect(chooseShareRung({ height: 360, frameRate: 30 }, 50)).toEqual({ height: 360, frameRate: 30 });
+   });
+});
+
+describe("first-pass quantizer", () => {
+   it("averages x264's per-frame quantizers", () => {
+      const stats = [
+         "#options: 1280x720 fps=60/1 timebase=1/60 bitdepth=8 cabac=1 ref=2",
+         "in:0 out:0 type:I dur:2 cpbdur:2 q:30.00 aq:26.11 tex:0 mv:0 misc:0 imb:0 pmb:0 smb:0 d:- ref:;",
+         "in:1 out:1 type:P dur:2 cpbdur:2 q:34.00 aq:31.10 tex:0 mv:0 misc:0 imb:0 pmb:0 smb:0 d:- ref:0 ;",
+      ].join("\n");
+      expect(passQuantizer(stats)).toBe(32);
+      expect(passQuantizer("#options: none")).toBeUndefined();
    });
 });

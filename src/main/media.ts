@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { parseClipTag } from "../shared/clip-tag";
 import type { ClipTag } from "../shared/clip-tag";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import os from "node:os";
 import type { AudioTrack } from "../shared/types";
@@ -412,45 +412,102 @@ export async function createKeyframeStrip(source: string, output: string, durati
    }
 }
 
-/** Two-pass software encoding reserves audio/container overhead and never truncates the requested moment. */
+/** The height and frame rate a shareable is encoded at. */
+export interface ShareRung {
+   height: number;
+   frameRate: number;
+}
+
+/** Heights a shareable can take, tallest first: the clip's own up to 1080p, then 720p, 540p and 360p. */
+export function shareHeights(height: number): number[] {
+   const top = Math.max(2, Math.floor(Math.min(height, 1080) / 2) * 2);
+   return [top, ...[720, 540, 360].filter((step) => step < top)];
+}
+
+/** The mean quantizer of a first pass, from x264's stats file, or undefined when it holds no frames. */
+export function passQuantizer(stats: string): number | undefined {
+   const values = Array.from(stats.matchAll(/ q:(\d+(?:\.\d+)?)/g), (match) => Number(match[1]));
+   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
+}
+
+/**
+ * Where the first pass is measured: 720p at the clip's frame rate, up to 60 fps, or the clip's own
+ * height when that's smaller.
+ */
+export function measuredRung(info: Pick<MediaInfo, "height" | "frameRate">): ShareRung {
+   const heights = shareHeights(info.height);
+   return { height: heights.find((height) => height <= 720) ?? heights[0]!, frameRate: Math.min(info.frameRate || 30, 60) };
+}
+
+// First-pass mean quantizers at the measured rung that mark each step, calibrated against VMAF on real
+// recordings at 10 to 40 MB. Up to 29 there are bits to spare for the clip's full height. From 39 a
+// smaller picture with fewer blocks looks better. From 44 even that breaks up in motion, and half the
+// frames at twice the bits each look better than all of them smeared.
+const tallerQuantizer = 29;
+const smallerQuantizer = 39;
+const halfRateQuantizer = 44;
+
+/** The rung a shareable is encoded at, from the first pass's mean quantizer at `measuredRung`. */
+export function chooseShareRung(info: Pick<MediaInfo, "height" | "frameRate">, quantizer: number): ShareRung {
+   const measured = measuredRung(info);
+   const heights = shareHeights(info.height);
+   const index = heights.indexOf(measured.height);
+   if (quantizer <= tallerQuantizer) return { ...measured, height: heights[0]! };
+   if (quantizer <= smallerQuantizer) return measured;
+   const smaller = heights[index + 1] ?? measured.height;
+   if (quantizer <= halfRateQuantizer || measured.frameRate <= 40) return { ...measured, height: smaller };
+   return { height: smaller, frameRate: measured.frameRate / 2 };
+}
+
+/** Threads one encode may use. 0 lets ffmpeg and x264 pick, which fills the machine. */
+export interface EncodeOptions extends MediaOptions {
+   threads?: number;
+}
+
+/**
+ * Two-pass software encoding reserves audio/container overhead and never truncates the requested moment.
+ * The first pass runs at `measuredRung`. Its mean quantizer says how hard the footage is for this budget,
+ * and so which size and frame rate look best. When that's another rung, the first pass runs again there.
+ */
 export async function encodeShareable(
    source: string,
    output: string,
    passLog: string,
    info: MediaInfo,
    targetMB: number,
-   options: MediaOptions
+   options: EncodeOptions
 ): Promise<void> {
    const maximum = Math.floor(targetMB * 1_000_000);
    const audioRate = info.tracks.length ? Math.min(128000, Math.max(32000, Math.floor(((maximum * 8) / info.duration) * 0.12))) : 0;
    const videoRate = Math.floor(((maximum * 8) / info.duration) * 0.94 - audioRate - 8000);
    if (videoRate < 25000) throw new Error("That size limit is too small for the complete clip. Choose a larger limit.");
-   const budgetPerFrame = videoRate / Math.min(info.frameRate, 60);
-   const maximumHeight = budgetPerFrame < 1000 ? 360 : budgetPerFrame < 2500 ? 480 : budgetPerFrame < 5000 ? 720 : 1080;
-   const height = Math.max(2, Math.floor(Math.min(info.height, maximumHeight) / 2) * 2);
-   const common = [
+   const threads = String(Math.max(0, Math.floor(options.threads ?? 2)));
+   const filterThreads = String(options.threads === 0 ? 4 : Math.max(1, Math.min(4, Math.floor((options.threads ?? 2) / 2))));
+   const measured = measuredRung(info);
+   const common = (rung: ShareRung) => [
       ...ffmpegBase,
       "-filter_threads",
-      "1",
+      filterThreads,
       "-filter_complex_threads",
       "1",
       "-y",
       "-threads",
-      "2",
+      threads,
       "-i",
       source,
       "-map",
       "0:v:0",
       "-vf",
-      `scale=-2:${height}:flags=lanczos`,
+      // The fps filter keeps the frames nearest each half-rate slot, where -r alone drifts by a frame.
+      `scale=-2:${rung.height}:flags=lanczos${rung.frameRate < measured.frameRate ? `,fps=${rung.frameRate}` : ""}`,
       "-r",
-      String(Math.min(info.frameRate || 30, 60)),
+      String(rung.frameRate),
       "-c:v",
       "libx264",
       "-preset",
       "fast",
       "-threads",
-      "2",
+      threads,
       "-pix_fmt",
       "yuv420p",
       "-b:v",
@@ -460,18 +517,25 @@ export async function encodeShareable(
       "-progress",
       "pipe:1",
    ];
-   await runMedia("ffmpeg", [...common, "-pass", "1", "-an", "-f", "null", process.platform === "win32" ? "NUL" : "/dev/null"], {
-      ...options,
-      belowNormal: true,
-      duration: info.duration,
-      onProgress: (fraction) => options.onProgress?.(fraction * 0.45),
-   });
+   const firstPass = (rung: ShareRung, from: number, to: number) =>
+      runMedia("ffmpeg", [...common(rung), "-pass", "1", "-an", "-f", "null", process.platform === "win32" ? "NUL" : "/dev/null"], {
+         ...options,
+         belowNormal: true,
+         duration: info.duration,
+         onProgress: (fraction) => options.onProgress?.(from + fraction * (to - from)),
+      });
+   await firstPass(measured, 0, 0.3);
+   const quantizer = passQuantizer(await readFile(`${passLog}-0.log`, "utf8").catch(() => ""));
+   const rung = quantizer === undefined ? measured : chooseShareRung(info, quantizer);
+   const again = rung.height !== measured.height || rung.frameRate !== measured.frameRate;
+   if (again) await firstPass(rung, 0.3, 0.5);
+   const start = again ? 0.5 : 0.3;
    const audio = audioRate ? ["-map", "0:a:0?", "-c:a", "aac", "-b:a", String(audioRate)] : ["-an"];
-   await runMedia("ffmpeg", [...common, "-pass", "2", ...audio, "-movflags", "+faststart", "-f", "mp4", output], {
+   await runMedia("ffmpeg", [...common(rung), "-pass", "2", ...audio, "-movflags", "+faststart", "-f", "mp4", output], {
       ...options,
       belowNormal: true,
       duration: info.duration,
-      onProgress: (fraction) => options.onProgress?.(0.45 + fraction * 0.5),
+      onProgress: (fraction) => options.onProgress?.(start + fraction * (0.95 - start)),
    });
 }
 
