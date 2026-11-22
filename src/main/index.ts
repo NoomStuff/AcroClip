@@ -16,6 +16,7 @@ import type {
    ApplicationArtwork,
    AutosaveResult,
    CaptureSource,
+   GameCandidate,
    NoticeOptions,
    Preferences,
    RecorderState,
@@ -77,7 +78,7 @@ import { saveOutcomeNotice, savingNotice } from "../shared/save-outcome";
 import type { SaveOutcome } from "../shared/save-outcome";
 import { ActivityTracker } from "./activity";
 import { libraryWorkers, shareableThreads } from "./library-work";
-import { desktopGame, DesktopGameWatch } from "./desktop-game";
+import { desktopGame, DesktopGameWatch, presenceDesktopGame } from "./desktop-game";
 import { copyFileToClipboard } from "./clipboard-file";
 
 // CORS lets the renderer read back images it asks for with crossOrigin, such as hover strips it
@@ -693,8 +694,8 @@ const presence = new DiscordPresence({
    paths: () => discordIpcPaths(process.platform, process.env),
    log: (message, level) => log(`discord: ${message}`, level),
 });
-/** The recognized game filling a desktop capture at the last sample. */
-let desktopGameInFront: ApplicationArtwork | undefined;
+/** The game a desktop capture's Discord status names, which outlasts a moment behind another window. */
+let desktopGamePlayed: ApplicationArtwork | undefined;
 const presenceSession = new PresenceSession();
 /** The last name the status gave each captured window, for while it's missing from the window list. */
 let presenceLabel = { sourceId: "", name: "" };
@@ -723,7 +724,7 @@ function updatePresence() {
       : footage.kind === "app"
         ? lastRecordingArtwork?.application
         : footage.kind === "screen"
-          ? desktopGameInFront
+          ? desktopGamePlayed
           : undefined;
    const art = application && preferences.discordPresence !== "off" ? recorder.gameIcon(application.id) : undefined;
    const name = !recording ? undefined : footage.kind === "app" ? presenceAppName(footage.id) : application?.name;
@@ -913,7 +914,7 @@ async function startRecording(options: { quiet?: boolean } = {}) {
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to capture.");
    if (captureActive()) throw new Error("Capture is already running.");
    lastRecordingArtwork = undefined;
-   desktopGameInFront = undefined;
+   desktopGamePlayed = undefined;
    recordingNotices.starting(preferences.sourceKind === "auto" ? "Automatic game detection" : recordingSourceLabel(preferences, captureSources.cached), {
       appKnown: preferences.sourceKind !== "app" || !!preferences.sourceApplicationId,
       mode: preferences.sourceKind,
@@ -960,25 +961,35 @@ async function stopRecording() {
       throw error;
    }
 }
-/** The recognized game filling the captured screen, if any. A slow or failed lookup just saves as Desktop. */
-async function desktopCaptureGame(screenId: string | undefined): Promise<ApplicationArtwork | undefined> {
+/**
+ * The recognized game filling the captured screen, if any, and every recognized game open at all.
+ * A slow or failed lookup finds none, and a clip just saves as Desktop.
+ */
+async function desktopCaptureGames(screenId: string | undefined): Promise<{ inFront: ApplicationArtwork | undefined; open: ApplicationArtwork[] }> {
    try {
       const candidates = await Promise.race([
          recorder.games(preferences.customGames),
          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Game lookup took too long")), 1000)),
       ]);
-      const game = desktopGame(
+      const artwork = (game: GameCandidate): ApplicationArtwork | undefined => {
+         if (!game.gameName) return undefined;
+         const id = applicationId(game.executable, game.gameId);
+         return { id, icon: captureSources.cached.find((source) => source.applicationId === id)?.appIcon ?? "", name: game.gameName };
+      };
+      const front = desktopGame(
          candidates,
          captureSources.cached.find((source) => source.id === screenId),
          screen.getAllDisplays().length
       );
-      if (!game?.gameName) return undefined;
-      const id = applicationId(game.executable, game.gameId);
-      return { id, icon: captureSources.cached.find((source) => source.applicationId === id)?.appIcon ?? "", name: game.gameName };
+      return {
+         inFront: front && artwork(front),
+         open: candidates.flatMap((candidate) => (candidate.gameId ? (artwork(candidate) ?? []) : [])),
+      };
    } catch {
-      return undefined;
+      return { inFront: undefined, open: [] };
    }
 }
+const desktopCaptureGame = async (screenId: string | undefined) => (await desktopCaptureGames(screenId)).inFront;
 /** Long enough to cover the longest merged clip. */
 const desktopWatch = new DesktopGameWatch<ApplicationArtwork>(11 * 60_000);
 let desktopWatchSource = "";
@@ -989,7 +1000,7 @@ function desktopWatchFor(footage: ReturnType<typeof bufferedCaptureSource>): boo
    if (source !== desktopWatchSource) {
       desktopWatch.clear();
       desktopWatchSource = source;
-      desktopGameInFront = undefined;
+      desktopGamePlayed = undefined;
    }
    return source !== "";
 }
@@ -1000,11 +1011,11 @@ async function watchDesktopGame(): Promise<void> {
       const footage = bufferedCaptureSource(recorder.status);
       if (desktopWatchFor(footage)) {
          const watched = desktopWatchSource;
-         const game = await desktopCaptureGame(footage.id);
-         desktopWatch.record(Date.now(), game);
+         const games = await desktopCaptureGames(footage.id);
+         desktopWatch.record(Date.now(), games.inFront);
          // A capture that changed during the lookup starts over without this sample.
          if (watched !== desktopWatchSource) return;
-         desktopGameInFront = game;
+         desktopGamePlayed = presenceDesktopGame(games.inFront, desktopGamePlayed, games.open);
          updatePresence();
       }
    } finally {
