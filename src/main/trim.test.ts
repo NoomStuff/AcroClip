@@ -65,12 +65,21 @@ describe("trim planning", () => {
       const result = plan(3, 10);
       expect(result.kind === "cut" && result.spans.map(({ start, end, encode }) => [start, end, encode])).toEqual([[3, 10, false]]);
    });
+   it("treats an end a moment past the probed length as the clip's end", () => {
+      // Chromium can report a few frames more than ffprobe, and the end handle starts at its length.
+      const result = plan(3, 10.04);
+      expect(result.kind === "cut" && result.spans.map(({ start, end, encode }) => [start, end, encode])).toEqual([[3, 10, false]]);
+   });
+   it("says when a range runs well past the clip instead of asking for a longer part", () => {
+      const result = plan(3, 14);
+      expect(result.kind === "unsupported" && result.reason).toMatch(/length changed/);
+   });
    it("cuts other codecs too when no frame needs encoding", () => {
       expect(plan(3, 10, source({}, "hevc")).kind).toBe("cut");
    });
    it("explains that only H.264 cuts between keyframes", () => {
       const result = plan(2.5, 10, source({}, "hevc"));
-      expect(result.kind === "unsupported" && result.reason).toMatch(/HEVC.*AttaCut/);
+      expect(result.kind === "unsupported" && result.reason).toMatch(/HEVC.*video editor/);
    });
    it("snaps cuts to the nearest frame", () => {
       const result = plan(2.51, 7.49);

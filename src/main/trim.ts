@@ -12,6 +12,8 @@ import type { MediaOptions } from "./media";
  * join before anything is published.
  */
 const epsilon = 0.0001;
+/** How far past the probed length a trim's end can be and still mean the end. */
+const lengthSlack = 1;
 // Encoding a long stretch would turn a quick trim into a slow export during gameplay.
 export const maximumEncodedSeconds = 20;
 
@@ -213,22 +215,33 @@ const isMp4Container = (extension: string) => [".mp4", ".mov", ".m4v"].includes(
 const losslessAudio = (codec: string) => ["flac", "alac", "wavpack", "truehd", "mlp"].includes(codec) || codec.startsWith("pcm_");
 
 /** Which parts of a range to copy and which to encode. Pure, so every rule is testable without media. */
-export function planTrim(source: TrimSource, start: number, end: number, startPackets: readonly PacketPoint[], endPackets: readonly PacketPoint[]): TrimPlan {
+export function planTrim(
+   source: TrimSource,
+   requestedStart: number,
+   requestedEnd: number,
+   startPackets: readonly PacketPoint[],
+   endPackets: readonly PacketPoint[]
+): TrimPlan {
    const unsupported = (reason: string): TrimPlan => ({ kind: "unsupported", reason });
-   if (start < 0 || end > source.duration + epsilon || end - start < 0.05) return unsupported("Choose a longer part of the clip to keep.");
+   // The player measures a clip's length its own way, so a handle left at its end can sit a little past
+   // where ffprobe ends it. That is still the end, not a range outside the clip.
+   const start = requestedStart < 0 && requestedStart > -lengthSlack ? 0 : requestedStart;
+   const end = requestedEnd > source.duration && requestedEnd - source.duration <= lengthSlack ? source.duration : requestedEnd;
+   if (start < 0 || end > source.duration + epsilon) return unsupported("The clip's length changed since it opened. Open it again, then trim.");
+   if (end - start < 0.05) return unsupported("Keep at least a tenth of a second of the clip.");
    if (start < epsilon && Math.abs(end - source.duration) < epsilon) return unsupported("Move a handle to choose what to keep.");
    if (!outputContainers.has(source.extension))
-      return unsupported(`AcroClip can't trim ${source.extension.slice(1).toUpperCase()} files yet. Open the clip in AttaCut to trim it.`);
+      return unsupported(`AcroClip can't trim ${source.extension.slice(1).toUpperCase()} files yet. Open it in a video editor to trim it.`);
    const video = trimVideo(source);
    if (!video) return unsupported("This clip has no video to trim.");
    if (source.streams.some((stream) => stream.type !== "audio" && stream !== video))
-      return unsupported("This clip has subtitles, cover art or data tracks that a trim would lose. Open it in AttaCut to keep them.");
+      return unsupported("This clip has subtitles, cover art or data tracks that a trim would lose. Trim it in a video editor to keep them.");
    if (audioStreams(source).some((stream) => losslessAudio(stream.codec)))
-      return unsupported("This clip's lossless audio can't be trimmed in AcroClip. Open it in AttaCut to trim it.");
+      return unsupported("This clip's lossless audio can't be trimmed in AcroClip. Trim it in a video editor instead.");
    if (!startPackets.length || !endPackets.length) return unsupported("This clip has no readable frames near the cuts.");
    const snappedStart = nearestFrame(startPackets, start, source.duration);
    const snappedEnd = nearestFrame(endPackets, end, source.duration);
-   if (snappedEnd - snappedStart < 0.001) return unsupported("Choose a longer part of the clip to keep.");
+   if (snappedEnd - snappedStart < 0.001) return unsupported("The part to keep is shorter than one frame. Move the handles further apart.");
    // Copying starts at the first keyframe inside the range. Everything before it is encoded.
    const nextKey = startPackets.find((packet) => packet.key && packet.time >= snappedStart - epsilon)?.time;
    const copyStart = Math.max(snappedStart, nextKey ?? snappedEnd);
@@ -251,10 +264,10 @@ export function planTrim(source: TrimSource, start: number, end: number, startPa
    const encodedSeconds = spans.filter((span) => span.encode).reduce((sum, span) => sum + span.end - span.start, 0);
    if (encodedSeconds > epsilon) {
       if (video.codec !== "h264")
-         return unsupported(`AcroClip can only cut ${video.codec.toUpperCase()} clips at keyframes. Open this clip in AttaCut to trim it exactly.`);
+         return unsupported(`AcroClip can only cut ${video.codec.toUpperCase()} clips at keyframes. Trim it in a video editor to cut it exactly.`);
       if (video.pixelFormat.startsWith("gbr") || (video.fieldOrder && !["unknown", "progressive"].includes(video.fieldOrder)))
-         return unsupported("This clip's video format can't be cut exactly in AcroClip. Open it in AttaCut to trim it.");
-      if (encodedSeconds > maximumEncodedSeconds) return unsupported("This clip has too few keyframes for a quick trim. Open it in AttaCut to trim it.");
+         return unsupported("This clip's video format can't be cut exactly in AcroClip. Trim it in a video editor instead.");
+      if (encodedSeconds > maximumEncodedSeconds) return unsupported("This clip has too few keyframes for a quick trim. Trim it in a video editor instead.");
    }
    const points = [...startPackets, ...endPackets].sort((a, b) => a.time - b.time);
    const inside = (span: Omit<TrimSpan, "readStart">) => [
