@@ -6,11 +6,12 @@ import { createInterface } from "node:readline";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fitResolutionLimit } from "../src/shared/recording-presets";
+import { windowsPowerShell } from "./windows-powershell";
 
 if (process.platform !== "win32") throw new Error("This real capture smoke test requires Windows");
 const software = Boolean(process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"]);
 const display = spawnSync(
-   "powershell",
+   windowsPowerShell,
    [
       "-NoProfile",
       "-Command",

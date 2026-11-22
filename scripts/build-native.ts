@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { buildWindowsWasapi } from "./windows-wasapi-source";
+import { windowsPowerShell } from "./windows-powershell";
 
 const version = "32.2.2";
 const root = process.cwd();
@@ -83,11 +84,12 @@ if (!existsSync(path.join(obs, "bin", "64bit", "obs.dll"))) {
          .digest("hex") !== "4d6e40e3ab155f56b30de517380566a206d74b63cdf5ad49aa596924768f97e1"
    )
       throw new Error("The OBS runtime archive did not match its pinned official release digest");
-   run("powershell", ["-NoProfile", "-Command", `Expand-Archive -LiteralPath ${psLiteral(archive)} -DestinationPath ${psLiteral(obs)} -Force`]);
+   run(windowsPowerShell, ["-NoProfile", "-Command", `Expand-Archive -LiteralPath ${psLiteral(archive)} -DestinationPath ${psLiteral(obs)} -Force`]);
+   if (!existsSync(path.join(obs, "bin", "64bit", "obs.dll"))) throw new Error(`Expanding ${archive} left no OBS runtime in ${obs}`);
 }
 const bin = path.join(obs, "bin", "64bit");
 // Read through .NET directly, so a missing file fails here instead of reading as a blank version.
-const [fileVersion = "", productVersion = "", size = ""] = run("powershell", [
+const [fileVersion = "", productVersion = "", size = ""] = run(windowsPowerShell, [
    "-NoProfile",
    "-Command",
    `$info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo(${psLiteral(path.join(bin, "obs64.exe"))}); "$($info.FileVersion)|$($info.ProductVersion)|$((Get-Item -LiteralPath $info.FileName).Length)"`,
