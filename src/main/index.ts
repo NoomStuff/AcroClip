@@ -57,6 +57,7 @@ import type { ResetPart } from "../shared/maintenance";
 import { loudnessEnvelope, probe } from "./media";
 import { LoudnessCache } from "./loudness-cache";
 import { OpenWith, openWithPlatform } from "./open-with";
+import { openExternal, openPath } from "./launch-environment";
 import { BACKGROUND_CHECK_INTERVAL, Updates } from "./updates";
 import { testUpdateServer } from "./update-manager";
 import { fadeForExit, launcherPath, releaseSplash } from "./splash";
@@ -1852,7 +1853,7 @@ function registerIPC() {
       await mkdir(directory, { recursive: true });
       await writeLogArchive(path);
       shell.showItemInFolder(path);
-      await shell.openExternal(bugReportUrl({ version: app.getVersion(), system: systemDescription(), archive: path.split(/[\\/]/).at(-1)! }));
+      await openExternal(bugReportUrl({ version: app.getVersion(), system: systemDescription(), archive: path.split(/[\\/]/).at(-1)! }));
       return path;
    });
    handle("copy-file", async (path) => {
@@ -1865,7 +1866,7 @@ function registerIPC() {
    });
    handle("reveal", (path) => {
       const selected = trustedPath(path);
-      if (samePath(selected, collections.root)) void shell.openPath(selected);
+      if (samePath(selected, collections.root)) void openPath(selected);
       else shell.showItemInFolder(selected);
       const owner = fileOwner(selected);
       if (owner) action("reveal", owner.clipId);
@@ -1873,7 +1874,7 @@ function registerIPC() {
    // Opens a clip or shareable in whatever the system opens videos with: an editor, a player, AttaCut.
    handle("open-file", async (path) => {
       const selected = trustedPath(path);
-      const failure = await shell.openPath(selected);
+      const failure = await openPath(selected);
       if (failure)
          throw new Error(
             `Couldn't open ${basename(selected)}. Choose a default app for ${extname(selected).toLowerCase() || "these"} files in your system settings.`

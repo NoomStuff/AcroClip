@@ -3,6 +3,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import type { AvailableUpdate, UpdateState, UpdateStatus } from "../shared/types";
+import { openExternal } from "./launch-environment";
 import { fetchAvailableUpdate, isNewerVersion, UpdateManager } from "./update-manager";
 
 /** Automatic checks run at most this often; manual checks always run. */
@@ -97,7 +98,7 @@ export class Updates {
       shell.showItemInFolder(this.manager.downloadedPath);
    }
    async release(): Promise<void> {
-      if (this.available) await shell.openExternal(this.available.url);
+      if (this.available) await openExternal(this.available.url);
    }
    async install(hooks: InstallHooks): Promise<void> {
       if (!this.manager.isReady) throw new Error("The update isn't ready yet.");

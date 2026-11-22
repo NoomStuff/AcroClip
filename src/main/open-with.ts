@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { extname, isAbsolute, posix } from "node:path";
 import { z } from "zod";
 import type { OpenWithApp, OpenWithList } from "../shared/types";
+import { launchEnvironment } from "./launch-environment";
 
 /**
  * The apps a clip can open with, like a file manager's Open with menu: the system default and the
@@ -245,7 +246,9 @@ async function linuxIcon(name: string, directories: readonly string[]): Promise<
 }
 
 export function linuxOpenWith(environment: NodeJS.ProcessEnv = process.env): OpenWithPlatform {
-   const plain = { ...environment, LC_ALL: "C", LANGUAGE: "" };
+   const clean = launchEnvironment(environment);
+   // Only the queries run in the C locale, so their output parses. Apps open in the person's own.
+   const plain = { ...clean, LC_ALL: "C", LANGUAGE: "" };
    const entries = new Map<string, string>();
    return {
       async list(path) {
@@ -255,7 +258,7 @@ export function linuxOpenWith(environment: NodeJS.ProcessEnv = process.env): Ope
          const answer = await run("gio", ["mime", type], plain);
          if (answer.code !== 0) return { apps: [], canChoose: false };
          const { defaultId, ids } = parseGioMime(answer.stdout);
-         const directories = linuxDataDirectories(environment);
+         const directories = linuxDataDirectories(clean);
          const apps: OpenWithApp[] = [];
          for (const id of ids) {
             if (apps.length >= maximumApps) break;
@@ -272,12 +275,33 @@ export function linuxOpenWith(environment: NodeJS.ProcessEnv = process.env): Ope
       async open(path, app) {
          const file = entries.get(app.id);
          // gio launches the entry with its own Exec line and file handling. Older systems have gtk-launch.
-         const launched = file ? await run("gio", ["launch", file, path], plain).catch(() => null) : null;
-         if (launched?.code === 0) return;
-         const fallback = await run("gtk-launch", [app.id.replace(/\.desktop$/, ""), path], plain).catch(() => null);
-         if (fallback?.code !== 0) throw new Error(`${app.name} couldn't open this file.`);
+         if (file && (await launch("gio", ["launch", file, path], clean)) === 0) return;
+         if ((await launch("gtk-launch", [app.id.replace(/\.desktop$/, ""), path], clean)) !== 0) throw new Error(`${app.name} couldn't open this file.`);
       },
    };
+}
+
+/**
+ * Runs a launcher that starts an app and exits. The app inherits nothing from AcroClip's pipes, which
+ * would otherwise keep the launcher's output open for as long as the app runs.
+ */
+function launch(file: string, args: string[], environment: NodeJS.ProcessEnv): Promise<number | null> {
+   return new Promise((resolve) => {
+      const child = spawn(file, args, { env: environment, stdio: "ignore", detached: true });
+      // A launcher still running after this long has handed the file over, as far as anyone can tell.
+      const timer = setTimeout(() => {
+         child.unref();
+         resolve(0);
+      }, 5_000);
+      child.once("error", () => {
+         clearTimeout(timer);
+         resolve(null);
+      });
+      child.once("exit", (code) => {
+         clearTimeout(timer);
+         resolve(code);
+      });
+   });
 }
 
 export function openWithPlatform(options: { helper: string; icon: (path: string) => Promise<string> }): OpenWithPlatform | null {
