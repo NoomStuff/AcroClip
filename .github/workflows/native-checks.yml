@@ -41,6 +41,8 @@ jobs:
            run: |
               python3 scripts/audio_tone.test.py
               python3 scripts/smoke-linux-app-audio.py resources/recorder
+         - name: Verify application and desktop audio on PipeWire, with native PipeWire streams
+           run: python3 scripts/smoke-linux-app-audio.py resources/recorder --pipewire
          - name: Verify real Wine image identity and application capture
            run: python3 scripts/smoke-wine.py resources/recorder
          - name: Verify accepted saves and capture after process interruption

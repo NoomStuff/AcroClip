@@ -131,6 +131,29 @@ struct Connection {
     return done;
   }
 };
+/** The process behind each client. A native PipeWire stream, such as pw-play's,
+ * names its process only on its client, not on the stream itself. */
+std::map<uint32_t, uint32_t> clientProcesses(Connection &connection) {
+  std::map<uint32_t, uint32_t> result;
+  connection.operation(pa_context_get_client_info_list(
+      connection.context,
+      [](pa_context *, const pa_client_info *info, int end, void *data) {
+        if (end || !info)
+          return;
+        if (const auto pid = processId(info->proplist))
+          (*static_cast<std::map<uint32_t, uint32_t> *>(data))[info->index] = pid;
+      },
+      &result));
+  return result;
+}
+/** The process playing a sink input, from the stream or else its client. */
+uint32_t inputProcess(const pa_sink_input_info *info,
+                      const std::map<uint32_t, uint32_t> &clients) {
+  if (const auto pid = processId(info->proplist))
+    return pid;
+  const auto found = clients.find(info->client);
+  return found == clients.end() ? 0 : found->second;
+}
 struct Input {
   uint32_t index, pid, sink;
   uint64_t processStarted;
@@ -185,10 +208,12 @@ struct MonitoredInput {
     try {
       Connection connection(quit);
       bool verified = false;
+      const auto clients = clientProcesses(connection);
       struct Verification {
         MonitoredInput *self;
         bool *result;
-      } request{this, &verified};
+        const std::map<uint32_t, uint32_t> *clients;
+      } request{this, &verified, &clients};
       connection.operation(pa_context_get_sink_input_info(
           connection.context, index,
           [](pa_context *, const pa_sink_input_info *info, int end,
@@ -198,7 +223,7 @@ struct MonitoredInput {
               *request->result =
                   info->index == request->self->index &&
                   info->sink == request->self->sink &&
-                  processId(info->proplist) == request->self->pid &&
+                  inputProcess(info, *request->clients) == request->self->pid &&
                   process(request->self->pid).started ==
                       request->self->processStarted;
           },
@@ -436,10 +461,12 @@ struct ApplicationAudio {
           if (selectedSink == PA_INVALID_INDEX) throw std::runtime_error("The selected audio output is unavailable");
         }
         std::vector<Input> inputs;
+        const auto clients = clientProcesses(connection);
         struct Discovery {
           ApplicationAudio *self;
           std::vector<Input> *inputs;
-        } request{this, &inputs};
+          const std::map<uint32_t, uint32_t> *clients;
+        } request{this, &inputs, &clients};
         bool complete =
             connection.operation(pa_context_get_sink_input_info_list(
                 connection.context,
@@ -448,7 +475,7 @@ struct ApplicationAudio {
                   auto *request = static_cast<Discovery *>(data);
                   if (end || !info)
                     return;
-                  auto pid = processId(info->proplist);
+                  auto pid = inputProcess(info, *request->clients);
                   if (request->self->includes(pid) && (request->self->pid || info->sink == request->self->selectedSink))
                     request->inputs->push_back({info->index,
                                                 pid,
