@@ -372,8 +372,14 @@ export interface DesktopAPI {
    reportBug(): Promise<string>;
    /** Keeps `start` to `end` seconds of a clip, as a new clip or in place of it. Resolves to the trimmed clip, or null when the trim failed or was cancelled. */
    trimClip(clipId: string, start: number, end: number, mode: "copy" | "replace"): Promise<string | null>;
-   openInAttaCut(id: string): Promise<void>;
-   attaCutAvailable(): Promise<boolean>;
+   /** Opens a clip or shareable file in the app the system uses for it. */
+   openFile(path: string): Promise<void>;
+   /** The apps the system offers for this file's type, for an Open with menu. Empty when it can't say. */
+   openWithApps(path: string): Promise<OpenWithList>;
+   /** Opens the file with one of the apps `openWithApps` listed. */
+   openWith(path: string, appId: string): Promise<void>;
+   /** The system's own picker for any installed app. Only when the list says `canChoose`. */
+   chooseOpenWith(path: string): Promise<void>;
    dragFile(path: string): void;
    /** Audio levels are only sent while a level meter is on screen. */
    showMeters(shown: boolean): void;
@@ -394,4 +400,18 @@ export interface DesktopAPI {
    window(action: "minimize" | "maximize" | "close"): void;
    exit(): Promise<void>;
    onEvent(listener: (event: AppEvent) => void): () => void;
+}
+
+/** An app the system offers to open a file with. `icon` is a data URL, or empty. */
+export interface OpenWithApp {
+   id: string;
+   name: string;
+   icon: string;
+   /** The app the file opens in by default. */
+   isDefault: boolean;
+}
+export interface OpenWithList {
+   apps: OpenWithApp[];
+   /** The system has its own picker for any other installed app. */
+   canChoose: boolean;
 }

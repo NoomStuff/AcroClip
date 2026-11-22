@@ -17,7 +17,9 @@ export const statsActions = [
    "untag",
    "move",
    "reveal",
+   // Opening in AttaCut, before files opened in the system's default app instead. Older months still hold it.
    "attacut",
+   "open",
    "trim",
    "folder-create",
    "folder-rename",

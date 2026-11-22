@@ -7,7 +7,7 @@ import { mkdirSync, realpathSync } from "node:fs";
 import { mkdir, realpath, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { arch, availableParallelism, cpus, freemem, homedir, release, totalmem, version as kernelVersion } from "node:os";
 import { randomUUID } from "node:crypto";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type {
@@ -55,6 +55,8 @@ import { bugReportUrl, describeSystem, logArchiveName } from "../shared/diagnost
 import { factoryResetDetail, resetPreferenceGroups } from "../shared/maintenance";
 import type { ResetPart } from "../shared/maintenance";
 import { loudnessEnvelope, probe } from "./media";
+import { LoudnessCache } from "./loudness-cache";
+import { OpenWith, openWithPlatform } from "./open-with";
 import { BACKGROUND_CHECK_INTERVAL, Updates } from "./updates";
 import { testUpdateServer } from "./update-manager";
 import { fadeForExit, launcherPath, releaseSplash } from "./splash";
@@ -66,7 +68,6 @@ import { captureErrorReport, feedbackRequest, routeNotice, type NoticeKind, type
 import { RecordingNotices, type RecordingNoticeKind } from "./recording-notices";
 import { SaveFailure } from "./save-failure";
 import { bufferedCaptureSource, captureSourceFor, portalScreenId, previewCaptureSource } from "../shared/capture-policy";
-import { attaCutEnvironment, findAttaCut } from "./attacut";
 import { needsMicrophonePermission } from "../shared/audio-policy";
 import { StorageMonitor } from "./storage";
 import { StateChanges } from "./state-changes";
@@ -1856,8 +1857,9 @@ function registerIPC() {
    });
    handle("copy-file", async (path) => {
       const selected = trustedPath(path);
-      await copyFileToClipboard(selected);
-      await collections.markShared(selected);
+      await copyFileToClipboard(selected, process.platform === "win32" ? helperPath("acroclip-notifier") : undefined);
+      // The file is on the clipboard now. Noting that it was shared doesn't hold up the answer.
+      void collections.markShared(selected).catch(() => undefined);
       const owner = fileOwner(selected);
       if (owner) stats.record({ type: "copy", ...owner, method: "clipboard" });
    });
@@ -1868,14 +1870,31 @@ function registerIPC() {
       const owner = fileOwner(selected);
       if (owner) action("reveal", owner.clipId);
    });
-   const detectAttaCut = () =>
-      findAttaCut(join(app.getPath("userData"), "attacut.json"), {
-         platform: process.platform,
-         home: app.getPath("home"),
-         appData: app.getPath("appData"),
-         searchPath: process.env["PATH"] ?? "",
-         programFiles: [process.env["ProgramFiles"], process.env["ProgramFiles(x86)"]].filter((directory): directory is string => !!directory),
-      });
+   // Opens a clip or shareable in whatever the system opens videos with: an editor, a player, AttaCut.
+   handle("open-file", async (path) => {
+      const selected = trustedPath(path);
+      const failure = await shell.openPath(selected);
+      if (failure)
+         throw new Error(
+            `Couldn't open ${basename(selected)}. Choose a default app for ${extname(selected).toLowerCase() || "these"} files in your system settings.`
+         );
+      const owner = fileOwner(selected);
+      if (owner) action("open", owner.clipId);
+   });
+   const openWith = new OpenWith(
+      openWithPlatform({
+         helper: helperPath("acroclip-notifier"),
+         icon: async (path) => (await app.getFileIcon(path, { size: "normal" })).toDataURL(),
+      })
+   );
+   handle("open-with-list", (path) => openWith.list(trustedPath(path)));
+   handle("open-with", async (path, appId) => {
+      const selected = trustedPath(path);
+      await openWith.open(selected, z.string().min(1).max(4096).parse(appId));
+      const owner = fileOwner(selected);
+      if (owner) action("open", owner.clipId);
+   });
+   handle("open-with-choose", (path) => openWith.choose(trustedPath(path)));
    handle("trim", async (id, start, end, mode) => {
       const clipId = idSchema.parse(id);
       const range = z.object({ start: z.number().finite().min(0), end: z.number().finite().positive() }).parse({ start, end });
@@ -1883,29 +1902,25 @@ function registerIPC() {
       if (result) action("trim", clipId);
       return result;
    });
-   handle("attacut-available", async () => !!(await detectAttaCut()));
-   handle("attacut", async (id) => {
-      const clip = collections.clips.find((c) => c.id === idSchema.parse(id));
-      if (!clip || clip.originalMissing) throw new Error("This clip is no longer in the collection.");
-      const executable = await detectAttaCut();
-      if (!executable) throw new Error("AttaCut is no longer available. Install it to open this clip there.");
-      const { spawn } = await import("node:child_process");
-      const child = spawn(executable, [clip.path], { detached: true, stdio: "ignore", windowsHide: true, env: attaCutEnvironment(process.env) });
-      child.once("error", () => notice("AttaCut couldn't open. Show the clip in your file manager and open it from there.", true, "info", "action"));
-      child.unref();
-      action("attacut", clip.id);
-   });
-   // Envelopes are small and files rarely change during a session, so they stay cached by path and size.
+   // Envelopes are small. They stay in memory for the session by path, size and modification time.
+   // A clip's envelope is also kept in its collection, which measures the rest in the background.
    const loudness = new Map<string, Promise<number[]>>();
+   app.once("will-quit", () => void collections.flushLoudness());
    // Each envelope decodes the clip's whole audio track. The player asks for one clip at a time,
    // so a newer request cancels an older decode instead of stacking reads of large files on top
    // of the one playing.
    let loudnessJob: { key: string; envelope: Promise<number[]>; controller: AbortController } | undefined;
    handle("loudness", async (path) => {
       const source = trustedPath(path);
-      const key = `${source}:${(await stat(source)).size}`;
+      const file = await stat(source);
+      const key = LoudnessCache.key(process.platform === "win32" ? source.toLowerCase() : source, file.size, file.mtimeMs);
       const cached = loudness.get(key);
       if (cached) return cached;
+      const stored = await collections.storedLoudness(source);
+      if (stored?.levels) {
+         loudness.set(key, Promise.resolve(stored.levels));
+         return stored.levels;
+      }
       if (loudnessJob) {
          loudnessJob.controller.abort();
          if (loudness.get(loudnessJob.key) === loudnessJob.envelope) loudness.delete(loudnessJob.key);
@@ -1923,7 +1938,9 @@ function registerIPC() {
       loudnessJob = job;
       loudness.set(key, envelope);
       try {
-         return await envelope;
+         const levels = await envelope;
+         if (stored) void collections.storeLoudness(stored.key, levels).catch(() => undefined);
+         return levels;
       } catch (error) {
          if (loudness.get(key) === envelope) loudness.delete(key);
          // The player moved on to another clip, which has nothing to show for this one.

@@ -12,7 +12,8 @@ import type { Category, Clip, FolderContents, Job, Shareable } from "../shared/t
 import { collectionFolder, folderContents, folderName } from "./collection-folders";
 import { normalizeApplicationLabel } from "./application-identity";
 import { safeFileStem } from "../shared/filename";
-import { createKeyframeStrip, createThumbnail, encodeShareable, keyframeStripColumns, keyframeStripFrames, probe } from "./media";
+import { createKeyframeStrip, createThumbnail, encodeShareable, keyframeStripColumns, keyframeStripFrames, loudnessEnvelope, probe } from "./media";
+import { LoudnessCache } from "./loudness-cache";
 import type { MediaInfo } from "./media";
 import { PlaybackCache } from "./playback";
 import { mapConcurrent } from "./concurrent";
@@ -261,6 +262,12 @@ export class CollectionService {
    // Failed strips aren't retried by the background fill until the app restarts. A hover still tries.
    private stripFailed = new Set<string>();
    private activeOutputs = new Set<string>();
+   // Loudness envelopes for the player's peak moments, beside the thumbnails, by file identity.
+   private loudnessStore: { root: string; cache: LoudnessCache } | undefined;
+   private loudnessFill: ReturnType<typeof setTimeout> | undefined;
+   private loudnessFilling = false;
+   // Like strips, a clip whose audio couldn't be read isn't tried again by the background fill this session.
+   private loudnessFailed = new Set<string>();
    constructor(options: CollectionOptions = {}) {
       this.options = options;
    }
@@ -450,6 +457,8 @@ export class CollectionService {
             }
          );
       }
+      // With every strip already made, nothing else starts the peak moments, which wait for strips anyway.
+      this.scheduleLoudnessFill();
    }
    private async makeStrips(): Promise<void> {
       if (this.stripWorking) return;
@@ -458,7 +467,11 @@ export class CollectionService {
          for (;;) {
             let next: [string, StripJob] | undefined;
             for (const entry of this.stripJobs) if (!entry[1].started && (!next || entry[1].order > next[1].order)) next = entry;
-            if (!next) return;
+            if (!next) {
+               // Peak moments come after hover previews, the last of the library's background work.
+               this.scheduleLoudnessFill(1000);
+               return;
+            }
             const [output, job] = next;
             job.started = true;
             const result = job.run();
@@ -468,6 +481,77 @@ export class CollectionService {
          }
       } finally {
          this.stripWorking = false;
+      }
+   }
+   private loudnessCache(root: string): LoudnessCache {
+      if (this.loudnessStore?.root !== root) this.loudnessStore = { root, cache: new LoudnessCache(join(root, ".acroclip", "thumbnails", "loudness-v1.json")) };
+      return this.loudnessStore.cache;
+   }
+   /**
+    * Where the player keeps the loudness envelope of the clip at `path`: its key and the stored
+    * levels, if any. Null for a file that isn't a clip in this collection.
+    */
+   async storedLoudness(path: string): Promise<{ key: string; levels: number[] | undefined } | null> {
+      const target = normal(resolve(path));
+      const clip = this.clips.find((entry) => !entry.originalMissing && normal(entry.path) === target);
+      const stored = clip && this.metadata.clips.find((entry) => entry.id === clip.id);
+      if (!stored || !/^[a-f0-9]{64}$/i.test(stored.identity) || !this.root) return null;
+      return { key: stored.identity, levels: await this.loudnessCache(this.root).get(stored.identity) };
+   }
+   async storeLoudness(key: string, levels: readonly number[]): Promise<void> {
+      const root = this.root;
+      if (!root) return;
+      const cache = this.loudnessCache(root);
+      await this.safeDirectory(dirname(cache.file));
+      if (root === this.root) await cache.set(key, levels);
+   }
+   /** Writes stored envelopes now, before the app quits. */
+   flushLoudness(): Promise<void> {
+      return this.loudnessStore?.cache.flush() ?? Promise.resolve();
+   }
+   private scheduleLoudnessFill(delay = 3000) {
+      if (!this.options.backgroundStrips) return;
+      clearTimeout(this.loudnessFill);
+      this.loudnessFill = setTimeout(
+         () => void this.fillLoudness().catch((error: unknown) => this.warn(`Peak moments could not be prepared: ${message(error)}`, "log")),
+         delay
+      );
+      this.loudnessFill.unref?.();
+   }
+   /**
+    * Measures every clip that has no envelope yet, newest first and one at a time, once thumbnails
+    * and hover previews are done. Each takes a fraction of a second, but they yield to any of
+    * that work arriving meanwhile, and pick up again after it.
+    */
+   private async fillLoudness(): Promise<void> {
+      const root = this.root;
+      if (this.loudnessFilling || !root || this.phase !== "ready" || this.scanRetryNeeded) return;
+      this.loudnessFilling = true;
+      try {
+         const cache = this.loudnessCache(root);
+         const storedClips = new Map(this.metadata.clips.map((stored) => [stored.id, stored]));
+         for (const clip of [...this.clips].sort((a, b) => b.createdAt - a.createdAt)) {
+            if (root !== this.root || this.phase !== "ready") return;
+            if (this.thumbnailJobs.size || this.thumbnailsRunning.size || this.stripJobs.size) {
+               this.scheduleLoudnessFill();
+               return;
+            }
+            const stored = storedClips.get(clip.id);
+            if (!stored || clip.originalMissing || !(clip.duration > 0) || this.loudnessFailed.has(stored.identity)) continue;
+            if ((await cache.get(stored.identity)) !== undefined) continue;
+            const source = await this.resolveFile(stored);
+            if (!source || root !== this.root) continue;
+            try {
+               await this.storeLoudness(stored.identity, clip.tracks.length ? await loudnessEnvelope(source, clip.duration, 240) : []);
+            } catch (error) {
+               this.loudnessFailed.add(stored.identity);
+               this.warn(`Peak moments unavailable for ${clip.name}: ${message(error)}`, "log");
+            }
+         }
+         // Envelopes of files the collection no longer knows go, as their strips do.
+         if (root === this.root) await cache.retain(new Set(this.metadata.clips.map((stored) => stored.identity)));
+      } finally {
+         this.loudnessFilling = false;
       }
    }
    /** Usage history lives next to the collection info, so it moves with the clips. */
@@ -497,6 +581,9 @@ export class CollectionService {
       this.playbackLifetime = new AbortController();
       this.playbackCache.cancelAll();
       this.stripFailed.clear();
+      this.loudnessFailed.clear();
+      this.loudnessStore?.cache.discard();
+      this.loudnessStore = undefined;
       await this.stopThumbnails();
       for (const folder of ["thumbnails", "playback"]) await rm(join(root, ".acroclip", folder), { recursive: true, force: true });
       await this.open(root);

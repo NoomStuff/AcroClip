@@ -1,5 +1,5 @@
 import { Gauge, Headphones, ListVideo, LoaderCircle, Maximize, Minimize, Pause, Play, SkipBack, SkipForward } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { loudnessCurve } from "./loudness-curve";
 import { restartThreshold } from "./play-queue";
 import { useKeyframeScrub } from "./useKeyframeScrub";
@@ -10,6 +10,7 @@ import { formatTime } from "./format";
 import { IconButton } from "./ui";
 import { ViewerVolume } from "./ViewerVolume";
 import { TrimHandles } from "./TrimHandles";
+import { markShortcut } from "./keyboard-mode";
 import type { SeekQueue } from "./seek-queue";
 import { pointerSmoothingMs, useSmoothValue } from "./useSmoothValue";
 import type { TrimControls } from "./TrimHandles";
@@ -46,6 +47,7 @@ export function ViewerTransport({
    onFullscreen,
    trim,
    seeker,
+   mediaKey,
 }: {
    time: number;
    video: RefObject<HTMLVideoElement | null>;
@@ -83,10 +85,14 @@ export function ViewerTransport({
    trim: TrimControls | undefined;
    // Where a seek on its way is heading, so the playhead doesn't fall back while the video catches up.
    seeker: SeekQueue;
+   // Which file is showing. A different one is a different moment, not a seek within this one.
+   mediaKey: string;
 }) {
    // The playback clock only redraws transport controls. Sidebar, menus and
    // export controls do not need to reconcile on every video frame.
-   const [time, setTime] = useState(initialTime);
+   const [liveTime, setTime] = useState(initialTime);
+   // While a file loads, the moment it will start at. The old file's position belongs to another clip.
+   const time = disabled ? initialTime : liveTime;
    useEffect(() => {
       const media = video.current;
       if (!media || !visible || disabled) return;
@@ -131,9 +137,19 @@ export function ViewerTransport({
    // While trimming, dragging the playhead follows like scrubbing, and dragging a handle moves it exactly.
    const [trimDrag, setTrimDrag] = useState<TrimEdge | "playhead" | null>(null);
    const frameStep = 1 / (preview.frameRate && preview.frameRate > 0 ? preview.frameRate : 30);
+   // A newly opened file lands the playhead where it starts. Gliding there from the last clip's
+   // position would suggest the two are one piece of footage. The file takes a moment to load and
+   // report its position, so the playhead snaps until a little after it is ready.
+   const arrival = useRef({ key: mediaKey, disabled, until: 0 });
+   useLayoutEffect(() => {
+      const previous = arrival.current;
+      const arrived = previous.key !== mediaKey || (previous.disabled && !disabled);
+      arrival.current = { key: mediaKey, disabled, until: arrived ? performance.now() + 600 : previous.until };
+   }, [mediaKey, disabled]);
    const drawnTime = useSmoothValue(time, {
       ...(scrubbing || trimDrag === "playhead" ? { follow: pointerSmoothingMs } : { duration: 170, jump: Math.max(frameStep * 1.5, 0.05) }),
-      snap: () => playing || trimDrag === "start" || trimDrag === "end",
+      snap: () => playing || disabled || performance.now() < arrival.current.until || trimDrag === "start" || trimDrag === "end",
+      key: mediaKey,
    });
    const fraction = duration > 0 ? Math.min(1, Math.max(0, drawnTime / duration)) : 0;
    const scrub = useKeyframeScrub(preview, visible && !disabled && duration > 0, { eager: true });
@@ -246,6 +262,18 @@ export function ViewerTransport({
                onChange={(event) => seekTo(Number(event.target.value))}
                onKeyDown={(event) => {
                   if (event.altKey || event.ctrlKey || event.metaKey) return;
+                  // A click leaves focus on the seek bar. Arrows pressed after it are the player's shortcuts,
+                  // the same 5 second seeks and volume steps as anywhere else in the player. Someone tabbing
+                  // to the seek bar moves it in seconds instead.
+                  const arrows = { ArrowLeft: "seekBack", ArrowRight: "seekForward", ArrowUp: "volumeUp", ArrowDown: "volumeDown" } as const;
+                  const shortcut = arrows[event.key as keyof typeof arrows];
+                  if (shortcut && !document.documentElement.hasAttribute("data-keyboard")) {
+                     event.preventDefault();
+                     event.stopPropagation();
+                     markShortcut(event.nativeEvent);
+                     window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: shortcut }));
+                     return;
+                  }
                   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
                      event.preventDefault();
                      event.stopPropagation();

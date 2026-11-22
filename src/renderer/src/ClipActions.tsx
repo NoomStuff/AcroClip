@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Copy, FolderInput, FolderOpen, Pencil, Plus, Scissors, Share2, Tag, Trash2 } from "lucide-react";
+import { AppWindow, Copy, ExternalLink, FolderInput, FolderOpen, Pencil, Plus, Scissors, Share2, Tag, Trash2 } from "lucide-react";
 import type { Category, Clip } from "../../shared/types";
 import type { Ask } from "./Dialog";
 import type { Run } from "./desktop";
@@ -9,13 +9,14 @@ import { categoryStyle } from "./category-color";
 import { MenuCheckboxItem, MenuItem, MenuSubmenu } from "./ui";
 import { clipFileLabel, clipFiles, copiedMessage } from "./clip-files";
 import type { ClipFile } from "./clip-files";
+import { ApplicationIcon } from "./ApplicationIcon";
+import { useOpenWith } from "./open-with";
 
 export function ClipActions({
    clip,
    categories,
    busy,
    canCreate,
-   attaCutAvailable,
    ask,
    run,
    create,
@@ -23,13 +24,13 @@ export function ClipActions({
    trim,
    move,
    remove,
+   openPath,
    children,
 }: {
    clip: Clip;
    categories: Category[];
    busy: boolean;
    canCreate: boolean;
-   attaCutAvailable: boolean;
    ask: Ask;
    run: Run;
    create: () => void;
@@ -39,6 +40,8 @@ export function ClipActions({
    move?: (() => void) | undefined;
    // Deletes the clip, one shareable, or all of its shareables. Each asks first.
    remove?: ((shareableId?: string, scope?: "shareables") => void) | undefined;
+   /** The file Open with opens, such as the version the player shows. The clip itself otherwise. */
+   openPath?: string | undefined;
    children?: ReactNode;
 }) {
    const removeFiles = (shareableId?: string, scope?: "shareables") =>
@@ -52,12 +55,20 @@ export function ClipActions({
       });
       if (typeof name === "string" && name) await run(() => api.renameClip(clip.id, name));
    };
+   // Making something from the clip, then getting the file out, then organizing it, then deleting.
    return (
       <>
          <MenuItem disabled={busy || !!clip.originalMissing || !canCreate} onClick={create}>
             <Share2 size={15} />
             {busy ? "Creating shareable…" : "Create shareable"}
          </MenuItem>
+         {trim && (
+            <MenuItem disabled={busy || !!clip.originalMissing} onClick={trim}>
+               <Scissors size={15} />
+               Trim clip
+            </MenuItem>
+         )}
+         <div className="menu-separator" role="separator" />
          <FileChoice
             clip={clip}
             label="Copy file"
@@ -69,17 +80,14 @@ export function ClipActions({
                })
             }
          />
+         <FileChoice clip={clip} label="Show in folder" icon={<FolderOpen size={15} />} choose={(file) => void run(() => api.reveal(file.path))} />
+         <OpenWithChoice path={openPath ?? openableFile(clip)?.path} run={run} />
+         {children}
          <div className="menu-separator" role="separator" />
          <MenuItem disabled={busy || !!clip.originalMissing} onClick={() => void rename()}>
             <Pencil size={15} />
             Rename clip
          </MenuItem>
-         {move && (
-            <MenuItem disabled={busy || !!clip.originalMissing} onClick={move}>
-               <FolderInput size={15} />
-               Move to folder
-            </MenuItem>
-         )}
          <MenuSubmenu label="Tags" icon={<Tag size={15} />}>
             {categories.map((category) => (
                <MenuCheckboxItem
@@ -98,21 +106,12 @@ export function ClipActions({
                Create tag
             </MenuItem>
          </MenuSubmenu>
-         <div className="menu-separator" role="separator" />
-         <FileChoice clip={clip} label="Show in folder" icon={<FolderOpen size={15} />} choose={(file) => void run(() => api.reveal(file.path))} />
-         {trim && (
-            <MenuItem disabled={busy || !!clip.originalMissing} onClick={trim}>
-               <Scissors size={15} />
-               Trim clip
+         {move && (
+            <MenuItem disabled={busy || !!clip.originalMissing} onClick={move}>
+               <FolderInput size={15} />
+               Move to folder
             </MenuItem>
          )}
-         {attaCutAvailable && !clip.originalMissing && (
-            <MenuItem onClick={() => void run(() => api.openInAttaCut(clip.id))}>
-               <Scissors size={15} />
-               Open in AttaCut
-            </MenuItem>
-         )}
-         {children}
          <div className="menu-separator" role="separator" />
          <ShareableDeletion clip={clip} busy={busy} remove={removeFiles} />
          <MenuItem danger separated={false} disabled={busy} onClick={() => removeFiles()}>
@@ -120,6 +119,54 @@ export function ClipActions({
             Delete clip
          </MenuItem>
       </>
+   );
+}
+
+/** The clip when it's there, since opening it elsewhere is mostly for editing. Its newest shareable otherwise. */
+function openableFile(clip: Clip): ClipFile | undefined {
+   const { original, shareables } = clipFiles(clip);
+   return original.available ? original : shareables.at(-1);
+}
+
+/**
+ * Open with, like a file manager's: the default app first, the others the system recommends under it,
+ * and its own picker for anything else where it has one. Until the system has listed apps for this
+ * file type, or where it can't, it's one item that opens the default app.
+ */
+function OpenWithChoice({ path, run }: { path: string | undefined; run: Run }) {
+   const list = useOpenWith(path);
+   if (!path || !list || (!list.apps.length && !list.canChoose))
+      return (
+         <MenuItem disabled={!path} onClick={() => path && void run(() => api.openFile(path))}>
+            <ExternalLink size={15} />
+            Open in default app
+         </MenuItem>
+      );
+   const preferred = list.apps.find((app) => app.isDefault);
+   const others = list.apps.filter((app) => app !== preferred);
+   return (
+      <MenuSubmenu label="Open with" icon={<ExternalLink size={15} />}>
+         <MenuItem onClick={() => void run(() => api.openFile(path))}>
+            {preferred ? <ApplicationIcon src={preferred.icon} size={16} /> : <ExternalLink size={15} />}
+            {preferred?.name ?? "Default app"}
+         </MenuItem>
+         {others.length > 0 && <div className="menu-separator" role="separator" />}
+         {others.map((app) => (
+            <MenuItem key={app.id} onClick={() => void run(() => api.openWith(path, app.id))}>
+               <ApplicationIcon src={app.icon} size={16} />
+               {app.name}
+            </MenuItem>
+         ))}
+         {list.canChoose && (
+            <>
+               <div className="menu-separator" role="separator" />
+               <MenuItem onClick={() => void run(() => api.chooseOpenWith(path))}>
+                  <AppWindow size={15} />
+                  Choose another app…
+               </MenuItem>
+            </>
+         )}
+      </MenuSubmenu>
    );
 }
 

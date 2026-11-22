@@ -4,7 +4,11 @@ import type { CSSProperties, DragEvent } from "react";
 import {
    AlertCircle,
    AppWindow,
+   ArrowDown,
+   ArrowUp,
    ChevronRight,
+   ChevronsDownUp,
+   ChevronsUpDown,
    Clapperboard,
    Folder,
    FolderInput,
@@ -38,6 +42,7 @@ import { ContextHeader, Button, Empty, IconButton, Menu, MenuItem } from "./ui";
 import { api, reportFeedback } from "./desktop";
 import { copiedMessage, defaultClipFile } from "./clip-files";
 import { MoveDialog } from "./MoveDialog";
+import { loadOpenWith } from "./open-with";
 import { initialLocation, reportLocation } from "./navigation-history";
 import type { NavigationLocation } from "./navigation-history";
 
@@ -65,7 +70,6 @@ import { useGridMotion } from "./useGridMotion";
 import { PaneDivider, usePaneSize } from "./layout";
 import { useApplicationColors } from "./useApplicationColors";
 import type { ContextMenuRequest } from "./ui";
-import { useAttaCutAvailable } from "./useAttaCutAvailable";
 import { applicationKeys, summarizeClips, orderLibrarySections, summarizeFolders, selectChildFolders, selectLibraryClips } from "./library-index";
 import type { LibrarySectionId, LibrarySort } from "./library-index";
 import { groupClips } from "./library-groups";
@@ -123,7 +127,7 @@ export function Library({
    visible?: boolean;
    run: Run;
    ask: Ask;
-   openClip: (clip: Clip, queue?: PlayQueue, options?: { trim: true }) => void;
+   openClip: (clip: Clip, queue?: PlayQueue, options?: { trim: true } | { play: number }) => void;
    justWatched: JustWatched | null;
    openSettings: () => void;
    openGames: () => void;
@@ -225,7 +229,11 @@ export function Library({
    const unavailable = state.collectionStatus.phase === "error";
    const initial = state.collectionStatus.phase === "loading" && !state.clips.length;
    const collectionRoot = state.collectionStatus.root || state.preferences.collection;
-   const attaCutAvailable = useAttaCutAvailable(visible);
+   // Asking for the Open with apps early has them ready by the time a clip's menu opens.
+   const sampleClip = state.clips.find((clip) => !clip.originalMissing)?.path;
+   useEffect(() => {
+      if (visible && sampleClip) void loadOpenWith(sampleClip).catch(() => undefined);
+   }, [visible, sampleClip]);
    // Main follows file changes while the window is shown. Opening the library checks once more.
    useEffect(() => {
       if (visible) void api.refresh().catch(() => undefined);
@@ -509,6 +517,7 @@ export function Library({
    const playQueue = useRef<PlayQueue>({ ids: [], label: "" });
    const openFromView = useCallback((clip: Clip) => openClip(clip, playQueue.current), [openClip]);
    const trimFromView = useCallback((clip: Clip) => openClip(clip, playQueue.current, { trim: true }), [openClip]);
+   const playFromView = useCallback((clip: Clip, at: number) => openClip(clip, playQueue.current, { play: at }), [openClip]);
    const renderItem = (item: LibraryItem) =>
       item.type === "folder" ? (
          <FolderCard
@@ -545,11 +554,11 @@ export function Library({
          appIcon={state.applicationIcons[appKeys.get(clip.id) ?? ""]}
          showSource={!filter.startsWith("source:")}
          shareSizeMB={state.preferences.shareSizeMB}
-         attaCutAvailable={attaCutAvailable}
          contextRequest={contextMenu?.clipId === clip.id ? contextMenu : undefined}
          requestMenu={requestMenu}
          closeMenu={closeMenu}
          openClip={openFromView}
+         playClip={playFromView}
          trimClip={trimFromView}
          categories={state.categories}
          watchedAt={justWatched?.clipId === clip.id ? justWatched.position : undefined}
@@ -715,118 +724,169 @@ export function Library({
                   count={initial ? "" : state.clips.length}
                />
                <MotionList items={sections} identity={collectionRoot} onReorder={reorderSection} followContentSize>
-                  {(section) => (
-                     <LibrarySection
-                        label={section.label}
-                        empty={section.empty}
-                        open={sectionOpen(section.id)}
-                        toggle={() =>
-                           setCollapsedSections((current) =>
-                              current.includes(section.id) ? current.filter((id) => id !== section.id) : [...current, section.id]
-                           )
-                        }
-                        action={
-                           <IconButton
-                              label={section.id === "tags" ? "New tag" : section.id === "applications" ? "Add game" : "New collection folder"}
-                              onClick={() => {
-                                 setCollapsedSections((current) => current.filter((id) => id !== section.id));
-                                 if (section.id === "tags") createCategory();
-                                 else if (section.id === "applications") openGames();
-                                 else void createFolder("");
-                              }}
-                           >
-                              <Plus size={16} />
-                           </IconButton>
-                        }
-                     >
-                        {section.id === "tags" ? (
-                           <>
-                              <MotionList
-                                 items={state.categories}
-                                 visible={sectionOpen("tags")}
-                                 identity={collectionRoot}
-                                 onReorder={(id, beforeId) => run(() => api.reorderCategory(id, beforeId))}
-                              >
-                                 {(item) => (
-                                    <SidebarTab
-                                       key={item.id}
-                                       className="category-item"
-                                       rowAttributes={{
-                                          "data-empty": !summary.categories.get(item.id) || undefined,
-                                          onContextMenu: (event) => {
-                                             event.preventDefault();
-                                             setCategoryContextMenu({
-                                                categoryId: item.id,
-                                                left: event.clientX,
-                                                top: event.clientY,
-                                                restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
-                                             });
-                                          },
-                                       }}
-                                       icon={<CategoryMark category={item} />}
-                                       label={item.name}
-                                       selected={filter === `category:${item.id}`}
-                                       tabStyle={categoryStyle(item.color)}
-                                       onSelect={() => setFilter(`category:${item.id}`)}
-                                       count={summary.categories.get(item.id) ?? 0}
-                                       actions={
-                                          <Menu
-                                             label={`Actions for ${item.name}`}
-                                             trigger={<MoreHorizontal size={14} />}
-                                             contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
-                                             onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
-                                          >
-                                             <MenuItem onClick={() => setEditingCategory(item)}>
-                                                <Pencil size={14} />
-                                                Edit tag
-                                             </MenuItem>
-                                             <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
-                                                <Trash2 size={14} />
-                                                Delete tag
-                                             </MenuItem>
-                                          </Menu>
-                                       }
+                  {(section) => {
+                     const addLabel = section.id === "tags" ? "New tag" : section.id === "applications" ? "Add game" : "New collection folder";
+                     const add = () => {
+                        setCollapsedSections((current) => current.filter((id) => id !== section.id));
+                        if (section.id === "tags") createCategory();
+                        else if (section.id === "applications") openGames();
+                        else void createFolder("");
+                     };
+                     const toggle = () =>
+                        setCollapsedSections((current) =>
+                           current.includes(section.id) ? current.filter((id) => id !== section.id) : [...current, section.id]
+                        );
+                     const index = sections.findIndex((item) => item.id === section.id);
+                     return (
+                        <LibrarySection
+                           label={section.label}
+                           empty={section.empty}
+                           open={sectionOpen(section.id)}
+                           toggle={toggle}
+                           action={
+                              <IconButton label={addLabel} onClick={add}>
+                                 <Plus size={16} />
+                              </IconButton>
+                           }
+                           menu={
+                              <>
+                                 <MenuItem onClick={add}>
+                                    <Plus size={15} />
+                                    {addLabel}
+                                 </MenuItem>
+                                 {!section.empty && (
+                                    <MenuItem onClick={toggle}>
+                                       {sectionOpen(section.id) ? <ChevronsDownUp size={15} /> : <ChevronsUpDown size={15} />}
+                                       {sectionOpen(section.id) ? "Collapse" : "Expand"}
+                                    </MenuItem>
+                                 )}
+                                 <div className="menu-separator" role="separator" />
+                                 <MenuItem disabled={index <= 0} onClick={() => reorderSection(section.id, sections[index - 1]?.id ?? null)}>
+                                    <ArrowUp size={15} />
+                                    Move up
+                                 </MenuItem>
+                                 <MenuItem
+                                    disabled={index < 0 || index >= sections.length - 1}
+                                    onClick={() => reorderSection(section.id, sections[index + 2]?.id ?? null)}
+                                 >
+                                    <ArrowDown size={15} />
+                                    Move down
+                                 </MenuItem>
+                              </>
+                           }
+                        >
+                           {section.id === "tags" ? (
+                              <>
+                                 <MotionList
+                                    items={state.categories}
+                                    visible={sectionOpen("tags")}
+                                    identity={collectionRoot}
+                                    onReorder={(id, beforeId) => run(() => api.reorderCategory(id, beforeId))}
+                                 >
+                                    {(item) => (
+                                       <SidebarTab
+                                          key={item.id}
+                                          className="category-item"
+                                          rowAttributes={{
+                                             "data-empty": !summary.categories.get(item.id) || undefined,
+                                             onContextMenu: (event) => {
+                                                event.preventDefault();
+                                                setCategoryContextMenu({
+                                                   categoryId: item.id,
+                                                   left: event.clientX,
+                                                   top: event.clientY,
+                                                   restoreFocus: event.currentTarget.querySelector("button") ?? event.currentTarget,
+                                                });
+                                             },
+                                          }}
+                                          icon={<CategoryMark category={item} />}
+                                          label={item.name}
+                                          selected={filter === `category:${item.id}`}
+                                          tabStyle={categoryStyle(item.color)}
+                                          onSelect={() => setFilter(`category:${item.id}`)}
+                                          count={summary.categories.get(item.id) ?? 0}
+                                          actions={
+                                             <Menu
+                                                label={`Actions for ${item.name}`}
+                                                trigger={<MoreHorizontal size={14} />}
+                                                contextRequest={categoryContextMenu?.categoryId === item.id ? categoryContextMenu : undefined}
+                                                onContextClose={() => setCategoryContextMenu((current) => (current?.categoryId === item.id ? null : current))}
+                                             >
+                                                <MenuItem onClick={() => setEditingCategory(item)}>
+                                                   <Pencil size={14} />
+                                                   Edit tag
+                                                </MenuItem>
+                                                <div className="menu-separator" role="separator" />
+                                                <MenuItem
+                                                   disabled={state.categories.indexOf(item) <= 0}
+                                                   onClick={() =>
+                                                      void run(() =>
+                                                         api.reorderCategory(item.id, state.categories[state.categories.indexOf(item) - 1]?.id ?? null)
+                                                      )
+                                                   }
+                                                >
+                                                   <ArrowUp size={14} />
+                                                   Move up
+                                                </MenuItem>
+                                                <MenuItem
+                                                   disabled={state.categories.indexOf(item) >= state.categories.length - 1}
+                                                   onClick={() =>
+                                                      void run(() =>
+                                                         api.reorderCategory(item.id, state.categories[state.categories.indexOf(item) + 2]?.id ?? null)
+                                                      )
+                                                   }
+                                                >
+                                                   <ArrowDown size={14} />
+                                                   Move down
+                                                </MenuItem>
+                                                <MenuItem danger onClick={() => void removeCategory(item.id, item.name)}>
+                                                   <Trash2 size={14} />
+                                                   Delete tag
+                                                </MenuItem>
+                                             </Menu>
+                                          }
+                                       />
+                                    )}
+                                 </MotionList>
+                              </>
+                           ) : section.id === "applications" ? (
+                              <>
+                                 <MotionList items={sources} identity={collectionRoot} visible={sectionOpen("applications")}>
+                                    {(source) => (
+                                       <SidebarTab
+                                          key={source.id}
+                                          className="application-row"
+                                          rowAttributes={{ "data-empty": !applicationCounts.get(source.id) || undefined }}
+                                          tabClassName="application-filter"
+                                          tabStyle={{ "--application-color": applicationColors[source.id] } as CSSProperties}
+                                          icon={<ApplicationIcon src={source.icon} size={16} />}
+                                          label={source.name}
+                                          selected={filter === `source:${source.id}`}
+                                          onSelect={() => setFilter(`source:${source.id}`)}
+                                          count={applicationCounts.get(source.id) ?? 0}
+                                       />
+                                    )}
+                                 </MotionList>
+                              </>
+                           ) : (
+                              <>
+                                 {folders.length > 0 && (
+                                    <FolderTree
+                                       visible={sectionOpen("folders")}
+                                       dropProps={folderDropProps}
+                                       paths={folders}
+                                       counts={folderStats}
+                                       selected={folderPath}
+                                       onSelect={(path) => setFilter(`folder:${path}`)}
+                                       renderActions={(path) => folderMenu(path, "tree")}
+                                       requestMenu={(path, element, left, top) => requestFolderMenu(path, "tree", element, left, top)}
                                     />
                                  )}
-                              </MotionList>
-                           </>
-                        ) : section.id === "applications" ? (
-                           <>
-                              <MotionList items={sources} identity={collectionRoot} visible={sectionOpen("applications")}>
-                                 {(source) => (
-                                    <SidebarTab
-                                       key={source.id}
-                                       className="application-row"
-                                       rowAttributes={{ "data-empty": !applicationCounts.get(source.id) || undefined }}
-                                       tabClassName="application-filter"
-                                       tabStyle={{ "--application-color": applicationColors[source.id] } as CSSProperties}
-                                       icon={<ApplicationIcon src={source.icon} size={16} />}
-                                       label={source.name}
-                                       selected={filter === `source:${source.id}`}
-                                       onSelect={() => setFilter(`source:${source.id}`)}
-                                       count={applicationCounts.get(source.id) ?? 0}
-                                    />
-                                 )}
-                              </MotionList>
-                           </>
-                        ) : (
-                           <>
-                              {folders.length > 0 && (
-                                 <FolderTree
-                                    visible={sectionOpen("folders")}
-                                    dropProps={folderDropProps}
-                                    paths={folders}
-                                    counts={folderStats}
-                                    selected={folderPath}
-                                    onSelect={(path) => setFilter(`folder:${path}`)}
-                                    renderActions={(path) => folderMenu(path, "tree")}
-                                    requestMenu={(path, element, left, top) => requestFolderMenu(path, "tree", element, left, top)}
-                                 />
-                              )}
-                           </>
-                        )}
-                     </LibrarySection>
-                  )}
+                              </>
+                           )}
+                        </LibrarySection>
+                     );
+                  }}
                </MotionList>
             </div>
          </aside>

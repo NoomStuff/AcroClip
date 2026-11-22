@@ -67,7 +67,18 @@ function stripFrame(position: number, frames: number): number {
  * hover, so moving the pointer decodes nothing and cuts straight between frames. A card drops the
  * decoded strip shortly after the pointer leaves; the player keeps it while the clip is open.
  */
-export function useKeyframeScrub(clip: Pick<Clip, "id" | "thumbnail" | "width" | "height">, enabled: boolean, { eager = false }: { eager?: boolean } = {}) {
+export function useKeyframeScrub(
+   clip: Pick<Clip, "id" | "thumbnail" | "width" | "height">,
+   enabled: boolean,
+   {
+      eager = false,
+      fit = "thumbnail",
+   }: {
+      eager?: boolean;
+      /** "thumbnail" frames it like a card's thumbnail. "contain" shows the whole frame, as the player does. */
+      fit?: "thumbnail" | "contain";
+   } = {}
+) {
    const [position, setPosition] = useState<number | null>(null);
    const [loaded, setLoaded] = useState<Loaded | null>(null);
    const canvas = useRef<HTMLCanvasElement>(null);
@@ -128,7 +139,7 @@ export function useKeyframeScrub(clip: Pick<Clip, "id" | "thumbnail" | "width" |
       const top = Math.floor(frame / strip.columns) * frameHeight;
       context.clearRect(0, 0, canvasWidth, canvasHeight);
       // Same framing as the thumbnail: portrait clips fit inside, the rest fill the frame.
-      if (height > width) {
+      if (fit === "contain" || height > width) {
          const fit = Math.min(canvasWidth / frameWidth, canvasHeight / frameHeight);
          const drawWidth = frameWidth * fit;
          const drawHeight = frameHeight * fit;
@@ -159,7 +170,7 @@ export function useKeyframeScrub(clip: Pick<Clip, "id" | "thumbnail" | "width" |
             canvasHeight
          );
       }
-   }, [strip, frame, width, height]);
+   }, [strip, frame, width, height, fit]);
    return {
       canvas,
       position: enabled ? position : null,
