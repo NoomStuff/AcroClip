@@ -86,13 +86,19 @@ if (!existsSync(path.join(obs, "bin", "64bit", "obs.dll"))) {
    run("powershell", ["-NoProfile", "-Command", `Expand-Archive -LiteralPath ${psLiteral(archive)} -DestinationPath ${psLiteral(obs)} -Force`]);
 }
 const bin = path.join(obs, "bin", "64bit");
-const installedVersion = run("powershell", [
+// Read through .NET directly, so a missing file fails here instead of reading as a blank version.
+const [fileVersion = "", productVersion = "", size = ""] = run("powershell", [
    "-NoProfile",
    "-Command",
-   `(Get-Item -LiteralPath ${psLiteral(path.join(bin, "obs64.exe"))}).VersionInfo.FileVersion`,
-]).trim();
+   `$info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo(${psLiteral(path.join(bin, "obs64.exe"))}); "$($info.FileVersion)|$($info.ProductVersion)|$((Get-Item -LiteralPath $info.FileName).Length)"`,
+])
+   .trim()
+   .split("|");
+const installedVersion = fileVersion.trim() || productVersion.trim();
 if (installedVersion !== version)
-   throw new Error(`OBS runtime ${installedVersion} does not match pinned headers ${version}. Set ACROCLIP_OBS_ROOT to ${version}`);
+   throw new Error(
+      `OBS runtime ${installedVersion || "with no version"} does not match pinned headers ${version}. Set ACROCLIP_OBS_ROOT to ${version}. obs64.exe: file "${fileVersion}", product "${productVersion}", ${size} bytes`
+   );
 const vswhere = path.join(process.env["ProgramFiles(x86)"] ?? "C:/Program Files (x86)", "Microsoft Visual Studio", "Installer", "vswhere.exe");
 const installation = run(vswhere, [
    "-latest",
