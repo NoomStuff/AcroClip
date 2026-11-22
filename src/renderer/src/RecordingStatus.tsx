@@ -210,7 +210,13 @@ function NotificationChips() {
       if (total < 2) setLogOpen(false);
    }, [total]);
    if (!groups.length) return null;
-   const toggle = (entry: NotificationEntry) => (open === entry.id ? closePinned(entry.id, entry.tone, closeOpen) : toggleOpen(entry.id));
+   const toggle = (entry: NotificationEntry) => {
+      if (open === entry.id) return closePinned(entry.id, entry.tone, closeOpen);
+      // Another open message folds back into its pill before this one opens.
+      const current = entries.find((item) => item.id === open);
+      if (current) closePinned(current.id, current.tone, closeOpen);
+      toggleOpen(entry.id);
+   };
    const [primary, ...others] = groups;
    const newest = primary!.entries[0]!;
    return (
@@ -272,14 +278,14 @@ function NotificationChips() {
             )}
          </div>
          <Popover open={logOpen} anchor={area} onClose={closeLog} label="Notification log" className="notification-log-popover" placement="above" align="end">
-            <NotificationLog entries={groups.flatMap((group) => group.entries)} open={open} close={closeLog} />
+            <NotificationLog entries={groups.flatMap((group) => group.entries)} close={closeLog} show={(entry) => open !== entry.id && toggle(entry)} />
          </Popover>
       </div>
    );
 }
 
 /** Every chip, most severe first. A row reopens its message; dismiss removes it. */
-function NotificationLog({ entries, open, close }: { entries: NotificationEntry[]; open: number | null; close: () => void }) {
+function NotificationLog({ entries, close, show }: { entries: NotificationEntry[]; close: () => void; show: (entry: NotificationEntry) => void }) {
    return (
       <>
          <div className="notification-log-entries">
@@ -290,7 +296,7 @@ function NotificationLog({ entries, open, close }: { entries: NotificationEntry[
                      className="notification-log-text"
                      onClick={() => {
                         close();
-                        if (open !== entry.id) toggleOpen(entry.id);
+                        show(entry);
                      }}
                   >
                      <span>{entry.title}</span>
