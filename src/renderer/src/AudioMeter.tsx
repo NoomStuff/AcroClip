@@ -2,6 +2,9 @@ import { useEffect, useRef } from "react";
 import { advanceMeter } from "./audio-meter";
 import type { MeterReading } from "./audio-meter";
 import { api, onAudioLevels } from "./desktop";
+
+/** Levels arrive about 30 times a second while a source is heard. */
+const staleAfterMs = 250;
 export function AudioMeter({
    name,
    sourceId,
@@ -18,7 +21,9 @@ export function AudioMeter({
    visible: boolean;
 }) {
    const meter = useRef<HTMLDivElement>(null),
-      target = useRef(0);
+      target = useRef(0),
+      // When the level last arrived. Nothing arrives from a source that has gone quiet, so an old level falls to silence.
+      heardAt = useRef(0);
    useEffect(() => {
       target.current = 0;
       if (!visible) return;
@@ -26,7 +31,9 @@ export function AudioMeter({
       // React state or rebuild recording controls and source lists.
       const stopLevels = onAudioLevels((levels) => {
          const level = captureLevel ? levels.capture : levels.additional?.[sourceId];
-         if (level !== undefined) target.current = level;
+         if (level === undefined) return;
+         target.current = level;
+         heardAt.current = performance.now();
       });
       const stopErrors = api.onEvent((event) => {
          if (event.type === "audio-monitor" && event.monitorError) target.current = 0;
@@ -45,6 +52,7 @@ export function AudioMeter({
       let reading: MeterReading = { level: 0, peak: 0, holdUntil: 0, clipUntil: 0 };
       const paint = (now: number) => {
          const live = visible && enabled && !muted;
+         if (now - heardAt.current > staleAfterMs) target.current = 0;
          reading = live ? advanceMeter(reading, target.current, now, Math.max(0, now - previous)) : { level: 0, peak: 0, holdUntil: 0, clipUntil: 0 };
          previous = now;
          const signature = `${reading.level.toFixed(2)}:${reading.peak.toFixed(2)}:${live && reading.clipUntil > now}`;

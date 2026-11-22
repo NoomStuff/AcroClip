@@ -129,6 +129,8 @@ export class Recorder {
    private missingAudio = "";
    /** Application sources that weren't open when capture started. Windows attaches each once its app opens. */
    private pendingAudio: AdditionalAudioSource[] = [];
+   /** The window each pending source was last refused for, by source id. A new window of the app is tried again. */
+   private refusedAudio = new Map<string, string>();
    private attachingAudio = false;
    private requests = new Map<string, string>();
    private fullscreen = false;
@@ -167,6 +169,8 @@ export class Recorder {
    private sourceAudioId: string | null = null;
    private monitorGeneration = 0;
    private monitorLevels: AudioLevels = { capture: 0, microphone: 0 };
+   /** When each monitored level last arrived. A source that goes quiet stops reporting, and its bar falls to silence instead of holding its last level. */
+   private monitorHeardAt = { capture: 0, microphone: 0 };
    private fastStatusUntil = 0;
    private background = false;
    constructor(options: RecorderOptions) {
@@ -479,8 +483,9 @@ export class Recorder {
    }
    /**
     * Gives a silent application track its audio once the app opens, without restarting capture. Only
-    * runs while a source is still waiting, so it costs nothing otherwise. A source the helper refuses
-    * stays silent for the rest of the session instead of being retried every tick.
+    * runs while a source is still waiting, so it costs nothing otherwise. A window the helper refuses,
+    * such as one still opening, isn't tried again every tick. The source stays pending, and the app's
+    * next window gets its own try.
     */
    private async attachPendingAudio(): Promise<void> {
       if (this.attachingAudio || !this.pendingAudio.length || process.platform !== "win32" || !["recording", "waiting"].includes(this.current.state)) return;
@@ -488,10 +493,14 @@ export class Recorder {
       try {
          const { sources } = resolveAudioSources(this.pendingAudio, await this.capturableApplications());
          for (const source of sources.filter((item) => item.enabled)) {
-            this.pendingAudio = this.pendingAudio.filter((item) => item.id !== source.id);
+            const target = `${source.sourceId}:${source.pid ?? ""}`;
+            if (this.refusedAudio.get(source.id) === target) continue;
             try {
                await this.command({ action: "attach-audio", settings: source });
+               this.pendingAudio = this.pendingAudio.filter((item) => item.id !== source.id);
+               this.refusedAudio.delete(source.id);
             } catch (error) {
+               this.refusedAudio.set(source.id, target);
                this.options.onWarning?.(`${source.name} opened, but its audio couldn't be added: ${error instanceof Error ? error.message : String(error)}`);
             }
          }
@@ -747,8 +756,17 @@ export class Recorder {
       if (value.event === "audio-levels") {
          const idle = !["starting", "recording", "waiting"].includes(this.current.state);
          if (idle) {
-            if (typeof value.additional?.["monitor-capture"] === "number") this.monitorLevels.capture = value.additional["monitor-capture"];
-            if (typeof value.additional?.["monitor-microphone"] === "number") this.monitorLevels.microphone = value.additional["monitor-microphone"];
+            const now = Date.now();
+            if (typeof value.additional?.["monitor-capture"] === "number") {
+               this.monitorLevels.capture = value.additional["monitor-capture"];
+               this.monitorHeardAt.capture = now;
+            }
+            if (typeof value.additional?.["monitor-microphone"] === "number") {
+               this.monitorLevels.microphone = value.additional["monitor-microphone"];
+               this.monitorHeardAt.microphone = now;
+            }
+            if (now - this.monitorHeardAt.capture > 250) this.monitorLevels.capture = 0;
+            if (now - this.monitorHeardAt.microphone > 250) this.monitorLevels.microphone = 0;
          }
          this.options.onAudioLevels?.({
             capture: idle ? this.monitorLevels.capture : Number.isFinite(value.capture) ? Math.max(0, Math.min(1, value.capture!)) : 0,
@@ -1021,6 +1039,7 @@ export class Recorder {
       this.autoFailure = "";
       this.missingAudio = "";
       this.pendingAudio = [];
+      this.refusedAudio.clear();
       this.monitorGeneration++;
       this.monitorKey = "";
       this.monitorLevels = { capture: 0, microphone: 0 };
