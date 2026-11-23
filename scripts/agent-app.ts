@@ -1,18 +1,22 @@
 /**
  * A long-running AcroClip that agents can look at and drive without touching the person at the
- * computer. The app runs from out/ inside the private Linux desktop that the UI tests use: its own
- * X display, D-Bus, audio, profile and collection. Every command attaches over CDP and detaches
- * again, so the app keeps its state between commands. See `bun run agent-app help`.
+ * computer. The app runs from out/ with its own profile and collection. On Linux it runs inside the
+ * private desktop that the UI tests use: its own X display, D-Bus and audio. On Windows it runs on a
+ * Win32 desktop of its own, which keeps its windows off the person's screen, and its main process is
+ * patched at launch so it can't take global shortcuts, open links or play sound. Every command
+ * attaches over CDP and detaches again, so the app keeps its state between commands. See
+ * `bun run agent-app help`.
  */
-import { spawn, spawnSync } from "node:child_process";
-import { existsSync, openSync, readFileSync } from "node:fs";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { appendFileSync, existsSync, openSync, readFileSync } from "node:fs";
 import { chmod, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { z } from "zod";
 import { defaultPreferences } from "../src/shared/defaults";
+import type { Preferences } from "../src/shared/types";
 import { requireTestIsolation } from "./test-isolation";
 
 const home = resolve(".cache/agent-app");
@@ -27,6 +31,8 @@ const paths = {
    shots: join(home, "shots"),
    bin: join(home, "bin"),
 };
+const windowsDesktop = "acroclip-agent";
+const electron = resolve("node_modules/electron/dist", readFileSync("node_modules/electron/path.txt", "utf8").trim());
 const Session = z.object({ runner: z.number(), host: z.number(), app: z.number(), cdp: z.number(), inspector: z.number(), launch: z.number() });
 type Session = z.infer<typeof Session>;
 
@@ -48,7 +54,7 @@ const help = `bun run agent-app <command>
   run <body>             Run an async function body with Playwright's \`page\` for the main window, for
                          steps that must happen back to back. A returned value is printed.
   state                  window.acroClip.state() as JSON.
-  logs [lines]           Tail of the app's stdout, its app.log and links it tried to open.
+  logs [lines]           Tail of the app's stdout, its app.log and what it tried to open.
   restart [--no-build]   Rebuild out/ and relaunch with the same profile and collection.
   stop                   Quit the app and tear the private desktop down.`;
 
@@ -130,11 +136,8 @@ async function withPage<T>(use: (page: Page) => Promise<T>): Promise<T> {
 }
 
 /** Runtime.evaluate on the main process through its Node inspector. */
-async function evaluateMain(expression: string): Promise<unknown> {
-   const session = requireSession();
-   const [target] = z
-      .array(z.object({ webSocketDebuggerUrl: z.string() }))
-      .parse(await (await fetch(`http://127.0.0.1:${session.inspector}/json/list`)).json());
+async function evaluateMain(expression: string, inspector = requireSession().inspector): Promise<unknown> {
+   const [target] = z.array(z.object({ webSocketDebuggerUrl: z.string() })).parse(await (await fetch(`http://127.0.0.1:${inspector}/json/list`)).json());
    if (!target) throw new Error("The main process inspector has no target.");
    const socket = new WebSocket(target.webSocketDebuggerUrl);
    await new Promise<void>((done, fail) => {
@@ -170,24 +173,74 @@ async function evaluateMain(expression: string): Promise<unknown> {
    }
 }
 
+/**
+ * The private Win32 desktop only holds windows. Global shortcuts share one table with the person's
+ * desktop, and sound, toasts and opened links reach them too, so the profile turns sounds off and the
+ * main process is patched at launch.
+ */
+const windowsQuiet = {
+   notificationStartSound: false,
+   notificationStopSound: false,
+   notificationSaveSound: false,
+   notificationErrorSound: false,
+} satisfies Partial<Preferences>;
+
+/** Records what the app opens and registers instead of doing it, and mutes its pages. */
+const windowsPatch = (opened: string): string => `{
+   // Until Electron hooks module loading, "electron" resolves to the npm package, and requiring it then would cache that for this context.
+   if (require.resolve("electron") !== "electron") throw new Error("Electron hasn't loaded yet.");
+   const { app, dialog, globalShortcut, Notification, shell, webContents } = require("electron");
+   globalShortcut.unregisterAll();
+   const { appendFileSync } = require("node:fs");
+   const record = (kind, value) => appendFileSync(${JSON.stringify(opened)}, kind + " " + value + "\\n");
+   shell.openExternal = async (url) => record("link", url);
+   shell.openPath = async (path) => (record("path", path), "");
+   shell.showItemInFolder = (path) => record("folder", path);
+   globalShortcut.register = (accelerator) => (record("shortcut", accelerator), true);
+   globalShortcut.registerAll = (accelerators) => accelerators.forEach((accelerator) => record("shortcut", accelerator));
+   Notification.prototype.show = function () { record("notification", this.title); };
+   // Electron reports a main process crash in a modal box, which nobody could close on this desktop.
+   dialog.showErrorBox = (title, content) => record("error", title + ": " + content);
+   for (const contents of webContents.getAllWebContents()) contents.setAudioMuted(true);
+   app.on("web-contents-created", (_event, contents) => contents.setAudioMuted(true));
+   "patched";
+}`;
+
+/** Patches a new launch as soon as its main process inspector answers, or stops it. */
+async function patchWindowsApp(inspector: number, child: ChildProcess): Promise<void> {
+   const deadline = Date.now() + 30_000;
+   let failure: unknown = "it never answered";
+   while (Date.now() < deadline && child.exitCode === null) {
+      try {
+         if ((await evaluateMain(windowsPatch(paths.opened), inspector)) === "patched") return;
+      } catch (error) {
+         failure = error;
+      }
+      await delay(50);
+   }
+   child.kill();
+   throw new Error(`Couldn't patch the main process, so the app was stopped: ${failure instanceof Error ? failure.message : String(failure)}`);
+}
+
 async function seed(clips: number, onboarding: boolean): Promise<void> {
    await mkdir(paths.profile, { recursive: true });
    await mkdir(paths.collection, { recursive: true });
    const preferences = join(paths.profile, "preferences.json");
-   if (!existsSync(preferences))
-      await writeFile(
-         preferences,
-         JSON.stringify({
-            ...defaultPreferences,
-            collection: paths.collection,
-            setupComplete: !onboarding,
-            audioSources: [],
-            audioSourcesVersion: undefined,
-            captureAudio: false,
-         })
-      );
+   const saved: Record<string, unknown> = existsSync(preferences)
+      ? z.record(z.string(), z.unknown()).parse(JSON.parse(readFileSync(preferences, "utf8")))
+      : {
+           ...defaultPreferences,
+           collection: paths.collection,
+           setupComplete: !onboarding,
+           audioSources: [],
+           audioSourcesVersion: undefined,
+           captureAudio: false,
+        };
+   // Reapplied on every start, so sounds turned on during a session stay off.
+   await writeFile(preferences, JSON.stringify(process.platform === "win32" ? { ...saved, ...windowsQuiet } : saved));
    const existing = (await readdir(paths.collection)).filter((name) => name.endsWith(".mp4")).length;
-   const ffmpeg = existsSync("resources/media/ffmpeg") ? resolve("resources/media/ffmpeg") : (process.env["FFMPEG_PATH"] ?? "ffmpeg");
+   const bundled = resolve("resources/media", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+   const ffmpeg = existsSync(bundled) ? bundled : (process.env["FFMPEG_PATH"] ?? "ffmpeg");
    for (let index = existing; index < existing + clips; index++) {
       const result = spawnSync(ffmpeg, [
          ...["-v", "error", "-f", "lavfi", "-i", `testsrc2=size=1280x720:rate=30`, "-f", "lavfi", "-i", `sine=frequency=${300 + index * 40}`],
@@ -198,31 +251,44 @@ async function seed(clips: number, onboarding: boolean): Promise<void> {
    }
 }
 
-/** Runs inside run-linux-ui.py. Launches the app and relaunches it when a restart was requested. */
+/** Runs inside run-linux-ui.py, or on the private Win32 desktop. Launches the app and relaunches it when a restart was requested. */
 async function host(): Promise<void> {
-   requireTestIsolation();
-   // run-linux-ui.py starts the host directly, so its parent owns the private desktop.
-   const runner = process.ppid;
-   // Links and folders the app opens are recorded instead of opening on the private desktop.
-   await mkdir(paths.bin, { recursive: true });
-   await writeFile(join(paths.bin, "xdg-open"), `#!/bin/sh\nprintf '%s\\n' "$1" >> '${paths.opened}'\n`);
-   await chmod(join(paths.bin, "xdg-open"), 0o755);
+   const windows = process.platform === "win32";
+   // The Windows host has no console, so both hosts write their log directly.
+   const say = (line: string) => appendFileSync(paths.host, `${line}\n`);
+   if (windows) {
+      const { currentDesktop, openDesktop } = await import("./windows-desktop");
+      if (currentDesktop() !== windowsDesktop) throw new Error(`The host must run on the ${windowsDesktop} desktop. Use bun run agent-app start.`);
+      // Held for the host's lifetime, so the desktop outlives the start command that created it.
+      openDesktop(windowsDesktop);
+   } else {
+      requireTestIsolation();
+      // Links and folders the app opens are recorded instead of opening on the private desktop.
+      await mkdir(paths.bin, { recursive: true });
+      await writeFile(join(paths.bin, "xdg-open"), `#!/bin/sh\nprintf '%s\\n' "$1" >> '${paths.opened}'\n`);
+      await chmod(join(paths.bin, "xdg-open"), 0o755);
+   }
+   // run-linux-ui.py starts the Linux host directly, so its parent owns the private desktop. A Win32
+   // desktop needs no process of its own, so there the host is the whole session.
+   const runner = windows ? process.pid : process.ppid;
    for (let launch = 1; ; launch++) {
       const [cdp, inspector] = [await freePort(), await freePort()];
       const log = openSync(paths.app, "a");
-      const child = spawn(
-         resolve("node_modules/.bin/electron"),
-         [resolve("."), "--disable-gpu-sandbox", `--remote-debugging-port=${cdp}`, `--inspect=127.0.0.1:${inspector}`],
-         {
-            stdio: ["ignore", log, log],
-            env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: paths.profile, PATH: `${paths.bin}:${process.env["PATH"] ?? ""}` },
-         }
-      );
+      const child = spawn(electron, [resolve("."), "--disable-gpu-sandbox", `--remote-debugging-port=${cdp}`, `--inspect=127.0.0.1:${inspector}`], {
+         stdio: ["ignore", log, log],
+         env: {
+            ...process.env,
+            ACROCLIP_TEST: "1",
+            ACROCLIP_PROFILE: paths.profile,
+            ...(windows ? {} : { PATH: `${paths.bin}${delimiter}${process.env["PATH"] ?? ""}` }),
+         },
+      });
+      const exited = new Promise<number | null>((done) => child.once("exit", done));
+      if (windows) await patchWindowsApp(inspector, child);
       const session: Session = { runner, host: process.pid, app: child.pid ?? 0, cdp, inspector, launch };
       await writeFile(paths.session, JSON.stringify(session));
-      console.log(`Launch ${launch}: app ${child.pid}, CDP ${cdp}, inspector ${inspector}`);
-      const code = await new Promise<number | null>((done) => child.once("exit", done));
-      console.log(`App exited with ${code}`);
+      say(`Launch ${launch}: app ${child.pid}, CDP ${cdp}, inspector ${inspector}`);
+      say(`App exited with ${await exited}`);
       if (!existsSync(paths.restart)) break;
       await rm(paths.restart);
    }
@@ -230,7 +296,8 @@ async function host(): Promise<void> {
 }
 
 async function start(args: string[]): Promise<void> {
-   if (process.platform !== "linux") throw new Error("The agent app needs the private Linux desktop. On other platforms, use the Playwright UI tests.");
+   if (process.platform !== "linux" && process.platform !== "win32")
+      throw new Error("The agent app needs a private Linux or Windows desktop. On macOS, use the Playwright UI tests.");
    const running = readSession();
    if (running) {
       console.log(`Already running (launch ${running.launch}, CDP ${running.cdp}). Use restart to pick up changes.`);
@@ -254,12 +321,17 @@ async function start(args: string[]): Promise<void> {
    if (option("--no-build") < 0) build();
    await rm(paths.session, { force: true });
    await rm(paths.restart, { force: true });
-   const log = openSync(paths.host, "w");
-   const runner = spawn("python3", ["scripts/run-linux-ui.py", process.execPath, "scripts/agent-app.ts", "host"], {
-      detached: true,
-      stdio: ["ignore", log, log],
-   });
-   runner.unref();
+   await writeFile(paths.host, "");
+   const hostCommand = ["scripts/agent-app.ts", "host"];
+   if (process.platform === "win32") {
+      const { openDesktop, spawnOnDesktop } = await import("./windows-desktop");
+      // Held until this command exits, by which time the host holds its own handle.
+      openDesktop(windowsDesktop);
+      spawnOnDesktop(windowsDesktop, process.execPath, hostCommand, process.cwd(), process.env);
+   } else {
+      const log = openSync(paths.host, "a");
+      spawn("python3", ["scripts/run-linux-ui.py", process.execPath, ...hostCommand], { detached: true, stdio: ["ignore", log, log] }).unref();
+   }
    const session = await waitForLaunch(0);
    console.log(`AcroClip is running in a private desktop (CDP ${session.cdp}). Profile: ${paths.profile}, collection: ${paths.collection}`);
 }
@@ -274,7 +346,10 @@ async function stop(): Promise<void> {
    await evaluateMain('require("electron").app.exit(0)').catch(() => undefined);
    const deadline = Date.now() + 15_000;
    while (alive(session.runner) && Date.now() < deadline) await delay(200);
-   if (alive(session.runner)) process.kill(-session.runner, "SIGTERM");
+   if (alive(session.runner)) {
+      if (process.platform === "win32") spawnSync("taskkill", ["/T", "/F", "/PID", String(session.runner)], { stdio: "ignore" });
+      else process.kill(-session.runner, "SIGTERM");
+   }
    await rm(paths.session, { force: true });
    console.log("Stopped.");
 }
@@ -289,7 +364,10 @@ const required = (index: number, name: string): string => {
 
 switch (command) {
    case "host":
-      await host();
+      await host().catch((failure: unknown) => {
+         appendFileSync(paths.host, `${failure instanceof Error ? (failure.stack ?? failure.message) : String(failure)}\n`);
+         process.exit(1);
+      });
       break;
    case "start":
       await start(args);
