@@ -322,6 +322,11 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
       const position = page.getByRole("slider", { name: "Playback position", exact: true });
       await expect(position).toHaveValue("2");
+      // Someone moving through the player by keyboard steps the seek bar in seconds. After a click,
+      // its arrows are the player's 5 second seeks instead.
+      await page.keyboard.press("Tab");
+      await expect(page.locator("html")).toHaveAttribute("data-keyboard", "true");
+      await position.focus();
       await position.press("ArrowRight");
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(2.9);
       await position.press("ArrowLeft");

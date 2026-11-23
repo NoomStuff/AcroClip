@@ -12,6 +12,7 @@ import {
    wasapiModulePath,
    wasapiPacketFiles,
    wasapiSourceNames,
+   windowsOrigin,
    type WasapiRecord,
 } from "./windows-wasapi-source";
 import { selectSourceKitFiles } from "./package-source-kit";
@@ -165,6 +166,11 @@ async function fixture(): Promise<{ project: string; packet: string; record: Was
 }
 
 describe("controlled WASAPI source boundaries", () => {
+   it("reads a tracker's long-path spelling as the same file", () => {
+      // MSVC on the 20261116 runner image logs objects as \\?\D:\..., the linker as D:\....
+      expect(windowsOrigin("\\\\?\\D:\\a\\Build\\win-wasapi.obj")).toBe(windowsOrigin("D:\\a\\Build\\win-wasapi.obj"));
+      expect(windowsOrigin("\\\\?\\UNC\\server\\share\\a.obj")).toBe("\\\\SERVER\\SHARE\\A.OBJ");
+   });
    it("validates exact compiler/read/link evidence without bundling system SDK files", async () => {
       const f = await fixture();
       expect(await validateWasapiBuildEvidence(f.record, f.packet, f.project, f.staged)).toEqual(f.record);
