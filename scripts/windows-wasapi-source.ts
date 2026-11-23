@@ -98,7 +98,11 @@ export function tlogRoots(bytes: Buffer): string[] {
 }
 function equalSet(actual: string[], expected: string[], label: string): void {
    if (new Set(actual).size !== actual.length) throw new Error(`${label} contains duplicate identities`);
-   if (JSON.stringify([...new Set(actual)].sort()) !== JSON.stringify([...new Set(expected)].sort())) throw new Error(`${label} set differs`);
+   if (JSON.stringify([...new Set(actual)].sort()) !== JSON.stringify([...new Set(expected)].sort())) {
+      const extra = actual.filter((item) => !expected.includes(item));
+      const missing = expected.filter((item) => !actual.includes(item));
+      throw new Error(`${label} set differs. Unexpected: ${extra.slice(0, 8).join(", ") || "none"}. Missing: ${missing.slice(0, 8).join(", ") || "none"}`);
+   }
 }
 function packetFile(directory: string, relativePath: string): string {
    relative.parse(relativePath);
