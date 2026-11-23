@@ -27,9 +27,21 @@ afterEach(() => {
    vi.clearAllMocks();
    mocks.exists.mockReturnValue(true);
 });
-function helper() {
+function fakeTimers() {
+   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setImmediate", "clearImmediate"] });
+}
+/** The display deadline checks for a late acknowledgement on the following turn of the event loop. */
+function elapse(ms: number) {
+   vi.advanceTimersByTime(ms);
+   vi.runOnlyPendingTimers();
+}
+function helperProcess() {
    const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough(), kill: vi.fn() });
    vi.spyOn(child.stdin, "write");
+   return child;
+}
+function helper() {
+   const child = helperProcess();
    mocks.spawn.mockReturnValue(child);
    const feedback = new Feedback("notifier", vi.fn(), "icon.png");
    instances.push(feedback);
@@ -47,7 +59,7 @@ it("falls back to system notifications when the helper is missing", () => {
    expect(mocks.spawn).not.toHaveBeenCalled();
    expect(mocks.show).toHaveBeenCalledOnce();
 });
-it.each(["error", "exit", "pipe"])("falls back once for the latest banner after a helper %s failure", (failure) => {
+it.each(["error", "exit", "pipe"])("falls back once for the latest banner after a helper %s failure, then restarts it", (failure) => {
    const { feedback, child } = helper();
    feedback.show("Clip saving...", false, true);
    feedback.show("Clip saved");
@@ -57,20 +69,71 @@ it.each(["error", "exit", "pipe"])("falls back once for the latest banner after 
    child.emit("exit", 1);
    expect(mocks.show).toHaveBeenCalledOnce();
    expect(child.kill).toHaveBeenCalledOnce();
+   mocks.spawn.mockReturnValue(helperProcess());
    feedback.show("Recording stopped");
+   expect(mocks.spawn).toHaveBeenCalledTimes(2);
+   expect(mocks.show).toHaveBeenCalledOnce();
+});
+it("stays on system notifications once the helper fails after two restarts", () => {
+   const { feedback } = helper();
+   for (let attempt = 0; attempt < 3; attempt++) {
+      const child = helperProcess();
+      mocks.spawn.mockReturnValueOnce(child);
+      feedback.show("Clip saved");
+      child.emit("exit", 1);
+   }
+   expect(mocks.spawn).toHaveBeenCalledTimes(3);
+   expect(mocks.show).toHaveBeenCalledTimes(3);
+   feedback.show("Recording stopped");
+   expect(mocks.spawn).toHaveBeenCalledTimes(3);
+   expect(mocks.show).toHaveBeenCalledTimes(4);
+});
+it("starts the helper ahead of the first banner and reuses it", () => {
+   const { feedback, child } = helper();
+   feedback.start();
    expect(mocks.spawn).toHaveBeenCalledOnce();
-   expect(mocks.show).toHaveBeenCalledTimes(2);
+   feedback.start();
+   feedback.show("Clip saved");
+   expect(mocks.spawn).toHaveBeenCalledOnce();
+   expect(child.stdin.write).toHaveBeenCalledOnce();
 });
 it("falls back on a display timeout even if the helper is alive", () => {
-   vi.useFakeTimers();
+   fakeTimers();
    const { feedback, child } = helper();
    feedback.show("Clip saved");
-   vi.advanceTimersByTime(2000);
+   elapse(6000);
    expect(mocks.show).toHaveBeenCalledOnce();
    expect(child.kill).toHaveBeenCalledOnce();
 });
+it("gives a starting helper longer to show its first banner than a warm one", () => {
+   fakeTimers();
+   const { feedback, child } = helper();
+   feedback.show("Starting capture", false, true);
+   vi.advanceTimersByTime(5000);
+   child.stdout.write('{"event":"shown","id":"1","visible":true}\n');
+   feedback.show("Capture started");
+   vi.advanceTimersByTime(1900);
+   expect(mocks.show).not.toHaveBeenCalled();
+   elapse(100);
+   expect(mocks.show).toHaveBeenCalledOnce();
+   expect(child.kill).toHaveBeenCalledOnce();
+});
+it("reads an acknowledgement that arrived while the deadline passed", () => {
+   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+   const { feedback, child } = helper();
+   feedback.show("Starting capture", false, true);
+   vi.advanceTimersByTime(6000);
+   child.stdout.write('{"event":"shown","id":"1","visible":true}\n');
+   return new Promise<void>((done) =>
+      setImmediate(() => {
+         expect(mocks.show).not.toHaveBeenCalled();
+         expect(child.kill).not.toHaveBeenCalled();
+         done();
+      })
+   );
+});
 it("accepts only a matching, visible display acknowledgement", () => {
-   vi.useFakeTimers();
+   fakeTimers();
    const { feedback, child } = helper();
    feedback.show("Saving", false, true);
    feedback.show("Saved");
@@ -91,12 +154,12 @@ it("falls back when the helper reports an invisible banner", () => {
    expect(mocks.show).toHaveBeenCalledOnce();
 });
 it("ignores stale display acknowledgements and falls back for the current banner", () => {
-   vi.useFakeTimers();
+   fakeTimers();
    const { feedback, child } = helper();
    feedback.show("Saving", false, true);
    feedback.show("Saved");
    child.stdout.write('{"event":"shown","id":"1","visible":true}\n');
-   vi.advanceTimersByTime(2000);
+   elapse(6000);
    expect(mocks.show).toHaveBeenCalledOnce();
 });
 it.each([false, true])("respects preserveBanner=%s when a muted event precedes failure", (preserveBanner) => {
@@ -107,7 +170,7 @@ it.each([false, true])("respects preserveBanner=%s when a muted event precedes f
    expect(mocks.show).toHaveBeenCalledTimes(preserveBanner ? 1 : 0);
 });
 it("does not fall back for sound-only events or intentional shutdown", () => {
-   vi.useFakeTimers();
+   fakeTimers();
    const { feedback, child } = helper();
    feedback.show("Starting", false, true, { visual: false, sound: "starting.wav" });
    child.emit("exit", 1);

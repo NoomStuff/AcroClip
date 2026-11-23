@@ -2063,6 +2063,7 @@ else {
          preferencePath = join(app.getPath("userData"), "preferences.json");
          preferences = await readPreferences(preferencePath, process.env["ACROCLIP_COLLECTION"] ?? join(app.getPath("videos"), "AcroClip"));
          collectionReady = collections.open(preferences.collection);
+         feedback.start();
          const previewAllowed = () => !!previewSourceId && windowShown() && !closingRequested && !isWaylandSession();
          session.defaultSession.setDisplayMediaRequestHandler(
             (request, callback) => {
