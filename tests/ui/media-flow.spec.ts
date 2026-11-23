@@ -1,5 +1,6 @@
 import { mediaTool } from "./media-tool";
 import { selectOption } from "./select-option";
+import { hoverSubmenu } from "./submenu";
 import { test, expect, _electron as electron } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -111,7 +112,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await expect(clipButton).toBeFocused();
       await page.getByRole("button", { name: "Grid view", exact: true }).click();
       await clipButton.click({ button: "right" });
-      await page.getByRole("menuitem", { name: "Tags", exact: true }).hover();
+      await hoverSubmenu(page.getByRole("menuitem", { name: "Tags", exact: true }));
       const emptyTagsMenu = page.getByRole("menu", { name: "Tags", exact: true });
       await expect(emptyTagsMenu.getByRole("separator")).toHaveCount(0);
       await emptyTagsMenu.getByRole("menuitem", { name: "Create tag", exact: true }).click();
@@ -124,7 +125,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await page.getByRole("button", { name: "Create", exact: true }).click();
       await page.locator(".clip-card").hover();
       await page.getByRole("button", { name: "Actions for Desktop moment", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Tags", exact: true }).hover();
+      await hoverSubmenu(page.getByRole("menuitem", { name: "Tags", exact: true }));
       const categories = page.getByRole("menu", { name: "Tags", exact: true });
       await expect(categories).toBeVisible();
       await expect(categories.getByRole("separator")).toHaveCount(1);
@@ -419,7 +420,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       for (const action of ["Copy file", "Show in folder"]) {
          const trigger = fileMenu.getByRole("menuitem", { name: action, exact: true });
          await expect(trigger).toHaveAttribute("aria-haspopup", "menu");
-         await trigger.hover();
+         await hoverSubmenu(trigger);
          const choices = page.getByRole("menu", { name: action, exact: true });
          await expect(choices.getByRole("menuitem")).toHaveText([/^Clip · /, /^Shareable 1 · /, /^Shareable 2 · /]);
          await expect(choices.getByRole("separator")).toHaveCount(1);
@@ -442,7 +443,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       expect(await fileMenu.getByRole("menuitem", { name: "Delete clip", exact: true }).evaluate((node) => node.previousElementSibling?.className)).toBe(
          "menu-submenu"
       );
-      await deleteShareable.hover();
+      await hoverSubmenu(deleteShareable);
       const shareableDeletes = page.getByRole("menu", { name: "Delete shareable", exact: true });
       await expect(shareableDeletes.getByRole("menuitem")).toHaveText([/^Shareable 1 · /, /^Shareable 2 · /, "Delete all shareables"]);
       await expect(shareableDeletes.getByRole("separator")).toHaveCount(1);
@@ -463,7 +464,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
          };
       });
       await page.getByRole("button", { name: "File actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Delete shareable", exact: true }).hover();
+      await hoverSubmenu(page.getByRole("menuitem", { name: "Delete shareable", exact: true }));
       await page
          .getByRole("menu", { name: "Delete shareable", exact: true })
          .getByRole("menuitem", { name: /^Shareable 1 · / })
@@ -473,7 +474,7 @@ test("real media plays, creates a verified shareable, and supports overlapping t
          .toBe("Move this shareable to the trash?");
       expect((await page.evaluate(() => window.acroClip.state())).clips[0]!.shareables).toHaveLength(2);
       await page.getByRole("button", { name: "File actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Delete shareable", exact: true }).hover();
+      await hoverSubmenu(page.getByRole("menuitem", { name: "Delete shareable", exact: true }));
       await page.getByRole("menuitem", { name: "Delete all shareables", exact: true }).click();
       await expect
          .poll(() => desktop.evaluate(() => (globalThis as typeof globalThis & { testDeletePrompt?: string }).testDeletePrompt))

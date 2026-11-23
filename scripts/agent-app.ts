@@ -45,6 +45,8 @@ const help = `bun run agent-app <command>
   press <key>            Press a key in the focused window, e.g. Escape, Control+A.
   eval <js>              Evaluate in the renderer and print JSON. window.acroClip is the app API.
   main <js>              Evaluate in the main process; require("electron") works.
+  run <body>             Run an async function body with Playwright's \`page\` for the main window, for
+                         steps that must happen back to back. A returned value is printed.
   state                  window.acroClip.state() as JSON.
   logs [lines]           Tail of the app's stdout, its app.log and links it tried to open.
   restart [--no-build]   Rebuild out/ and relaunch with the same profile and collection.
@@ -331,6 +333,14 @@ switch (command) {
    case "eval":
       print(await withPage((page) => page.evaluate(`(async () => (${required(0, "an expression")}))()`)));
       break;
+   case "run": {
+      // An async function body with the main window's Playwright `page` in scope, for steps that must run back to back.
+      const body = required(0, "a script body");
+      const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor as new (...parameters: string[]) => (page: Page) => Promise<unknown>;
+      const result = await withPage((page) => new AsyncFunction("page", body)(page));
+      if (result !== undefined) print(result);
+      break;
+   }
    case "state":
       print(await withPage((page) => page.evaluate(() => window.acroClip.state())));
       break;

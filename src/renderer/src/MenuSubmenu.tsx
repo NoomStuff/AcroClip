@@ -150,9 +150,16 @@ export function MenuSubmenu({
       const observer = new ResizeObserver(place);
       observer.observe(panel.current);
       window.addEventListener("resize", place);
+      // Opened while the parent menu still scales in, the trigger's rect was mid-animation. Place again once it lands.
+      const parent = trigger.current.closest<HTMLElement>(".floating-menu");
+      const landed = (event: AnimationEvent) => {
+         if (event.target === parent) place();
+      };
+      parent?.addEventListener("animationend", landed);
       return () => {
          observer.disconnect();
          window.removeEventListener("resize", place);
+         parent?.removeEventListener("animationend", landed);
       };
    }, [phase]);
    return (
