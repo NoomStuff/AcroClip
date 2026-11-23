@@ -34,6 +34,7 @@ it.each(["startRecording", "toggleRecording"])("acknowledges the %s bind before 
    }).outputText;
    const trigger = new Script(compiled).runInNewContext({
       preferences: { ...defaultPreferences, setupComplete: true, sourceKind: "screen" },
+      sharedDesktop: false,
       closingRequested: false,
       startingCapture: null,
       capturing: () => false,

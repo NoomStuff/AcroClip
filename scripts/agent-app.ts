@@ -2,8 +2,9 @@
  * A long-running AcroClip that agents can look at and drive without touching the person at the
  * computer. The app runs from out/ with its own profile and collection. On Linux it runs inside the
  * private desktop that the UI tests use: its own X display, D-Bus and audio. On Windows it runs on a
- * Win32 desktop of its own, which keeps its windows off the person's screen, and its main process is
- * patched at launch so it can't take global shortcuts, open links or play sound. Every command
+ * Win32 desktop of its own, which keeps its windows off the person's screen. ACROCLIP_SHARED_DESKTOP
+ * turns off capture and feedback sounds there, and the main process is patched at launch so it can't
+ * take global shortcuts or open links. Every command
  * attaches over CDP and detaches again, so the app keeps its state between commands. See
  * `bun run agent-app help`.
  */
@@ -16,7 +17,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { z } from "zod";
 import { defaultPreferences } from "../src/shared/defaults";
-import type { Preferences } from "../src/shared/types";
 import { requireTestIsolation } from "./test-isolation";
 
 const home = resolve(".cache/agent-app");
@@ -175,17 +175,9 @@ async function evaluateMain(expression: string, inspector = requireSession().ins
 
 /**
  * The private Win32 desktop only holds windows. Global shortcuts share one table with the person's
- * desktop, and sound, toasts and opened links reach them too, so the profile turns sounds off and the
- * main process is patched at launch.
+ * desktop, and toasts, opened links and page audio reach them too. This records what the app opens
+ * and registers instead of doing it, and mutes its pages.
  */
-const windowsQuiet = {
-   notificationStartSound: false,
-   notificationStopSound: false,
-   notificationSaveSound: false,
-   notificationErrorSound: false,
-} satisfies Partial<Preferences>;
-
-/** Records what the app opens and registers instead of doing it, and mutes its pages. */
 const windowsPatch = (opened: string): string => `{
    // Until Electron hooks module loading, "electron" resolves to the npm package, and requiring it then would cache that for this context.
    if (require.resolve("electron") !== "electron") throw new Error("Electron hasn't loaded yet.");
@@ -226,18 +218,18 @@ async function seed(clips: number, onboarding: boolean): Promise<void> {
    await mkdir(paths.profile, { recursive: true });
    await mkdir(paths.collection, { recursive: true });
    const preferences = join(paths.profile, "preferences.json");
-   const saved: Record<string, unknown> = existsSync(preferences)
-      ? z.record(z.string(), z.unknown()).parse(JSON.parse(readFileSync(preferences, "utf8")))
-      : {
-           ...defaultPreferences,
-           collection: paths.collection,
-           setupComplete: !onboarding,
-           audioSources: [],
-           audioSourcesVersion: undefined,
-           captureAudio: false,
-        };
-   // Reapplied on every start, so sounds turned on during a session stay off.
-   await writeFile(preferences, JSON.stringify(process.platform === "win32" ? { ...saved, ...windowsQuiet } : saved));
+   if (!existsSync(preferences))
+      await writeFile(
+         preferences,
+         JSON.stringify({
+            ...defaultPreferences,
+            collection: paths.collection,
+            setupComplete: !onboarding,
+            audioSources: [],
+            audioSourcesVersion: undefined,
+            captureAudio: false,
+         })
+      );
    const existing = (await readdir(paths.collection)).filter((name) => name.endsWith(".mp4")).length;
    const bundled = resolve("resources/media", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
    const ffmpeg = existsSync(bundled) ? bundled : (process.env["FFMPEG_PATH"] ?? "ffmpeg");
@@ -280,6 +272,8 @@ async function host(): Promise<void> {
             ...process.env,
             ACROCLIP_TEST: "1",
             ACROCLIP_PROFILE: paths.profile,
+            // Capture and its preview would record the person's real screen, and sounds would play aloud.
+            ...(windows ? { ACROCLIP_SHARED_DESKTOP: "1" } : {}),
             ...(windows ? {} : { PATH: `${paths.bin}${delimiter}${process.env["PATH"] ?? ""}` }),
          },
       });

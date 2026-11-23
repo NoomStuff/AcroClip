@@ -93,6 +93,11 @@ app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
 const here = dirname(fileURLToPath(import.meta.url));
 const testProfile = process.env["ACROCLIP_PROFILE"];
 if (testProfile) app.setPath("userData", resolve(testProfile));
+/**
+ * A test run that shares the person's screen and speakers, like the agent app on Windows. Capture,
+ * its preview and source thumbnails would show that screen, and feedback sounds would play aloud.
+ */
+const sharedDesktop = process.env["ACROCLIP_TEST"] === "1" && process.env["ACROCLIP_SHARED_DESKTOP"] === "1";
 app.setName("AcroClip");
 const appStartedAt = Date.now();
 const diagnostics = new Diagnostics({ directory: join(app.getPath("userData"), "logs"), version: app.getVersion() });
@@ -147,6 +152,7 @@ const iconPath = () => iconFile(process.platform === "win32" ? "icon.ico" : "ico
 const capturing = () => recorder.status.state === "recording" || recorder.status.state === "waiting";
 const captureActive = () => capturing() || recorder.status.state === "starting" || !!startingCapture;
 const windowShown = () => !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized();
+const mainContents = () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : undefined);
 const applicationArtwork = (sources: CaptureSource[]): ApplicationArtwork[] =>
    sources.flatMap((source) =>
       source.applicationId
@@ -670,7 +676,8 @@ function notice(
 function showFeedback(message: string, error: boolean, kind: NoticeKind, options: NoticeOptions, details: FeedbackDetails) {
    const request = feedbackRequest(error, kind, options, preferences, visibleNotificationAction);
    if (request.visual) visibleNotificationAction = request.action;
-   const sound = request.sound ? join(isPackagedApp() ? process.resourcesPath : resolve(here, "../../resources"), "feedback", request.sound) : undefined;
+   const sound =
+      request.sound && !sharedDesktop ? join(isPackagedApp() ? process.resourcesPath : resolve(here, "../../resources"), "feedback", request.sound) : undefined;
    feedback.show(message, error, request.busy, {
       ...details,
       ...(options.detail ? { detail: options.detail } : {}),
@@ -861,7 +868,7 @@ function createWindow() {
    mainWindow.webContents.on("preload-error", (_event, path, error) => log(`renderer: preload ${path} failed: ${error.stack ?? error.message}`, "error"));
    mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
    mainWindow.webContents.on("will-navigate", (event, url) => {
-      if (url !== mainWindow?.webContents.getURL()) event.preventDefault();
+      if (url !== mainContents()?.getURL()) event.preventDefault();
    });
    const dev = process.env["ELECTRON_RENDERER_URL"];
    if (dev) void mainWindow.loadURL(dev);
@@ -912,6 +919,7 @@ function rememberSourceApplication(available: CaptureSource[]): void {
 }
 /** `quiet` is for starts AcroClip makes itself, like capturing on launch. Only failures speak up. */
 async function startRecording(options: { quiet?: boolean } = {}) {
+   if (sharedDesktop) throw new Error("Capture is off in this test run, because it would record the screen of the person at the computer.");
    if (!preferences.setupComplete) throw new Error("Finish setup before capturing.");
    if (closingRequested) throw new Error("AcroClip is preparing to exit. Keep the app open to capture.");
    if (captureActive()) throw new Error("Capture is already running.");
@@ -1373,7 +1381,7 @@ const locallyReported = new Set([
 ]);
 function handle(channel: string, fn: (...args: unknown[]) => unknown) {
    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
-      if (event.sender !== mainWindow?.webContents) throw new Error("Unknown window");
+      if (event.sender !== mainContents()) throw new Error("Unknown window");
       try {
          if (!collectionIndependent.has(channel)) await collectionReady;
          if (closingRequested && changesWhileExiting.has(channel)) throw new Error("AcroClip is preparing to exit. Keep the app open to make changes.");
@@ -1451,7 +1459,7 @@ function registerIPC() {
    handle("recording-capabilities", () => recordingCapabilities());
    handle("state", () => state());
    handle("sources", (options) =>
-      captureSources.list(z.object({ thumbnails: z.boolean().optional() }).strict().optional().parse(options)?.thumbnails ?? false)
+      captureSources.list(z.object({ thumbnails: z.boolean().optional() }).strict().optional().parse(options)?.thumbnails === true && !sharedDesktop)
    );
    handle("games", async () =>
       Promise.all(
@@ -1984,7 +1992,7 @@ function registerIPC() {
    handle("update-install", () => updates.install({ prepare: prepareUpdateExit, recover: recoverUpdateExit }));
    handle("exit", () => requestExit());
    ipcMain.on("window", (event, action) => {
-      if (event.sender !== mainWindow?.webContents) return;
+      if (!mainWindow || event.sender !== mainContents()) return;
       switch (action) {
          case "minimize":
             mainWindow.minimize();
@@ -1999,12 +2007,12 @@ function registerIPC() {
       }
    });
    ipcMain.on("meters", (event, shown) => {
-      if (event.sender !== mainWindow?.webContents) return;
+      if (event.sender !== mainContents()) return;
       metersShown = shown === true;
       recorder.setMeters(metersShown && windowShown());
    });
    ipcMain.on("drag", (event, path) => {
-      if (event.sender !== mainWindow?.webContents) return;
+      if (event.sender !== mainContents()) return;
       try {
          const selected = trustedPath(path);
          event.sender.startDrag({ file: selected, icon: trayIcon() });
@@ -2064,10 +2072,10 @@ else {
          preferences = await readPreferences(preferencePath, process.env["ACROCLIP_COLLECTION"] ?? join(app.getPath("videos"), "AcroClip"));
          collectionReady = collections.open(preferences.collection);
          feedback.start();
-         const previewAllowed = () => !!previewSourceId && windowShown() && !closingRequested && !isWaylandSession();
+         const previewAllowed = () => !!previewSourceId && windowShown() && !closingRequested && !isWaylandSession() && !sharedDesktop;
          session.defaultSession.setDisplayMediaRequestHandler(
             (request, callback) => {
-               if (request.frame !== mainWindow?.webContents.mainFrame || !request.videoRequested || request.audioRequested || !previewAllowed()) {
+               if (request.frame !== mainContents()?.mainFrame || !request.videoRequested || request.audioRequested || !previewAllowed()) {
                   callback(null);
                   return;
                }
@@ -2105,7 +2113,7 @@ else {
          );
          session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) =>
             callback(
-               webContents === mainWindow?.webContents &&
+               webContents === mainContents() &&
                   ((permission === "fullscreen" && details.isMainFrame && !!mainWindow?.isVisible()) ||
                      (permission === "display-capture" && previewAllowed()) ||
                      (permission === "media" && details.isMainFrame && "mediaTypes" in details && details.mediaTypes?.length === 0 && previewAllowed()) ||
@@ -2114,7 +2122,7 @@ else {
          );
          session.defaultSession.setPermissionCheckHandler(
             (webContents, permission, _origin, details) =>
-               webContents === mainWindow?.webContents &&
+               webContents === mainContents() &&
                ((permission === "fullscreen" && details.isMainFrame && !!mainWindow?.isVisible()) ||
                   (permission === "display-capture" && details.isMainFrame && previewAllowed()) ||
                   (permission === "media" && details.mediaType === "audio"))
