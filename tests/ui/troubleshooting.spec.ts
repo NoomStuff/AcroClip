@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { inflateRawSync } from "node:zlib";
 import { resolve, join } from "node:path";
 import { defaultPreferences } from "../../src/shared/defaults";
+import { externalOpener } from "./external-opener";
 
 /** Entry names and text, read through the central directory. */
 function unzip(archive: Buffer): Map<string, string> {
@@ -42,17 +43,19 @@ test("troubleshooting exports logs and opens a prefilled bug report", async () =
       })
    );
    const exported = join(profile, "chosen.zip");
-   const app = await electron.launch({ args: [resolve("."), "--disable-gpu-sandbox"], env: { ...process.env, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile } });
+   const opener = await externalOpener(profile);
+   const app = await electron.launch({
+      args: [resolve("."), "--disable-gpu-sandbox"],
+      env: { ...opener.environment, ACROCLIP_TEST: "1", ACROCLIP_PROFILE: profile },
+   });
    try {
       const page = await app.firstWindow();
+      await opener.stub(app);
       await app.evaluate(({ dialog, shell }, path) => {
-         const fixture = globalThis as typeof globalThis & { opened?: string; shown?: string[] };
+         const fixture = globalThis as typeof globalThis & { shown?: string[] };
          fixture.shown = [];
          dialog.showSaveDialog = (async () => ({ canceled: false, filePath: path })) as typeof dialog.showSaveDialog;
          shell.showItemInFolder = (item) => void fixture.shown!.push(item);
-         shell.openExternal = async (url) => {
-            fixture.opened = url;
-         };
       }, exported);
       expect((await readFile(join(profile, "logs", "session.json"), "utf8")).includes('"clean":false')).toBe(true);
 
@@ -77,8 +80,8 @@ test("troubleshooting exports logs and opens a prefilled bug report", async () =
       expect(system.preferences.clipSeconds).toBe(defaultPreferences.clipSeconds);
 
       await page.getByRole("button", { name: "Open report", exact: true }).click();
-      await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { opened?: string }).opened)).toBeTruthy();
-      const opened = new URL(await app.evaluate(() => (globalThis as typeof globalThis & { opened: string }).opened));
+      await expect.poll(async () => (await opener.opened(app)).length).toBe(1);
+      const opened = new URL((await opener.opened(app))[0]!);
       expect(opened.pathname).toBe("/NoomStuff/AcroClip/issues/new");
       expect(opened.searchParams.get("template")).toBe("bug-report.yml");
       expect(opened.searchParams.get("version")).toBe(system.app.version);

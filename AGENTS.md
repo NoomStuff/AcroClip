@@ -26,6 +26,13 @@ The folder is the collection. Existing supported videos should work without regi
 
 Isolate runs from real user state with `ACROCLIP_PROFILE`, `ACROCLIP_COLLECTION`, and `ACROCLIP_TEST=1`. Never point destructive tests at a real collection. A platform build alone doesn't establish working capture.
 
+The interactive suites only run inside an isolated desktop. Anywhere else they refuse a dirty tree, then dispatch the pushed commit to Windows CI and wait for it. On Linux, run them locally instead:
+
+- `bun run test:ui:linux [spec names]` and `bun run test:ui:native:linux` start a private X11, D-Bus and audio desktop and work on uncommitted changes. Other suites run as `python3 scripts/run-linux-ui.py bun run test:<suite>`.
+- `bun run agent-app start [--clips N]` keeps the built app running in that private desktop for you to inspect: `snapshot`, `shot`, `click`, `fill`, `eval`, `main`, `logs`, `restart`, `stop`. Use it to see a change working, then prove it with a spec.
+- Specs that list sources or capture need a recorder. `bun scripts/fetch-recorder.ts` installs the latest release's recorder, which is fine for app changes. Changes under `native/` need a real build of the recorder.
+- PR checks only run Windows. Prove Linux and macOS capture on a branch with `gh workflow run build.yml --ref <branch> -f verify_candidate=true`, which builds and verifies all five targets without publishing.
+
 ## Versioning
 
 Pushing to main with a new version number in `package.json` triggers a release via GitHub Actions. Bump it appropriately for the changes made, not every change needs a new version. Follow ups should not bump again unless pushes to main have been made since. Don't blindly push without permission from the user.
