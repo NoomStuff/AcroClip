@@ -1,9 +1,29 @@
 import { shareableTargetAllowed } from "../../shared/shareable-target";
 import { useDirectionalContent } from "./useDirectionalContent";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Copy, CopyPlus, Film, FolderOpen, LoaderCircle, MoreHorizontal, Save, Scissors, Share2, X } from "lucide-react";
+import {
+   Check,
+   ChevronDown,
+   Copy,
+   CopyPlus,
+   FastForward,
+   Film,
+   FolderOpen,
+   LoaderCircle,
+   MoreHorizontal,
+   Pause,
+   Play,
+   Rewind,
+   Save,
+   Scissors,
+   Share2,
+   Volume1,
+   Volume2,
+   VolumeX,
+   X,
+} from "lucide-react";
 import { dailyLine, emptyTitles } from "./empty-flavor";
-import type { ReactNode, RefObject } from "react";
+import type { ReactNode, RefObject, WheelEvent } from "react";
 import type { AppState, Category, Clip } from "../../shared/types";
 import { api, describeError, fileDragProps, reportFeedback } from "./desktop";
 import { clipFiles, copiedMessage } from "./clip-files";
@@ -17,7 +37,6 @@ import { ApplicationIcon } from "./ApplicationIcon";
 import { ViewerTransport } from "./ViewerTransport";
 import { PaneDivider, usePaneSize } from "./layout";
 import type { Ask } from "./Dialog";
-import { useAttaCutAvailable } from "./useAttaCutAvailable";
 import { ClipActions } from "./ClipActions";
 import { CategoryEditor, CategoryMark } from "./CategoryEditor";
 import { categoryStyle } from "./category-color";
@@ -31,7 +50,24 @@ import { startWatch, watchEvent, watchSeek, watchTick } from "./view-stats";
 import type { WatchSession } from "./view-stats";
 import { lastKeptTime, trims } from "./trim-range";
 import { SeekQueue } from "./seek-queue";
+import { loadOpenWith } from "./open-with";
+import { useKeyframeScrub } from "./useKeyframeScrub";
 import type { TrimEdge, TrimRange } from "./trim-range";
+
+/** A request to play a clip from a moment. `at` tells repeated requests apart. */
+export interface StartRequest {
+   clipId: string;
+   time: number;
+   play: boolean;
+   at: number;
+}
+
+/** How long a press on the video waits before it counts as holding, which plays at double speed. */
+const holdMs = 350;
+/** Skips this close together add up in one indicator, like +10s for two presses. */
+const skipStreakMs = 800;
+/** Wheel travel per 5% volume step: one notch of a mouse wheel. */
+const wheelStep = 100;
 
 const autoAdvanceKey = "acroclip.player.autoAdvance";
 function readAutoAdvance(): boolean {
@@ -52,6 +88,7 @@ export function Viewer({
    run,
    ask,
    trimRequest,
+   startRequest,
    showClip,
    left,
 }: {
@@ -65,14 +102,15 @@ export function Viewer({
    ask: Ask;
    // Asks the player to start trimming this clip, such as from a library card's menu.
    trimRequest: { clipId: string; at: number } | null;
-   // Shows another clip in the player, such as a trimmed copy just saved.
-   showClip: (id: string) => void;
+   // Asks the player to play this clip from a moment, such as Play (0:42) in a library card's menu.
+   startRequest: StartRequest | null;
+   // Shows another clip in the player, such as a trimmed copy just saved, optionally from a moment.
+   showClip: (id: string, start?: { time: number; play: boolean }) => void;
    // Told which clip was showing, and how far into it, whenever the player stops showing it.
    left: (watched: JustWatched) => void;
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const sidebar = usePaneSize(layout, { key: "viewer.sidebar", initial: 300, min: 230, max: 420, reserve: 440, axis: "x" });
-   const attaCutAvailable = useAttaCutAvailable(visible);
    const [contextMenu, setContextMenu] = useState<ContextMenuRequest | null>(null);
    useEffect(() => setContextMenu(null), [visible, clip?.id]);
    const [selectedVersion, setVersion] = useState<"original" | "shareable">("original");
@@ -106,6 +144,15 @@ export function Viewer({
    // What the listener hears right now, so a mix that fails can put the picker back.
    const audible = useRef<number[] | undefined>(undefined);
    const [speed, setSpeed] = useState(1);
+   // A new clip starts from nothing in the same render that shows it. Reset in an effect, the previous
+   // clip's position showed against the new clip's length for a frame.
+   const [shownClip, setShownClip] = useState(clip?.id);
+   if (shownClip !== clip?.id) {
+      setShownClip(clip?.id);
+      setTime(0);
+      setDuration(0);
+      if (clip && visible) setLoading(true);
+   }
    // The part to keep while trimming, and whether saving makes a copy or replaces the clip.
    const [trim, setTrim] = useState<TrimRange | null>(null);
    const [trimMode, setTrimMode] = useState<"copy" | "replace">("copy");
@@ -123,6 +170,9 @@ export function Viewer({
    // Seeks from the player's controls wait for the previous one to show, so dragging never freezes the picture.
    const [seeker] = useState(() => new SeekQueue());
    const player = useRef<HTMLDivElement>(null);
+   const stage = useRef<HTMLDivElement>(null);
+   const frame = useRef<HTMLDivElement>(null);
+   const sidebarContent = useRef<HTMLDivElement>(null);
    const seek = useRef(0);
    const switching = useRef(false);
    const currentUrl = useRef("");
@@ -141,6 +191,10 @@ export function Viewer({
          /* The toggle still works for this session. */
       }
    }, []);
+   // Playback stopped by reaching the end, not by a pause. Moving the playhead from there plays again, like a video site.
+   const reachedEnd = useRef(false);
+   // Which way the queue last stepped, so the next clip slides in from that side. Zero for a clip opened directly.
+   const stepDirection = useRef<-1 | 0 | 1>(0);
    // Previous restarts a clip that has been playing for a moment, like a music player.
    // While trimming, the queue stays put: previous restarts at the start handle and next does nothing.
    const stepBack = useCallback(() => {
@@ -151,12 +205,22 @@ export function Viewer({
          seeker.seek(start);
          seek.current = start;
          setTime(start);
+         // Restarting a clip that played to its end plays it again.
+         if (reachedEnd.current && media.paused) {
+            reachedEnd.current = false;
+            void media.play().catch(() => undefined);
+         }
          return;
       }
-      if (queue?.previous) stepClip(queue.previous, !!media && !media.paused);
+      if (queue?.previous) {
+         stepDirection.current = -1;
+         stepClip(queue.previous, !!media && !media.paused);
+      }
    }, [queue?.previous, stepClip, seeker]);
    const stepForward = useCallback(() => {
-      if (queue?.next && !trimRef.current) stepClip(queue.next, !!video.current && !video.current.paused);
+      if (!queue?.next || trimRef.current) return;
+      stepDirection.current = 1;
+      stepClip(queue.next, !!video.current && !video.current.paused);
    }, [queue?.next, stepClip]);
    const trimming = !!trim;
    // Media keys step through the queue too, while this player has the media session.
@@ -265,6 +329,8 @@ export function Viewer({
       if (previousClip.current !== clip?.id) {
          previousClip.current = clip?.id;
          seek.current = 0;
+         // The length shows the clip's own until its file reports one.
+         setDuration(0);
          // Stepping through a queue while playing keeps playing.
          resume.current = autoplayRef.current;
          setTime(0);
@@ -277,6 +343,39 @@ export function Viewer({
          setTarget(state.preferences.shareSizeMB);
       }
    }, [clip?.id, clip?.originalMissing, state.preferences.shareSizeMB]);
+   // While a file loads, the player shows the keyframe of the moment it will start at: the first frame
+   // for a new clip, or where Play (0:42), previous and next, or a saved trim pick up. The clip's
+   // thumbnail is often a frame from elsewhere, and cutting from it to the video suggested a jump.
+   // The keyframe previews are usually made already, so this draws from one decoded image.
+   const placeholder = useKeyframeScrub(clip ?? { id: "", thumbnail: "", width: 0, height: 0 }, visible && !!clip && clip.duration > 0, {
+      eager: true,
+      fit: "contain",
+   });
+   const { setPosition: placeAt } = placeholder;
+   const clipLength = clip?.duration ?? 0;
+   useEffect(() => placeAt(clipLength > 0 ? Math.min(1, Math.max(0, time / clipLength)) : null), [placeAt, time, clipLength]);
+   // The file menu's Open with apps, ready before the menu opens.
+   useEffect(() => {
+      if (visible && path) void loadOpenWith(path).catch(() => undefined);
+   }, [visible, path]);
+   // Runs after the reset above, so a clip opened from a moment starts there instead of at zero.
+   const handledStart = useRef<number | undefined>(undefined);
+   useEffect(() => {
+      if (!visible || !startRequest || handledStart.current === startRequest.at || clip?.id !== startRequest.clipId) return;
+      handledStart.current = startRequest.at;
+      const time = Math.max(0, startRequest.time);
+      seek.current = time;
+      resume.current = startRequest.play;
+      setTime(time);
+      // The clip already showing doesn't load again, so it moves there now.
+      const media = video.current;
+      if (media && loaded.current.identity === currentPlayback.current.identity && media.readyState >= HTMLMediaElement.HAVE_METADATA) {
+         seeker.seekNow(time);
+         if (startRequest.play) void media.play().catch(() => undefined);
+      }
+      // The seeker is stable, and the rest are refs.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [visible, startRequest, clip?.id]);
    useEffect(() => {
       if (clip?.originalMissing) setVersion("shareable");
    }, [clip?.originalMissing]);
@@ -329,6 +428,10 @@ export function Viewer({
                   setUrlOwner(playbackIdentity);
                   return;
                }
+               // The file is still loaded, so a moment asked for meanwhile, like Play (0:42) in the library, is a seek.
+               const media = video.current;
+               if (media && media.readyState >= HTMLMediaElement.HAVE_METADATA && Math.abs(media.currentTime - seek.current) > 0.25)
+                  seeker.seekNow(seek.current);
                if (resume.current) void video.current?.play().catch(() => undefined);
             } else if (swap) {
                // Continue from the same moment, and cover the reload with the frame showing now.
@@ -367,7 +470,7 @@ export function Viewer({
          setMixing(false);
          void api.cancelPlayback(requestId).catch(() => undefined);
       };
-      // rememberPlayback and fade.hold read refs only.
+      // rememberPlayback, fade.hold and the seeker read refs only.
       // eslint-disable-next-line react-hooks/exhaustive-deps
    }, [path, requestedTrack, compatible, visible, playbackIdentity, revision]);
    // Track changes apply to the playing element without reloading it.
@@ -413,15 +516,23 @@ export function Viewer({
       },
       [seeker]
    );
+   // Moves the playhead and answers where it went, which a trim's handles can hold it short of.
    const seekTo = useCallback(
-      (value: number) => {
+      (value: number): number => {
          const range = trimRef.current;
          const next = range ? Math.min(lastKeptTime(range), Math.max(range.start, value)) : value;
          seeker.seek(next);
          seek.current = next;
          setTime(next);
+         const media = video.current;
+         const end = range ? lastKeptTime(range) : (media?.duration ?? 0);
+         if (media && reachedEnd.current && media.paused && next < end - 0.05) {
+            reachedEnd.current = false;
+            void play(media).catch(() => undefined);
+         }
+         return next;
       },
-      [seeker]
+      [seeker, play]
    );
    useEffect(() => {
       const media = video.current;
@@ -440,6 +551,7 @@ export function Viewer({
       const watch = () => {
          if (media.currentTime >= trim.end - 0.001) {
             media.pause();
+            reachedEnd.current = true;
             media.currentTime = lastKeptTime(trim);
          } else frame = requestAnimationFrame(watch);
       };
@@ -489,6 +601,7 @@ export function Viewer({
       if (!media) return;
       // The player shows the frame under the handle being dragged.
       media.pause();
+      reachedEnd.current = false;
       const shown = edge === "start" ? next.start : lastKeptTime(next);
       seeker.seek(shown);
       seek.current = shown;
@@ -503,16 +616,21 @@ export function Viewer({
       const clipId = clip.id,
          range = trim,
          mode = trimMode;
+      // Playback carries on between the handles while the trim saves.
       void run(async () => {
-         if (mode === "replace") video.current?.pause();
          const result = await api.trimClip(clipId, range.start, range.end, mode);
          // A failed or cancelled trim keeps the handles, and main reports why.
          if (!result || currentClip.current !== clipId) return;
+         // The trimmed clip opens on the frame that was showing, and keeps playing if it was.
+         const media = video.current;
+         const at = Math.min(range.end - range.start, Math.max(0, (media?.currentTime ?? seek.current) - range.start));
+         const playing = !!media && !media.paused;
          setTrim(null);
-         if (mode === "copy") showClip(result);
+         if (mode === "copy") showClip(result, { time: at, play: playing });
          else {
-            seek.current = 0;
-            setTime(0);
+            seek.current = at;
+            resume.current = playing;
+            setTime(at);
             setRevision((value) => value + 1);
             reportFeedback({ kind: "notice", message: "Clip trimmed. The original is in the trash.", error: false });
          }
@@ -533,6 +651,68 @@ export function Viewer({
       },
       [clip, version, shareable, run]
    );
+   // Feedback over the video for what a click or key just did: play or pause, a skip, and double speed while held.
+   const [flash, setFlash] = useState<{ id: number; playing: boolean } | null>(null);
+   const [skip, setSkip] = useState<{ id: number; seconds: number } | null>(null);
+   const skipStreak = useRef({ seconds: 0, at: 0 });
+   const showSkip = useCallback((seconds: number) => {
+      const now = performance.now();
+      const streak = skipStreak.current;
+      const total = now - streak.at < skipStreakMs && Math.sign(streak.seconds) === Math.sign(seconds) ? streak.seconds + seconds : seconds;
+      skipStreak.current = { seconds: total, at: now };
+      setSkip({ id: now, seconds: total });
+   }, []);
+   const toggleWithFlash = () => {
+      const media = video.current;
+      if (!media) return;
+      setFlash({ id: performance.now(), playing: media.paused });
+      toggle();
+   };
+   // The arrow keys step volume by 5%, like a video site, and the new level shows over the video.
+   // Stepping down past the bottom mutes and keeps the last level, which the next step up comes back to.
+   const [level, setLevel] = useState<{ id: number; percent: number } | null>(null);
+   // Read from a ref, so steps faster than a render, like a held key, each build on the last.
+   const audio = useRef({ volume, muted });
+   useLayoutEffect(() => {
+      audio.current = { volume, muted };
+   }, [volume, muted]);
+   const changeVolume = useCallback((step: number) => {
+      const current = audio.current;
+      const next = current.muted ? (step > 0 ? current.volume : 0) : Math.round(Math.min(1, Math.max(0, current.volume + step)) * 100) / 100;
+      audio.current = next <= 0 ? { ...current, muted: true } : { volume: next, muted: false };
+      // Already at the top, or already muted at the bottom: nothing changed, so nothing shows.
+      if (audio.current.volume === current.volume && audio.current.muted === current.muted) return;
+      setVolume(audio.current.volume);
+      setMuted(audio.current.muted);
+      setLevel({ id: performance.now(), percent: Math.round(next * 100) });
+   }, []);
+   // The wheel over the video steps volume too, as desktop players do. The player page doesn't scroll,
+   // so the wheel has no other job there. A trackpad's many small deltas add up to a step.
+   const wheel = useRef(0);
+   const wheelVolume = (event: WheelEvent<HTMLDivElement>) => {
+      if (event.ctrlKey || !url || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      wheel.current += event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * 33 : event.deltaY;
+      // Reversing direction starts over, so a step never needs undoing first.
+      if (Math.sign(wheel.current) !== Math.sign(event.deltaY)) wheel.current = event.deltaY;
+      while (Math.abs(wheel.current) >= wheelStep) {
+         changeVolume(wheel.current < 0 ? 0.05 : -0.05);
+         wheel.current -= Math.sign(wheel.current) * wheelStep;
+      }
+   };
+   const [boosted, setBoosted] = useState(false);
+   const hold = useRef<{ timer: number | undefined; boosted: boolean; swallowClick: boolean }>({ timer: undefined, boosted: false, swallowClick: false });
+   const endHold = useCallback(() => {
+      window.clearTimeout(hold.current.timer);
+      hold.current.timer = undefined;
+      if (!hold.current.boosted) return false;
+      hold.current.boosted = false;
+      setBoosted(false);
+      if (video.current) video.current.playbackRate = speed;
+      return true;
+   }, [speed]);
+   useEffect(() => () => void endHold(), [endHold, url]);
+   // The second click of a double-click that opened this clip from the library lands on the video. It isn't meant for it.
+   const press = useRef({ at: 0, paired: false });
    // Escape stops trimming, unless it closes a menu or dialog first.
    useEffect(() => {
       if (!visible || !trim || trimJob) return;
@@ -551,10 +731,16 @@ export function Viewer({
             node = video.current;
          if (!clip || !node) return;
          if (id === "playPause") {
+            setFlash({ id: performance.now(), playing: node.paused });
             if (node.paused) void run(() => play(node));
             else node.pause();
-         } else if (id === "seekBack") seekTo(Math.max(0, node.currentTime - 5));
-         else if (id === "seekForward" && Number.isFinite(node.duration)) seekTo(Math.min(node.duration, node.currentTime + 5));
+         } else if (id === "seekBack" || (id === "seekForward" && Number.isFinite(node.duration))) {
+            // The indicator says how far the playhead actually went, and nothing when it couldn't move,
+            // like back at 0:00 or forward at the end.
+            const from = seeker.pendingTime() ?? node.currentTime;
+            const moved = seekTo(id === "seekBack" ? Math.max(0, from - 5) : Math.min(node.duration, from + 5)) - from;
+            if (Math.abs(moved) >= 0.05) showSkip(moved);
+         } else if (id === "volumeUp" || id === "volumeDown") changeVolume(id === "volumeUp" ? 0.05 : -0.05);
          else if (id === "mutePlayback") toggleMute();
          else if (id === "previousClip") stepBack();
          else if (id === "nextClip") stepForward();
@@ -567,7 +753,26 @@ export function Viewer({
       };
       window.addEventListener("acroclip-shortcut", command);
       return () => window.removeEventListener("acroclip-shortcut", command);
-   }, [visible, clip, override, target, path, run, targetAllowed, job, trimJob, toggleMute, stepBack, stepForward, play, seekTo, copyShown]);
+   }, [
+      visible,
+      clip,
+      override,
+      target,
+      path,
+      run,
+      targetAllowed,
+      job,
+      trimJob,
+      toggleMute,
+      stepBack,
+      stepForward,
+      play,
+      seekTo,
+      copyShown,
+      seeker,
+      showSkip,
+      changeVolume,
+   ]);
    // A clip counts as viewed once it is on screen, which keeps a later save from merging it away.
    const clipId = clip?.id;
    useEffect(() => {
@@ -613,6 +818,47 @@ export function Viewer({
       wakeControls();
       return () => clearTimeout(controlsTimer.current);
    }, [wakeControls]);
+   // Previous and next push the clips past each other, like a carousel: the frame that was showing
+   // leaves one side while the new clip comes in from the other, both opaque, clipped by the stage.
+   // Blending them as they passed made a double exposure. The sidebar's details and its clip actions
+   // nudge in from the same side, like the app's other directional changes. The player's own controls
+   // stay still, since they belong to the player rather than the clip.
+   const steppedClip = useRef(clip?.id);
+   useLayoutEffect(() => {
+      if (steppedClip.current === clip?.id) return;
+      steppedClip.current = clip?.id;
+      const direction = stepDirection.current;
+      stepDirection.current = 0;
+      if (!direction || !visible || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const easing = "cubic-bezier(.22,.8,.3,1)";
+      const push = { duration: 320, easing };
+      const nudge = (node: Element | null | undefined) =>
+         node?.animate(
+            [
+               { opacity: 0, transform: `translateX(${direction * 16}px)` },
+               { opacity: 1, transform: "none" },
+            ],
+            { duration: 280, easing }
+         );
+      const animations = [
+         // Opacity holds the old frame solid over its own fade, which would otherwise blend it away mid-push.
+         fade.outgoing.current?.animate(
+            [
+               { opacity: 1, transform: "none" },
+               { opacity: 1, transform: `translateX(${-direction * 100}%)` },
+            ],
+            push
+         ),
+         frame.current?.animate([{ transform: `translateX(${direction * 100}%)` }, { transform: "none" }], push),
+         nudge(sidebarContent.current),
+         nudge(versionActions.current),
+      ];
+      return () => {
+         for (const animation of animations) animation?.cancel();
+      };
+      // fade.outgoing is a ref.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [clip?.id, visible]);
    const create = () => {
       if (clip && targetAllowed && !clip.originalMissing && !job && !trimJob && !trim)
          void run(() => api.createShareable(clip.id, override ? target : undefined));
@@ -634,7 +880,7 @@ export function Viewer({
    return (
       <div className="viewer-page" ref={layout}>
          <aside className="viewer-sidebar" style={{ width: sidebar.size }}>
-            <div className="viewer-sidebar-scroll">
+            <div className="viewer-sidebar-scroll" ref={sidebarContent}>
                <header className="viewer-title action-header">
                   <h1>{clip.name}</h1>
                   <HeaderActions>
@@ -650,11 +896,11 @@ export function Viewer({
                            categories={state.categories}
                            busy={!!job || !!trimJob}
                            canCreate={targetAllowed && !trim}
-                           attaCutAvailable={attaCutAvailable}
                            ask={ask}
                            run={run}
                            create={create}
                            trim={trimAvailable && !trim ? startTrim : undefined}
+                           openPath={path}
                            remove={(shareableId, scope) => void remove(shareableId, scope)}
                         />
                      </Menu>
@@ -850,104 +1096,195 @@ export function Viewer({
          >
             <div
                className="video-stage"
+               ref={stage}
                onContextMenu={(event) => {
                   event.preventDefault();
                   setContextMenu({ left: event.clientX, top: event.clientY, restoreFocus: video.current ?? event.currentTarget });
                   wakeControls();
                }}
+               // The whole stage answers, letterboxing included: a click plays or pauses, a double-click
+               // goes fullscreen, and holding plays at double speed until released.
+               onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  const now = performance.now();
+                  press.current = { at: now, paired: now - press.current.at < 500 };
+                  hold.current.swallowClick = false;
+                  const media = video.current;
+                  if (!media || media.paused || !url) return;
+                  window.clearTimeout(hold.current.timer);
+                  hold.current.timer = window.setTimeout(() => {
+                     hold.current.timer = undefined;
+                     if (media.paused) return;
+                     hold.current.boosted = true;
+                     media.playbackRate = Math.max(2, speed);
+                     setBoosted(true);
+                  }, holdMs);
+               }}
+               onPointerUp={() => {
+                  if (endHold()) hold.current.swallowClick = true;
+               }}
+               onPointerCancel={endHold}
+               onPointerLeave={endHold}
+               onDragStart={endHold}
+               onWheel={wheelVolume}
+               onClick={(event) => {
+                  if (hold.current.swallowClick) {
+                     hold.current.swallowClick = false;
+                     return;
+                  }
+                  if (!url || !video.current || (event.target instanceof Element && event.target.closest(".playback-error"))) return;
+                  // The first click of this double-click landed somewhere else, like the library card that opened the clip.
+                  if (event.detail > 1 && !press.current.paired) return;
+                  if (fullscreen && !controlsShown) wakeControls();
+                  else toggleWithFlash();
+               }}
+               onDoubleClick={() => {
+                  if (!url || !press.current.paired) return;
+                  void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()));
+               }}
             >
-               {path && !mediaError && clip.thumbnail && <img className="player-poster" src={clip.thumbnail} alt="" aria-hidden="true" />}
                <canvas ref={fade.outgoing} className="player-outgoing" aria-hidden="true" hidden={!path || !!mediaError} />
-               {url ? (
-                  <video
-                     ref={video}
-                     className={`player-video ${fade.ready ? "ready" : ""}`}
-                     tabIndex={0}
-                     {...fileDragProps(path)}
-                     src={url}
-                     onLoadedMetadata={(event) => {
-                        const media = event.currentTarget;
-                        if (!ownsMedia(media)) return;
-                        // Chromium drops a video stream it can't decode, such as HEVC without
-                        // a platform decoder, and keeps playing the audio. Convert it instead.
-                        if (!media.videoWidth && path && !compatible) {
-                           setCompatiblePaths((paths) => new Set(paths).add(path));
-                           return;
-                        }
-                        // A prepared mix carries one track. Otherwise the element holds all of them.
-                        // When the element can't switch them, its first track plays until a prepared
-                        // copy carries the selection, which then swaps in at the same moment.
-                        const tracks = version === "original" && nativeTrackSelection && !loadedTracks ? mediaAudioTracks(media) : undefined;
-                        if (tracks) {
-                           if (selectAudioTracks(tracks, clip.tracks, nativeTracks)) audible.current = nativeTracks;
-                           else if (path) setTrackCopyPaths((paths) => new Set(paths).add(path));
-                        }
-                        setDuration(media.duration);
-                        media.currentTime = Math.min(seek.current, media.duration || 0);
-                        setTime(media.currentTime);
-                        switching.current = false;
-                        media.playbackRate = speed;
-                        media.defaultPlaybackRate = speed;
-                        media.preservesPitch = true;
-                        media.volume = volume;
-                        media.muted = muted;
-                        if (resume.current) void media.play().catch(() => undefined);
-                     }}
-                     onTimeUpdate={(event) => {
-                        if (switching.current || !ownsMedia(event.currentTarget)) return;
-                        seek.current = event.currentTarget.currentTime;
-                        if (watch.current && !event.currentTarget.paused) watchTick(watch.current, event.currentTarget.currentTime);
-                     }}
-                     onSeeking={() => watch.current && watchSeek(watch.current)}
-                     onPlay={(event) => {
-                        if (ownsMedia(event.currentTarget)) setPlaying(true);
-                     }}
-                     onPause={(event) => {
-                        if (ownsMedia(event.currentTarget)) setPlaying(false);
-                     }}
-                     onEnded={(event) => {
-                        if (!ownsMedia(event.currentTarget)) return;
-                        if (watch.current) watchTick(watch.current, event.currentTarget.currentTime);
-                        resume.current = false;
-                        setPlaying(false);
-                        // Trimming keeps this clip open, even with autoplay on.
-                        if (autoAdvance && queue?.next && !trimRef.current) stepClip(queue.next, true);
-                     }}
-                     onError={(event) => {
-                        if (!ownsMedia(event.currentTarget)) return;
-                        if (event.currentTarget.error && path && !compatible) setCompatiblePaths((paths) => new Set(paths).add(path));
-                        else setMediaError("Couldn't play this video. Try opening it in AttaCut or another player.");
-                     }}
-                     onClick={(event) => {
-                        const media = event.currentTarget;
-                        if (!media.videoWidth || !media.videoHeight) return;
-                        const bounds = media.getBoundingClientRect();
-                        const scale = Math.min(bounds.width / media.videoWidth, bounds.height / media.videoHeight);
-                        const width = media.videoWidth * scale;
-                        const height = media.videoHeight * scale;
-                        const left = bounds.left + (bounds.width - width) / 2;
-                        const top = bounds.top + (bounds.height - height) / 2;
-                        if (event.clientX < left || event.clientX > left + width || event.clientY < top || event.clientY > top + height) return;
-                        if (fullscreen && !controlsShown) wakeControls();
-                        else toggle();
-                     }}
-                     onDoubleClick={() => void run(() => (document.fullscreenElement ? document.exitFullscreen() : player.current!.requestFullscreen()))}
-                  />
-               ) : (
-                  !loading && (
-                     <Empty
-                        icon={<Share2 size={38} />}
-                        title={mediaError ? "Playback unavailable" : clip.originalMissing && !shareable ? "Clip unavailable" : "No shareable yet"}
-                        detail={
-                           mediaError ||
-                           (clip.originalMissing && !shareable
-                              ? "The clip is missing or changed. Locate it in your collection folder."
-                              : targetAllowed
-                                ? `A smaller copy of the whole clip, under ${shareTarget} MB, for chats with upload limits.`
-                                : `This clip is already under ${shareTarget} MB, so you can share it as it is.`)
-                        }
+               {/* What this clip shows, from placeholder to video, in one layer, so previous and next move it as one. */}
+               <div className="player-frame" ref={frame}>
+                  {/* A new clip's thumbnail mounts fresh, so the previous one never stands in while it loads.
+                   It leaves once the video shows, so its slightly different edges never peek out. */}
+                  {path && !mediaError && clip.thumbnail && (
+                     <img
+                        key={clip.thumbnail}
+                        className="player-poster"
+                        data-covered={fade.ready || undefined}
+                        src={clip.thumbnail}
+                        alt=""
+                        aria-hidden="true"
                      />
-                  )
+                  )}
+                  <canvas
+                     ref={placeholder.canvas}
+                     className="player-keyframe"
+                     data-shown={(placeholder.shown && !!path && !mediaError) || undefined}
+                     data-covered={fade.ready || undefined}
+                     aria-hidden="true"
+                  />
+                  {url ? (
+                     <video
+                        ref={video}
+                        className={`player-video ${fade.ready ? "ready" : ""}`}
+                        tabIndex={0}
+                        {...fileDragProps(path)}
+                        src={url}
+                        onLoadedMetadata={(event) => {
+                           const media = event.currentTarget;
+                           if (!ownsMedia(media)) return;
+                           // Chromium drops a video stream it can't decode, such as HEVC without
+                           // a platform decoder, and keeps playing the audio. Convert it instead.
+                           if (!media.videoWidth && path && !compatible) {
+                              setCompatiblePaths((paths) => new Set(paths).add(path));
+                              return;
+                           }
+                           // A prepared mix carries one track. Otherwise the element holds all of them.
+                           // When the element can't switch them, its first track plays until a prepared
+                           // copy carries the selection, which then swaps in at the same moment.
+                           const tracks = version === "original" && nativeTrackSelection && !loadedTracks ? mediaAudioTracks(media) : undefined;
+                           if (tracks) {
+                              if (selectAudioTracks(tracks, clip.tracks, nativeTracks)) audible.current = nativeTracks;
+                              else if (path) setTrackCopyPaths((paths) => new Set(paths).add(path));
+                           }
+                           setDuration(media.duration);
+                           media.currentTime = Math.min(seek.current, media.duration || 0);
+                           setTime(media.currentTime);
+                           switching.current = false;
+                           media.playbackRate = speed;
+                           media.defaultPlaybackRate = speed;
+                           media.preservesPitch = true;
+                           media.volume = volume;
+                           media.muted = muted;
+                           if (resume.current) void media.play().catch(() => undefined);
+                        }}
+                        onTimeUpdate={(event) => {
+                           if (switching.current || !ownsMedia(event.currentTarget)) return;
+                           seek.current = event.currentTarget.currentTime;
+                           if (watch.current && !event.currentTarget.paused) watchTick(watch.current, event.currentTarget.currentTime);
+                        }}
+                        onSeeking={() => watch.current && watchSeek(watch.current)}
+                        onPlay={(event) => {
+                           reachedEnd.current = false;
+                           if (ownsMedia(event.currentTarget)) setPlaying(true);
+                        }}
+                        onPause={(event) => {
+                           if (ownsMedia(event.currentTarget)) setPlaying(false);
+                        }}
+                        onEnded={(event) => {
+                           if (!ownsMedia(event.currentTarget)) return;
+                           if (watch.current) watchTick(watch.current, event.currentTarget.currentTime);
+                           resume.current = false;
+                           reachedEnd.current = true;
+                           setPlaying(false);
+                           // Trimming keeps this clip open, even with autoplay on.
+                           if (autoAdvance && queue?.next && !trimRef.current) {
+                              stepDirection.current = 1;
+                              stepClip(queue.next, true);
+                           }
+                        }}
+                        onError={(event) => {
+                           if (!ownsMedia(event.currentTarget)) return;
+                           if (event.currentTarget.error && path && !compatible) setCompatiblePaths((paths) => new Set(paths).add(path));
+                           else setMediaError("Couldn't play this video. Try Open in default app from the clip's menu.");
+                        }}
+                     />
+                  ) : (
+                     !loading && (
+                        <Empty
+                           icon={<Share2 size={38} />}
+                           title={mediaError ? "Playback unavailable" : clip.originalMissing && !shareable ? "Clip unavailable" : "No shareable yet"}
+                           detail={
+                              mediaError ||
+                              (clip.originalMissing && !shareable
+                                 ? "The clip is missing or changed. Locate it in your collection folder."
+                                 : targetAllowed
+                                   ? `A smaller copy of the whole clip, under ${shareTarget} MB, for chats with upload limits.`
+                                   : `This clip is already under ${shareTarget} MB, so you can share it as it is.`)
+                           }
+                        />
+                     )
+                  )}
+               </div>
+               {flash && (
+                  <span key={flash.id} className="player-flash" aria-hidden="true" onAnimationEnd={() => setFlash(null)}>
+                     {flash.playing ? <Play size={30} fill="currentColor" /> : <Pause size={30} fill="currentColor" />}
+                  </span>
+               )}
+               {skip && (
+                  <span
+                     key={skip.id}
+                     className="player-skip"
+                     data-side={skip.seconds < 0 ? "back" : "forward"}
+                     aria-hidden="true"
+                     onAnimationEnd={(event) => event.target === event.currentTarget && setSkip(null)}
+                  >
+                     {skip.seconds < 0 ? <Rewind size={18} fill="currentColor" /> : <FastForward size={18} fill="currentColor" />}
+                     <span className="tabular">
+                        {skip.seconds < 0 ? "−" : "+"}
+                        {Math.max(1, Math.round(Math.abs(skip.seconds)))}s
+                     </span>
+                  </span>
+               )}
+               {level && !boosted && (
+                  <span key={level.id} className="player-badge player-level" aria-hidden="true" onAnimationEnd={() => setLevel(null)}>
+                     {level.percent === 0 ? (
+                        <VolumeX size={15} aria-hidden="true" />
+                     ) : level.percent < 50 ? (
+                        <Volume1 size={15} aria-hidden="true" />
+                     ) : (
+                        <Volume2 size={15} aria-hidden="true" />
+                     )}
+                     <span className="tabular">{level.percent}%</span>
+                  </span>
+               )}
+               {boosted && (
+                  <span className="player-badge" role="status">
+                     <FastForward size={14} fill="currentColor" aria-hidden="true" />
+                     {Math.max(2, speed)}× speed
+                  </span>
                )}
                {mediaError && url && (
                   <div className="playback-error" role="alert">
@@ -983,6 +1320,7 @@ export function Viewer({
                preview={clip}
                onSeek={seekTo}
                seeker={seeker}
+               mediaKey={playbackIdentity}
                onVolume={(next, restore) => {
                   setVolume(next === 0 ? (restore > 0 ? restore : 1) : next);
                   setMuted(next === 0);

@@ -11,6 +11,13 @@ describe("copying a clip file", () => {
       expect(command?.args.join(" ")).not.toContain("Get-Date");
       expect(command?.env["ACROCLIP_CLIPBOARD_FILE"]).toBe(awkward);
    });
+   it("hands the Windows path to AcroClip's own helper as data, and waits for it to confirm", () => {
+      const command = clipboardCommand(awkward, "win32", { SystemRoot: "C:\\Windows" }, "C:\\AcroClip\\acroclip-notifier.exe");
+      expect(command?.file).toBe("C:\\AcroClip\\acroclip-notifier.exe");
+      expect(command?.args).toEqual(["--copy-file"]);
+      expect(command?.env["ACROCLIP_CLIPBOARD_FILE"]).toBe(awkward);
+      expect(command?.confirms).toBe(true);
+   });
    it("passes the macOS path as an AppleScript argument", () => {
       const command = clipboardCommand('/Users/me/It\'s "a" clip.mp4', "darwin", {});
       expect(command?.args.at(-1)).toBe('/Users/me/It\'s "a" clip.mp4');

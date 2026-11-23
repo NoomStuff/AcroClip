@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { desktopGame, DesktopGameWatch } from "./desktop-game";
+import { desktopGame, DesktopGameWatch, presenceDesktopGame } from "./desktop-game";
 import type { GameCandidate } from "../shared/types";
 
 const game = (patch: Partial<GameCandidate> = {}): GameCandidate => ({
@@ -96,5 +96,23 @@ describe("crediting a desktop clip to the game that filled it", () => {
       expect(log.pick(0, 600_000, undefined)).toBeUndefined();
       const all = watch(600, during(demo, 0, 540), during(undefined, 540, 600));
       expect(all.pick(0, 600_000, undefined)).toBe(demo);
+   });
+});
+
+describe("the game a desktop capture's status names", () => {
+   const deadlock = { id: "deadlock" };
+   const limbus = { id: "limbus" };
+   it("names the game in front", () => {
+      expect(presenceDesktopGame(limbus, deadlock, [deadlock, limbus])).toBe(limbus);
+   });
+   it("keeps the last game while it's open behind something else, like Discord", () => {
+      expect(presenceDesktopGame(undefined, deadlock, [deadlock, limbus])).toBe(deadlock);
+   });
+   it("moves to the one game still open once the last one closes", () => {
+      expect(presenceDesktopGame(undefined, deadlock, [limbus, limbus])).toBe(limbus);
+   });
+   it("names nothing when several are open and none is in front", () => {
+      expect(presenceDesktopGame(undefined, undefined, [deadlock, limbus])).toBeUndefined();
+      expect(presenceDesktopGame(undefined, undefined, [])).toBeUndefined();
    });
 });

@@ -10,10 +10,16 @@ import type { NotificationTone } from "./notifications";
  * at its real size while the two copies crossfade. The copy keeps its tone
  * attribute so its colors match the real pill exactly. The ghost is aria-hidden
  * and inert, so nothing can find or click it.
+ *
+ * Each notification has at most one flight. Opening and closing a message
+ * quickly reverses its flight from wherever the ghost is, so two ghosts never
+ * stack and nothing jumps back to a start it already left.
  */
 
-/** Quick, with a small overshoot before it settles. */
+/** Quick, with a small overshoot before it settles. Growing out of a pill uses it. */
 const SPRING = "cubic-bezier(0.34, 1.36, 0.64, 1)";
+/** No overshoot. A box that shrinks past its pill and bounces back reads as a glitch. */
+const SETTLE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 const FLIGHT_MS = 340;
 const LEAVE_MS = 160;
 
@@ -68,7 +74,12 @@ function layer(element: HTMLElement, rect: DOMRect): HTMLElement {
    copy.removeAttribute("data-notification-chip");
    copy.removeAttribute("data-toast-id");
    copy.removeAttribute("role");
+   // An open pill shows a collapse arrow. Its copy shows the message it stands for.
+   for (const node of Array.from(copy.querySelectorAll(".holding"))) node.classList.remove("holding");
+   for (const node of Array.from(copy.querySelectorAll("[aria-expanded]"))) node.removeAttribute("aria-expanded");
    copy.classList.add("notification-layer");
+   // A toast hidden behind its own flight is copied visible.
+   copy.style.opacity = "";
    copy.style.width = `${rect.width}px`;
    copy.style.height = `${rect.height}px`;
    return copy;
@@ -86,15 +97,72 @@ function ghost(...layers: HTMLElement[]): HTMLDivElement {
 
 const pillLook = (pill: HTMLElement, rect = pill.getBoundingClientRect()) => look(pill, rect, `${rect.height / 2}px`);
 
-/** Resize the ghost between two looks while one copy fades into the other. */
-function fly(from: Look, to: Look, leaving: HTMLElement, arriving: HTMLElement): Promise<void> {
-   const element = ghost(leaving, arriving);
-   const timing = { duration: FLIGHT_MS, easing: SPRING, fill: "both" as const };
+interface Flight {
+   ghost: HTMLDivElement;
+   pill: HTMLElement;
+   toast: HTMLElement;
+   /** Lets go of the real pill or toast this flight hides. */
+   release: () => void;
+}
+/** The flight each notification is on, by id. */
+const flights = new Map<number, Flight>();
+
+/** Where an interrupted flight had got to: the ghost's look and how visible each copy was. */
+interface Midway {
+   look: Look;
+   pill: number;
+   toast: number;
+}
+
+/** Stops a notification's flight where it is, so the next motion can start from there. */
+function interrupt(id: number): Midway | null {
+   const flight = flights.get(id);
+   if (!flight) return null;
+   flights.delete(id);
+   const midway = {
+      look: look(flight.ghost),
+      pill: Number(getComputedStyle(flight.pill).opacity),
+      toast: Number(getComputedStyle(flight.toast).opacity),
+   };
+   for (const animation of [...flight.ghost.getAnimations(), ...flight.pill.getAnimations(), ...flight.toast.getAnimations()]) animation.cancel();
+   flight.ghost.remove();
+   flight.release();
+   return midway;
+}
+
+/**
+ * Resize the ghost between two looks while one copy fades into the other. A
+ * flight that takes over from an interrupted one continues from its opacities.
+ */
+function fly(
+   id: number,
+   route: { from: Look; to: Look; towards: "pill" | "toast" },
+   copies: { pill: HTMLElement; toast: HTMLElement },
+   midway: Midway | null,
+   release: () => void
+): void {
+   const element = ghost(copies.pill, copies.toast);
+   const pillward = route.towards === "pill";
+   const [leaving, arriving] = pillward ? [copies.toast, copies.pill] : [copies.pill, copies.toast];
    const fade = { duration: FLIGHT_MS, easing: "linear", fill: "both" as const };
-   leaving.animate([{ opacity: 1 }, { opacity: 0, offset: 0.4 }, { opacity: 0 }], fade);
-   arriving.animate([{ opacity: 0 }, { opacity: 0, offset: 0.2 }, { opacity: 1, offset: 0.6 }, { opacity: 1 }], fade);
-   const done = () => element.remove();
-   return element.animate([box(from), box(to)], timing).finished.then(done, done);
+   if (midway) {
+      const [out, into] = pillward ? [midway.toast, midway.pill] : [midway.pill, midway.toast];
+      leaving.animate([{ opacity: out }, { opacity: 0, offset: 0.4 }, { opacity: 0 }], fade);
+      arriving.animate([{ opacity: into }, { opacity: 1, offset: 0.5 }, { opacity: 1 }], fade);
+   } else {
+      leaving.animate([{ opacity: 1 }, { opacity: 0, offset: 0.4 }, { opacity: 0 }], fade);
+      arriving.animate([{ opacity: 0 }, { opacity: 0, offset: 0.2 }, { opacity: 1, offset: 0.6 }, { opacity: 1 }], fade);
+   }
+   const flight: Flight = { ghost: element, ...copies, release };
+   flights.set(id, flight);
+   const done = () => {
+      // A later flight took over and owns the cleanup now.
+      if (flights.get(id) !== flight) return;
+      flights.delete(id);
+      element.remove();
+      release();
+   };
+   element.animate([box(route.from), box(route.to)], { duration: FLIGHT_MS, easing: pillward ? SETTLE : SPRING, fill: "both" }).finished.then(done, done);
 }
 
 /**
@@ -102,9 +170,10 @@ function fly(from: Look, to: Look, leaving: HTMLElement, arriving: HTMLElement):
  * or pinned to closed). It runs synchronously so the pill is in place to aim at.
  */
 export function flyToChip(toast: HTMLElement | null, id: number, tone: NotificationTone, commit: () => void): void {
+   const midway = interrupt(id);
    if (!toast || still()) return commit();
-   const from = look(toast);
-   const leaving = layer(toast, from.rect);
+   const from = midway?.look ?? look(toast);
+   const leaving = layer(toast, toast.getBoundingClientRect());
    const existed = !!document.querySelector(pillSelector(tone));
    flushSync(commit);
    const pill = document.querySelector<HTMLElement>(chipSelector(id));
@@ -116,18 +185,19 @@ export function flyToChip(toast: HTMLElement | null, id: number, tone: Notificat
    pill.classList.add(waiting);
    // The flight is this pill's entrance, so drop the pop-in the render just started.
    if (!existed) for (const animation of pill.getAnimations()) animation.cancel();
-   void fly(from, to, leaving, arriving).then(() => pill.classList.remove(waiting));
+   fly(id, { from, to, towards: "pill" }, { pill: arriving, toast: leaving }, midway, () => pill.classList.remove(waiting));
 }
 
 /** A pinned toast just mounted: grow it out of its pill. */
 export function flyFromChip(toast: HTMLElement, id: number): void {
+   const midway = interrupt(id);
    const pill = document.querySelector<HTMLElement>(chipSelector(id));
    if (!pill || still()) return;
-   const from = pillLook(pill);
+   const from = midway?.look ?? pillLook(pill);
    const to = look(toast);
    // Opacity, not visibility, so its buttons work while the copy is still growing.
    toast.style.opacity = "0";
-   void fly(from, to, layer(pill, from.rect), layer(toast, to.rect)).then(() => {
+   fly(id, { from, to, towards: "toast" }, { pill: layer(pill, pill.getBoundingClientRect()), toast: layer(toast, to.rect) }, midway, () => {
       toast.style.opacity = "";
    });
 }
@@ -139,9 +209,12 @@ export function closePinned(id: number, tone: NotificationTone, commit: () => vo
 
 /** Slide a toast out to the right, for dismissals and plain notices that time out. */
 export function leave(toast: HTMLElement | null, commit: () => void): void {
+   const id = Number(toast?.dataset["toastId"]);
+   // A toast dismissed mid-flight leaves from where its flight had got to.
+   const midway = Number.isFinite(id) ? interrupt(id) : null;
    if (!toast || still()) return commit();
-   const rect = toast.getBoundingClientRect();
-   const copy = layer(toast, rect);
+   const rect = midway?.look.rect ?? toast.getBoundingClientRect();
+   const copy = layer(toast, toast.getBoundingClientRect());
    flushSync(commit);
    const element = ghost(copy);
    // Below the stack, so toasts gliding into the gap pass over it.

@@ -69,8 +69,10 @@ function run(command: string, args: string[], cwd?: string): Buffer {
    if (result.status !== 0) throw new Error(`${command} failed: ${result.stderr.toString()}\n${result.stdout.toString()}`);
    return result.stdout;
 }
+/** One spelling per path. Newer MSVC trackers write long-path forms such as \\?\D:\..., the same file as D:\.... */
 export function windowsOrigin(value: string): string {
-   return path.win32.normalize(value).toUpperCase();
+   const plain = value.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, "");
+   return path.win32.normalize(plain).toUpperCase();
 }
 export function tlogReads(bytes: Buffer): string[] {
    const text = bytes.subarray(0, 2).equals(Buffer.from([0xff, 0xfe])) ? bytes.toString("utf16le") : bytes.toString("utf8");
@@ -98,7 +100,11 @@ export function tlogRoots(bytes: Buffer): string[] {
 }
 function equalSet(actual: string[], expected: string[], label: string): void {
    if (new Set(actual).size !== actual.length) throw new Error(`${label} contains duplicate identities`);
-   if (JSON.stringify([...new Set(actual)].sort()) !== JSON.stringify([...new Set(expected)].sort())) throw new Error(`${label} set differs`);
+   if (JSON.stringify([...new Set(actual)].sort()) !== JSON.stringify([...new Set(expected)].sort())) {
+      const extra = actual.filter((item) => !expected.includes(item));
+      const missing = expected.filter((item) => !actual.includes(item));
+      throw new Error(`${label} set differs. Unexpected: ${extra.slice(0, 8).join(", ") || "none"}. Missing: ${missing.slice(0, 8).join(", ") || "none"}`);
+   }
 }
 function packetFile(directory: string, relativePath: string): string {
    relative.parse(relativePath);

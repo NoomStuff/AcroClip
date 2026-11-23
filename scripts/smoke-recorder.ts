@@ -6,11 +6,12 @@ import { createInterface } from "node:readline";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fitResolutionLimit } from "../src/shared/recording-presets";
+import { windowsPowerShell } from "./windows-powershell";
 
 if (process.platform !== "win32") throw new Error("This real capture smoke test requires Windows");
 const software = Boolean(process.env["ACROCLIP_NATIVE_TEST_SOFTWARE"]);
 const display = spawnSync(
-   "powershell",
+   windowsPowerShell,
    [
       "-NoProfile",
       "-Command",
@@ -115,8 +116,9 @@ try {
    send({ action: "stop" });
    const firstSaved = await wait((event) => event.event === "saved" && event.requestId === "first");
    const secondSaved = await wait((event) => event.event === "saved" && event.requestId === "second");
-   assert.equal(firstSaved.source, "Initial screen");
-   assert.equal(secondSaved.source, "Initial screen");
+   // A screen is always saved as Desktop, whatever the start request called it.
+   assert.equal(firstSaved.source, "Desktop");
+   assert.equal(secondSaved.source, "Desktop");
    for (const file of [first, second]) {
       const probe = spawnSync(
          path.resolve("resources/media/ffprobe.exe"),

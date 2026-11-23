@@ -241,7 +241,16 @@
    opacity: 1;
    pointer-events: auto;
 }
+/* The clip's own picture: placeholders and video, which previous and next move as one. */
+.player-frame {
+   position: absolute;
+   inset: 0;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+}
 .player-poster,
+.player-keyframe,
 .player-outgoing {
    position: absolute;
    inset: 0;
@@ -253,6 +262,178 @@
 .player-outgoing {
    z-index: 1;
    opacity: 0;
+}
+/* While the file loads, the keyframe of the moment it starts at stands in. The thumbnail is the
+   fallback, and waits a moment first, since the keyframe usually arrives and a swap would flash.
+   Both go once the video shows a frame, a beat after its fade-in, so their edges never peek out. */
+.player-keyframe {
+   opacity: 0;
+}
+.player-keyframe[data-shown] {
+   opacity: 1;
+}
+.player-poster:not([data-covered]) {
+   animation: player-placeholder-wait 0s 150ms both;
+}
+:is(.player-poster, .player-keyframe[data-shown])[data-covered] {
+   animation: player-placeholder-leave 0s 200ms both;
+}
+@keyframes player-placeholder-wait {
+   from {
+      opacity: 0;
+   }
+   to {
+      opacity: 1;
+   }
+}
+@keyframes player-placeholder-leave {
+   from {
+      opacity: 1;
+   }
+   to {
+      opacity: 0;
+   }
+}
+.video-stage {
+   user-select: none;
+}
+
+/* What a click or key just did, over the video: play or pause in the middle, skips at the sides. */
+.player-flash,
+.player-skip,
+.player-badge {
+   position: absolute;
+   z-index: 3;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   color: #fff;
+   background: #000000a6;
+   pointer-events: none;
+}
+.player-flash {
+   width: 64px;
+   height: 64px;
+   border-radius: 50%;
+   animation: player-flash 520ms ease-out both;
+}
+.player-flash > svg {
+   filter: drop-shadow(0 1px 2px #0006);
+}
+@keyframes player-flash {
+   from {
+      opacity: 0.9;
+      transform: scale(0.85);
+   }
+   to {
+      opacity: 0;
+      transform: scale(1.45);
+   }
+}
+.player-skip {
+   top: 50%;
+   flex-direction: column;
+   gap: 3px;
+   width: 76px;
+   height: 76px;
+   margin-top: -38px;
+   border-radius: 50%;
+   font-size: 12px;
+   font-weight: 650;
+   animation: player-skip 760ms ease-out both;
+}
+.player-skip[data-side="back"] {
+   left: 9%;
+}
+.player-skip[data-side="forward"] {
+   right: 9%;
+}
+.player-skip > svg {
+   animation: player-skip-arrow 300ms var(--spring) both;
+}
+.player-skip[data-side="back"] > svg {
+   --nudge: -6px;
+}
+.player-skip[data-side="forward"] > svg {
+   --nudge: 6px;
+}
+@keyframes player-skip {
+   0% {
+      opacity: 0;
+   }
+   12%,
+   65% {
+      opacity: 1;
+   }
+   100% {
+      opacity: 0;
+   }
+}
+@keyframes player-skip-arrow {
+   from {
+      transform: translateX(var(--nudge));
+   }
+}
+.player-badge {
+   top: 14px;
+   left: 50%;
+   gap: 6px;
+   height: 30px;
+   padding: 0 12px;
+   border-radius: 15px;
+   font-size: 12px;
+   font-weight: 650;
+   transform: translateX(-50%);
+   animation: player-badge-in 200ms var(--ease) both;
+}
+@keyframes player-badge-in {
+   from {
+      opacity: 0;
+      transform: translate(-50%, -6px);
+   }
+}
+@keyframes player-level-still {
+   from {
+      opacity: 1;
+      transform: translateX(-50%);
+   }
+   to {
+      opacity: 0;
+      transform: translateX(-50%);
+   }
+}
+/* A volume step stays up for a moment, then fades. Each step restarts it. */
+.player-level {
+   animation: player-level 900ms var(--ease) both;
+}
+@keyframes player-level {
+   0% {
+      opacity: 0;
+      transform: translate(-50%, -6px);
+   }
+   15%,
+   70% {
+      opacity: 1;
+      transform: translate(-50%, 0);
+   }
+   100% {
+      opacity: 0;
+      transform: translate(-50%, 0);
+   }
+}
+@media (prefers-reduced-motion: reduce) {
+   .player-flash,
+   .player-skip,
+   .player-skip > svg,
+   .player-badge {
+      animation-duration: 1ms;
+   }
+   .player-skip {
+      animation: player-skip 760ms steps(1, end) both;
+   }
+   .player-level {
+      animation: player-level-still 900ms steps(1, end) both;
+   }
 }
 
 .video-stage:fullscreen {
@@ -544,15 +725,21 @@
    border: 0;
    border-radius: 0;
 }
+/* Controls float over the picture, so a tall scrim keeps them readable on bright footage. */
 .viewer-main:fullscreen .player-controls {
    position: absolute;
    left: 0;
    right: 0;
    bottom: 0;
-   padding: 10px 14px 12px;
-   background: linear-gradient(to top, #06090bd0, #06090b00);
-   color: #eef0f3;
+   padding: 72px 18px 14px;
+   background: linear-gradient(to top, #000000e6 0%, #000000b3 38%, #00000052 72%, #0000 100%);
+   color: #f4f6f8;
+   text-shadow: 0 1px 2px #000a;
    z-index: 3;
+   pointer-events: none;
+}
+.viewer-main:fullscreen .player-controls > * {
+   pointer-events: auto;
 }
 .viewer-main:fullscreen .player-progress-track {
    background: #10131ad9;
@@ -781,9 +968,17 @@
 .player-progress[data-trimming] {
    margin-inline: var(--trim-handle);
 }
-.player-progress[data-trimming] :is(.player-progress-fill, .player-progress-hover, .player-loudness),
+.player-progress[data-trimming] :is(.player-progress-fill, .player-progress-hover),
 .player-progress[data-trimming] > i {
    display: none;
+}
+/* While trimming, loud moments stay on show to cut around, with the kept part in the accent. */
+.player-progress[data-trimming] .player-loudness {
+   opacity: 1;
+   transform: none;
+}
+.player-progress[data-trimming] .player-loudness svg.played {
+   clip-path: inset(-2px calc(100% - var(--trim-end)) 0 var(--trim-start));
 }
 /* The preview's time steps aside for the trim playhead's dot instead of covering it. */
 .player-preview time {

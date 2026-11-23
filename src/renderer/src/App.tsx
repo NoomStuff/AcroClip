@@ -1,5 +1,6 @@
 import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { JustWatched } from "./Library";
+import type { StartRequest } from "./Viewer";
 import { Clapperboard, LibraryBig, Play, Minus, Settings as Gear, Square, Video, X } from "lucide-react";
 import { PageBoundary } from "./PageBoundary";
 import { AppLogo } from "./AppLogo";
@@ -26,10 +27,13 @@ import { ShortcutSheet } from "./ShortcutSheet";
 import { queuePosition } from "./play-queue";
 import type { PlayQueue } from "./play-queue";
 import { readLibraryView } from "./library-view";
+import { markShortcut } from "./keyboard-mode";
 
 type Page = "recording" | "library" | "viewer" | "settings";
 // Capture is the first screen. Other pages load after it paints and preload
 // while the window is idle, so switching to them never waits.
+/** Shortcuts that repeat while their key is held. */
+const repeatable: ReadonlySet<string> = new Set(["seekBack", "seekForward", "volumeUp", "volumeDown"]);
 const library = preloadedPage(() => import("./Library").then((module) => module.Library));
 const viewer = preloadedPage(() => import("./Viewer").then((module) => module.Viewer));
 const settings = preloadedPage(() => import("./Settings").then((module) => module.Settings));
@@ -184,7 +188,7 @@ export function App() {
       const key = (event: KeyboardEvent) => {
          const target = event.target instanceof HTMLElement ? event.target : null;
          const editing = target?.closest("input,textarea,select,[contenteditable=true],[role=textbox],[role=slider],[role=combobox],.shortcut-input.editing");
-         if (event.defaultPrevented || event.repeat || document.querySelector('[role="dialog"]')) return;
+         if (event.defaultPrevented || document.querySelector('[role="dialog"]')) return;
          const candidates = shortcutRegistry.filter(
             (item) => item.scope === "local" && (item.page === "all" || item.page === page) && bindingFor(shortcutPreferences, item.id)
          );
@@ -196,16 +200,24 @@ export function App() {
          const action = matches(eventBinding(event)) ?? matches(physicalBinding(event));
          if (
             !action ||
+            // Holding a key repeats only what reads as a stepper, like seeking and volume on a video site.
+            (event.repeat && !repeatable.has(action.id)) ||
             (editing && action.id !== "newCategory" && action.id !== "newFolder") ||
-            (target?.closest('button,a[href],[role="button"],[role="menuitem"],[role="menuitemradio"],[role="option"]') &&
-               !event.ctrlKey &&
+            // A focused control keeps the keys it answers itself: Enter and Space press a button, and arrows
+            // move through a menu or list. Other keys, like a player shortcut after clicking a button, still work.
+            (!event.ctrlKey &&
                !event.metaKey &&
-               !event.altKey) ||
+               !event.altKey &&
+               ((target?.closest('button,a[href],[role="button"]') && (event.key === "Enter" || event.key === " ")) ||
+                  target?.closest(
+                     '[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"],[role="option"],[role="radio"],[role="tab"],[role="treeitem"]'
+                  ))) ||
             // Copying selected text stays the usual copy.
             ((action.id === "copyFile" || action.id === "copyClipFile") && !!window.getSelection()?.toString())
          )
             return;
          event.preventDefault();
+         markShortcut(event);
          if (action.id === "shortcutHelp") setShortcutSheet(true);
          else if (["recording", "library", "viewer", "settings"].includes(action.id)) setPage(action.id as Page);
          else if ((action.id === "newCategory" || action.id === "newFolder") && page !== "library") {
@@ -234,19 +246,23 @@ export function App() {
    }, [page, selected, clip]);
    // A request the player answers by trimming the clip it names, once.
    const [trimRequest, setTrimRequest] = useState<{ clipId: string; at: number } | null>(null);
+   // A request the player answers by playing the clip it names from a moment, once.
+   const [startRequest, setStartRequest] = useState<StartRequest | null>(null);
    const openClip = useCallback(
-      (value: Clip, from?: PlayQueue, options?: { trim: true }) => {
+      (value: Clip, from?: PlayQueue, options?: { trim: true } | { play: number }) => {
          setSelected(value.id);
          setQueue(from ?? null);
-         setAutoplay(null);
-         if (options?.trim) setTrimRequest({ clipId: value.id, at: Date.now() });
+         setAutoplay(options && "play" in options ? value.id : null);
+         if (options && "trim" in options) setTrimRequest({ clipId: value.id, at: Date.now() });
+         if (options && "play" in options) setStartRequest({ clipId: value.id, time: options.play, play: true, at: Date.now() });
          setPage("viewer");
       },
       [setPage]
    );
-   const showClip = useCallback((id: string) => {
+   const showClip = useCallback((id: string, start?: { time: number; play: boolean }) => {
       setSelected(id);
-      setAutoplay(null);
+      setAutoplay(start?.play ? id : null);
+      if (start) setStartRequest({ clipId: id, ...start, at: Date.now() });
    }, []);
    const clips = state?.clips,
       folders = state?.folders,
@@ -390,6 +406,7 @@ export function App() {
                                  visible={page === "viewer" && windowVisible}
                                  run={run}
                                  trimRequest={trimRequest}
+                                 startRequest={startRequest}
                                  showClip={showClip}
                                  left={leftViewer}
                               />

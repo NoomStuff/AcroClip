@@ -19,6 +19,8 @@ export const shortcutRegistry = [
    { id: "seekForward", label: "Seek forward 5 seconds", scope: "local", page: "viewer", binding: "Right" },
    { id: "previousClip", label: "Previous clip", scope: "local", page: "viewer", binding: "PageUp" },
    { id: "nextClip", label: "Next clip", scope: "local", page: "viewer", binding: "PageDown" },
+   { id: "volumeUp", label: "Volume up", scope: "local", page: "viewer", binding: "Up" },
+   { id: "volumeDown", label: "Volume down", scope: "local", page: "viewer", binding: "Down" },
    { id: "mutePlayback", label: "Mute playback", scope: "local", page: "viewer", binding: "M" },
    { id: "fullscreen", label: "Fullscreen playback", scope: "local", page: "viewer", binding: "F" },
    { id: "createShareable", label: "Create shareable", scope: "local", page: "viewer", binding: "CommandOrControl+E" },

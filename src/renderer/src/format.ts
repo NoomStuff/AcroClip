@@ -5,12 +5,16 @@ export const formatTime = (seconds: number): string => {
 };
 export const folderName = (path: string): string => path.split(/[\\/]/).filter(Boolean).at(-1) ?? "Choose a folder";
 const clipDate = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
-export const age = (timestamp: number): string => {
-   const minutes = Math.max(0, (Date.now() - timestamp) / 60000);
+const datedClip = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
+/** "5m ago", "3h ago", then the date. A date from another year says which, so last year's clips don't read as this year's. */
+export const age = (timestamp: number, now = Date.now()): string => {
+   const minutes = Math.max(0, (now - timestamp) / 60000);
    if (minutes < 1) return "Just now";
    if (minutes < 60) return `${Math.floor(minutes)}m ago`;
    if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
-   return Number.isNaN(new Date(timestamp).getTime()) ? "Unknown date" : clipDate.format(timestamp);
+   const date = new Date(timestamp);
+   if (Number.isNaN(date.getTime())) return "Unknown date";
+   return (date.getFullYear() === new Date(now).getFullYear() ? clipDate : datedClip).format(date);
 };
 
 const relativeTime = new Intl.RelativeTimeFormat("en", { numeric: "always" });

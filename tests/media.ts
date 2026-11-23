@@ -282,6 +282,16 @@ try {
    }
    assert.ok(!existsSync(orphan) && !existsSync(outdated), "strips for unknown files and old layouts are removed");
    assert.ok(existsSync(unrelated), "other files in the folder are left alone");
+   // Peak moments follow the strips, so the player draws them without decoding the audio.
+   const measuredStarted = Date.now();
+   for (const name of ["Short.mp4", "Wrapped.mp4"]) {
+      while ((await filling.storedLoudness(join(fillRoot, name)))?.levels === undefined) {
+         assert.ok(Date.now() - measuredStarted < 60_000, `the fill measures the loudness of ${name}`);
+         await delay(200);
+      }
+   }
+   await filling.flushLoudness();
+   assert.ok(existsSync(join(fillStrips, "loudness-v1.json")), "measured loudness is kept with the thumbnails");
    const filledTile = join(fillRoot, "first-tile.png");
    await sharp(join(fillStrips, expected[1]!)).extract({ left: 8, top: 8, width: 400, height: 224 }).toFile(filledTile);
    await checkColor(filledTile, "red");

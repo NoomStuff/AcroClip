@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { windowsPowerShell } from "./windows-powershell";
 
 if (process.platform !== "win32") throw new Error("This loopback smoke test requires Windows and an NVENC GPU");
 const folder = path.resolve(".cache", "native-audio", randomUUID());
@@ -52,7 +53,7 @@ public class TonePlayer {
 [TonePlayer]::Play('${tonePath.replaceAll("'", "''")}')
 `
 );
-const tone = spawn("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", toneScript], { windowsHide: true, stdio: "pipe" });
+const tone = spawn(windowsPowerShell, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", toneScript], { windowsHide: true, stdio: "pipe" });
 tone.stderr.on("data", (data: Buffer) => console.error(data.toString()));
 const runtime = path.resolve("resources/recorder");
 const helper = spawn(path.join(runtime, "acroclip-recorder.exe"), [runtime], { cwd: runtime, windowsHide: true, stdio: "pipe" });

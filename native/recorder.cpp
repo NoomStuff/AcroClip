@@ -435,6 +435,10 @@ private:
     uint32_t mixerMask = 0, outputChannel = 0;
     bool managedInput = false;
     uint64_t openedAt = 0;
+    // An application source follows its executable, so it outlives the window and process it opened with.
+    std::string executable;
+    // The app was heard at least once, so losing it means it closed rather than that it is still starting.
+    bool hooked = false;
     std::shared_ptr<ExtraMeter> metering;
 #ifdef __linux__
     ApplicationAudio *application = nullptr;
@@ -497,7 +501,15 @@ private:
     bool microphone;
   } captureContext{this, false}, microphoneContext{this, true};
   std::atomic<float> captureLevel{0}, microphoneLevel{0};
+  // When each level last came from its meter. A source that goes quiet stops calling back, so
+  // its last level would otherwise ride along on every other source's message and freeze its bar.
+  std::atomic<uint64_t> captureLevelAt{0}, microphoneLevelAt{0};
   std::atomic<float> capturePendingPeak{0}, microphonePendingPeak{0};
+  static float heard(const std::atomic<float> &level, const std::atomic<uint64_t> &at) {
+    return os_gettime_ns() - at.load() < 250000000ULL ? level.load() : 0.f;
+  }
+  float captureHeard() const { return heard(captureLevel, captureLevelAt); }
+  float microphoneHeard() const { return heard(microphoneLevel, microphoneLevelAt); }
   std::atomic<uint64_t> lastMeterEvent{0};
   float captureVolume = 1, microphoneVolume = 1;
   bool captureMuted = false, microphoneMuted = false;
@@ -539,13 +551,14 @@ public:
           value =
               std::max(value, std::clamp((peak[i] + 60.f) / 60.f, 0.f, 1.f));
       (context->microphone ? r->microphoneLevel : r->captureLevel) = value;
+      (context->microphone ? r->microphoneLevelAt : r->captureLevelAt) = os_gettime_ns();
       accumulatePeak(context->microphone ? r->microphonePendingPeak : r->capturePendingPeak, value);
       uint64_t now = os_gettime_ns(), last = r->lastMeterEvent.load();
       if (r->active && r->metersWanted && now - last >= 33000000 &&
           r->lastMeterEvent.compare_exchange_strong(last, now)) {
         emit({{"event", "audio-levels"},
-              {"capture", std::max(r->captureLevel.load(), r->capturePendingPeak.exchange(0))},
-              {"microphone", std::max(r->microphoneLevel.load(), r->microphonePendingPeak.exchange(0))}});
+              {"capture", std::max(r->captureHeard(), r->capturePendingPeak.exchange(0))},
+              {"microphone", std::max(r->microphoneHeard(), r->microphonePendingPeak.exchange(0))}});
       }
     };
     obs_volmeter_add_callback(captureMeter, callback, &captureContext);
@@ -1287,7 +1300,7 @@ public:
           releasedInput = found->source != nullptr;
           closeMicrophone(found->source, found->metering ? found->metering->meter : nullptr, found->outputChannel, found->id);
           if (found->metering) found->metering->pendingPeak = 0;
-          emit({{"event", "audio-levels"}, {"capture", captureLevel.load()}, {"microphone", microphoneLevel.load()}, {"additional", {{found->id, 0.f}}}});
+          emit({{"event", "audio-levels"}, {"capture", captureHeard()}, {"microphone", microphoneHeard()}, {"additional", {{found->id, 0.f}}}});
         } else if (!found->source) {
           found->source = openMicrophone(found->deviceId, found->name);
           found->openedAt = os_gettime_ns();
@@ -1355,23 +1368,19 @@ private:
 #endif
     return inputWarming(error, openedAt) ? std::string{} : error;
   }
-  std::string additionalSourceError(const AdditionalAudio &extra) {
+  std::string additionalSourceError(AdditionalAudio &extra) {
 #ifndef __APPLE__
     auto physical = deviceAudioError(extra.source, extra.openedAt);
     if (!physical.empty()) return extra.name + ": " + physical;
 #endif
 #ifdef _WIN32
-    if (extra.window) {
-      DWORD pid = 0;
-      GetWindowThreadProcessId(reinterpret_cast<HWND>(extra.window), &pid);
-      if (!IsWindow(reinterpret_cast<HWND>(extra.window)) || pid != extra.pid)
-        return "Audio source " + extra.name + " is unavailable";
-      calldata_t state{};
-      calldata_init(&state);
-      bool queried = proc_handler_call(obs_source_get_proc_handler(extra.source), "get_hooked", &state);
-      bool ready = queried && calldata_bool(&state, "hooked");
-      calldata_free(&state);
-      if (!ready) return "Waiting for audio source " + extra.name;
+    if (extra.kind == "application" && !extra.executable.empty()) {
+      // The source matches by executable, so whatever it hooked is this app, even after a restart.
+      if (_stricmp(hookedExecutable(extra.source).c_str(), extra.executable.c_str()) == 0) {
+        extra.hooked = true;
+        return {};
+      }
+      return extra.hooked ? extra.name + " closed, so its track is silent until it opens again" : "Waiting for audio source " + extra.name;
     }
 #elif defined(__linux__)
     if (extra.application) {
@@ -1430,16 +1439,20 @@ private:
           if ((meter->owner->active || meter->owner->monitoring) && meter->owner->metersWanted && now - last >= 33000000 &&
               meter->lastEvent.compare_exchange_strong(last, now))
             emit({{"event", "audio-levels"},
-                  {"capture", meter->owner->captureLevel.load()},
-                  {"microphone", meter->owner->microphoneLevel.load()},
+                  {"capture", meter->owner->captureHeard()},
+                  {"microphone", meter->owner->microphoneHeard()},
                   {"additional", {{meter->id, meter->pendingPeak.exchange(0)}}}});
         },
         metering.get());
     return metering;
   }
 #ifdef _WIN32
-  /** The window match OBS's process audio capture expects, refused when another window could match it. */
-  static std::string applicationAudioWindow(uintptr_t handle, uint32_t pid) {
+  /**
+   * The match OBS's process audio capture expects. It matches by executable, so the source follows
+   * the app rather than one window: a closed window or a restarted app is found again, and a window
+   * of another app is never picked up in its place.
+   */
+  static std::string applicationAudioWindow(uintptr_t handle, uint32_t pid, std::string &executable) {
     auto window = reinterpret_cast<HWND>(handle);
     DWORD actual = 0;
     GetWindowThreadProcessId(window, &actual);
@@ -1448,10 +1461,8 @@ private:
     dstr title{}, klass{}, exe{};
     ms_get_window_title(&title, window);
     ms_get_window_class(&klass, window);
-    bool identified =
-        ms_get_window_exe(&exe, window) &&
-        ms_find_window(INCLUDE_MINIMIZED, WINDOW_PRIORITY_TITLE,
-                       klass.array, title.array, exe.array) == window;
+    const bool identified = ms_get_window_exe(&exe, window) && exe.array && *exe.array;
+    if (identified) executable = exe.array;
     for (auto *part : {&title, &klass, &exe}) {
       dstr_replace(part, "#", "#22");
       dstr_replace(part, ":", "#3A");
@@ -1463,9 +1474,54 @@ private:
     dstr_free(&klass);
     dstr_free(&exe);
     if (!identified)
-      throw std::runtime_error(
-          "The application audio target cannot be distinguished safely");
+      throw std::runtime_error("The application audio target cannot be identified");
     return match;
+  }
+  /** Asks a process audio source which executable it hears now. Empty while it hears none. */
+  static std::string hookedExecutable(obs_source_t *source, HWND *window = nullptr) {
+    calldata_t state{};
+    calldata_init(&state);
+    std::string executable;
+    if (proc_handler_call(obs_source_get_proc_handler(source), "get_hooked", &state) && calldata_bool(&state, "hooked")) {
+      const char *exe = calldata_string(&state, "executable");
+      const char *klass = calldata_string(&state, "class");
+      const char *title = calldata_string(&state, "title");
+      if (exe) executable = exe;
+      if (window && exe && klass) *window = ms_find_window(INCLUDE_MINIMIZED, WINDOW_PRIORITY_EXE, klass, title ? title : "", exe);
+    }
+    calldata_free(&state);
+    return executable;
+  }
+  uint64_t applicationAudioFollowedAt = 0;
+  /**
+   * When an application source hooks its restarted app, Desktop audio leaves the new process out
+   * and Master routing sees its new identity, as it did for the first one. Every two seconds at most.
+   */
+  void followApplicationAudio() {
+    const uint64_t now = os_gettime_ns();
+    if (now - applicationAudioFollowedAt < 2000000000ULL) return;
+    applicationAudioFollowedAt = now;
+    bool moved = false;
+    {
+      std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
+      for (auto &extra : additionalAudio) {
+        if (extra.kind != "application" || !extra.source || extra.executable.empty()) continue;
+        HWND window = nullptr;
+        if (_stricmp(hookedExecutable(extra.source, &window).c_str(), extra.executable.c_str()) != 0 || !window) continue;
+        DWORD pid = 0;
+        if (!GetWindowThreadProcessId(window, &pid) || !pid || pid == extra.pid) continue;
+        blog(LOG_INFO, "Audio source %s follows its app to a new process", extra.name.c_str());
+        extra.pid = pid;
+        extra.window = reinterpret_cast<uintptr_t>(window);
+        if (sessionConfiguration.contains("audioSources") && sessionConfiguration["audioSources"].is_array())
+          for (auto &configured : sessionConfiguration["audioSources"])
+            if (configured.value("id", std::string()) == extra.id) configured["pid"] = pid;
+        moved = true;
+      }
+    }
+    if (!moved) return;
+    configureDesktopExclusions(sessionConfiguration);
+    routeMaster();
   }
 #endif
 public:
@@ -1489,16 +1545,18 @@ public:
       if (value.id == id) extra = &value;
     if (!extra || extra->kind != "application") throw std::runtime_error("Unknown audio source");
     if (extra->source) return;
-    const std::string match = applicationAudioWindow(handle, pid);
+    std::string executable;
+    const std::string match = applicationAudioWindow(handle, pid, executable);
     std::unique_ptr<obs_data_t, decltype(&obs_data_release)> data(obs_data_create(), &obs_data_release);
     obs_data_set_string(data.get(), "window", match.c_str());
-    obs_data_set_int(data.get(), "priority", 0);
+    obs_data_set_int(data.get(), "priority", WINDOW_PRIORITY_EXE);
     obs_source_t *created = obs_source_create_private("wasapi_process_output_capture", extra->name.c_str(), data.get());
     if (!created) throw std::runtime_error("The additional audio source could not be opened");
     {
       std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
       extra->window = handle;
       extra->pid = pid;
+      extra->executable = executable;
       extra->source = created;
       obs_source_set_audio_mixers(created, extra->mixerMask);
       audioHealth.watch(created);
@@ -1623,9 +1681,9 @@ private:
           extra.window = std::stoull(identity.substr(7));
           extra.pid = settings.at("pid");
 #ifdef _WIN32
-          const std::string match = applicationAudioWindow(extra.window, extra.pid);
+          const std::string match = applicationAudioWindow(extra.window, extra.pid, extra.executable);
           obs_data_set_string(data.get(), "window", match.c_str());
-          obs_data_set_int(data.get(), "priority", 0);
+          obs_data_set_int(data.get(), "priority", WINDOW_PRIORITY_EXE);
           type = "wasapi_process_output_capture";
 #elif defined(__linux__)
           data.reset();
@@ -1714,8 +1772,8 @@ private:
               additionalAudio.back().application, [this, identity](float value) {
                 if ((active || monitoring) && metersWanted)
                   emit({{"event", "audio-levels"},
-                        {"capture", captureLevel.load()},
-                        {"microphone", microphoneLevel.load()},
+                        {"capture", captureHeard()},
+                        {"microphone", microphoneHeard()},
                         {"additional", {{identity, value}}}});
               });
         }
@@ -2634,10 +2692,11 @@ public:
     if (applicationAudio)
       setApplicationAudioLevelCallback(applicationAudio, [this](float value) {
         captureLevel = value;
+        captureLevelAt = os_gettime_ns();
         if (active && metersWanted)
           emit({{"event", "audio-levels"},
                 {"capture", value},
-                {"microphone", microphoneLevel.load()}});
+                {"microphone", microphoneHeard()}});
       });
 #endif
   }
@@ -2940,6 +2999,9 @@ public:
       if (portal)
         captureError = portal->health().message();
     }
+#endif
+#ifdef _WIN32
+    if (active) followApplicationAudio();
 #endif
     std::string audioWarning = additionalAudioError();
     if (audioWarning.empty()) audioWarning = audioSetupWarning;

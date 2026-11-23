@@ -57,6 +57,7 @@ jobs:
               python3 scripts/smoke-linux-device-audio.py resources/recorder
               python3 scripts/audio_tone.test.py
               python3 scripts/smoke-linux-app-audio.py resources/recorder
+              python3 scripts/smoke-linux-app-audio.py resources/recorder --pipewire
 
               python3 scripts/smoke-interruption.py resources/recorder
               ACROCLIP_TEST_X11_APP=1 python3 scripts/smoke-linux.py resources/recorder

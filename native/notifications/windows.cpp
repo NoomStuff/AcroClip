@@ -5,6 +5,8 @@
 #include <memory>
 #include <vector>
 #include <psapi.h>
+#include <shlobj.h>
+#include <shlwapi.h>
 #include <algorithm>
 using std::min;
 using std::max;
@@ -451,7 +453,244 @@ LRESULT CALLBACK events(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
 }
 }
 
+std::wstring environmentValue(const wchar_t *name) {
+  const DWORD length = GetEnvironmentVariableW(name, nullptr, 0);
+  if (!length) return {};
+  std::wstring value(length, L'\0');
+  value.resize(GetEnvironmentVariableW(name, value.data(), length));
+  return value;
+}
+std::string narrow(const std::wstring &value) {
+  if (value.empty()) return {};
+  const int size = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), int(value.size()), nullptr, 0, nullptr, nullptr);
+  std::string result(size_t(size), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, value.c_str(), int(value.size()), result.data(), size, nullptr, nullptr);
+  return result;
+}
+/** An icon as a bitmap that keeps its transparency, which Bitmap::FromHICON drops. */
+std::unique_ptr<Bitmap> iconBitmap(HICON icon) {
+  ICONINFO info{};
+  if (!GetIconInfo(icon, &info)) return nullptr;
+  std::unique_ptr<Bitmap> result;
+  if (info.hbmColor) {
+    BITMAP shape{};
+    GetObject(info.hbmColor, sizeof(shape), &shape);
+    const int width = shape.bmWidth, height = shape.bmHeight;
+    BITMAPINFO layout{};
+    layout.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    layout.bmiHeader.biWidth = width;
+    layout.bmiHeader.biHeight = -height;
+    layout.bmiHeader.biPlanes = 1;
+    layout.bmiHeader.biBitCount = 32;
+    layout.bmiHeader.biCompression = BI_RGB;
+    std::vector<uint32_t> pixels(size_t(width) * size_t(height));
+    HDC screen = GetDC(nullptr);
+    const bool read = width > 0 && height > 0 && GetDIBits(screen, info.hbmColor, 0, UINT(height), pixels.data(), &layout, DIB_RGB_COLORS) == height;
+    ReleaseDC(nullptr, screen);
+    if (read) {
+      // Old icons carry no alpha at all. They draw fully opaque rather than invisible.
+      if (std::none_of(pixels.begin(), pixels.end(), [](uint32_t pixel) { return (pixel >> 24) != 0; }))
+        for (auto &pixel : pixels) pixel |= 0xFF000000u;
+      result = std::make_unique<Bitmap>(width, height, PixelFormat32bppARGB);
+      BitmapData data{};
+      Rect area(0, 0, width, height);
+      if (result->LockBits(&area, ImageLockModeWrite, PixelFormat32bppARGB, &data) == Ok) {
+        for (int row = 0; row < height; row++)
+          memcpy(static_cast<BYTE *>(data.Scan0) + row * data.Stride, pixels.data() + size_t(row) * size_t(width), size_t(width) * 4);
+        result->UnlockBits(&data);
+      } else {
+        result.reset();
+      }
+    }
+    DeleteObject(info.hbmColor);
+  }
+  if (info.hbmMask) DeleteObject(info.hbmMask);
+  return result;
+}
+/** The handler's icon as a 32 pixel PNG data URL, or empty when it has none to read. */
+std::string handlerIcon(IAssocHandler *handler) {
+  PWSTR location = nullptr;
+  int index = 0;
+  if (FAILED(handler->GetIconLocation(&location, &index)) || !location) return {};
+  const std::wstring path = location;
+  CoTaskMemFree(location);
+  std::unique_ptr<Bitmap> image;
+  if (!path.empty() && path[0] == L'@') {
+    // Store apps name their logo through a resource string that resolves to an image file.
+    wchar_t resolved[MAX_PATH]{};
+    if (SUCCEEDED(SHLoadIndirectString(path.c_str(), resolved, MAX_PATH, nullptr))) image.reset(Bitmap::FromFile(resolved));
+  } else {
+    HICON large = nullptr, little = nullptr;
+    if (SHDefExtractIconW(path.c_str(), index, 0, &large, &little, MAKELONG(32, 16)) == S_OK) {
+      if (large) image = iconBitmap(large);
+      if (large) DestroyIcon(large);
+      if (little) DestroyIcon(little);
+    }
+  }
+  if (!image || image->GetLastStatus() != Ok) return {};
+  Bitmap scaled(32, 32, PixelFormat32bppARGB);
+  {
+    Graphics canvas(&scaled);
+    canvas.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+    canvas.SetPixelOffsetMode(PixelOffsetModeHalf);
+    canvas.Clear(Color(0, 0, 0, 0));
+    canvas.DrawImage(image.get(), 0, 0, 32, 32);
+  }
+  IStream *stream = SHCreateMemStream(nullptr, 0);
+  if (!stream) return {};
+  const CLSID png{0x557cf406, 0x1a04, 0x11d3, {0x9a, 0x73, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e}};
+  std::string url;
+  STATSTG stat{};
+  if (scaled.Save(stream, &png, nullptr) == Ok && SUCCEEDED(stream->Stat(&stat, STATFLAG_NONAME)) && stat.cbSize.QuadPart < 256 * 1024) {
+    std::vector<BYTE> bytes(size_t(stat.cbSize.QuadPart));
+    LARGE_INTEGER start{};
+    ULONG read = 0;
+    if (SUCCEEDED(stream->Seek(start, STREAM_SEEK_SET, nullptr)) && SUCCEEDED(stream->Read(bytes.data(), ULONG(bytes.size()), &read)) &&
+        read == bytes.size()) {
+      DWORD size = 0;
+      const DWORD flags = CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF;
+      if (CryptBinaryToStringA(bytes.data(), DWORD(bytes.size()), flags, nullptr, &size)) {
+        std::string base64(size, '\0');
+        if (CryptBinaryToStringA(bytes.data(), DWORD(bytes.size()), flags, base64.data(), &size)) {
+          base64.resize(size);
+          url = "data:image/png;base64," + base64;
+        }
+      }
+    }
+  }
+  stream->Release();
+  return url;
+}
+/** Visits the apps Explorer recommends in Open with for a file type, until the visitor returns true. */
+template <typename Visit> void eachOpenWithHandler(const std::wstring &extension, Visit visit) {
+  IEnumAssocHandlers *handlers = nullptr;
+  if (FAILED(SHAssocEnumHandlers(extension.c_str(), ASSOC_FILTER_RECOMMENDED, &handlers)) || !handlers) return;
+  IAssocHandler *handler = nullptr;
+  ULONG fetched = 0;
+  while (handlers->Next(1, &handler, &fetched) == S_OK && fetched) {
+    const bool stop = visit(handler);
+    handler->Release();
+    if (stop) break;
+  }
+  handlers->Release();
+}
+/** Prints the Open with apps for ACROCLIP_EXTENSION as one JSON array, with the system default marked. */
+int listOpenWith() {
+  const std::wstring extension = environmentValue(L"ACROCLIP_EXTENSION");
+  if (extension.size() < 2 || extension[0] != L'.') return 2;
+  wchar_t defaultName[512]{};
+  DWORD defaultSize = 512;
+  const bool knownDefault =
+      SUCCEEDED(AssocQueryStringW(ASSOCF_INIT_IGNOREUNKNOWN, ASSOCSTR_FRIENDLYAPPNAME, extension.c_str(), nullptr, defaultName, &defaultSize));
+  json apps = json::array();
+  eachOpenWithHandler(extension, [&](IAssocHandler *handler) {
+    PWSTR id = nullptr, name = nullptr;
+    if (SUCCEEDED(handler->GetName(&id)) && SUCCEEDED(handler->GetUIName(&name)) && id && name && *name)
+      apps.push_back({{"id", narrow(id)},
+                      {"name", narrow(name)},
+                      {"icon", handlerIcon(handler)},
+                      {"default", knownDefault && _wcsicmp(name, defaultName) == 0}});
+    CoTaskMemFree(id);
+    CoTaskMemFree(name);
+    return apps.size() >= 16;
+  });
+  std::cout << apps.dump(-1, ' ', false, json::error_handler_t::replace) << std::endl;
+  return 0;
+}
+/** Opens ACROCLIP_FILE with the listed app named ACROCLIP_HANDLER, and only with a listed one. */
+int openWith() {
+  const std::wstring file = environmentValue(L"ACROCLIP_FILE"), wanted = environmentValue(L"ACROCLIP_HANDLER");
+  if (file.empty() || wanted.empty() || GetFileAttributesW(file.c_str()) == INVALID_FILE_ATTRIBUTES) return 3;
+  IShellItem *item = nullptr;
+  IDataObject *data = nullptr;
+  if (FAILED(SHCreateItemFromParsingName(file.c_str(), nullptr, IID_PPV_ARGS(&item))) || !item) return 4;
+  const HRESULT bound = item->BindToHandler(nullptr, BHID_DataObject, IID_PPV_ARGS(&data));
+  item->Release();
+  if (FAILED(bound) || !data) return 4;
+  bool found = false, opened = false;
+  eachOpenWithHandler(PathFindExtensionW(file.c_str()), [&](IAssocHandler *handler) {
+    PWSTR id = nullptr;
+    found = SUCCEEDED(handler->GetName(&id)) && id && _wcsicmp(id, wanted.c_str()) == 0;
+    CoTaskMemFree(id);
+    if (found) opened = SUCCEEDED(handler->Invoke(data));
+    return found;
+  });
+  data->Release();
+  if (!opened) return found ? 6 : 5;
+  std::cout << "opened" << std::endl;
+  return 0;
+}
+/** Explorer's own Choose another app dialog for ACROCLIP_FILE. It stays open until the person picks or cancels. */
+int chooseOpenWith() {
+  const std::wstring file = environmentValue(L"ACROCLIP_FILE");
+  if (file.empty() || GetFileAttributesW(file.c_str()) == INVALID_FILE_ATTRIBUTES) return 3;
+  OPENASINFO info{};
+  info.pcszFile = file.c_str();
+  info.oaifInFlags = OAIF_ALLOW_REGISTRATION | OAIF_REGISTER_EXT | OAIF_EXEC;
+  return SUCCEEDED(SHOpenWithDialog(nullptr, &info)) ? 0 : 8;
+}
+/** Runs one of the Open with modes with COM and GDI+ up, for its handlers and icons. */
+template <typename Mode> int withShell(Mode mode) {
+  const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+  ULONG_PTR token = 0;
+  GdiplusStartupInput graphics;
+  const bool drawing = GdiplusStartup(&token, &graphics, nullptr) == Ok;
+  const int result = mode();
+  if (drawing) GdiplusShutdown(token);
+  if (SUCCEEDED(com)) CoUninitialize();
+  return result;
+}
+/**
+ * Puts one file on the clipboard the way Explorer's Copy does, for AcroClip's Copy file. Starting
+ * PowerShell for this took most of a second. The path arrives in an environment variable, never as
+ * part of a command line.
+ */
+int copyFileToClipboard(HINSTANCE instance) {
+  const std::wstring path = environmentValue(L"ACROCLIP_CLIPBOARD_FILE");
+  if (path.empty()) return 2;
+  if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return 3;
+  // The list ends with two null characters, which the zeroed allocation supplies.
+  HGLOBAL drop = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, sizeof(DROPFILES) + (path.size() + 2) * sizeof(wchar_t));
+  HGLOBAL effect = GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD));
+  if (!drop || !effect) {
+    if (drop) GlobalFree(drop);
+    if (effect) GlobalFree(effect);
+    return 4;
+  }
+  auto *files = static_cast<DROPFILES *>(GlobalLock(drop));
+  files->pFiles = sizeof(DROPFILES);
+  files->fWide = TRUE;
+  memcpy(reinterpret_cast<BYTE *>(files) + sizeof(DROPFILES), path.c_str(), path.size() * sizeof(wchar_t));
+  GlobalUnlock(drop);
+  *static_cast<DWORD *>(GlobalLock(effect)) = DROPEFFECT_COPY;
+  GlobalUnlock(effect);
+  // The clipboard needs an owner window for its data to be accepted. The data outlives it.
+  HWND owner = CreateWindowExW(0, L"STATIC", L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, instance, nullptr);
+  // Another app can hold the clipboard for a moment.
+  bool opened = false;
+  for (int attempt = 0; attempt < 40 && !(opened = OpenClipboard(owner)); attempt++) Sleep(25);
+  if (!opened) {
+    GlobalFree(drop);
+    GlobalFree(effect);
+    if (owner) DestroyWindow(owner);
+    return 5;
+  }
+  EmptyClipboard();
+  const bool placed = SetClipboardData(CF_HDROP, drop) != nullptr;
+  if (!placed) GlobalFree(drop);
+  if (!SetClipboardData(RegisterClipboardFormatW(CFSTR_PREFERREDDROPEFFECT), effect)) GlobalFree(effect);
+  CloseClipboard();
+  if (owner) DestroyWindow(owner);
+  if (!placed) return 6;
+  // An older helper would ignore the flag and exit cleanly, so success is said out loud.
+  std::cout << "copied" << std::endl;
+  return 0;
+}
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
+  if (std::wstring(arguments) == L"--copy-file") return copyFileToClipboard(instance);
+  if (std::wstring(arguments) == L"--open-with-list") return withShell(listOpenWith);
+  if (std::wstring(arguments) == L"--open-with") return withShell(openWith);
+  if (std::wstring(arguments) == L"--open-with-choose") return withShell(chooseOpenWith);
   SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
   ULONG_PTR token; GdiplusStartupInput graphics;
   if (GdiplusStartup(&token, &graphics, nullptr) != Ok) return 1;

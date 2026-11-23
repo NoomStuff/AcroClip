@@ -21,6 +21,24 @@ export function desktopGame(
    return displays === 1 ? game : undefined;
 }
 
+/**
+ * The game Discord should say is being played during a desktop capture. A game filling the captured
+ * screen is the answer. Otherwise the game named last stays while it's still open, since alt-tabbing
+ * to Discord or a browser doesn't stop someone playing it. When that one closes, the one recognized
+ * game still open takes over, like Limbus Company left running after Deadlock. With several open
+ * and none in front, there's no telling which is being played, so none is named.
+ */
+export function presenceDesktopGame<Game extends { id: string }>(
+   inFront: Game | undefined,
+   previous: Game | undefined,
+   open: readonly Game[]
+): Game | undefined {
+   if (inFront) return inFront;
+   if (previous && open.some((game) => game.id === previous.id)) return previous;
+   const distinct = [...new Map(open.map((game) => [game.id, game])).values()];
+   return distinct.length === 1 ? distinct[0] : undefined;
+}
+
 /** How far apart two samples can be before the time between them counts as unknown. */
 const MAX_SAMPLE_GAP_MS = 12_000;
 /** A game takes a clip when it filled at least this much of the footage. */

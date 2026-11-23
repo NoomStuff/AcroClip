@@ -140,6 +140,10 @@ test("a clip trims from the library as a copy and from the player in place", asy
       const copy = (await clips()).find((clip) => clip.name === "Trim moment (Trim)");
       await expect(page.getByRole("button", { name: "Copy clip", exact: true })).toBeEnabled();
       expect(copy?.duration).toBeCloseTo(5, 1);
+      // The copy opens on the frame the trim was showing, its last kept one, rather than back at its start.
+      await expect
+         .poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime), { timeout: 10000 })
+         .toBeGreaterThan(4.5);
       expect(copy?.tracks.map((track) => track.title)).toEqual(["Game", "Microphone"]);
       expect((await clips()).find((clip) => clip.name === "Trim moment")?.duration).toBeCloseTo(10, 1);
 

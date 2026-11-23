@@ -251,7 +251,8 @@ try:
     assert any(e.get("additional",{}).get("fixture-b",0)>.05 for e in events if e["event"]=="audio-levels")
     # Play the shipped feedback WAV through a child process, exactly as Linux
     # feedback does. Silence existing private producers so a missing exclusion
-    # cannot hide underneath unrelated captured audio.
+    # cannot hide underneath unrelated captured audio. On PipeWire the player
+    # is a native client, whose stream names its process only on its client.
     command(dict(action="stop"))
     existing_inputs = json.loads(subprocess.check_output(["pactl", "-f", "json", "list", "sink-inputs"], env=env, text=True))
     for item in existing_inputs:
@@ -261,8 +262,8 @@ try:
 import signal, subprocess, sys
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 while True:
-    subprocess.run(['paplay', sys.argv[1]], check=True)
-""", str(feedback_wav)], "feedback-player")
+    subprocess.run([sys.argv[2], sys.argv[1]], check=True)
+""", str(feedback_wav), "pw-play" if "--pipewire" in sys.argv[2:] else "paplay"], "feedback-player")
     feedback_levels = {}
     for name, application_pid in [("included", 0), ("excluded", feedback_player.pid)]:
         assert feedback_player.poll() is None, "The notification sound producer exited"

@@ -59,11 +59,11 @@ export const ClipCard = memo(function ClipCard({
    appIcon,
    showSource,
    shareSizeMB,
-   attaCutAvailable,
    contextRequest,
    requestMenu,
    closeMenu,
    openClip,
+   playClip,
    trimClip,
    categories,
    createTag,
@@ -80,11 +80,12 @@ export const ClipCard = memo(function ClipCard({
    appIcon: string | undefined;
    showSource: boolean;
    shareSizeMB: number;
-   attaCutAvailable: boolean;
    contextRequest: ContextMenuRequest | undefined;
    requestMenu: (clipId: string, element: HTMLElement, left: number, top: number) => void;
    closeMenu: (clipId: string) => void;
    openClip: (clip: Clip) => void;
+   /** Opens the clip and plays it from a moment, in seconds. */
+   playClip: (clip: Clip, at: number) => void;
    trimClip: (clip: Clip) => void;
    categories: Category[];
    /** Opens the tag editor, which applies the new tag to this clip. */
@@ -110,6 +111,12 @@ export const ClipCard = memo(function ClipCard({
    const scrubbing = scrub.position !== null;
    const { setPosition } = scrub;
    useEffect(() => setPosition(rest), [rest, setPosition]);
+   // The moment the length label shows: the frame under the pointer, or where the clip was left.
+   const shownTime =
+      rest !== null && scrub.position === rest ? rest * clip.duration : scrub.frame === null ? null : (scrub.frame * clip.duration) / scrub.frames;
+   // Taken when the menu opens, since moving onto the menu ends the scrub. Play starts from there.
+   const [menuTime, setMenuTime] = useState<number | null>(null);
+   const restTime = rest !== null ? rest * clip.duration : null;
    useEffect(() => {
       if (!scrubbing) return;
       // Pointer leave misses a card that scrolls out from under a still pointer, a drag taking over,
@@ -150,6 +157,7 @@ export const ClipCard = memo(function ClipCard({
          onPointerLeave={() => scrub.setPosition(rest)}
          onContextMenu={(event) => {
             event.preventDefault();
+            setMenuTime(shownTime);
             requestMenu(clip.id, event.currentTarget, event.clientX, event.clientY);
          }}
          onKeyDown={(event) => {
@@ -157,6 +165,7 @@ export const ClipCard = memo(function ClipCard({
             event.preventDefault();
             event.stopPropagation();
             const bounds = event.currentTarget.getBoundingClientRect();
+            setMenuTime(restTime);
             requestMenu(clip.id, event.currentTarget, bounds.left + 20, bounds.top + 30);
          }}
       >
@@ -193,18 +202,7 @@ export const ClipCard = memo(function ClipCard({
                      <span>Just watched</span>
                   </span>
                )}
-               {clip.duration > 0 && (
-                  <Duration
-                     duration={clip.duration}
-                     position={
-                        rest !== null && scrub.position === rest
-                           ? rest * clip.duration
-                           : scrub.frame === null
-                             ? null
-                             : (scrub.frame * clip.duration) / scrub.frames
-                     }
-                  />
-               )}
+               {clip.duration > 0 && <Duration duration={clip.duration} position={shownTime} />}
                {shareable && (
                   <span className="copy-indicator" data-tooltip={`${clip.shareables.length} shareable${clip.shareables.length === 1 ? "" : "s"}`}>
                      <Share2 size={12} />
@@ -262,16 +260,22 @@ export const ClipCard = memo(function ClipCard({
                 A stable image target also works before the thumbnail loads. */}
             <img className="clip-drag-surface" src={dragSurface} alt="" aria-hidden="true" draggable={!!dragPath} />
          </button>
-         <div className="card-menu">
+         <div
+            className="card-menu"
+            // The menu button sits over the thumbnail, so whatever it scrubbed to on the way isn't a choice. Events from
+            // the open menu, which React passes up through its portal, leave the moment alone.
+            onPointerDownCapture={(event) => event.currentTarget.contains(event.target as Node) && setMenuTime(restTime)}
+            onKeyDownCapture={(event) => event.currentTarget.contains(event.target as Node) && setMenuTime(restTime)}
+         >
             <Menu
                label={`Actions for ${clip.name}`}
                trigger={<MoreHorizontal size={17} />}
                contextRequest={contextRequest}
                onContextClose={() => closeMenu(clip.id)}
             >
-               <MenuItem onClick={() => openClip(clip)}>
+               <MenuItem disabled={!!clip.originalMissing && !shareable} onClick={() => playClip(clip, menuTime ?? 0)}>
                   <Play size={15} />
-                  Open clip
+                  {menuTime !== null && menuTime >= 1 ? `Play (${formatTime(menuTime)})` : "Play"}
                </MenuItem>
                <ClipActions
                   createTag={() => createTag(clip.id)}
@@ -279,7 +283,6 @@ export const ClipCard = memo(function ClipCard({
                   categories={categories}
                   busy={!!job}
                   canCreate={shareableTargetAllowed(clip.size, shareSizeMB)}
-                  attaCutAvailable={attaCutAvailable}
                   ask={ask}
                   run={run}
                   create={() => void run(() => api.createShareable(clip.id))}

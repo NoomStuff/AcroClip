@@ -613,6 +613,10 @@ label:active > .checkbox {
 .menu-wrap {
    position: relative;
 }
+/* Takes no room in its row. The menu opens at the pointer. */
+.menu-wrap.menu-context-only {
+   display: contents;
+}
 
 .menu {
    position: absolute;

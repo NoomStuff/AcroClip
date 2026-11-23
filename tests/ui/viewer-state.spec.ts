@@ -79,7 +79,9 @@ test("the viewer rail retains its first clip, version and position when a newer 
       await expect(page.getByRole("button", { name: "Shareable", exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("button", { name: "Create shareable", exact: true })).toBeDisabled();
       await page.getByRole("button", { name: "File actions", exact: true }).click();
-      await expect(page.getByRole("menuitem", { name: "Open in AttaCut", exact: true })).toHaveCount(0);
+      // The shareable can still open in another app. The missing clip is the one choice that can't.
+      // Once the system has listed apps for the file type, that's the Open with submenu.
+      await expect(page.getByRole("menuitem", { name: /^(Open with|Open in default app)$/ })).toBeEnabled();
       await page.keyboard.press("Escape");
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(2);
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);

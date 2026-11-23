@@ -293,6 +293,7 @@ export interface ContextMenuRequest {
    top: number;
    restoreFocus: HTMLElement;
 }
+/** A menu behind a button. Without a trigger it has no button, and only a context request opens it, like right-clicking what it belongs to. */
 export function Menu({
    trigger,
    children,
@@ -303,7 +304,7 @@ export function Menu({
    contextRequest,
    onContextClose,
 }: {
-   trigger: ReactNode;
+   trigger?: ReactNode;
    children: ReactNode;
    label: string;
    // The trigger's tooltip, when it should say more than its name, such as the current choice.
@@ -414,27 +415,29 @@ export function Menu({
       };
    }, [open, restoreFocus, dismiss, belongsToFamily]);
    return (
-      <div className={`menu-wrap ${className}`} ref={ref}>
-         <IconButton
-            label={label}
-            title={title}
-            aria-expanded={open}
-            aria-haspopup="menu"
-            onClick={() => {
-               setContextAnchor(null);
-               if (open) dismiss();
-               else setPhase("open");
-            }}
-            onKeyDown={(event) => {
-               if (event.key === "ArrowDown") {
-                  event.preventDefault();
+      <div className={`menu-wrap ${trigger === undefined ? "menu-context-only" : ""} ${className}`} ref={ref}>
+         {trigger !== undefined && (
+            <IconButton
+               label={label}
+               title={title}
+               aria-expanded={open}
+               aria-haspopup="menu"
+               onClick={() => {
                   setContextAnchor(null);
-                  setPhase("open");
-               }
-            }}
-         >
-            {trigger}
-         </IconButton>
+                  if (open) dismiss();
+                  else setPhase("open");
+               }}
+               onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") {
+                     event.preventDefault();
+                     setContextAnchor(null);
+                     setPhase("open");
+                  }
+               }}
+            >
+               {trigger}
+            </IconButton>
+         )}
          {phase !== "closed" &&
             createPortal(
                <div

@@ -104,8 +104,9 @@ test("tag appearance, local shortcuts, conflicts and global capture bindings per
       await highlightRow.click({ button: "right" });
       await expect(page.getByRole("menu", { name: "Actions for Highlights", exact: true })).toBeVisible();
       await expect(page.getByRole("menuitem", { name: "Edit tag", exact: true })).toBeVisible();
-      await expect(page.getByRole("menuitem", { name: "Move up", exact: true })).toHaveCount(0);
-      await expect(page.getByRole("menuitem", { name: "Move down", exact: true })).toHaveCount(0);
+      // The only tag can't move either way, so both stay in place, disabled.
+      await expect(page.getByRole("menuitem", { name: "Move up", exact: true })).toBeDisabled();
+      await expect(page.getByRole("menuitem", { name: "Move down", exact: true })).toBeDisabled();
       await page.keyboard.press("Escape");
       await expect(highlightRow.locator(".sidebar-item")).toBeFocused();
       await page.getByRole("button", { name: "Actions for Highlights", exact: true }).click();

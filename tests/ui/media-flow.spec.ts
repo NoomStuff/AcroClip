@@ -257,12 +257,13 @@ test("real media plays, creates a verified shareable, and supports overlapping t
             node.style.width = `${size.width}px`;
             node.style.height = `${size.height}px`;
          }, size);
+         // The whole stage answers, letterboxing included, and the picture itself too.
          await playbackVideo.click({ position: { x: 5, y: 5 } });
-         expect(await playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
-         await playbackVideo.click({ position: { x: size.width / 2, y: size.height / 2 } });
          await expect.poll(() => playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+         await playbackVideo.click({ position: { x: size.width / 2, y: size.height / 2 } });
+         await expect.poll(() => playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
          await playbackVideo.click({ position: { x: size.width - 5, y: size.height - 5 } });
-         expect(await playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+         await expect.poll(() => playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
          await playbackVideo.click({ position: { x: size.width / 2, y: size.height / 2 } });
          await expect.poll(() => playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
       }
@@ -321,6 +322,11 @@ test("real media plays, creates a verified shareable, and supports overlapping t
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(1.9);
       const position = page.getByRole("slider", { name: "Playback position", exact: true });
       await expect(position).toHaveValue("2");
+      // Someone moving through the player by keyboard steps the seek bar in seconds. After a click,
+      // its arrows are the player's 5 second seeks instead.
+      await page.keyboard.press("Tab");
+      await expect(page.locator("html")).toHaveAttribute("data-keyboard", "true");
+      await position.focus();
       await position.press("ArrowRight");
       await expect.poll(() => page.locator(".viewer-main video").evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(2.9);
       await position.press("ArrowLeft");
