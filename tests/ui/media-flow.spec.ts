@@ -257,12 +257,13 @@ test("real media plays, creates a verified shareable, and supports overlapping t
             node.style.width = `${size.width}px`;
             node.style.height = `${size.height}px`;
          }, size);
+         // The whole stage answers, letterboxing included, and the picture itself too.
          await playbackVideo.click({ position: { x: 5, y: 5 } });
-         expect(await playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
-         await playbackVideo.click({ position: { x: size.width / 2, y: size.height / 2 } });
          await expect.poll(() => playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+         await playbackVideo.click({ position: { x: size.width / 2, y: size.height / 2 } });
+         await expect.poll(() => playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
          await playbackVideo.click({ position: { x: size.width - 5, y: size.height - 5 } });
-         expect(await playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+         await expect.poll(() => playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
          await playbackVideo.click({ position: { x: size.width / 2, y: size.height / 2 } });
          await expect.poll(() => playbackVideo.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
       }

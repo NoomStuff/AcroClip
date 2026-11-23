@@ -116,8 +116,9 @@ try {
    send({ action: "stop" });
    const firstSaved = await wait((event) => event.event === "saved" && event.requestId === "first");
    const secondSaved = await wait((event) => event.event === "saved" && event.requestId === "second");
-   assert.equal(firstSaved.source, "Initial screen");
-   assert.equal(secondSaved.source, "Initial screen");
+   // A screen is always saved as Desktop, whatever the start request called it.
+   assert.equal(firstSaved.source, "Desktop");
+   assert.equal(secondSaved.source, "Desktop");
    for (const file of [first, second]) {
       const probe = spawnSync(
          path.resolve("resources/media/ffprobe.exe"),
