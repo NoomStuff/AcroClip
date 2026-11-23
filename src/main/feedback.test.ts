@@ -91,7 +91,7 @@ it("stays on system notifications once the helper fails after two restarts", () 
 it("starts the helper ahead of the first banner and reuses it", () => {
    const { feedback, child } = helper();
    feedback.start();
-   expect(mocks.spawn).toHaveBeenCalledOnce();
+   expect(mocks.spawn).toHaveBeenCalledExactlyOnceWith("notifier", [], expect.objectContaining({ cwd: "." }));
    feedback.start();
    feedback.show("Clip saved");
    expect(mocks.spawn).toHaveBeenCalledOnce();

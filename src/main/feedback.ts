@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
+import { dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { nativeImage, Notification } from "electron";
 
@@ -112,7 +113,8 @@ export class Feedback {
    }
    private helper(): ChildProcessWithoutNullStreams {
       if (this.child) return this.child;
-      const child = spawn(this.executable, [], { windowsHide: true, stdio: "pipe" });
+      // The helper outlives app start, so it must not hold the folder the app was started from, such as the updater's pending installer.
+      const child = spawn(this.executable, [], { cwd: dirname(this.executable), windowsHide: true, stdio: "pipe" });
       this.child = child;
       const output = createInterface({ input: child.stdout });
       output.on("line", (line) => {
