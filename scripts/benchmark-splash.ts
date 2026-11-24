@@ -80,8 +80,9 @@ for (const [index, version] of ["baseline", "working", "working", "baseline"].en
    if (!handle) throw new Error("Could not retain the benchmark launcher's process handle");
    try {
       const started = performance.now();
-      while (!existsSync(ready) && performance.now() - started < 5000) await delay(50);
+      while (!existsSync(ready) && performance.now() - started < 30000) await delay(50);
       if (!existsSync(ready)) throw new Error("The benchmark child did not start");
+      const childStarted = performance.now();
       await delay(1500);
       const cpuMs = () => {
          const times = Array.from({ length: 4 }, () => Buffer.alloc(8));
@@ -98,7 +99,7 @@ for (const [index, version] of ["baseline", "working", "working", "baseline"].en
       do {
          if (!kernel.symbols.GetExitCodeProcess(handle, ptr(code))) throw new Error("Could not read launcher exit code");
          if (code[0] !== 259) break;
-         if (performance.now() - started > 30000) throw new Error("The launcher outlived its benchmark child");
+         if (performance.now() - childStarted > 30000) throw new Error("The launcher outlived its benchmark child");
          await delay(100);
       } while (code[0] === 259);
       if (code[0] !== 42) throw new Error(`The launcher changed the child's exit code to ${code[0]}`);
