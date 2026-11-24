@@ -186,11 +186,11 @@ internal sealed class Splash : Form
     {
         if (disposing)
         {
-            // The launcher waits for its child on this STA thread after the form
-            // closes. Stop the timers before that wait can keep dispatching ticks.
+            // The launcher's STA wait for the app pumps messages, so live timers would tick all session.
             if (spinTimer != null) spinTimer.Dispose();
             if (doneTimer != null) doneTimer.Dispose();
             if (lifetime != null) lifetime.Dispose();
+            if (logo != null) logo.Dispose();
         }
         base.Dispose(disposing);
     }

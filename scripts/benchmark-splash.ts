@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { dlopen, ptr } from "bun:ffi";
@@ -62,16 +62,14 @@ const kernel = dlopen("kernel32.dll", {
    CloseHandle: { args: ["ptr"], returns: "i32" },
 });
 const desktop = `acroclip-splash-${randomUUID()}`;
-const desktopHandle = openDesktop(desktop);
+openDesktop(desktop);
+const stillActive = 259;
 const results: Array<{ version: string; cpuMsPerSecond: number; exitCode: number }> = [];
 for (const [index, version] of ["baseline", "working", "working", "baseline"].entries()) {
    const directory = path.join(root, version);
    const ready = path.join(directory, `ready-${index}`);
    const pid = spawnOnDesktop(desktop, path.join(directory, "AcroClip.exe"), [], directory, {
       ...process.env,
-      ACROCLIP_TEST: "1",
-      ACROCLIP_PROFILE: path.join(directory, "profile"),
-      ACROCLIP_COLLECTION: path.join(directory, "collection"),
       ACROCLIP_BENCH_READY: ready,
       TEMP: temporary,
       TMP: temporary,
@@ -98,22 +96,19 @@ for (const [index, version] of ["baseline", "working", "working", "baseline"].en
       const code = new Uint32Array(1);
       do {
          if (!kernel.symbols.GetExitCodeProcess(handle, ptr(code))) throw new Error("Could not read launcher exit code");
-         if (code[0] !== 259) break;
+         if (code[0] !== stillActive) break;
          if (performance.now() - childStarted > 30000) throw new Error("The launcher outlived its benchmark child");
          await delay(100);
-      } while (code[0] === 259);
+      } while (code[0] === stillActive);
       if (code[0] !== 42) throw new Error(`The launcher changed the child's exit code to ${code[0]}`);
       const result = { version, cpuMsPerSecond: Number((used / elapsed).toFixed(3)), exitCode: code[0] };
       results.push(result);
       console.log(JSON.stringify(result));
    } finally {
       const remaining = new Uint32Array(1);
-      if (kernel.symbols.GetExitCodeProcess(handle, ptr(remaining)) && remaining[0] === 259) kernel.symbols.TerminateProcess(handle, 1);
+      if (kernel.symbols.GetExitCodeProcess(handle, ptr(remaining)) && remaining[0] === stillActive) kernel.symbols.TerminateProcess(handle, 1);
       kernel.symbols.CloseHandle(handle);
    }
 }
-await copyFile(path.resolve("scripts/splash/identity.cs"), path.join(root, "identity.cs"));
 await writeFile(path.join(root, "results.json"), JSON.stringify({ baseline, results }, null, 2));
 console.log(`Saved measurements to ${path.join(root, "results.json")}`);
-// Keep the private desktop handle alive until every launcher and child has exited.
-if (!desktopHandle) throw new Error("The benchmark desktop closed unexpectedly");
