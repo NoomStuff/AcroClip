@@ -26,7 +26,8 @@ test("a second launch replaces a destroyed main window", async () => {
       });
       await expect.poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.isDevToolsOpened())).toBe(true);
       await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.closeDevTools());
-      const reopened = application.waitForEvent("window");
+      await expect.poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.isDevToolsOpened())).toBe(false);
+      const reopened = application.waitForEvent("window", { predicate: (page) => !page.url().startsWith("devtools://") });
       await application.evaluate(({ app, BrowserWindow }) => {
          BrowserWindow.getAllWindows()[0]!.destroy();
          app.emit("second-instance", null, [], "", {});
