@@ -99,8 +99,9 @@ describe("StatsLog", () => {
       stats.record(view);
       await stats.flush();
       stats.record(view);
-      await stats.clear(root);
-      await stats.flush();
-      expect(await stats.read(root)).toEqual([]);
+      const clearing = stats.clear(root);
+      stats.record({ ...view, clipId: "after-clear" });
+      await Promise.all([clearing, stats.flush()]);
+      expect(await stats.read(root)).toMatchObject([{ type: "view", clipId: "after-clear" }]);
    });
 });

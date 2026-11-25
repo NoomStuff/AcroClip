@@ -12,21 +12,22 @@ export function orderLibrarySections(populated: Record<LibrarySectionId, boolean
    return sections;
 }
 export function applicationKeys(clips: readonly Clip[]): Map<string, string> {
-   const known = new Map(
-      clips
-         .filter((clip) => clip.applicationId && normalizeApplicationLabel(clip.source) !== "Desktop")
-         .map((clip) => [normalizeApplicationLabel(clip.source).toLowerCase(), clip.applicationId!])
-   );
-   return new Map(
-      clips
-         .filter((clip) => normalizeApplicationLabel(clip.source) !== "Desktop")
-         .map((clip) => [
-            clip.id,
-            clip.applicationId ??
-               known.get(normalizeApplicationLabel(clip.source).toLowerCase()) ??
-               `label:${normalizeApplicationLabel(clip.source).toLowerCase()}`,
-         ])
-   );
+   const labels = new Map<string, string>();
+   const known = new Map<string, string>();
+   for (const clip of clips) {
+      let label = labels.get(clip.source);
+      if (label === undefined) {
+         label = normalizeApplicationLabel(clip.source).toLowerCase();
+         labels.set(clip.source, label);
+      }
+      if (clip.applicationId) known.set(label, clip.applicationId);
+   }
+   const keys = new Map<string, string>();
+   for (const clip of clips) {
+      const label = labels.get(clip.source)!;
+      if (label !== "desktop") keys.set(clip.id, clip.applicationId ?? known.get(label) ?? `label:${label}`);
+   }
+   return keys;
 }
 
 export function summarizeClips(clips: readonly Clip[]): { size: number; categories: Map<string, number> } {
@@ -98,45 +99,54 @@ export interface FolderSummary {
    oldest: number;
    size: number;
    duration: number;
-   matches: boolean;
+   matchingSize: number;
    count: number;
    matchingCount: number;
 }
 const matchesSearch = (clip: Clip, search: string) => !search || `${clip.name} ${clip.source}`.toLowerCase().includes(search);
-const parentFolder = (path: string) => path.replaceAll("\\", "/").split("/").slice(0, -1).join("/");
+export function parentFolder(path: string): string {
+   const end = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+   return end < 0 ? "" : path.slice(0, end).replaceAll("\\", "/");
+}
 
 export function summarizeFolders(clips: readonly Clip[], search: string): Map<string, FolderSummary> {
    const result = new Map<string, FolderSummary>();
    for (const clip of clips) {
-      const parts = clip.relativePath.replaceAll("\\", "/").split("/");
       const matches = matchesSearch(clip, search);
-      for (let i = 0; i < parts.length; i++) {
-         const path = parts.slice(0, i).join("/");
-         const previous = result.get(path);
-         result.set(path, {
-            newest: Math.max(previous?.newest ?? 0, clip.createdAt),
-            oldest: Math.min(previous?.oldest ?? Infinity, clip.createdAt),
-            size: (previous?.size ?? 0) + clip.size,
-            duration: (previous?.duration ?? 0) + clip.duration,
-            matches: (previous?.matches ?? false) || matches,
-            count: (previous?.count ?? 0) + 1,
-            matchingCount: (previous?.matchingCount ?? 0) + (matches ? 1 : 0),
-         });
+      let folder = parentFolder(clip.relativePath);
+      for (;;) {
+         let summary = result.get(folder);
+         if (!summary) {
+            summary = { newest: clip.createdAt, oldest: clip.createdAt, size: 0, duration: 0, count: 0, matchingCount: 0, matchingSize: 0 };
+            result.set(folder, summary);
+         }
+         summary.newest = Math.max(summary.newest, clip.createdAt);
+         summary.oldest = Math.min(summary.oldest, clip.createdAt);
+         summary.size += clip.size;
+         summary.duration += clip.duration;
+         summary.count++;
+         if (matches) {
+            summary.matchingCount++;
+            summary.matchingSize += clip.originalMissing ? (clip.shareables.at(-1)?.size ?? clip.size) : clip.size;
+         }
+         if (!folder) break;
+         folder = parentFolder(folder);
       }
    }
    return result;
 }
 
-export function selectChildFolders(
-   paths: readonly string[],
-   parent: string | null,
-   search: string,
-   summaries: ReadonlyMap<string, FolderSummary>,
-   sort: LibrarySort
-): string[] {
-   if (parent === null) return [];
+export function selectChildFolders(paths: readonly string[], search: string, summaries: ReadonlyMap<string, FolderSummary>, sort: LibrarySort): string[] {
    return paths
-      .filter((path) => parentFolder(path) === parent && (!search || path.split("/").at(-1)!.toLowerCase().includes(search) || summaries.get(path)?.matches))
+      .filter(
+         (path) =>
+            !search ||
+            path
+               .slice(path.lastIndexOf("/") + 1)
+               .toLowerCase()
+               .includes(search) ||
+            summaries.get(path)?.matchingCount
+      )
       .sort((a, b) => {
          const first = summaries.get(a),
             second = summaries.get(b);

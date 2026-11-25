@@ -19,7 +19,9 @@ describe("library indexes", () => {
          { id: "screen", source: "Screen 2" },
          { id: "desktop", source: "Desktop" },
          { id: "other", source: "Other" },
+         { id: "constructor", source: "constructor" },
       ] as Clip[]);
+      expect(keys.get("constructor")).toBe("label:constructor");
       expect(keys.has("screen")).toBe(false);
       expect(keys.has("desktop")).toBe(false);
       expect(keys.get("legacy")).toBe(keys.get("known"));
@@ -97,10 +99,10 @@ const sampleClip = (id: string, relativePath: string, createdAt: number): Clip =
 it("counts nested folders across path separators while filtering only direct clips", () => {
    const clips = [sampleClip("Root", "Root.mp4", 1), sampleClip("Warmup", "Games\\Warmup.mp4", 5), sampleClip("Winner", "Games/Finals/Winner.mp4", 10)];
    const summaries = summarizeFolders(clips, "winner");
-   expect(summaries.get("Games")).toEqual({ count: 2, matchingCount: 1, matches: true, newest: 10, oldest: 5, size: 2000, duration: 60 });
+   expect(summaries.get("Games")).toEqual({ count: 2, matchingCount: 1, matchingSize: 1000, newest: 10, oldest: 5, size: 2000, duration: 60 });
    expect(summaries.get("")?.count).toBe(3);
-   expect(selectChildFolders(["Games", "Games/Finals", "Empty"], "Games", "winner", summaries, { field: "date", reversed: false })).toEqual(["Games/Finals"]);
-   expect(selectChildFolders(["Games"], null, "", summaries, { field: "name", reversed: false })).toEqual([]);
+   expect(selectChildFolders(["Games/Finals", "Games/Empty"], "winner", summaries, { field: "date", reversed: false })).toEqual(["Games/Finals"]);
+   expect(selectChildFolders([], "", summaries, { field: "name", reversed: false })).toEqual([]);
    expect(
       selectLibraryClips(clips, {
          search: "",

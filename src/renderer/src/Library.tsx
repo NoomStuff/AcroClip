@@ -70,7 +70,7 @@ import { useGridMotion } from "./useGridMotion";
 import { PaneDivider, usePaneSize } from "./layout";
 import { useApplicationColors } from "./useApplicationColors";
 import type { ContextMenuRequest } from "./ui";
-import { applicationKeys, summarizeClips, orderLibrarySections, summarizeFolders, selectChildFolders, selectLibraryClips } from "./library-index";
+import { groupFolders, applicationKeys, summarizeClips, orderLibrarySections, summarizeFolders, selectChildFolders, selectLibraryClips } from "./library-index";
 import type { LibrarySectionId, LibrarySort } from "./library-index";
 import { groupClips } from "./library-groups";
 import type { ClipGroup, LibraryGrouping } from "./library-groups";
@@ -323,14 +323,14 @@ export function Library({
       if (filter.startsWith("category:") && !state.categories.some((category) => `category:${category.id}` === filter)) setFilter("all");
    }, [filter, sources, state.categories]);
    const folderPath = filter.startsWith("folder:") ? filter.slice(7) : null;
+   const folderSearch = folderPath === null ? "" : search;
+   const folderStats = useMemo(() => summarizeFolders(state.clips, folderSearch), [state.clips, folderSearch]);
    const folders = useMemo(() => {
       const found = new Set(state.folders);
-      for (const clip of state.clips) {
-         const parts = clip.relativePath.replaceAll("\\", "/").split("/");
-         for (let i = 1; i < parts.length; i++) found.add(parts.slice(0, i).join("/"));
-      }
+      for (const path of folderStats.keys()) if (path) found.add(path);
       return [...found].sort((a, b) => a.localeCompare(b));
-   }, [state.folders, state.clips]);
+   }, [state.folders, folderStats]);
+   const children = useMemo(() => groupFolders(folders), [folders]);
    useEffect(() => {
       if (state.collectionStatus.phase !== "ready" || folderPath === null || !folderPath || folders.includes(folderPath)) return;
       let parent = folderPath;
@@ -419,8 +419,10 @@ export function Library({
          });
       },
    });
-   const folderStats = useMemo(() => summarizeFolders(state.clips, search), [state.clips, search]);
-   const childFolders = useMemo(() => selectChildFolders(folders, folderPath, search, folderStats, sort), [folders, folderPath, search, folderStats, sort]);
+   const childFolders = useMemo(
+      () => (folderPath === null ? [] : selectChildFolders(children.get(folderPath) ?? [], search, folderStats, sort)),
+      [children, folderPath, search, folderStats, sort]
+   );
    const clips = useMemo(
       () => selectLibraryClips(state.clips, { search, filter, folderPath, sort, applications: appKeys }),
       [state.clips, search, filter, folderPath, sort, appKeys]
@@ -432,10 +434,11 @@ export function Library({
       (grouping === "tag" && filter.startsWith("category:"))
          ? "none"
          : grouping;
+   const groupingDay = activeGrouping === "date" ? new Date().setHours(0, 0, 0, 0) : 0;
    const groups = useMemo(
       () =>
          groupClips(clips, activeGrouping, sort, {
-            now: new Date(),
+            now: new Date(groupingDay),
             application: (clip) => {
                const label = normalizeApplicationLabel(clip.source);
                const known = label.trim() && label.trim().toLowerCase() !== "unknown";
@@ -443,7 +446,7 @@ export function Library({
             },
             tags: state.categories,
          }),
-      [clips, activeGrouping, sort, appKeys, state.categories]
+      [clips, activeGrouping, sort, appKeys, state.categories, groupingDay]
    );
    const foldedKeys = useMemo(() => new Set(folded[activeGrouping] ?? []), [folded, activeGrouping]);
    const toggleGroup = (key: string) =>
@@ -462,15 +465,21 @@ export function Library({
       if (contextMenu && !clips.some((clip) => clip.id === contextMenu.clipId)) setContextMenu(null);
    }, [clips, contextMenu]);
    const selectedCategory = state.categories.find((item) => `category:${item.id}` === filter);
-   const headingClipCount = folderPath !== null ? (folderStats.get(folderPath)?.matchingCount ?? 0) : clips.length;
-   // Narrowed scopes (search, tag/source filters) can show the match against the unsearched scope with the matched size.
-   const scopeClips = useMemo(
-      () => (query || filter !== "all" ? selectLibraryClips(state.clips, { search: "", filter, folderPath, sort, applications: appKeys }) : null),
-      [query, filter, state.clips, folderPath, sort, appKeys]
-   );
+   const folderSummary = folderPath === null ? undefined : folderStats.get(folderPath);
+   const headingClipCount = folderPath === null ? clips.length : (folderSummary?.matchingCount ?? 0);
+   const scopeCount =
+      folderPath !== null
+         ? (folderSummary?.count ?? 0)
+         : filter.startsWith("category:")
+           ? (summary.categories.get(filter.slice(9)) ?? 0)
+           : filter.startsWith("source:")
+             ? (applicationCounts.get(filter.slice(7)) ?? 0)
+             : state.clips.length;
    const matchSize = useMemo(
-      () => clips.reduce((total, clip) => total + (clip.originalMissing ? (clip.shareables.at(-1)?.size ?? clip.size) : clip.size), 0),
-      [clips]
+      () =>
+         folderSummary?.matchingSize ??
+         clips.reduce((total, clip) => total + (clip.originalMissing ? (clip.shareables.at(-1)?.size ?? clip.size) : clip.size), 0),
+      [clips, folderSummary]
    );
    const discovering = state.collectionStatus.phase === "loading";
    const discovery = state.collectionStatus.discovery;
@@ -874,7 +883,7 @@ export function Library({
                                     <FolderTree
                                        visible={sectionOpen("folders")}
                                        dropProps={folderDropProps}
-                                       paths={folders}
+                                       childrenByParent={children}
                                        counts={folderStats}
                                        selected={folderPath}
                                        onSelect={(path) => setFilter(`folder:${path}`)}
@@ -902,14 +911,14 @@ export function Library({
                      {pending && <LoaderCircle size={13} className="spin" aria-label="Loading clips" />}
                      {childFolders.length > 0 && `${childFolders.length} ${childFolders.length === 1 ? "folder" : "folders"} · `}
                      {discovering && discovery && discoveredCount !== undefined ? (
-                        `Loaded ${headingClipCount} of ${discoveredCount} clips · ${formatSize(matchSize)}`
+                        `Loaded ${clips.length} of ${discoveredCount} clips · ${formatSize(matchSize)}`
                      ) : initial ? (
                         <span aria-hidden="true">&nbsp;</span>
                      ) : query && headingClipCount === 0 ? (
                         "No results"
-                     ) : scopeClips ? (
+                     ) : query || filter !== "all" ? (
                         <>
-                           Showing {headingClipCount} of {scopeClips.length} {scopeClips.length === 1 ? "clip" : "clips"} · {formatSize(matchSize)}
+                           Showing {headingClipCount} of {scopeCount} {scopeCount === 1 ? "clip" : "clips"} · {formatSize(matchSize)}
                         </>
                      ) : (
                         <>

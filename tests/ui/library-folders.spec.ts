@@ -122,6 +122,11 @@ test("folder browsing keeps the real hierarchy and empty directories accessible"
       await expect(foldersToggle).toHaveAttribute("aria-expanded", "true");
       await expect(page.getByRole("treeitem", { name: "Highlights", exact: true })).toBeVisible();
       await games.press("Enter");
+      await expect(page.locator(".library-count")).toContainText("Showing 2 of 2 clips");
+      const search = page.getByRole("textbox", { name: "Search clips" });
+      await search.fill("Replay");
+      await expect(page.locator(".library-count")).toContainText("Showing 1 of 2 clips");
+      await search.fill("");
       await expect(page.getByRole("button", { name: "Open Gameplay", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Open Replay", exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: "Open folder Games/Highlights", exact: true }).click();
