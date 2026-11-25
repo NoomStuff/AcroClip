@@ -1,3 +1,4 @@
+import { parentFolder } from "./library-index";
 import type { Clip } from "../../shared/types";
 import type { LibrarySort } from "./library-index";
 
@@ -62,11 +63,19 @@ export function groupClips(
 ): ClipGroup[] {
    if (grouping === "none") return [];
    const reversed = (field: LibrarySort["field"]) => sort.field === field && sort.reversed;
+   const dates = new Map<number, Bucket>();
+   const tagRanks = new Map(grouping === "tag" ? options.tags?.map((tag, index) => [tag.id, index]) : []);
    const bucket = (clip: Clip): Bucket => {
       switch (grouping) {
          case "date": {
-            const { key, label, start } = dateBucket(clip.createdAt, options.now, options.locale);
-            return { key, label, rank: reversed("date") ? start : -start };
+            const day = startOfDay(clip.createdAt);
+            let bucket = dates.get(day);
+            if (!bucket) {
+               const { key, label, start } = dateBucket(day, options.now, options.locale);
+               bucket = { key, label, rank: reversed("date") ? start : -start };
+               dates.set(day, bucket);
+            }
+            return bucket;
          }
          case "watched":
             return clip.watched ? { key: "watched", label: "Watched", rank: 1 } : { key: "new", label: "New", rank: 0 };
@@ -76,17 +85,20 @@ export function groupClips(
          case "application": {
             // Ranked by the group's newest clip below, so the last game played comes first.
             const { key, label } = options.application(clip);
-            return { key: `application:${key}`, label, rank: 0 };
+            return { key: `application:${key}`, label, rank: -clip.createdAt };
          }
          case "folder": {
-            const folder = clip.relativePath.replaceAll("\\", "/").split("/").slice(0, -1).join("/");
+            const folder = parentFolder(clip.relativePath);
             // The collection's own clips first, then folders in tree order.
             return { key: `folder:${folder}`, label: folder ? folder.split("/").join(" / ") : "Collection", rank: folder ? 1 : 0 };
          }
          case "tag": {
             const tags = options.tags ?? [];
-            const index = tags.findIndex((tag) => clip.categories.includes(tag.id));
-            return index < 0 ? { key: "tag:", label: "Untagged", rank: tags.length } : { key: `tag:${tags[index]!.id}`, label: tags[index]!.name, rank: index };
+            let index = tags.length;
+            for (const id of clip.categories) index = Math.min(index, tagRanks.get(id) ?? tags.length);
+            return index === tags.length
+               ? { key: "tag:", label: "Untagged", rank: tags.length }
+               : { key: `tag:${tags[index]!.id}`, label: tags[index]!.name, rank: index };
          }
       }
    };
@@ -94,15 +106,12 @@ export function groupClips(
    for (const clip of clips) {
       const { key, label, rank } = bucket(clip);
       const group = groups.get(key);
-      if (group) group.clips.push(clip);
-      else groups.set(key, { key, label, rank, clips: [clip] });
+      if (group) {
+         group.clips.push(clip);
+         if (grouping === "application") group.rank = Math.min(group.rank, rank);
+      } else groups.set(key, { key, label, rank, clips: [clip] });
    }
-   const newest = (group: ClipGroup) => Math.max(...group.clips.map((clip) => clip.createdAt));
    return [...groups.values()]
-      .sort(
-         (a, b) =>
-            a.rank - b.rank ||
-            (grouping === "application" ? newest(b) - newest(a) || a.label.localeCompare(b.label) : grouping === "folder" ? a.key.localeCompare(b.key) : 0)
-      )
+      .sort((a, b) => a.rank - b.rank || (grouping === "application" ? a.label.localeCompare(b.label) : grouping === "folder" ? a.key.localeCompare(b.key) : 0))
       .map(({ key, label, clips: members }) => ({ key, label, clips: members }));
 }

@@ -24,7 +24,7 @@ import { useNavigationHistory } from "./navigation-history";
 import type { Ask } from "./Dialog";
 import { preloadedPage } from "./preloaded-page";
 import { ShortcutSheet } from "./ShortcutSheet";
-import { queuePosition } from "./play-queue";
+import { resolveQueue } from "./play-queue";
 import type { PlayQueue } from "./play-queue";
 import { readLibraryView } from "./library-view";
 import { markShortcut } from "./keyboard-mode";
@@ -234,7 +234,9 @@ export function App() {
    // A clip the player should start playing as soon as it loads, such as the next one in a queue.
    const [autoplay, setAutoplay] = useState<string | null>(null);
    const allClips = state?.clips;
-   const position = useMemo(() => (clip && allClips ? queuePosition(clip, allClips, queue, readLibraryView().sort) : null), [clip, allClips, queue]);
+   const viewerOpen = page === "viewer";
+   const queueLookup = useMemo(() => (viewerOpen && allClips ? resolveQueue(allClips, queue, readLibraryView().sort) : null), [viewerOpen, allClips, queue]);
+   const position = useMemo(() => (clip && queueLookup ? queueLookup(clip) : null), [clip, queueLookup]);
    const stepClip = useCallback((value: Clip, play: boolean) => {
       setSelected(value.id);
       setAutoplay(play ? value.id : null);

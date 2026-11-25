@@ -55,8 +55,9 @@ export class StatsLog {
    /** Removes every recorded event for a collection, including ones not written yet. */
    async clear(root: string): Promise<void> {
       this.pending = this.pending.filter((entry) => entry.root !== root);
-      await this.writing;
-      await rm(join(root, ".acroclip", "stats"), { recursive: true, force: true });
+      const clearing = this.writing.then(() => rm(join(root, ".acroclip", "stats"), { recursive: true, force: true }));
+      this.writing = clearing.catch(() => undefined);
+      await clearing;
    }
 
    async read(root: string): Promise<StatsEvent[]> {

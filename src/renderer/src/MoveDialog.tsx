@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Folder, FolderInput } from "lucide-react";
 import { DialogPanel } from "./Dialog";
+import { groupFolders } from "./library-index";
 import { FolderTree } from "./FolderTree";
 import { SidebarTab } from "./SidebarTab";
 import { Button } from "./ui";
@@ -24,7 +25,10 @@ export function MoveDialog({
    const [destination, setDestination] = useState(initial);
    const [busy, setBusy] = useState(false);
    const [error, setError] = useState("");
-   const available = folders.filter((path) => !excluded || (path !== excluded && !path.startsWith(`${excluded}/`)));
+   const available = useMemo(
+      () => groupFolders(excluded ? folders.filter((path) => path !== excluded && !path.startsWith(`${excluded}/`)) : folders),
+      [folders, excluded]
+   );
    const move = async () => {
       setBusy(true);
       setError("");
@@ -47,7 +51,7 @@ export function MoveDialog({
       >
          <div className="move-folders" inert={busy}>
             <SidebarTab icon={<Folder size={16} />} label="Collection" selected={destination === ""} onSelect={() => setDestination("")} />
-            <FolderTree paths={available} selected={destination} onSelect={setDestination} />
+            <FolderTree childrenByParent={available} selected={destination} onSelect={setDestination} />
          </div>
          <p className="move-destination">{destination || "Collection"}</p>
          {error && <p role="alert">{error}</p>}

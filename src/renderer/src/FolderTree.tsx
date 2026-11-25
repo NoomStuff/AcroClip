@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, HTMLAttributes } from "react";
 import { ChevronRight, Folder, FolderOpen } from "lucide-react";
-import { groupFolders, visibleFolderRows } from "./library-index";
+import { visibleFolderRows } from "./library-index";
 import { MotionList } from "./MotionList";
 import { SidebarTab } from "./SidebarTab";
 export function FolderTree({
-   paths,
+   childrenByParent: children,
    counts,
    selected,
    onSelect,
@@ -14,7 +14,7 @@ export function FolderTree({
    dropProps,
    visible = true,
 }: {
-   paths: string[];
+   childrenByParent: ReadonlyMap<string, readonly string[]>;
    visible?: boolean;
    counts?: ReadonlyMap<string, { count: number }>;
    selected: string | null;
@@ -25,9 +25,8 @@ export function FolderTree({
 }) {
    const root = useRef<HTMLDivElement>(null);
    const [expanded, setExpanded] = useState(new Set<string>());
-   const children = useMemo(() => groupFolders(paths), [paths]);
    const rows = useMemo(() => visibleFolderRows(children, expanded), [children, expanded]);
-   const selectedExists = selected !== null && paths.includes(selected);
+   const selectedExists = selected !== null && rows.some((row) => row.id === selected);
    useEffect(() => {
       if (selected === null) return;
       setExpanded((current) => {
