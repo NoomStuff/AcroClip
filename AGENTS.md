@@ -1,46 +1,29 @@
 # AcroClip
 
-We are building a local-first, cross-platform clipping app. Trying to make clipping moments, rewatching them, and sharing them as easy as possible.
+We are building a local-first, cross-platform clipping app. Trying to make clipping, rewatching, managing and sharing moments as easy as possible.
 
 ## What we optimize for
 
-1. **Correctness.** A saved clip contains the requested moment, with working playback and synchronized audio. A fast save of the wrong footage is a failure.
-2. **Low impact.** Recording must remain dependable during gameplay. Library work and compression must not compromise capture.
-3. **Polish.** Common actions should feel immediate. Use compact controls, useful feedback, and sensible defaults.
+1. **Correctness.** Our absolute top priority making sure clips are correctly saved.
+2. **Low impact.** Recording must remain dependable during gameplay. Minimimal usage, high clip quality.
+3. **Polish & Speed.** Common actions should feel immediate. Use compact controls, useful feedback, and sensible defaults.
 
 ## Scope
 
-AcroClip captures recent footage, previews clips, and creates shareables. Full-session recording belongs in OBS. Cutting belongs in AttaCut. Growth needs a reason tied to making clipping or sharing better, rather than turning this into another recording studio or editor.
+AcroClip captures recent footage, manages and plays clips, and creates shareables. Growth needs a reason tied to making clipping, managing clips, or sharing them better, rather than turning this into another recording studio or editor.
 
 ## The user's files are theirs
 
 The folder is the collection. Existing supported videos should work without registration, and files must remain usable outside AcroClip. Metadata supports the collection, allowing for better library features, but its only additive.
 
-## Verified work
-
-`bun run verify` covers formatting, lint, unit tests, strict types, and the build; run it after edits. Recording, audio, and export changes are verified against actual media and failure cases, never simulations. Useful checks beyond `verify`:
-
-- `bun run test:media`: real video fixtures for exports, playback tracks, moved collections, and metadata recovery.
-- `bun run test:ui` and `bun run test:ui:native`: the actual app in an isolated profile, with real capture in the native variant.
-- `bun run test:native`, `bun run test:packaged`, `bun run test:capture-loss`: recorder smoke, packaged builds, and recovery after source loss.
-
-Isolate runs from real user state with `ACROCLIP_PROFILE`, `ACROCLIP_COLLECTION`, and `ACROCLIP_TEST=1`. Never point destructive tests at a real collection. A platform build alone doesn't establish working capture.
-
-The interactive suites only run inside an isolated desktop. Anywhere else they refuse a dirty tree, then dispatch the pushed commit to Windows CI and wait for it.
-
-- On Linux, run them locally instead: `bun run test:ui:linux [spec names]` and `bun run test:ui:native:linux` start a private X11, D-Bus and audio desktop and work on uncommitted changes. Other suites run as `python3 scripts/run-linux-ui.py bun run test:<suite>`.
-- `bun run agent-app start [--clips N]` keeps the built app running for you to inspect without disturbing the person at the computer: `snapshot`, `shot`, `click`, `fill`, `eval`, `main`, `logs`, `restart`, `stop`. Linux runs it in that private desktop. Windows runs it on a separate Win32 desktop with global shortcuts, sound and opened links stubbed, and turns capture off there because it would record the real screen. Test capture with the native suites. Use it to see a change working, then prove it with a spec.
-- Specs that list sources or capture need a recorder. `bun scripts/fetch-recorder.ts` installs the latest release's recorder on Linux, or on Windows with 7-Zip, which is fine for app changes. Changes under `native/` need a real build of the recorder.
-- PR checks only run Windows. Prove Linux and macOS capture on a branch with `gh workflow run build.yml --ref <branch> -f verify_candidate=true`, which builds and verifies all five targets without publishing.
-
 ## Versioning
 
-Pushing to main with a new version number in `package.json` triggers a release via GitHub Actions. Bump it appropriately for the changes made, not every change needs a new version. Follow ups should not bump again unless pushes to main have been made since. Don't blindly push without permission from the user.
-
-Every push to main also builds and verifies all five targets as a private candidate. To release, push the changes first, wait for that commit's `Release candidate` status to pass, then run `bun run release <major|minor|patch>`. It refuses without a passing candidate and pushes a commit that changes only the version, which publishes after building and checking package bytes. A version bump in the same commit as other changes still releases, but runs every suite again.
+Every push to main builds and verifies all five targets as a private candidate. To release, push the changes first, wait for that commit's `Release candidate` status to pass, then run `bun run release <major|minor|patch>`. Don't blindly bump without permission from the user.
 
 Always run `bun run format` and `bun run verify` after a turn with many file edits. For changes to capture, audio, export, playback, packaging, or release workflows, run `bun run verify:release` too. Fix local failures before pushing, then fix isolated check failures before publication.
 
-After a version bump, watch the release through completion on all five targets. If an unpublished release fails, rerun the failed jobs or fix and retry the same version. The release workflow publishes automatically after every required check passes. Release notes and custom attempt counts are not required. Create the final tag only when publishing the verified commit. Public releases and tags are immutable, so fixes after publication require a new version. A release carries the app downloads under versionless names, the updater feeds and blockmap, and the corresponding sources.
+After a version bump, watch the release through completion on all five targets. If an unpublished release fails, rerun the failed jobs or fix and retry the same version. The release workflow publishes automatically after every required check passes.
+
+## Shared Files
 
 These files are shared line for line with AttaCut and Deduup, apart from their imports and app blocks: `src/main/update-manager.ts`, `src/main/splash.ts`, `scripts/splash/splash.cs`, `scripts/after-pack.cjs` and `scripts/release-notes.mjs`. Each app keeps its own `scripts/splash/identity.cs`. Make changes to a shared file in all three apps in the same turn.
