@@ -102,7 +102,7 @@ test("settings autosave retains drafts, merges external changes and retries fail
          if (narrow) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
          await page.getByRole("button", { name: "Library", exact: true }).click();
          await page.getByRole("button", { name: "Collection actions", exact: true }).click();
-         await page.getByRole("menuitem", { name: "Choose collection folder", exact: true }).click();
+         await page.getByRole("menuitem", { name: "Change folder", exact: true }).click();
          await expect(page.locator(".settings-heading h1")).toHaveText("Clips");
          await expect(page.getByRole("button", { name: "Change folder", exact: true })).toBeFocused();
          await expect(page.getByRole("group", { name: "Collection folder", exact: true })).toHaveAttribute("data-navigation-highlight", "true");
