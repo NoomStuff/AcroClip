@@ -13,6 +13,7 @@ test("field descriptions reach controls and folders support keyboard selection",
    try {
       const page = await app.firstWindow();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.locator(".settings-sidebar").getByRole("button", { name: "Recording", exact: true }).click();
       await expect(page.getByRole("combobox", { name: "Resolution limit", exact: true })).toHaveAccessibleDescription(
          "Screens scale to this limit. Apps keep their original size."
       );
@@ -21,8 +22,9 @@ test("field descriptions reach controls and folders support keyboard selection",
             page.getByRole(role, { name: role === "slider" ? "Capture compression" : "Capture compression value", exact: true })
          ).toHaveAccessibleDescription("Lower values keep more detail and use more space.");
       }
+      await page.locator(".settings-sidebar").getByRole("button", { name: "Clips", exact: true }).click();
       await expect(page.getByRole("spinbutton", { name: "Clip length", exact: true })).toHaveAccessibleDescription(
-         "Save this much recent footage when you clip."
+         /^Press .+ in any app to save the last 1:00\.$/
       );
       const evidence = process.env["ACROCLIP_UI_EVIDENCE"];
       if (evidence) {

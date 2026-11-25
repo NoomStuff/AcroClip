@@ -1,8 +1,8 @@
 import { FieldDescription } from "./field-accessibility";
 import { Children, Fragment, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
-import { Check, LoaderCircle } from "lucide-react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, Ref } from "react";
+import { Check, LoaderCircle, Search, X } from "lucide-react";
 
 import { SelectionIndicator } from "./SelectionIndicator";
 import { DropdownSelect } from "./DropdownSelect";
@@ -188,7 +188,8 @@ export function Toggle({
             const current = drag.current;
             if (!current || current.pointer !== event.pointerId) return;
             const offset = event.clientX - current.startX;
-            if (!current.moved && Math.abs(offset) < 3) return;
+            // A click that wobbles a few pixels is still a click. Below this the release toggles like any press.
+            if (!current.moved && Math.abs(offset) < 8) return;
             current.moved = true;
             current.position = current.from + offset;
             const on = current.position > switchTravel / 2;
@@ -278,9 +279,60 @@ export function Field({ label, detail, children, stacked = false }: { label: str
       </FieldDescription.Provider>
    );
 }
-export function Empty({ icon, title, detail, children }: { icon: ReactNode; title: string; detail?: string; children?: ReactNode }) {
+/** The one search field: a pill on the page that lifts on focus, with a clear button once there's text. */
+export function SearchInput({
+   label,
+   placeholder = label,
+   value,
+   onChange,
+   inputRef,
+   onKeyDown,
+   className = "",
+}: {
+   label: string;
+   placeholder?: string;
+   value: string;
+   onChange: (value: string) => void;
+   inputRef?: Ref<HTMLInputElement>;
+   onKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
+   className?: string;
+}) {
    return (
-      <div className="empty">
+      <div className={`search-input ${className}`}>
+         <Search size={16} aria-hidden="true" />
+         <input
+            ref={inputRef}
+            aria-label={label}
+            spellCheck={false}
+            placeholder={placeholder}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            {...(onKeyDown ? { onKeyDown } : {})}
+         />
+         {value && (
+            <IconButton label="Clear search" onClick={() => onChange("")}>
+               <X size={13} />
+            </IconButton>
+         )}
+      </div>
+   );
+}
+export function Empty({
+   icon,
+   title,
+   detail,
+   children,
+   floating = false,
+}: {
+   icon: ReactNode;
+   title: string;
+   detail?: string;
+   children?: ReactNode;
+   /** Floats over a list instead of taking its place, so what the list drops fades out where it was. */
+   floating?: boolean;
+}) {
+   return (
+      <div className={`empty${floating ? " empty-floating" : ""}`}>
          <div className="empty-icon">{icon}</div>
          <h2>{title}</h2>
          {detail && <p>{detail}</p>}

@@ -48,7 +48,7 @@ test("maintenance clears what each action names and leaves the clips alone", asy
          }) as typeof dialog.showMessageBox;
       });
       await page.getByRole("button", { name: "Settings", exact: true }).click();
-      await page.getByRole("button", { name: "App & updates", exact: true }).click();
+      await page.locator(".settings-sidebar").getByRole("button", { name: "App", exact: true }).click();
       await expect(page.getByRole("heading", { name: "History" })).toHaveCount(0);
       // The history is on without a switch, so the launch is already counted.
       expect((await page.evaluate(() => window.acroClip.statsSummary())).app.launches).toBe(1);

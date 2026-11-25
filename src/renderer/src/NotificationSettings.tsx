@@ -22,7 +22,7 @@ export function NotificationSettings({
    onChange: (key: NotificationEditableKey, enabled: boolean) => void;
 }) {
    return (
-      <section className="settings-group notification-settings" aria-label="Notification preferences">
+      <div className="notification-settings" role="group" aria-label="Notification preferences">
          <div className="notification-columns">
             <h2>Choose how you're notified</h2>
             <span className="notification-column-label" aria-hidden="true">
@@ -40,7 +40,7 @@ export function NotificationSettings({
             const sound = keys.sound;
             const locked = banner === "notificationErrorBanner";
             return (
-               <div className="settings-row notification-settings-row" key={action}>
+               <div className="settings-row settings-surface notification-settings-row" key={action}>
                   <Icon className="settings-row-icon" size={21} aria-hidden="true" />
                   <div className="settings-row-copy">
                      <span className="field-label">{label}</span>
@@ -63,6 +63,6 @@ export function NotificationSettings({
                </div>
             );
          })}
-      </section>
+      </div>
    );
 }

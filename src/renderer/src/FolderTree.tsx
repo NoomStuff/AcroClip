@@ -13,9 +13,12 @@ export function FolderTree({
    requestMenu,
    dropProps,
    visible = true,
+   missed,
 }: {
    childrenByParent: ReadonlyMap<string, readonly string[]>;
    visible?: boolean;
+   /** Folders a search finds nothing in, which fade back. */
+   missed?: (path: string) => boolean;
    counts?: ReadonlyMap<string, { count: number }>;
    selected: string | null;
    onSelect: (path: string) => void;
@@ -67,6 +70,7 @@ export function FolderTree({
                if (event.target === event.currentTarget) onSelect(path);
             },
             "data-empty": (counts && !counts.get(path)?.count) || undefined,
+            "data-search-miss": missed?.(path) || undefined,
             style: { marginLeft: (level - 1) * 16 },
             ...dropProps?.(path),
             onContextMenu: (event) => {

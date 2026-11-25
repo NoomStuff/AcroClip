@@ -18,7 +18,7 @@ test("Discord status defaults to minimal for existing settings and saves a new c
    try {
       const page = await app.firstWindow();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
-      await page.getByRole("button", { name: "App & updates", exact: true }).click();
+      await page.locator(".settings-sidebar").getByRole("button", { name: "App", exact: true }).click();
       const status = page.getByRole("combobox", { name: "Discord status", exact: true });
       await expect(status).toHaveText(/Minimal/);
       await expect(status).toHaveAccessibleDescription("Adds AcroClip rich presence to the game you're capturing.");

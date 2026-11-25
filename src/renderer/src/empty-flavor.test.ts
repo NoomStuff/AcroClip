@@ -15,3 +15,12 @@ describe("empty state titles", () => {
       expect(anyTitle(emptyTitles.library).test("No clips")).toBe(false);
    });
 });
+
+describe("noMatchTitle easter egg", () => {
+   it("gives up on a word over 50 characters or more than 50 words", () => {
+      expect(noMatchTitle("a".repeat(51))).toBe("bro stop");
+      expect(noMatchTitle(`clip ${"a".repeat(50)}`)).not.toBe("bro stop");
+      expect(noMatchTitle(Array.from({ length: 51 }, () => "clip").join(" "))).toBe("bro stop");
+      expect(noMatchTitle(Array.from({ length: 50 }, () => "clip").join(" "))).not.toBe("bro stop");
+   });
+});

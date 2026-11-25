@@ -247,41 +247,56 @@ export class CaptureSources {
       this.onChange(this.cached);
       return this.cached;
    }
+   /**
+    * The icon the Capture page shows for an app: its window's own icon when one of its windows was listed, then its
+    * executable's file icon. Listing first means the window icons are there even before Capture was opened.
+    */
+   async applicationIcon(app: Pick<GameCandidate, "executable" | "gameId" | "pid">): Promise<string | undefined> {
+      if (!app.executable) return undefined;
+      await this.list().catch(() => undefined);
+      const id = stableApplicationId(app.executable, app.gameId);
+      const listed = this.stableWindowIcons.get(id) ?? this.cached.find((source) => source.applicationId === id && source.appIcon)?.appIcon;
+      if (listed) return listed;
+      return process.platform === "linux" ? undefined : this.executableIcon(app.executable);
+   }
+   /** An executable's own icon as a small data URL, cached. Windows' generic program icon counts as none. */
+   executableIcon(path: string): Promise<string | undefined> {
+      const executable = process.platform === "win32" ? path.toLowerCase() : path;
+      let icon = this.icons.get(executable);
+      if (icon) return icon;
+      icon = app
+         .getFileIcon(process.platform === "darwin" ? path.replace(/(\.app)\/Contents\/.*/, "$1") : path, {
+            size: "normal",
+         })
+         .then(async (image) => {
+            if (image.isEmpty()) return undefined;
+            const value = image.resize({ width: 32, height: 32 }).toDataURL();
+            if (process.platform === "win32") {
+               this.genericIcon ??= app
+                  .getFileIcon(join(tmpdir(), `.acroclip-generic-${randomUUID()}.exe`), { size: "normal" })
+                  .then((generic) => (generic.isEmpty() ? undefined : generic.resize({ width: 32, height: 32 }).toDataURL()))
+                  .catch(() => undefined);
+               if (value === (await this.genericIcon)) return undefined;
+            }
+            return value.length <= 45000 ? value : undefined;
+         })
+         .catch(() => undefined);
+      this.icons.set(executable, icon);
+      void icon.then((value) => {
+         if (!value) {
+            const timer = setTimeout(() => this.icons.delete(executable), 30_000);
+            timer.unref();
+         }
+      });
+      while (this.icons.size > 128) this.icons.delete(this.icons.keys().next().value!);
+      return icon;
+   }
    private hydrateIcons(candidates: GameCandidate[]): void {
       const missingIcons = new Map(this.cached.filter((source) => source.kind === "app").map((source) => [source.id.split(":")[1], source.processId]));
       const pending = candidates.filter((candidate) => candidate.executable && missingIcons.get(candidate.id.split(":")[1]) === candidate.pid);
       void Promise.all(
          pending.map(async (candidate) => {
-            const executable = process.platform === "win32" ? candidate.executable.toLowerCase() : candidate.executable;
-            let icon = this.icons.get(executable);
-            if (!icon) {
-               icon = app
-                  .getFileIcon(process.platform === "darwin" ? candidate.executable.replace(/(\.app)\/Contents\/.*/, "$1") : candidate.executable, {
-                     size: "normal",
-                  })
-                  .then(async (image) => {
-                     if (image.isEmpty()) return undefined;
-                     const value = image.resize({ width: 32, height: 32 }).toDataURL();
-                     if (process.platform === "win32") {
-                        this.genericIcon ??= app
-                           .getFileIcon(join(tmpdir(), `.acroclip-generic-${randomUUID()}.exe`), { size: "normal" })
-                           .then((generic) => (generic.isEmpty() ? undefined : generic.resize({ width: 32, height: 32 }).toDataURL()))
-                           .catch(() => undefined);
-                        if (value === (await this.genericIcon)) return undefined;
-                     }
-                     return value.length <= 45000 ? value : undefined;
-                  })
-                  .catch(() => undefined);
-               this.icons.set(executable, icon);
-               void icon.then((value) => {
-                  if (!value) {
-                     const timer = setTimeout(() => this.icons.delete(executable), 30_000);
-                     timer.unref();
-                  }
-               });
-               while (this.icons.size > 128) this.icons.delete(this.icons.keys().next().value!);
-            }
-            return [stableApplicationId(candidate.executable, candidate.gameId), await icon] as const;
+            return [stableApplicationId(candidate.executable, candidate.gameId), await this.executableIcon(candidate.executable)] as const;
          })
       ).then(async (entries) => {
          const icons = new Map(entries);

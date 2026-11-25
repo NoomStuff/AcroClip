@@ -21,11 +21,9 @@ import {
    MoreHorizontal,
    Pencil,
    Plus,
-   Search,
    SearchX,
    Tag,
    Trash2,
-   X,
    ZoomIn,
    ZoomOut,
 } from "lucide-react";
@@ -38,7 +36,7 @@ import { Slider } from "./Slider";
 import { SelectionIndicator } from "./SelectionIndicator";
 import { SidebarTab } from "./SidebarTab";
 import { MotionList } from "./MotionList";
-import { ContextHeader, Button, Empty, IconButton, Menu, MenuItem } from "./ui";
+import { ContextHeader, Button, Empty, IconButton, Menu, MenuItem, SearchInput } from "./ui";
 import { api, reportFeedback } from "./desktop";
 import { copiedMessage, defaultClipFile } from "./clip-files";
 import { MoveDialog } from "./MoveDialog";
@@ -79,6 +77,7 @@ import {
    summarizeFolders,
    selectChildFolders,
    selectLibraryClips,
+   searchHits,
 } from "./library-index";
 import type { LibrarySectionId, LibrarySort } from "./library-index";
 import { groupClips } from "./library-groups";
@@ -432,6 +431,9 @@ export function Library({
          });
       },
    });
+   // While searching, filters with nothing to find fade back, so the sidebar shows where the matches are.
+   const hits = useMemo(() => (search ? searchHits(state.clips, search, appKeys, folders) : null), [state.clips, search, appKeys, folders]);
+   const missed = (key: string) => (hits && !hits.has(key)) || undefined;
    const childFolders = useMemo(
       () => (folderPath === null ? [] : selectChildFolders(children.get(folderPath) ?? [], search, folderStats, sort)),
       [children, folderPath, search, folderStats, sort]
@@ -516,6 +518,11 @@ export function Library({
       for (let index = 0; index < remainingSlots; index++) result.push({ type: "pending", key: `pending:${index}`, index });
       return result;
    }, [childFolders, groups, foldedKeys, clips, remainingSlots]);
+   // A search that finds nothing keeps the last results for one fade, so they leave under the message instead of vanishing.
+   const [heldItems, setHeldItems] = useState(items);
+   const nextHeld = items.length || !query ? items : heldItems;
+   if (nextHeld !== heldItems) setHeldItems(nextHeld);
+   const searchEmptied = !!query && !items.length;
    const itemKeys = useMemo(() => new Set(items.map((item) => item.key)), [items]);
    // A new object whenever the layout can have changed, which is when cards may need to move.
    const layoutSignature = useMemo(
@@ -706,7 +713,7 @@ export function Library({
                ...(selectedCategory
                   ? { "--selection-background": categoryColors(selectedCategory.color).tint }
                   : selectedApplicationColor
-                    ? { "--selection-background": `color-mix(in srgb, ${selectedApplicationColor} 12%, transparent)` }
+                    ? { "--selection-background": `color-mix(in srgb, ${selectedApplicationColor} 18%, transparent)` }
                     : {}),
             }}
          >
@@ -726,7 +733,7 @@ export function Library({
                         </MenuItem>
                         <MenuItem onClick={openSettings}>
                            <Folder size={15} />
-                           Choose collection folder
+                           Change folder
                         </MenuItem>
                      </Menu>
                   }
@@ -737,6 +744,7 @@ export function Library({
                <SidebarTab
                   icon={<Grid2X2 size={17} />}
                   label="All clips"
+                  rowAttributes={{ "data-search-miss": missed("all") }}
                   selected={filter === "all"}
                   onSelect={() => setFilter("all")}
                   count={initial ? "" : state.clips.length}
@@ -807,6 +815,7 @@ export function Library({
                                           className="category-item"
                                           rowAttributes={{
                                              "data-empty": !summary.categories.get(item.id) || undefined,
+                                             "data-search-miss": missed(`category:${item.id}`),
                                              onContextMenu: (event) => {
                                                 event.preventDefault();
                                                 setCategoryContextMenu({
@@ -874,7 +883,10 @@ export function Library({
                                        <SidebarTab
                                           key={source.id}
                                           className="application-row"
-                                          rowAttributes={{ "data-empty": !applicationCounts.get(source.id) || undefined }}
+                                          rowAttributes={{
+                                             "data-empty": !applicationCounts.get(source.id) || undefined,
+                                             "data-search-miss": missed(`source:${source.id}`),
+                                          }}
                                           tabClassName="application-filter"
                                           tabStyle={{ "--application-color": applicationColors[source.id] } as CSSProperties}
                                           icon={<ApplicationIcon src={source.icon} size={16} />}
@@ -894,6 +906,7 @@ export function Library({
                                        dropProps={folderDropProps}
                                        childrenByParent={children}
                                        counts={collectionFolders}
+                                       missed={(path) => !!missed(`folder:${path}`)}
                                        selected={folderPath}
                                        onSelect={(path) => setFilter(`folder:${path}`)}
                                        renderActions={(path) => folderMenu(path, "tree")}
@@ -945,22 +958,7 @@ export function Library({
                      )}
                   </span>
                   <LibraryViewMenu sort={sort} grouping={grouping} onSort={setSort} onGroup={setGrouping} />
-                  <div className="search-input">
-                     <Search size={16} />
-                     <input
-                        ref={searchInput}
-                        aria-label="Search clips"
-                        spellCheck={false}
-                        placeholder="Search clips"
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                     />
-                     {query && (
-                        <IconButton label="Clear search" onClick={() => setQuery("")}>
-                           <X size={13} />
-                        </IconButton>
-                     )}
-                  </div>
+                  <SearchInput label="Search clips" value={query} onChange={setQuery} inputRef={searchInput} />
                </div>
             </header>
             <div className="library-scroll" ref={scrollArea} aria-busy={pending}>
@@ -988,20 +986,27 @@ export function Library({
                         <ClipPlaceholder key={index} index={index} />
                      ))}
                   </div>
-               ) : clips.length || childFolders.length ? (
-                  // Headers and cards are siblings, so regrouping moves each card instead of remounting it.
-                  <LibraryGrid
-                     grid={grid}
-                     scroller={scrollArea}
-                     view={view}
-                     visible={visible}
-                     items={items}
-                     kind={itemKind}
-                     itemKey={itemKey}
-                     render={renderItem}
-                     natural={natural}
-                     onSettled={settle}
-                  />
+               ) : clips.length || childFolders.length || query ? (
+                  <>
+                     <div className="library-results" data-emptied={searchEmptied || undefined} inert={searchEmptied}>
+                        {/* Headers and cards are siblings, so regrouping moves each card instead of remounting it. */}
+                        <LibraryGrid
+                           grid={grid}
+                           scroller={scrollArea}
+                           view={view}
+                           visible={visible}
+                           items={searchEmptied ? heldItems : items}
+                           kind={itemKind}
+                           itemKey={itemKey}
+                           render={renderItem}
+                           natural={natural}
+                           onSettled={settle}
+                        />
+                     </div>
+                     {searchEmptied && (
+                        <Empty floating icon={<SearchX size={38} />} title={noMatchTitle(query)} detail="Search looks at clip, application and folder names." />
+                     )}
+                  </>
                ) : pending ? null : unavailable ? (
                   <Empty icon={<FolderX size={38} />} title="Can't open the collection folder" detail="It may have moved, or its drive is disconnected.">
                      <Button onClick={() => void run(() => api.refresh())}>Retry</Button>
@@ -1009,9 +1014,7 @@ export function Library({
                ) : (
                   <Empty
                      icon={
-                        query ? (
-                           <SearchX size={38} />
-                        ) : folderPath !== null ? (
+                        folderPath !== null ? (
                            <FolderOpen size={38} />
                         ) : selectedCategory ? (
                            <Tag size={38} />
@@ -1022,26 +1025,22 @@ export function Library({
                         )
                      }
                      title={
-                        query
-                           ? noMatchTitle(query)
-                           : folderPath !== null
-                             ? dailyLine(emptyTitles.folder, "folder")
-                             : selectedCategory
-                               ? `Nothing tagged ${selectedCategory.name}`
-                               : filter.startsWith("source:")
-                                 ? "No clips from this application"
-                                 : dailyLine(emptyTitles.library, "library")
+                        folderPath !== null
+                           ? dailyLine(emptyTitles.folder, "folder")
+                           : selectedCategory
+                             ? `Nothing tagged ${selectedCategory.name}`
+                             : filter.startsWith("source:")
+                               ? "No clips from this application"
+                               : dailyLine(emptyTitles.library, "library")
                      }
                      detail={
-                        query
-                           ? "Search looks at clip, application and folder names."
-                           : folderPath !== null
-                             ? "Move clips here from the library, or add videos to the folder."
-                             : selectedCategory
-                               ? "Right-click a clip to tag it."
-                               : filter.startsWith("source:")
-                                 ? ""
-                                 : saveHint(bindingFor(state.preferences, "saveClip"), state.preferences.clipSeconds, state.platform === "darwin")
+                        folderPath !== null
+                           ? "Move clips here from the library, or add videos to the folder."
+                           : selectedCategory
+                             ? "Right-click a clip to tag it."
+                             : filter.startsWith("source:")
+                               ? ""
+                               : saveHint(bindingFor(state.preferences, "saveClip"), state.preferences.clipSeconds, state.platform === "darwin")
                      }
                   />
                )}

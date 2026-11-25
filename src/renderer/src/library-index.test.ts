@@ -8,6 +8,7 @@ import {
    summarizeFolders,
    selectChildFolders,
    selectLibraryClips,
+   searchHits,
 } from "./library-index";
 import type { Clip } from "../../shared/types";
 
@@ -130,4 +131,12 @@ it("combines search, tags and application filters without mutating collection or
    expect(selectLibraryClips(clips, { ...options, filter: "category:best" }).map(({ id }) => id)).toEqual(["Second"]);
    expect(selectLibraryClips(clips, { ...options, filter: "source:app-a" }).map(({ id }) => id)).toEqual(["First"]);
    expect(clips.map(({ id }) => id)).toEqual(["First", "Second"]);
+});
+
+it("lists the sidebar filters a search still finds something under", () => {
+   const clips = [sampleClip("Winner", "Games/Finals/Winner.mp4", 1), sampleClip("Other", "Other.mp4", 2)];
+   clips[0]!.categories = ["best"];
+   const hits = searchHits(clips, "winner", new Map([["Winner", "app-a"]]), ["Games", "Games/Finals", "Winners", "Empty"]);
+   expect([...hits].sort()).toEqual(["all", "category:best", "folder:Games", "folder:Games/Finals", "folder:Winners", "source:app-a"]);
+   expect(searchHits(clips, "nothing", new Map(), ["Games"]).size).toBe(0);
 });

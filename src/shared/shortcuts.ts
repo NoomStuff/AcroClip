@@ -1,7 +1,7 @@
 import type { Preferences } from "./types";
 export const shortcutRegistry = [
    { id: "saveClip", label: "Save clip", scope: "global", page: "all", binding: "" },
-   { id: "toggleRecording", label: "Start / stop capture", scope: "global", page: "all", binding: "" },
+   { id: "toggleRecording", label: "Start / stop capture", scope: "global", page: "all", binding: "CommandOrControl+Alt+Shift+C" },
    { id: "startRecording", label: "Start capture", scope: "global", page: "all", binding: "" },
    { id: "stopRecording", label: "Stop capture", scope: "global", page: "all", binding: "" },
    { id: "recording", label: "Capture page", scope: "local", page: "all", binding: "CommandOrControl+1" },
@@ -10,6 +10,7 @@ export const shortcutRegistry = [
    { id: "settings", label: "Settings page", scope: "local", page: "all", binding: "CommandOrControl+," },
    { id: "shortcutHelp", label: "Show shortcuts", scope: "local", page: "all", binding: "CommandOrControl+/" },
    { id: "search", label: "Search clips", scope: "local", page: "library", binding: "CommandOrControl+F" },
+   { id: "searchSettings", label: "Search settings", scope: "local", page: "settings", binding: "CommandOrControl+F" },
    { id: "newCategory", label: "New tag", scope: "local", page: "all", group: "library", binding: "CommandOrControl+N" },
    { id: "newFolder", label: "New folder", scope: "local", page: "all", group: "library", binding: "CommandOrControl+Shift+N" },
    { id: "openClip", label: "Open first matching clip", scope: "local", page: "library", binding: "CommandOrControl+Enter" },

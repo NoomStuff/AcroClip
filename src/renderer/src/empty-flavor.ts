@@ -15,8 +15,10 @@ export const emptyTitles = {
    player: ["Nothing playing", "The stage is empty", "Pick a clip, any clip"],
 } as const satisfies Record<string, readonly [string, ...string[]]>;
 
-/** A search that found nothing names what was typed. */
+/** A search that found nothing names what was typed. Nobody types a 50 letter word, or 50 words, by accident. */
 export function noMatchTitle(query: string, now = new Date()): string {
+   const words = query.split(/\s+/).filter(Boolean);
+   if (words.length > 50 || words.some((word) => word.length > 50)) return "bro stop";
    return dailyLine([`Nothing matches "${query}"`, `No sign of "${query}"`, `Zero hits for "${query}"`], "search", now);
 }
 

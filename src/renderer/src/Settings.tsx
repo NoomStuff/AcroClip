@@ -1,8 +1,9 @@
 import {
    AlertCircle,
-   Bell,
+   AudioLines,
    Bug,
    Check,
+   ChevronRight,
    Clock3,
    Copy,
    Download,
@@ -10,34 +11,33 @@ import {
    FileArchive,
    FileText,
    FileVideo,
-   Folder,
    FolderOpen,
    FolderTree,
-   Gamepad2,
    History,
    Info,
    Keyboard,
    LoaderCircle,
+   PanelBottomClose,
    Power,
    Radio,
    RefreshCw,
    RotateCcw,
    Scissors,
-   Settings2,
+   SearchX,
    Trash2,
-   Video,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { filenameFields, filenamePatterns, filenameTemplateError, filenameTemplateWarning, previewFilename } from "../../shared/filename";
 import { preferenceResetCopy, resetPartCopy, resetParts } from "../../shared/maintenance";
-import { bindingFor, formatBinding, shortcutClashes, shortcutConflict, shortcutGroup, shortcutRegistry } from "../../shared/shortcuts";
+import type { ShortcutAction } from "../../shared/shortcuts";
+import { bindingFor, formatBinding, shortcutClashes, shortcutConflict, shortcutRegistry } from "../../shared/shortcuts";
 import type { AppState, DiscordPresenceLevel, OverlapClips, Preferences } from "../../shared/types";
 import type { Run } from "./desktop";
 import { api, reportFeedback } from "./desktop";
 import type { Ask, DialogRequest } from "./Dialog";
 import { FolderPicker } from "./FolderPicker";
-import { timeAgo } from "./format";
+import { formatTime, timeAgo } from "./format";
 import { GameManagement } from "./GameManagement";
 import { PaneDivider, usePaneSize } from "./layout";
 import { MotionList } from "./MotionList";
@@ -46,27 +46,21 @@ import { initialLocation, reportLocation } from "./navigation-history";
 import { NotificationSettings } from "./NotificationSettings";
 import { overlapDetail } from "./overlap-copy";
 import { PresetNumberInput } from "./PresetNumberInput";
-import { customQualityError, RecordingPresets } from "./RecordingPresets";
+import { customQualityError, QualityPresets, RecordingPresets } from "./RecordingPresets";
 import { clipLengthWarning, useInstalledMemory } from "./replay-estimate";
 import { SelectionIndicator } from "./SelectionIndicator";
-import { Field, Toggle } from "./SettingsControls";
+import type { SettingGroup, SettingId, SettingSection } from "./settings-catalog";
+import { searchableText, searchSettings, searchWords, sectionLabel, settingCopy, settingGroups, settingSections } from "./settings-catalog";
+import { Field, Lock, Toggle } from "./SettingsControls";
 import { ShortcutInput } from "./ShortcutInput";
 import { SidebarTab } from "./SidebarTab";
 import { TimeInput } from "./TimeInput";
-import { Button, HeaderActions, Select } from "./ui";
+import { Button, Empty, SearchInput, Select } from "./ui";
+import { noMatchTitle } from "./empty-flavor";
 import { updateAction, updateDownloading, updateDownloadLabel } from "./update-action";
 import { useSettingsAutosave } from "./useSettingsAutosave";
 import { WarningIcon } from "./WarningIcon";
 
-const sections = [
-   { id: "recording", label: "Capture", icon: Video },
-   { id: "collection", label: "Collection", icon: Folder },
-   { id: "games", label: "Games", icon: Gamepad2 },
-   { id: "notifications", label: "Notifications", icon: Bell },
-   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
-   { id: "general", label: "App & updates", icon: Settings2 },
-] as const;
-type Section = (typeof sections)[number]["id"];
 const shareSizes = [10, 20, 50, 100];
 const discordPresenceDetail: Record<DiscordPresenceLevel, string> = {
    off: "Your rich presence stays untouched.",
@@ -170,49 +164,63 @@ function SaveFeedback({ message, tone, action }: { message: string; tone: "error
    );
 }
 export interface SettingsTarget {
-   section: "collection" | "games" | "shortcuts";
+   section: "clips" | "games" | "shortcuts";
    request: number;
 }
+const sectionOrder = settingSections.map((item) => item.id);
+const captureLockedSettings: ReadonlySet<SettingId> = new Set(["clip", "overlap", "quality", "qualityPreset"]);
+const fileLockedSettings: ReadonlySet<SettingId> = new Set(["folder", "grouping", "filename"]);
 export function Settings({
    state,
    run,
    ask,
    target,
    showShortcuts,
+   openCapture,
 }: {
    state: Pick<AppState, "preferences" | "pendingPreferences" | "recorder" | "jobs" | "update" | "version" | "platform">;
    run: Run;
    ask: Ask;
    target: SettingsTarget | null;
    showShortcuts: () => void;
+   openCapture: () => void;
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const content = useRef<HTMLDivElement>(null);
+   const searchInput = useRef<HTMLInputElement>(null);
    const sidebar = usePaneSize(layout, { key: "settings.sidebar", initial: 270, min: 210, max: 400, reserve: 520, axis: "x" });
-   const [{ section, direction }, setNavigation] = useState<{ section: Section; direction: "up" | "down" | null }>(() => ({
-      section: sections.find((item) => item.id === initialLocation("settings", "recording"))?.id ?? "recording",
+   const [{ section, direction }, setNavigation] = useState<{ section: SettingSection; direction: "up" | "down" | null }>(() => ({
+      section: settingSections.find((item) => item.id === initialLocation("settings", "essentials"))?.id ?? "essentials",
       direction: null,
    }));
-   const setSection = useCallback((next: Section) => {
+   const [query, setQuery] = useState("");
+   const results = useMemo(() => searchSettings(query), [query]);
+   const searching = query.trim() !== "";
+   const setSection = useCallback((next: SettingSection) => {
+      setQuery("");
       setNavigation((current) =>
-         current.section === next
-            ? current
-            : {
-                 section: next,
-                 direction: sections.findIndex((item) => item.id === next) < sections.findIndex((item) => item.id === current.section) ? "up" : "down",
-              }
+         current.section === next ? current : { section: next, direction: sectionOrder.indexOf(next) < sectionOrder.indexOf(current.section) ? "up" : "down" }
       );
    }, []);
    useEffect(() => reportLocation("settings", section), [section]);
    useEffect(() => {
       const restore = (event: Event) => {
          const next = (event as CustomEvent<NavigationLocation>).detail.settings;
-         const found = sections.find((item) => item.id === next);
+         const found = settingSections.find((item) => item.id === next);
          if (found) setSection(found.id);
       };
       window.addEventListener("acroclip-restore-location", restore);
       return () => window.removeEventListener("acroclip-restore-location", restore);
    }, [setSection]);
+   useEffect(() => {
+      const command = (event: Event) => {
+         if ((event as CustomEvent<string>).detail !== "searchSettings") return;
+         searchInput.current?.focus();
+         searchInput.current?.select();
+      };
+      window.addEventListener("acroclip-shortcut", command);
+      return () => window.removeEventListener("acroclip-shortcut", command);
+   }, []);
    useLayoutEffect(() => {
       const node = content.current;
       const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -236,10 +244,22 @@ export function Settings({
    const { draft, write, status, error: saveError, retrying, retry, flush } = useSettingsAutosave(state.preferences, state.pendingPreferences);
    const waiting = Object.keys(state.pendingPreferences) as Array<keyof Preferences>;
    const recording = ["recording", "waiting", "starting"].includes(state.recorder.state);
-   const captureSettings = section === "recording";
-   const collectionSettings = section === "collection";
    const pendingWork = state.recorder.pendingSaves > 0 || state.jobs.some((job) => job.state === "running" || job.state === "queued");
-   const locked = (recording && (captureSettings || collectionSettings)) || (collectionSettings && pendingWork);
+   const filesLocked = recording || pendingWork;
+   const locked = (id: SettingId) => (captureLockedSettings.has(id) ? recording : fileLockedSettings.has(id) ? filesLocked : false);
+   // Search shows each matching group whole, so a match keeps its neighbours for context. Only the matches stay at full strength.
+   const matched = searching ? new Set(results.flatMap(({ items }) => items)) : null;
+   // Tabs with nothing to find fade back. Essentials counts when one of the settings it repeats matched.
+   const hitSections = matched
+      ? new Set<SettingSection>([
+           ...results.map(({ group }) => group.section),
+           ...settingGroups.filter((group) => group.items.some((id) => matched.has(id))).map((group) => group.section),
+        ])
+      : null;
+   const shown: { id: string; group: SettingGroup; items: readonly SettingId[] }[] = (
+      searching ? results.map(({ group }) => group) : settingGroups.filter((group) => group.section === section)
+   ).map((group) => ({ id: group.id, group, items: group.items }));
+   const lockedShown = shown.some(({ items }) => items.some(locked));
    const collectionFolder = useRef<HTMLDivElement>(null);
    const gameSearch = useRef<HTMLInputElement>(null);
    const handledNavigationRequest = useRef(0);
@@ -249,28 +269,27 @@ export function Settings({
       if (target && target.request !== handledNavigationRequest.current) setSection(target.section);
    }, [target, setSection]);
    useLayoutEffect(() => {
-      if (!target || section !== target.section || target.request === handledNavigationRequest.current) return;
-      const element = target.section === "collection" ? collectionFolder.current : target.section === "games" ? gameSearch.current : null;
+      if (!target || searching || section !== target.section || target.request === handledNavigationRequest.current) return;
+      const element = target.section === "clips" ? collectionFolder.current : target.section === "games" ? gameSearch.current : null;
       if (!element) return;
       handledNavigationRequest.current = target.request;
       element.scrollIntoView({ block: "center" });
-      const button = target.section === "collection" ? element.querySelector<HTMLButtonElement>("button[data-choose-folder]") : null;
+      const button = target.section === "clips" ? element.querySelector<HTMLButtonElement>("button[data-choose-folder]") : null;
       (button && !button.disabled ? button : element).focus({ preventScroll: true });
       clearTimeout(highlightTimer.current);
-      setCollectionHighlighted(target.section === "collection");
+      setCollectionHighlighted(target.section === "clips");
       highlightTimer.current = setTimeout(() => setCollectionHighlighted(false), 1600);
-   }, [target, section]);
+   }, [target, section, searching]);
    useEffect(() => () => clearTimeout(highlightTimer.current), []);
    const mac = state.platform === "darwin";
    // Clashing shortcuts are marked on their rows, so the footer does not repeat them.
-   const inlineClash = section === "shortcuts" && shortcutConflict(draft, mac) !== null;
+   const inlineClash = shown.some(({ items }) => items.some((id) => id.startsWith("shortcut:") || id === "clip")) && shortcutConflict(draft, mac) !== null;
    const qualityError = customQualityError(draft);
    const memoryBytes = useInstalledMemory();
    const lengthWarning = clipLengthWarning(draft, memoryBytes);
    const filenamePattern = draft.filenamePreset === "custom" ? draft.filenameTemplate : filenamePatterns[draft.filenamePreset];
    const filenameError = filenameTemplateError(filenamePattern);
    const change = <K extends keyof Preferences>(key: K, value: Preferences[K]) => write({ ...draft, [key]: value });
-   const switchSection = (id: Section) => setSection(id);
    const chooseFolder = async () => {
       await run(async () => {
          const path = await api.chooseFolder();
@@ -372,46 +391,459 @@ export function Settings({
       );
    const update = updateAction(state.update);
    const downloading = updateDownloading(state.update);
-   const title = sections.find((item) => item.id === section)?.label;
+   const shortcutRow = (id: ShortcutAction) => {
+      const item = shortcutRegistry.find((entry) => entry.id === id)!;
+      const clashes = shortcutClashes(draft, id, mac);
+      return (
+         <Field
+            icon={Keyboard}
+            label={item.label}
+            className={clashes.length ? "shortcut-clash" : ""}
+            {...(clashes.length ? { detail: `Also used by ${clashes.join(" and ")}` } : {})}
+         >
+            <ShortcutInput
+               clash={clashes.length > 0}
+               global={item.scope === "global"}
+               label={id === "saveClip" ? "Clip shortcut" : `${item.label} shortcut`}
+               value={bindingFor(draft, id)}
+               onChange={(value) => (id === "saveClip" ? change("shortcut", value) : change("shortcuts", { ...draft.shortcuts, [id]: value }))}
+            />
+         </Field>
+      );
+   };
+   const clipDetail = () => {
+      const clashes = shortcutClashes(draft, "saveClip", mac);
+      if (clashes.length) return `The shortcut is also used by ${clashes.join(" and ")}.`;
+      const length = formatTime(draft.clipSeconds);
+      return draft.shortcut
+         ? `Press ${formatBinding(draft.shortcut, mac)} in any app to save the last ${length}.`
+         : `Set a shortcut to save the last ${length} from any app.`;
+   };
+   const setting = (id: SettingId): ReactNode => {
+      if (id.startsWith("shortcut:")) return shortcutRow(id.slice("shortcut:".length) as ShortcutAction);
+      switch (id as Exclude<SettingId, `shortcut:${string}`>) {
+         case "clip": {
+            const clashes = shortcutClashes(draft, "saveClip", mac);
+            return (
+               <Field icon={Clock3} label={settingCopy.clip.label} detail={clipDetail()} className={clashes.length ? "shortcut-clash" : ""}>
+                  <div className="clip-combo">
+                     <Lock locked={recording}>
+                        <div className="clip-length-control">
+                           <WarningIcon message={lengthWarning?.message ?? ""} error={!!lengthWarning?.error} id="clip-length-message" />
+                           <TimeInput
+                              min={5}
+                              max={1800}
+                              value={draft.clipSeconds}
+                              label="Clip length"
+                              onValueChange={(value) => change("clipSeconds", value)}
+                           />
+                        </div>
+                     </Lock>
+                     <ShortcutInput
+                        global
+                        clash={clashes.length > 0}
+                        label="Clip shortcut"
+                        value={draft.shortcut}
+                        onChange={(value) => change("shortcut", value)}
+                     />
+                  </div>
+               </Field>
+            );
+         }
+         case "overlap":
+            return (
+               <Field icon={Scissors} label={settingCopy.overlap.label} detail={overlapDetail(draft.overlapClips, draft.clipSeconds)} disabled={recording}>
+                  <Select label={settingCopy.overlap.label} value={draft.overlapClips} onChange={(value) => change("overlapClips", value as OverlapClips)}>
+                     <option value="keep">Save normally</option>
+                     <option value="trim">Save what's new</option>
+                     <option value="merge">Extend previous clip</option>
+                  </Select>
+               </Field>
+            );
+         case "quality":
+            return (
+               <Lock locked={recording}>
+                  <div className="settings-quality">
+                     <RecordingPresets
+                        compact
+                        value={draft}
+                        onChange={(next) => {
+                           if (!recording) write(next);
+                        }}
+                     />
+                  </div>
+               </Lock>
+            );
+         case "qualityPreset":
+            return (
+               <Lock locked={recording}>
+                  <div className="settings-quality">
+                     <QualityPresets
+                        value={draft}
+                        onChange={(next) => {
+                           if (!recording) write(next);
+                        }}
+                     />
+                  </div>
+               </Lock>
+            );
+         case "sources":
+            return (
+               <Field icon={AudioLines} label={settingCopy.sources.label} detail={settingCopy.sources.detail}>
+                  <Button onClick={openCapture}>
+                     Open
+                     <ChevronRight size={15} aria-hidden="true" />
+                  </Button>
+               </Field>
+            );
+         case "autoRecord":
+            return (
+               <Toggle
+                  icon={FileVideo}
+                  label={settingCopy.autoRecord.label}
+                  detail={settingCopy.autoRecord.detail}
+                  checked={draft.autoRecord}
+                  onChange={(value) => change("autoRecord", value)}
+               />
+            );
+         case "games":
+            return <GameManagement preferences={draft} searchRef={gameSearch} change={(customGames) => write({ ...draft, customGames })} />;
+         case "folder":
+            return (
+               <FolderPicker
+                  path={draft.collection}
+                  ref={collectionFolder}
+                  className="settings-surface"
+                  disabled={filesLocked}
+                  navigationHighlighted={collectionHighlighted}
+                  onChoose={() => void chooseFolder()}
+                  revealDisabled={draft.collection !== state.preferences.collection}
+                  onReveal={() => void run(() => api.reveal(state.preferences.collection))}
+               />
+            );
+         case "grouping":
+            return (
+               <Toggle
+                  icon={FolderTree}
+                  label={settingCopy.grouping.label}
+                  detail={settingCopy.grouping.detail}
+                  checked={draft.folderLayout === "application"}
+                  disabled={filesLocked}
+                  onChange={(enabled) => change("folderLayout", enabled ? "application" : "flat")}
+               />
+            );
+         case "filename":
+            return (
+               <fieldset className="settings-surface settings-filename-row" disabled={filesLocked}>
+                  <FilenameEditor
+                     preset={draft.filenamePreset}
+                     value={filenamePattern}
+                     onChange={(value) => write({ ...draft, filenamePreset: "custom", filenameTemplate: value })}
+                     onPreset={(preset) =>
+                        write({
+                           ...draft,
+                           filenamePreset: preset,
+                           filenameTemplate:
+                              preset === "custom"
+                                 ? draft.filenamePreset === "custom"
+                                    ? draft.filenameTemplate
+                                    : filenamePatterns[draft.filenamePreset]
+                                 : filenamePatterns[preset],
+                        })
+                     }
+                  />
+                  {!filenameError && (
+                     <div className="filename-preview">
+                        <span>Example</span>
+                        <code>{previewFilename(draft, "Desktop", new Date(2026, 9, 8, 19, 42, 10))}</code>
+                     </div>
+                  )}
+               </fieldset>
+            );
+         case "shareSize":
+            return (
+               <Field icon={FileVideo} label={settingCopy.shareSize.label} detail={settingCopy.shareSize.detail}>
+                  <PresetNumberInput
+                     label={settingCopy.shareSize.label}
+                     inputLabel="Shareable size in MB"
+                     presets={shareSizes}
+                     presetLabel={(size) => `${size} MB`}
+                     min={1}
+                     max={2000}
+                     value={draft.shareSizeMB}
+                     unit="MB"
+                     onValueChange={(value) => change("shareSizeMB", value)}
+                  />
+               </Field>
+            );
+         case "autoShare":
+            return (
+               <Toggle
+                  icon={Copy}
+                  label={settingCopy.autoShare.label}
+                  detail={settingCopy.autoShare.detail}
+                  checked={draft.autoShare}
+                  onChange={(value) => change("autoShare", value)}
+               />
+            );
+         case "discord":
+            return (
+               <Field icon={Radio} label={settingCopy.discord.label} detail={discordPresenceDetail[draft.discordPresence]}>
+                  <Select
+                     label={settingCopy.discord.label}
+                     value={draft.discordPresence}
+                     onChange={(value) => change("discordPresence", value as DiscordPresenceLevel)}
+                  >
+                     <option value="off">Off</option>
+                     <option value="minimal">Minimal</option>
+                     <option value="full">Full</option>
+                  </Select>
+               </Field>
+            );
+         case "notifications":
+            return <NotificationSettings value={draft} onChange={(key, enabled) => change(key, enabled)} />;
+         case "startWithOS":
+            return (
+               <Toggle
+                  icon={Power}
+                  label={settingCopy.startWithOS.label}
+                  detail={
+                     state.platform === "linux"
+                        ? "Closing the window exits AcroClip and stops capturing."
+                        : "Closing the window keeps AcroClip running in the tray."
+                  }
+                  checked={draft.startWithOS}
+                  onChange={(value) => change("startWithOS", value)}
+               />
+            );
+         case "startInTray":
+            return (
+               <Toggle
+                  icon={PanelBottomClose}
+                  label={settingCopy.startInTray.label}
+                  detail={settingCopy.startInTray.detail}
+                  checked={draft.startInTray}
+                  disabled={!draft.startWithOS}
+                  onChange={(value) => change("startInTray", value)}
+               />
+            );
+         case "updates":
+            return (
+               <>
+                  <Toggle
+                     icon={RefreshCw}
+                     label="Check for updates automatically"
+                     checked={draft.updateCheck}
+                     onChange={(updateCheck) => change("updateCheck", updateCheck)}
+                  />
+                  <Field
+                     className="update-panel"
+                     icon={Info}
+                     label={`AcroClip ${state.version}`}
+                     detail={
+                        state.update.state === "idle" && state.update.lastChecked ? (
+                           <LastChecked timestamp={state.update.lastChecked} />
+                        ) : (
+                           state.update.message || "Not checked yet"
+                        )
+                     }
+                  >
+                     {update ? (
+                        <Button className="primary" onClick={() => void run(() => api[update.method]())}>
+                           {update.method === "revealUpdate" ? <FolderOpen size={16} /> : <Download size={16} />}
+                           {update.label}
+                        </Button>
+                     ) : (
+                        <Button
+                           busy={state.update.state === "checking" || downloading}
+                           busyIndicator="content"
+                           onClick={() => void run(() => api.checkUpdate())}
+                        >
+                           <RefreshCw size={15} className={state.update.state === "checking" ? "spin" : undefined} />
+                           {downloading ? updateDownloadLabel(state.update) : "Check for updates"}
+                        </Button>
+                     )}
+                  </Field>
+               </>
+            );
+         case "reportBug":
+            return (
+               <Field icon={Bug} label={settingCopy.reportBug.label} detail={settingCopy.reportBug.detail}>
+                  <Button busy={exporting === "report"} disabled={!!exporting} onClick={() => exportLogs("report")}>
+                     Open report
+                  </Button>
+               </Field>
+            );
+         case "exportLogs":
+            return (
+               <Field icon={FileArchive} label={settingCopy.exportLogs.label} detail={settingCopy.exportLogs.detail}>
+                  <Button busy={exporting === "export"} disabled={!!exporting} onClick={() => exportLogs("export")}>
+                     Export
+                  </Button>
+               </Field>
+            );
+         case "resetSettings":
+            return (
+               <Field icon={RotateCcw} label={settingCopy.resetSettings.label} detail={settingCopy.resetSettings.detail}>
+                  <Button className="destructive" busy={maintaining === "settings"} disabled={!!maintaining} onClick={resetSettings}>
+                     Reset settings
+                  </Button>
+               </Field>
+            );
+         case "clearCache":
+            return (
+               <Field icon={Eraser} label={settingCopy.clearCache.label} detail={settingCopy.clearCache.detail}>
+                  <Button className="destructive" busy={maintaining === "cache"} disabled={!!maintaining} onClick={clearCache}>
+                     Clear cache
+                  </Button>
+               </Field>
+            );
+         case "clearHistory":
+            return (
+               <Field icon={History} label={settingCopy.clearHistory.label} detail={settingCopy.clearHistory.detail}>
+                  <Button className="destructive" busy={maintaining === "history"} disabled={!!maintaining} onClick={clearHistory}>
+                     Clear history
+                  </Button>
+               </Field>
+            );
+         case "factoryReset":
+            return (
+               <Field icon={Trash2} label={settingCopy.factoryReset.label} detail={settingCopy.factoryReset.detail}>
+                  <Button className="destructive" busy={maintaining === "factory"} disabled={!!maintaining} onClick={factoryReset}>
+                     Reset…
+                  </Button>
+               </Field>
+            );
+         case "shortcutSheet":
+            return (
+               <Field
+                  icon={Keyboard}
+                  label={settingCopy.shortcutSheet.label}
+                  detail={`Every shortcut on one screen. Press ${formatBinding(bindingFor(draft, "shortcutHelp"), mac)} to open it from anywhere.`}
+               >
+                  <Button onClick={showShortcuts}>Show all</Button>
+               </Field>
+            );
+      }
+   };
+   const group = ({ group, items }: { group: SettingGroup; items: readonly SettingId[] }) => {
+      const title = searching ? [sectionLabel(group.section), group.title].filter(Boolean).join(" · ") : group.title;
+      const more = searching ? group.section : group.more;
+      return (
+         <section className={`settings-group${group.danger ? " settings-danger" : ""}`} key={group.id}>
+            {(title || more) && (
+               <div className="settings-group-heading">
+                  {title && <h2>{title}</h2>}
+                  {more && (
+                     <button type="button" className="settings-more" onClick={() => setSection(more)}>
+                        {searching ? `Open ${sectionLabel(more)}` : `More in ${sectionLabel(more)}`}
+                        <ChevronRight size={14} aria-hidden="true" />
+                     </button>
+                  )}
+               </div>
+            )}
+            {group.detail && <p className="section-description">{group.detail}</p>}
+            {items.map((id) => (
+               <div className="settings-item" key={id} data-setting={id} data-unmatched={(matched && !matched.has(id)) || undefined}>
+                  {setting(id)}
+               </div>
+            ))}
+         </section>
+      );
+   };
+   // Marks what was typed without touching the DOM React owns. Only text search actually read lights up, so a word in a
+   // heading or a button that only shares the letters stays plain.
+   useLayoutEffect(() => {
+      const body = content.current?.querySelector(".settings-body");
+      const words = searchWords(query);
+      if (!words.length || !body) {
+         CSS.highlights.delete("settings-search");
+         return;
+      }
+      const ranges: Range[] = [];
+      for (const item of body.querySelectorAll<HTMLElement>('.settings-item:not([data-unmatched]):not([aria-hidden="true"] *)')) {
+         const id = item.dataset["setting"] as SettingId | undefined;
+         if (!id) continue;
+         const known = new Set(searchableText(id).map((text) => text.toLowerCase()));
+         const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+         for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const text = (node.textContent ?? "").toLowerCase();
+            if (!known.has(text.trim())) continue;
+            for (const word of words)
+               for (let index = text.indexOf(word); index >= 0; index = text.indexOf(word, index + word.length)) {
+                  // Search matches the start of words, so the highlight does too.
+                  if (index > 0 && /[\p{L}\p{N}]/u.test(text[index - 1]!)) continue;
+                  const range = new Range();
+                  range.setStart(node, index);
+                  range.setEnd(node, index + word.length);
+                  ranges.push(range);
+               }
+         }
+      }
+      CSS.highlights.set("settings-search", new Highlight(...ranges));
+   });
+   useEffect(
+      () => () => {
+         CSS.highlights.delete("settings-search");
+      },
+      []
+   );
+   const title = searching ? "Search" : sectionLabel(section);
    return (
       <div className="settings-page" ref={layout}>
          <aside className="settings-sidebar" style={{ width: sidebar.size }}>
-            <div className="settings-sidebar-heading action-header">
-               <h1>Settings</h1>
-               <HeaderActions>
-                  <span
-                     role="status"
-                     aria-label={
-                        status === "saving" ? "Saving settings" : status === "saved" ? "Settings saved" : status === "error" ? "Settings not saved" : undefined
+            <div className="settings-sidebar-heading">
+               <SearchInput
+                  label="Search settings"
+                  className="settings-search"
+                  value={query}
+                  onChange={setQuery}
+                  inputRef={searchInput}
+                  onKeyDown={(event) => {
+                     if (event.key === "Escape" && query) {
+                        event.preventDefault();
+                        setQuery("");
+                     } else if (event.key === "Enter" && searching) {
+                        event.preventDefault();
+                        content.current
+                           ?.querySelector<HTMLElement>(".settings-item:not([data-unmatched]) :is(input, button, [tabindex='0']):not(:disabled)")
+                           ?.focus();
                      }
-                  >
-                     {status === "saving" ? (
-                        <LoaderCircle size={17} className="spin" />
-                     ) : status === "saved" ? (
-                        <Check size={17} />
-                     ) : status === "error" ? (
-                        <AlertCircle size={17} />
-                     ) : null}
-                  </span>
-               </HeaderActions>
+                  }}
+               />
             </div>
             <div className="settings-nav moving-selection">
-               <SelectionIndicator value={section} />
-               <MotionList items={sections}>
+               <SelectionIndicator value={searching ? "search" : section} />
+               <MotionList items={settingSections}>
                   {(item) => (
                      <SidebarTab
                         key={item.id}
                         icon={<item.icon size={17} />}
                         label={item.label}
                         selection="page"
-                        selected={section === item.id}
-                        onSelect={() => void switchSection(item.id)}
+                        selected={!searching && section === item.id}
+                        rowAttributes={{ "data-search-miss": (hitSections && !hitSections.has(item.id)) || undefined }}
+                        onSelect={() => setSection(item.id)}
                      />
                   )}
                </MotionList>
             </div>
             <div className="settings-sidebar-bottom">
                <span>AcroClip {state.version}</span>
+               <span
+                  role="status"
+                  aria-label={
+                     status === "saving" ? "Saving settings" : status === "saved" ? "Settings saved" : status === "error" ? "Settings not saved" : undefined
+                  }
+               >
+                  {status === "saving" ? (
+                     <LoaderCircle size={17} className="spin" />
+                  ) : status === "saved" ? (
+                     <Check size={17} />
+                  ) : status === "error" ? (
+                     <AlertCircle size={17} />
+                  ) : null}
+               </span>
             </div>
          </aside>
          <PaneDivider label="Settings sidebar width" pane={sidebar} />
@@ -420,299 +852,19 @@ export function Settings({
                <header className="settings-heading">
                   <h1>{title}</h1>
                </header>
-               <fieldset className="settings-body" disabled={captureSettings && locked}>
-                  {section === "recording" && (
-                     <>
-                        <section className="settings-group">
-                           <h2>Quality</h2>
-                           <RecordingPresets
-                              compact
-                              value={draft}
-                              onChange={(next) => {
-                                 if (!locked) write(next);
-                              }}
-                           />
-                        </section>
-                        <section className="settings-group">
-                           <h2>Clip</h2>
-                           <Field icon={Clock3} label="Clip length" detail="Save this much recent footage when you clip.">
-                              <div className="clip-length-control">
-                                 <WarningIcon message={lengthWarning?.message ?? ""} error={!!lengthWarning?.error} id="clip-length-message" />
-                                 <TimeInput
-                                    min={5}
-                                    max={1800}
-                                    value={draft.clipSeconds}
-                                    label="Clip length"
-                                    onValueChange={(value) => change("clipSeconds", value)}
-                                 />
-                              </div>
-                           </Field>
-                           <Field icon={Scissors} label="Overlapping clips" detail={overlapDetail(draft.overlapClips, draft.clipSeconds)}>
-                              <Select label="Overlapping clips" value={draft.overlapClips} onChange={(value) => change("overlapClips", value as OverlapClips)}>
-                                 <option value="keep">Save normally</option>
-                                 <option value="trim">Save what's new</option>
-                                 <option value="merge">Extend previous clip</option>
-                              </Select>
-                           </Field>
-                        </section>
-                     </>
+               <div className="settings-body">
+                  {searching && !results.length && (
+                     <Empty
+                        floating
+                        icon={<SearchX size={38} />}
+                        title={noMatchTitle(query.trim())}
+                        detail="Search looks at setting names, their choices and descriptions."
+                     />
                   )}
-                  {section === "shortcuts" && (
-                     <>
-                        <section className="settings-group">
-                           <Field
-                              icon={Keyboard}
-                              label="Shortcut sheet"
-                              detail={`Every shortcut on one screen. Press ${formatBinding(bindingFor(draft, "shortcutHelp"), state.platform === "darwin")} to open it from anywhere.`}
-                           >
-                              <Button onClick={showShortcuts}>Show all</Button>
-                           </Field>
-                        </section>
-                        {[
-                           {
-                              title: "Capture",
-                              detail: "Work in any app, including fullscreen games.",
-                              items: shortcutRegistry.filter((item) => item.scope === "global"),
-                           },
-                           {
-                              title: "Navigation",
-                              detail: "While AcroClip is open.",
-                              items: shortcutRegistry.filter((item) => item.scope === "local" && shortcutGroup(item) === "all"),
-                           },
-                           {
-                              title: "Library",
-                              items: shortcutRegistry.filter((item) => shortcutGroup(item) === "library"),
-                           },
-                           { title: "Player", detail: "While a clip is open.", items: shortcutRegistry.filter((item) => item.page === "viewer") },
-                        ].map((group) => (
-                           <section className="settings-group" key={group.title}>
-                              <h2>{group.title}</h2>
-                              {"detail" in group && <p className="section-description">{group.detail}</p>}
-                              {group.items.map((item) => {
-                                 const clashes = shortcutClashes(draft, item.id, mac);
-                                 return (
-                                    <Field
-                                       icon={Keyboard}
-                                       key={item.id}
-                                       label={item.label}
-                                       className={clashes.length ? "shortcut-clash" : ""}
-                                       {...(clashes.length ? { detail: `Also used by ${clashes.join(" and ")}` } : {})}
-                                    >
-                                       <ShortcutInput
-                                          clash={clashes.length > 0}
-                                          global={item.scope === "global"}
-                                          label={item.id === "saveClip" ? "Clip shortcut" : `${item.label} shortcut`}
-                                          value={bindingFor(draft, item.id)}
-                                          onChange={(value) =>
-                                             item.id === "saveClip" ? change("shortcut", value) : change("shortcuts", { ...draft.shortcuts, [item.id]: value })
-                                          }
-                                       />
-                                    </Field>
-                                 );
-                              })}
-                           </section>
-                        ))}
-                     </>
-                  )}
-                  {section === "games" && (
-                     <>
-                        <section className="settings-group">
-                           <h2>Known games</h2>
-                           <GameManagement preferences={draft} searchRef={gameSearch} change={(customGames) => write({ ...draft, customGames })} />
-                        </section>
-                     </>
-                  )}
-                  {section === "collection" && (
-                     <>
-                        <fieldset className="settings-group" disabled={locked}>
-                           <h2>Location</h2>
-                           <FolderPicker
-                              path={draft.collection}
-                              ref={collectionFolder}
-                              navigationHighlighted={collectionHighlighted}
-                              onChoose={() => void chooseFolder()}
-                              revealDisabled={draft.collection !== state.preferences.collection}
-                              onReveal={() => void run(() => api.reveal(state.preferences.collection))}
-                           />
-                        </fieldset>
-                        <fieldset className="settings-group" disabled={locked}>
-                           <h2>New clips</h2>
-                           <Toggle
-                              icon={FolderTree}
-                              label="Group clips by application"
-                              detail="Save new clips in application folders. Existing files stay where they are."
-                              checked={draft.folderLayout === "application"}
-                              onChange={(enabled) => change("folderLayout", enabled ? "application" : "flat")}
-                           />
-                           <div className="settings-filename-row">
-                              <FilenameEditor
-                                 preset={draft.filenamePreset}
-                                 value={filenamePattern}
-                                 onChange={(value) => write({ ...draft, filenamePreset: "custom", filenameTemplate: value })}
-                                 onPreset={(preset) =>
-                                    write({
-                                       ...draft,
-                                       filenamePreset: preset,
-                                       filenameTemplate:
-                                          preset === "custom"
-                                             ? draft.filenamePreset === "custom"
-                                                ? draft.filenameTemplate
-                                                : filenamePatterns[draft.filenamePreset]
-                                             : filenamePatterns[preset],
-                                    })
-                                 }
-                              />
-                              {!filenameError && (
-                                 <>
-                                    <div className="filename-preview">
-                                       <span>Example</span>
-                                       <code>{previewFilename(draft, "Desktop", new Date(2026, 9, 8, 19, 42, 10))}</code>
-                                    </div>
-                                 </>
-                              )}
-                           </div>
-                        </fieldset>
-                        <section className="settings-group">
-                           <h2>Shareables</h2>
-                           <Field icon={FileVideo} label="Default maximum size" detail="You can choose a different limit for each clip.">
-                              <PresetNumberInput
-                                 label="Default maximum size"
-                                 inputLabel="Default shareable size in MB"
-                                 presets={shareSizes}
-                                 presetLabel={(size) => `${size} MB`}
-                                 min={1}
-                                 max={2000}
-                                 value={draft.shareSizeMB}
-                                 unit="MB"
-                                 onValueChange={(value) => change("shareSizeMB", value)}
-                              />
-                           </Field>
-                           <Toggle
-                              icon={Copy}
-                              label="Automatically create shareables"
-                              detail="Compress a copy after each save. Uses extra resources while capturing."
-                              checked={draft.autoShare}
-                              onChange={(value) => change("autoShare", value)}
-                           />
-                        </section>
-                     </>
-                  )}
-                  {section === "notifications" && <NotificationSettings value={draft} onChange={(key, enabled) => change(key, enabled)} />}
-                  {section === "general" && (
-                     <>
-                        <section className="settings-group">
-                           <h2>Startup</h2>
-                           <p className="section-description">
-                              {state.platform === "linux"
-                                 ? "Closing the window exits AcroClip and stops capturing."
-                                 : "Closing the window keeps AcroClip running in the tray."}
-                           </p>
-                           <Toggle
-                              icon={Power}
-                              label="Start with your computer"
-                              checked={draft.startWithOS}
-                              onChange={(value) => change("startWithOS", value)}
-                           />
-                           <Toggle
-                              icon={FileVideo}
-                              label="Start capturing when AcroClip opens"
-                              detail="Use your saved source, or wait for its application to open."
-                              checked={draft.autoRecord}
-                              onChange={(value) => change("autoRecord", value)}
-                           />
-                        </section>
-                        <section className="settings-group">
-                           <h2>Discord</h2>
-                           <Field icon={Radio} label="Discord status" detail={discordPresenceDetail[draft.discordPresence]}>
-                              <Select
-                                 label="Discord status"
-                                 value={draft.discordPresence}
-                                 onChange={(value) => change("discordPresence", value as DiscordPresenceLevel)}
-                              >
-                                 <option value="off">Off</option>
-                                 <option value="minimal">Minimal</option>
-                                 <option value="full">Full</option>
-                              </Select>
-                           </Field>
-                        </section>
-                        <section className="settings-group">
-                           <h2>Updates</h2>
-                           <Toggle
-                              icon={RefreshCw}
-                              label="Check for updates automatically"
-                              checked={draft.updateCheck}
-                              onChange={(updateCheck) => change("updateCheck", updateCheck)}
-                           />
-
-                           <Field
-                              className="update-panel"
-                              icon={Info}
-                              label={`AcroClip ${state.version}`}
-                              detail={
-                                 state.update.state === "idle" && state.update.lastChecked ? (
-                                    <LastChecked timestamp={state.update.lastChecked} />
-                                 ) : (
-                                    state.update.message || "Not checked yet"
-                                 )
-                              }
-                           >
-                              {update ? (
-                                 <Button className="primary" onClick={() => void run(() => api[update.method]())}>
-                                    {update.method === "revealUpdate" ? <FolderOpen size={16} /> : <Download size={16} />}
-                                    {update.label}
-                                 </Button>
-                              ) : (
-                                 <Button
-                                    busy={state.update.state === "checking" || downloading}
-                                    busyIndicator="content"
-                                    onClick={() => void run(() => api.checkUpdate())}
-                                 >
-                                    <RefreshCw size={15} className={state.update.state === "checking" ? "spin" : undefined} />
-                                    {downloading ? updateDownloadLabel(state.update) : "Check for updates"}
-                                 </Button>
-                              )}
-                           </Field>
-                        </section>
-                        <section className="settings-group">
-                           <h2>Troubleshooting</h2>
-                           <Field icon={Bug} label="Report a bug" detail="Saves your logs to Downloads and opens a bug report on GitHub.">
-                              <Button busy={exporting === "report"} disabled={!!exporting} onClick={() => exportLogs("report")}>
-                                 Open report
-                              </Button>
-                           </Field>
-                           <Field icon={FileArchive} label="Export logs" detail="Save logs and system details as a zip.">
-                              <Button busy={exporting === "export"} disabled={!!exporting} onClick={() => exportLogs("export")}>
-                                 Export
-                              </Button>
-                           </Field>
-                        </section>
-                        <section className="settings-group settings-danger">
-                           <h2>Maintenance</h2>
-                           <p className="section-description">None of these touch your clips.</p>
-                           <Field icon={RotateCcw} label="Reset settings & setup" detail="Reset settings, capture setup or both.">
-                              <Button className="destructive" busy={maintaining === "settings"} disabled={!!maintaining} onClick={resetSettings}>
-                                 Reset settings
-                              </Button>
-                           </Field>
-                           <Field icon={Eraser} label="Clear cache" detail="Thumbnails and playback copies rebuild in the background.">
-                              <Button className="destructive" busy={maintaining === "cache"} disabled={!!maintaining} onClick={clearCache}>
-                                 Clear cache
-                              </Button>
-                           </Field>
-                           <Field icon={History} label="Clear usage history" detail="Remove logs, usage stats or both.">
-                              <Button className="destructive" busy={maintaining === "history"} disabled={!!maintaining} onClick={clearHistory}>
-                                 Clear history
-                              </Button>
-                           </Field>
-                           <Field icon={Trash2} label="Factory reset" detail="Choose what to remove, then AcroClip restarts.">
-                              <Button className="destructive" busy={maintaining === "factory"} disabled={!!maintaining} onClick={factoryReset}>
-                                 Reset…
-                              </Button>
-                           </Field>
-                        </section>
-                     </>
-                  )}
-               </fieldset>
+                  <MotionList items={shown} identity={section}>
+                     {group}
+                  </MotionList>
+               </div>
             </div>
             <SaveFeedback
                message={
@@ -723,9 +875,9 @@ export function Settings({
                         ? "The new collection folder applies once capture stops and shareables finish."
                         : "Your capture changes are saved and apply when capture stops."
                      : "") ||
-                  (locked
+                  (lockedShown
                      ? recording
-                        ? "Stop capturing to change capture or collection settings."
+                        ? "Stop capturing to change capture or file settings."
                         : "Finish pending work before changing the collection."
                      : "")
                }

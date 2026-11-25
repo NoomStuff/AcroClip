@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
-import { Check, ChevronDown, Cpu, Monitor, Gauge, MemoryStick, SlidersHorizontal } from "lucide-react";
+import type { ReactNode } from "react";
+import { Check, ChevronDown, Cpu, Layers, Monitor, Gauge, MemoryStick, SlidersHorizontal } from "lucide-react";
 import type { Preferences, RecordingCapabilities } from "../../shared/types";
 import { applyRecordingPreset } from "../../shared/recording-presets";
 import { automaticReplayMemoryMB, memoryLabel, replayMemoryChoicesFor } from "../../shared/replay-memory";
@@ -188,7 +189,7 @@ function CustomQualityControls({
    );
 }
 
-export function RecordingPresets({ value, onChange, compact = false }: { value: Preferences; onChange: (value: Preferences) => void; compact?: boolean }) {
+function useRecordingCapabilities(): RecordingCapabilities | null {
    const [capabilities, setCapabilities] = useState<RecordingCapabilities | null>(null);
    useEffect(() => {
       void api
@@ -196,13 +197,47 @@ export function RecordingPresets({ value, onChange, compact = false }: { value: 
          .then(setCapabilities)
          .catch(() => undefined);
    }, []);
+   return capabilities;
+}
+/** Presets fill in other settings, so in Settings they sit on their own card as a picker rather than look like one more setting. */
+function PresetCard({ children }: { children: ReactNode }) {
    return (
-      <>
+      <div className="settings-surface quality-preset-card">
+         <div className="quality-preset-heading">
+            <Layers className="settings-row-icon" size={21} aria-hidden="true" />
+            <div className="settings-row-copy">
+               <span className="field-label">Preset</span>
+            </div>
+         </div>
+         {children}
+      </div>
+   );
+}
+/** Only the presets, for places that leave the details to the full quality settings. */
+export function QualityPresets({ value, onChange }: { value: Preferences; onChange: (value: Preferences) => void }) {
+   const capabilities = useRecordingCapabilities();
+   return (
+      <PresetCard>
          <QualityPicker
             value={value.quality}
             {...(capabilities?.supported ? { recommended: capabilities.recommended } : {})}
             onChange={(quality) => onChange(applyRecordingPreset(value, quality))}
          />
+      </PresetCard>
+   );
+}
+export function RecordingPresets({ value, onChange, compact = false }: { value: Preferences; onChange: (value: Preferences) => void; compact?: boolean }) {
+   const capabilities = useRecordingCapabilities();
+   const picker = (
+      <QualityPicker
+         value={value.quality}
+         {...(capabilities?.supported ? { recommended: capabilities.recommended } : {})}
+         onChange={(quality) => onChange(applyRecordingPreset(value, quality))}
+      />
+   );
+   return (
+      <>
+         {compact ? <PresetCard>{picker}</PresetCard> : picker}
          {!compact && (
             <p className="preset-source-note">
                Screens use the resolution limit. Apps use their original size. The capture size is set when a source starts and stays fixed while it is

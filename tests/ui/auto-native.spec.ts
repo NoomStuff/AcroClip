@@ -119,7 +119,7 @@ $form.Dispose()
       const candidate = (await page.evaluate(() => window.acroClip.games())).find((game) => game.name === title)!;
       const applicationName = await applicationLabel(candidate.executable);
       await selectOption(page, "Running application", candidate.id);
-      await page.getByRole("button", { name: "Add selected game", exact: true }).click();
+      await page.getByRole("button", { name: "Add to games", exact: true }).click();
       await page.locator(".rail").getByRole("button", { name: "Capture", exact: true }).click();
       console.log("Local fixture game added");
       await writeFile(action, "focus");

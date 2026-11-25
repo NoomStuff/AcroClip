@@ -36,6 +36,8 @@ export function ShortcutInput({
 }) {
    const description = useFieldDescription();
    const [editing, setEditing] = useState(false);
+   // Keys pop in while a shortcut is entered and once it lands, never just because the field appeared.
+   const [entered, setEntered] = useState(false);
    // Modifiers show as they are pressed, so you can see the combination build before it commits.
    const [held, setHeld] = useState<string[]>([]);
    // Modifiers are tracked from their own key presses too. With AltGr, Windows drops Ctrl and Alt
@@ -62,8 +64,6 @@ export function ShortcutInput({
       setEditing(false);
       void api.captureShortcut(false);
    };
-   // The clip shortcut is required. Every other shortcut can be left unassigned.
-   const clearable = label !== "Clip shortcut";
    const keys = value
       ? value
            .replace("CommandOrControl", mac ? "Command" : "Control")
@@ -74,6 +74,7 @@ export function ShortcutInput({
       <button
          data-row-target=""
          data-clash={clash || undefined}
+         data-animate={editing || entered || undefined}
          className={`shortcut-input ${editing ? "editing" : ""}`}
          onClick={() => {
             void api.captureShortcut(true).then(() => setEditing(true));
@@ -89,7 +90,8 @@ export function ShortcutInput({
                return;
             }
             if (modifierCodes[event.code] || ["Control", "Shift", "Alt", "Meta", "AltGraph"].includes(event.key)) return;
-            if (event.key === "Backspace" && clearable) {
+            if (event.key === "Backspace") {
+               setEntered(true);
                onChange("");
                stop();
                return;
@@ -101,7 +103,10 @@ export function ShortcutInput({
                  ? globalShortcutProblem(binding)
                  : null;
             if (problem) reportFeedback({ kind: "notice", message: problem, error: true });
-            else onChange(binding);
+            else {
+               setEntered(true);
+               onChange(binding);
+            }
             stop();
          }}
          onKeyUp={(event) => {
@@ -123,7 +128,7 @@ export function ShortcutInput({
             <>
                Press a shortcut…
                {/* Without this, clearing an optional shortcut is undiscoverable. */}
-               {clearable && value && <span className="shortcut-hint">Backspace clears</span>}
+               {value && <span className="shortcut-hint">Backspace clears</span>}
             </>
          ) : keys.length ? (
             keys.map((key) => <kbd key={key}>{key}</kbd>)

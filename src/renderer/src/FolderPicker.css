@@ -11,42 +11,32 @@
 .folder-picker > svg {
    flex-shrink: 0;
 }
-.folder-picker > span {
-   flex: 1;
-   min-width: 0;
-   font-size: 12px;
-   overflow: hidden;
-   text-overflow: ellipsis;
-   white-space: nowrap;
-}
 .folder-picker[data-navigation-highlight] {
    box-shadow: 0 0 0 2px var(--accent-border);
 }
-
-.folder-picker-path {
-   display: flex;
-   align-items: center;
-   gap: 8px;
+/* Reads like a settings row: the folder's name, then where it is. Only the buttons act. */
+.folder-picker-copy {
    flex: 1;
    min-width: 0;
-   padding: 8px;
-   margin: -8px;
-   border-radius: 10px;
-   corner-shape: squircle;
-   color: var(--muted);
-   text-align: left;
+   display: flex;
+   flex-direction: column;
+   gap: 3px;
+}
+.folder-picker-name {
+   color: var(--text);
+   font-size: 13px;
+   font-weight: 450;
+}
+.folder-picker-path {
    font-size: 12px;
 }
-.folder-picker-path > span {
+.folder-picker-name,
+.folder-picker-path {
    min-width: 0;
    overflow: hidden;
    text-overflow: ellipsis;
    white-space: nowrap;
 }
-.folder-picker-path > svg {
+.folder-picker > .button {
    flex-shrink: 0;
-}
-.folder-picker-path:hover:not(:disabled) {
-   background: var(--raised);
-   color: var(--text);
 }

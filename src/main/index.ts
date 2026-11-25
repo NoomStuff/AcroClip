@@ -773,6 +773,8 @@ async function mergeSaves(olderId: string, newerId: string) {
    else if (windowShown() && mainWindow?.isFocused()) notice("Extended the previous clip. The shorter version is in the trash.", false, "info", "app");
    autoShare(newerId);
 }
+/** Only the launch itself may stay in the tray. A window made later was asked for. */
+let firstWindow = true;
 function createWindow() {
    stateChanges.reset();
    const workArea = process.platform === "linux" ? screen.getPrimaryDisplay().workAreaSize : { width: 1380, height: 900 };
@@ -805,14 +807,17 @@ function createWindow() {
       // Taskbar relaunches go through the launcher, so they show the splash too.
       mainWindow.setAppDetails({
          appId: windowsAppId(),
-         appIconPath: process.execPath,
+         // In development the executable is Electron's own, so the taskbar would show its icon instead of ours.
+         appIconPath: isPackagedApp() ? process.execPath : iconPath(),
          appIconIndex: 0,
          relaunchDisplayName: "AcroClip",
          relaunchCommand: isPackagedApp() ? `"${launcherPath()}"` : `"${process.execPath}" "${app.getAppPath()}"`,
       });
    }
    mainWindow.once("ready-to-show", () => {
-      mainWindow?.show();
+      const stayInTray = firstWindow && preferences.startInTray && preferences.setupComplete && launchedAtLogin();
+      firstWindow = false;
+      if (!stayInTray) mainWindow?.show();
       // The launcher's native splash gives way to the app's own startup screen.
       releaseSplash();
    });
@@ -1113,10 +1118,13 @@ async function saveClip(trigger: SaveTrigger) {
       throw new SaveFailure(errorMessage(error), { cause: error });
    }
 }
+/** Login items pass this, so starting with the computer can stay in the tray without hiding launches people make themselves. */
+const startupArgument = "--startup";
+const launchedAtLogin = () => process.argv.includes(startupArgument) || (process.platform === "darwin" && app.getLoginItemSettings().wasOpenedAtLogin);
 async function applyStartup(enabled: boolean) {
    if (process.env["ACROCLIP_TEST"] === "1") return;
    const executable = process.env["PORTABLE_EXECUTABLE_FILE"] ?? process.env["APPIMAGE"] ?? launcherPath();
-   const args = isPackagedApp() ? [] : [app.getAppPath()];
+   const args = [...(isPackagedApp() ? [] : [app.getAppPath()]), startupArgument];
    if (process.platform === "linux")
       await linuxStartup(enabled, xdgDirectory(process.env["XDG_CONFIG_HOME"], join(app.getPath("home"), ".config")), executable, args);
    else app.setLoginItemSettings({ openAtLogin: enabled, path: executable, args });
@@ -1461,15 +1469,20 @@ function registerIPC() {
    handle("sources", (options) =>
       captureSources.list(z.object({ thumbnails: z.boolean().optional() }).strict().optional().parse(options)?.thumbnails === true && !sharedDesktop)
    );
-   handle("games", async () =>
-      Promise.all(
-         (await recorder.games(preferences.customGames)).map(async (candidate) => ({
-            ...candidate,
-            applicationName:
-               candidate.gameName ?? (candidate.executable ? await applicationLabel(candidate.executable) : normalizeApplicationLabel(candidate.name)),
-         }))
-      )
-   );
+   handle("games", async () => {
+      const candidates = await recorder.games(preferences.customGames);
+      return Promise.all(
+         candidates.map(async (candidate) => {
+            const appIcon = await captureSources.applicationIcon(candidate);
+            return {
+               ...candidate,
+               ...(appIcon ? { appIcon } : {}),
+               applicationName:
+                  candidate.gameName ?? (candidate.executable ? await applicationLabel(candidate.executable) : normalizeApplicationLabel(candidate.name)),
+            };
+         })
+      );
+   });
    handle("game-catalog", () => recorder.gameCatalog());
    handle("preview-source", async (id, token) => {
       const owner = z.string().max(100).optional().parse(token);
@@ -1563,7 +1576,8 @@ function registerIPC() {
             if (capture.starting && JSON.stringify(next) !== JSON.stringify(preferences))
                throw new Error("Capture is starting. Wait before applying settings.");
             if (!next.collection.trim()) throw new Error("Choose a collection folder.");
-            if (!isValidShortcut(next.shortcut)) throw new Error("That key combination isn't supported. Try a letter, number or function key.");
+            if (next.shortcut && !isValidShortcut(next.shortcut))
+               throw new Error("That key combination isn't supported. Try a letter, number or function key.");
             if (recorder.status.state !== "stopped" && recorder.status.state !== "error" && requiresCaptureRestart(preferences, next))
                throw new Error("Stop capturing to apply these changes. Footage you haven't saved will be discarded.");
             if (
@@ -2163,17 +2177,18 @@ else {
                process.env["APPIMAGE"] ?? process.execPath,
                iconPath()
             ).catch((error: unknown) => notice(errorMessage(error), true));
-            // AppImage updates can replace the versioned executable path.
-            if (preferences.startWithOS) await applyStartup(true).catch((error: unknown) => notice(errorMessage(error), true));
          }
+         // AppImage updates can replace the versioned executable path, and older login items lack the startup argument.
+         if (isPackagedApp() && preferences.startWithOS) await applyStartup(true).catch((error: unknown) => notice(errorMessage(error), true));
          installShortcuts(preferences, null);
          for (const item of shortcutRegistry.filter((entry) => entry.scope === "global")) {
             const problem = globalShortcutProblem(bindingFor(preferences, item.id));
             if (problem) notice(`${item.label}: ${problem} Change it in Settings.`, true);
          }
          if (process.argv.includes("--clip")) void saveClip("command").catch(captureActionError);
+         // With the window open, starting capture shows on screen. Starting into the tray, the banner is the only sign.
          if (preferences.autoRecord && preferences.setupComplete && process.env["ACROCLIP_TEST"] !== "1")
-            void startRecording({ quiet: true }).catch(captureActionError);
+            void startRecording({ quiet: !(preferences.startInTray && launchedAtLogin()) }).catch(captureActionError);
          // Detection only refreshed the catalogue while it ran, so a machine that never detected a
          // game kept the built-in stand-in. Fetch it once at launch; it then refreshes weekly.
          if (process.env["ACROCLIP_TEST"] !== "1") setTimeout(() => void recorder.gameCatalog().catch(() => undefined), 5000).unref();

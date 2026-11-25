@@ -49,8 +49,15 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await page.waitForTimeout(300);
       await page.getByRole("button", { name: "Continue", exact: true }).click();
       await expect(page.getByRole("heading", { name: "You're good to go", exact: true })).toBeVisible();
-      await expect(page.getByRole("checkbox", { name: "Start with your computer", exact: true })).not.toBeChecked();
-      await expect(page.getByRole("checkbox", { name: "Start capturing when AcroClip opens", exact: true })).not.toBeChecked();
+      // Startup options default on. This run turns them off, so finishing must not start capture or touch OS startup.
+      const startup = page.getByRole("checkbox", { name: "Start with your computer", exact: true });
+      const tray = page.getByRole("checkbox", { name: "Start in the tray", exact: true });
+      await expect(startup).toBeChecked();
+      await expect(tray).toBeChecked();
+      await startup.uncheck();
+      await expect(tray).toBeDisabled();
+      const capture = page.getByRole("checkbox", { name: "Start capturing when AcroClip opens", exact: true });
+      if (await capture.isChecked()) await capture.uncheck();
       await page.getByRole("button", { name: "Finish", exact: true }).click();
       await expect(page.locator(".onboarding"), "Setup should close after saving")
          .toHaveCount(0)
@@ -81,6 +88,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureMuted).toBe(true);
       await expect(page.getByRole("button", { name: "Unmute desktop", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.locator(".settings-sidebar").getByRole("button", { name: "Recording", exact: true }).click();
       await selectOption(page, "Resolution limit", "720");
       await expect(page.getByRole("combobox", { name: "Resolution limit" })).toHaveAttribute("data-value", "720");
       await expect(page.getByRole("button", { name: "Audio", exact: true })).toHaveCount(0);
@@ -109,14 +117,14 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences)
          .toMatchObject({ resolutionLimit: 1440, customFPS: 48, customCQ: 25, allowSoftwareEncoder: true, replayMemoryMB: 1024 });
-      await page.getByRole("button", { name: "Collection", exact: true }).click();
-      const sizes = page.getByRole("group", { name: "Default maximum size choices", exact: true });
+      await page.locator(".settings-sidebar").getByRole("button", { name: "Clips", exact: true }).click();
+      const sizes = page.getByRole("group", { name: "Shareable size choices", exact: true });
       await expect(sizes.getByRole("button", { name: "20 MB", exact: true })).toHaveAttribute("aria-pressed", "true");
       await sizes.getByRole("button", { name: "Custom", exact: true }).click();
-      await expect(page.getByRole("spinbutton", { name: "Default shareable size in MB" })).toHaveValue("20");
-      await page.getByRole("spinbutton", { name: "Default shareable size in MB" }).fill("50");
+      await expect(page.getByRole("spinbutton", { name: "Shareable size in MB" })).toHaveValue("20");
+      await page.getByRole("spinbutton", { name: "Shareable size in MB" }).fill("50");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.shareSizeMB).toBe(50);
-      await page.getByRole("button", { name: "Collection", exact: true }).click();
+      await page.locator(".settings-sidebar").getByRole("button", { name: "Clips", exact: true }).click();
       await selectOption(page, "Filename preset", "custom");
       const pattern = page.getByRole("textbox", { name: "Name pattern" });
       await pattern.fill("Moment ");

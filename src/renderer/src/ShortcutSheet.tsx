@@ -10,6 +10,7 @@ const sections = [
    { id: "all", title: "Anywhere in AcroClip", test: (item: (typeof shortcutRegistry)[number]) => item.scope === "local" && item.page === "all" },
    { id: "library", title: "Library", test: (item: (typeof shortcutRegistry)[number]) => item.scope === "local" && item.page === "library" },
    { id: "viewer", title: "Player", test: (item: (typeof shortcutRegistry)[number]) => item.scope === "local" && item.page === "viewer" },
+   { id: "settings", title: "Settings", test: (item: (typeof shortcutRegistry)[number]) => item.scope === "local" && item.page === "settings" },
 ] as const;
 
 /** Every shortcut with its current binding. The page you're on comes first. */

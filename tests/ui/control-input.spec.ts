@@ -95,6 +95,7 @@ test("gain entry commits, rejects invalid input and supports keyboard resets", a
       await page.getByRole("button", { name: "Unmute application", exact: true }).click();
       await expect(level).toHaveValue("0.53");
       await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.locator(".settings-sidebar").getByRole("button", { name: "Recording", exact: true }).click();
       await page
          .locator(".quality-options")
          .getByRole("button", { name: /^Custom/ })

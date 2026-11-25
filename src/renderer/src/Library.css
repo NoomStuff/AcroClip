@@ -208,53 +208,6 @@
    filter: drop-shadow(0 1px 2px #000) drop-shadow(0 0 8px #000c);
 }
 
-/* It sits on the page, so it takes the card colour. Focus lifts it instead of drawing a ring. */
-.search-input {
-   display: flex;
-   align-items: center;
-   background: var(--surface);
-   border-radius: 9999px;
-   corner-shape: squircle;
-   transition:
-      background 150ms var(--ease),
-      color 150ms var(--ease);
-   min-height: var(--control-height);
-   padding: 0 8px 0 11px;
-   width: 220px;
-   gap: 8px;
-   color: var(--subtle);
-}
-
-.search-input input {
-   color: var(--text);
-   background: transparent;
-   padding: 8px 0;
-   min-height: 0;
-   height: 36px;
-   width: 100%;
-   min-width: 0;
-   border: 0;
-   font-size: 13px;
-}
-
-:root[data-keyboard] .search-input input:focus-visible,
-.search-input input:focus {
-   outline: none;
-}
-
-.search-input:hover {
-   background: var(--row-hover);
-}
-.search-input:focus-within {
-   background: var(--raised);
-   color: var(--accent);
-}
-
-.search-input .icon-button {
-   width: 28px;
-   height: 28px;
-}
-
 .library-view-menu {
    flex-shrink: 0;
 }
@@ -860,7 +813,7 @@
    .library-tools {
       gap: 8px;
    }
-   .search-input {
+   .library-tools .search-input {
       width: 170px;
    }
    .clip-grid:not([data-view="list"]) .clip-card:hover::after {
@@ -1071,7 +1024,7 @@
    .library-tools {
       width: 100%;
    }
-   .search-input {
+   .library-tools .search-input {
       flex: 1;
       width: auto;
       min-width: 100px;
@@ -1240,4 +1193,12 @@
    .clip-tag[data-arriving] {
       animation: none;
    }
+}
+
+/* A search that finds nothing fades the last results out under the floating message. */
+.library-results {
+   transition: opacity 180ms var(--ease);
+}
+.library-results[data-emptied] {
+   opacity: 0;
 }

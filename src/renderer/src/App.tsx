@@ -6,7 +6,7 @@ import { PageBoundary } from "./PageBoundary";
 import { AppLogo } from "./AppLogo";
 import type { AppEvent, AppState, Clip, NoticeOptions } from "../../shared/types";
 import { applyStatePatch } from "../../shared/state-patch";
-import { SelectionIndicator, TabMarker } from "./SelectionIndicator";
+import { SelectionIndicator } from "./SelectionIndicator";
 import { api, describeError } from "./desktop";
 import { Dialog } from "./Dialog";
 import { RecordingStatus } from "./RecordingStatus";
@@ -75,7 +75,7 @@ export function App() {
       [setPage]
    );
    const openGames = useCallback(() => openSettings("games"), [openSettings]);
-   const openCollectionSettings = useCallback(() => openSettings("collection"), [openSettings]);
+   const openCollectionSettings = useCallback(() => openSettings("clips"), [openSettings]);
    const [windowVisible, setWindowVisible] = useState(!document.hidden);
    useEffect(() => {
       const update = () => setWindowVisible(!document.hidden);
@@ -342,7 +342,7 @@ export function App() {
                         setPage(item.id);
                      }}
                   >
-                     {page === item.id && <TabMarker />}
+                     <span className="rail-marker" aria-hidden="true" />
                      <item.icon size={23} strokeWidth={1.65} />
                      <span>{item.title}</span>
                   </button>
@@ -356,7 +356,7 @@ export function App() {
                className={`rail-button ${page === "settings" ? "selected" : ""}`}
                onClick={() => setPage("settings")}
             >
-               {page === "settings" && <TabMarker />}
+               <span className="rail-marker" aria-hidden="true" />
                <Gear size={23} strokeWidth={1.65} />
                <span>Settings</span>
             </button>
@@ -411,6 +411,7 @@ export function App() {
                                  startRequest={startRequest}
                                  showClip={showClip}
                                  left={leftViewer}
+                                 openLibrary={() => setPage("library")}
                               />
                            </Suspense>
                         </PageBoundary>
@@ -420,7 +421,14 @@ export function App() {
                      {visited.includes("settings") && (
                         <PageBoundary>
                            <Suspense fallback={null}>
-                              <SettingsPage state={settingsState} run={run} ask={ask} target={settingsTarget} showShortcuts={() => setShortcutSheet(true)} />
+                              <SettingsPage
+                                 state={settingsState}
+                                 run={run}
+                                 ask={ask}
+                                 target={settingsTarget}
+                                 showShortcuts={() => setShortcutSheet(true)}
+                                 openCapture={() => setPage("recording")}
+                              />
                            </Suspense>
                         </PageBoundary>
                      )}

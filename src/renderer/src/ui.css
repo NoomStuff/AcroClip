@@ -489,7 +489,7 @@ label:active > .checkbox {
    its tab, so pointing at them keeps the tab hovered. */
 .sidebar-item:not(.selected):hover,
 .sidebar-row:hover > .sidebar-item:not(.selected) {
-   background: #ffffff05;
+   background: #ffffff0c;
    color: var(--text);
 }
 
@@ -916,7 +916,7 @@ label:active > .checkbox {
    top: 0;
    pointer-events: none;
    z-index: -1;
-   background: var(--selection-background, #b197fc12);
+   background: var(--selection-background, color-mix(in srgb, var(--accent) 15%, transparent));
    border-radius: 9999px;
    corner-shape: squircle;
    transition: scale 280ms var(--spring);
@@ -951,19 +951,39 @@ label:active > .checkbox {
 .rail > .selection-indicator {
    border-radius: 9999px;
    corner-shape: squircle;
-   background: #ffffff0b;
+   background: #ffffff16;
 }
+/* Every page has its bar. The current one springs open from its middle while the one left behind folds away, so
+   the change reads at the edge without the bar travelling. */
 .rail-button > .rail-marker {
    display: block;
    position: absolute;
    left: -10px;
    top: 50%;
-   translate: 0 -50%;
    width: 3px;
-   height: 18px;
-   border-radius: 3px;
+   height: 20px;
+   margin-top: -10px;
+   border-radius: 9999px;
    background: var(--accent);
-   transform-origin: center;
+   box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent);
+   opacity: 0;
+   scale: 1 0.2;
+   pointer-events: none;
+   transition:
+      scale 200ms var(--ease),
+      opacity 160ms var(--ease);
+}
+.rail-button[aria-current="page"] > .rail-marker {
+   opacity: 1;
+   scale: 1;
+   transition:
+      scale 420ms var(--spring) 40ms,
+      opacity 120ms var(--ease) 40ms;
+}
+@media (prefers-reduced-motion: reduce) {
+   .rail-button > .rail-marker {
+      transition: opacity 120ms linear;
+   }
 }
 
 .application-icon {
@@ -1404,4 +1424,109 @@ label:active > .checkbox {
 }
 .shortcut-sheet-footer kbd {
    margin: 0 2px;
+}
+.preset-number-custom {
+   display: grid;
+   flex: 1;
+}
+.preset-number-custom > * {
+   grid-area: 1 / 1;
+}
+.preset-number-sizer {
+   visibility: hidden;
+   padding: 0 12px;
+   font-size: 13px;
+   font-weight: 550;
+   white-space: nowrap;
+}
+
+/* It sits on the page, so it takes the card colour. Focus lifts it instead of drawing a ring. */
+.search-input {
+   display: flex;
+   align-items: center;
+   background: var(--surface);
+   border-radius: 9999px;
+   corner-shape: squircle;
+   transition:
+      background 150ms var(--ease),
+      color 150ms var(--ease);
+   min-height: var(--control-height);
+   padding: 0 8px 0 11px;
+   width: 220px;
+   gap: 8px;
+   color: var(--subtle);
+}
+
+.search-input input {
+   color: var(--text);
+   background: transparent;
+   padding: 8px 0;
+   min-height: 0;
+   height: 36px;
+   width: 100%;
+   min-width: 0;
+   border: 0;
+   font-size: 13px;
+}
+
+:root[data-keyboard] .search-input input:focus-visible,
+.search-input input:focus {
+   outline: none;
+}
+
+.search-input:hover {
+   background: var(--row-hover);
+}
+.search-input:focus-within {
+   background: var(--raised);
+   color: var(--accent);
+}
+
+.search-input .icon-button {
+   width: 28px;
+   height: 28px;
+}
+
+/* Floats over the list it replaces. It waits a beat, so what's leaving fades out before the message grows in. */
+.empty-floating {
+   position: absolute;
+   inset: 0;
+   z-index: 1;
+   pointer-events: none;
+   animation: empty-in 320ms 90ms var(--spring) both;
+}
+.empty-floating > * {
+   pointer-events: auto;
+}
+@keyframes empty-in {
+   from {
+      opacity: 0;
+      scale: 0.9;
+   }
+}
+@media (prefers-reduced-motion: reduce) {
+   .empty-floating {
+      animation: empty-fade 160ms linear both;
+   }
+}
+@keyframes empty-fade {
+   from {
+      opacity: 0;
+   }
+}
+
+/* A search fades the pages and filters it found nothing under, so the matches stand out in the sidebar too. */
+.sidebar-row {
+   transition: opacity 200ms var(--ease);
+}
+.sidebar-row[data-search-miss] {
+   opacity: 0.4;
+}
+/* Set only while a new selection settles, so plain layout changes still resize at once. */
+.moving-selection > .selection-indicator[data-resizing] {
+   transition:
+      background-color 180ms ease-out,
+      scale 280ms var(--spring),
+      width 300ms var(--ease),
+      height 300ms var(--ease);
 }

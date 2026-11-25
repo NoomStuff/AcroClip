@@ -35,6 +35,8 @@
    font-size: 12px;
    font-weight: 650;
    text-align: center;
+}
+.shortcut-input[data-animate] kbd {
    animation: shortcut-key-in 280ms var(--spring) both;
 }
 .shortcut-input kbd:nth-child(2) {

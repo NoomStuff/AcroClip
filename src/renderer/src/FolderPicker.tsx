@@ -1,6 +1,7 @@
 import type { Ref } from "react";
-import { ExternalLink, Folder, FolderInput } from "lucide-react";
-import { Button } from "./ui";
+import { Folder, FolderOpen } from "lucide-react";
+import { folderName } from "./format";
+import { Button, IconButton } from "./ui";
 
 export function FolderPicker({
    path,
@@ -8,6 +9,8 @@ export function FolderPicker({
    onReveal,
    revealDisabled = false,
    navigationHighlighted = false,
+   disabled = false,
+   className = "",
    ref,
 }: {
    path: string;
@@ -15,39 +18,36 @@ export function FolderPicker({
    onReveal?: () => void;
    revealDisabled?: boolean;
    navigationHighlighted?: boolean;
+   /** Only choosing is held back. Opening the folder changes nothing. */
+   disabled?: boolean;
+   className?: string;
    ref?: Ref<HTMLDivElement>;
 }) {
    return (
       <div
-         className="folder-picker"
+         className={`folder-picker ${className}`}
          ref={ref}
          role="group"
          aria-label="Collection folder"
          tabIndex={-1}
          data-navigation-highlight={navigationHighlighted || undefined}
       >
-         <Folder size={22} />
-         {onReveal ? (
-            <button
-               type="button"
-               className="folder-picker-path"
-               aria-label="Open collection folder"
-               data-tooltip={path}
-               data-tooltip-overflow=""
-               disabled={revealDisabled || !path}
-               onClick={onReveal}
-            >
-               <span>{path || "No folder selected"}</span>
-               <ExternalLink size={16} aria-hidden="true" />
-            </button>
-         ) : (
-            <span data-tooltip={path} data-tooltip-overflow="">
-               {path || "No folder selected"}
-            </span>
+         <Folder size={21} aria-hidden="true" />
+         <div className="folder-picker-copy">
+            <span className="folder-picker-name">{path ? folderName(path) : "No folder selected"}</span>
+            {path && (
+               <span className="folder-picker-path" data-tooltip={path} data-tooltip-overflow="">
+                  {path}
+               </span>
+            )}
+         </div>
+         {onReveal && (
+            <IconButton label="Open collection folder" disabled={revealDisabled || !path} onClick={onReveal}>
+               <FolderOpen size={17} />
+            </IconButton>
          )}
-         <Button data-choose-folder onClick={onChoose}>
-            <FolderInput size={16} aria-hidden="true" />
-            Choose collection folder
+         <Button data-choose-folder disabled={disabled} onClick={onChoose}>
+            {path ? "Change folder" : "Choose folder"}
          </Button>
       </div>
    );

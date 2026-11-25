@@ -17,7 +17,7 @@ export function initialLocation(page: "library" | "settings", fallback: string):
       : fallback;
 }
 export function useNavigationHistory(page: AppPage, clipId: string | null, restore: (location: NavigationLocation) => void): void {
-   const location = useRef<NavigationLocation>({ page, clipId, library: "all", settings: "recording" });
+   const location = useRef<NavigationLocation>({ page, clipId, library: "all", settings: "essentials" });
    const latest = useRef({ page, clipId, restore });
    latest.current = { page, clipId, restore };
    useEffect(() => {

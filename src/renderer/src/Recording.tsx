@@ -448,7 +448,7 @@ export function Recording({
                      >
                         {saving ? <LoaderCircle className="spin" size={30} /> : <Clapperboard size={48} strokeWidth={1.65} />}
                         <span>{saving ? "Saving…" : "Save clip"}</span>
-                        <kbd>{formatBinding(state.preferences.shortcut, state.platform === "darwin")}</kbd>
+                        {state.preferences.shortcut && <kbd>{formatBinding(state.preferences.shortcut, state.platform === "darwin")}</kbd>}
                      </button>
                   </div>
                </div>

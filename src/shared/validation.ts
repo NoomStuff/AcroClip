@@ -49,7 +49,7 @@ export const preferencesSchema = z
    .object({
       collection: z.string().trim().min(1).max(4096),
       clipSeconds: z.number().int().min(5).max(1800),
-      shortcut: z.string().min(1).max(100),
+      shortcut: z.string().max(100),
       shortcuts: z
          .preprocess(
             (value) => {
@@ -139,6 +139,8 @@ export const preferencesSchema = z
       autoShare: z.boolean(),
       updateCheck: z.boolean().default(true),
       startWithOS: z.boolean(),
+      // New installs start in the tray. Settings saved before this existed keep opening the window as they did.
+      startInTray: z.boolean().default(false),
       autoRecord: z.boolean(),
       discordPresence: z.enum(["off", "minimal", "full"]).default("minimal"),
       notificationStartBanner: z.boolean().default(true),
