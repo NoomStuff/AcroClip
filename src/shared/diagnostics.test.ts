@@ -3,12 +3,11 @@ import { bugReportUrl, describeSystem, logArchiveName } from "./diagnostics";
 
 describe("bugReportUrl", () => {
    it("opens the bug form with what the app knows", () => {
-      const url = new URL(bugReportUrl({ version: "0.20.0", system: "Windows 11 (10.0.26100) x64", archive: "AcroClip-logs.zip" }));
+      const url = new URL(bugReportUrl({ version: "0.20.0", archive: "AcroClip-logs.zip" }));
       expect(url.origin + url.pathname).toBe("https://github.com/NoomStuff/AcroClip/issues/new");
       expect(Object.fromEntries(url.searchParams)).toEqual({
          template: "bug-report.yml",
          version: "0.20.0",
-         system: "Windows 11 (10.0.26100) x64",
          logs: "Attach AcroClip-logs.zip here (drag it into this box).",
       });
    });

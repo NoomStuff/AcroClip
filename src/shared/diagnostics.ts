@@ -11,8 +11,6 @@ export interface RendererError {
 
 export interface BugReportContext {
    version: string;
-   /** Human-readable, such as "Windows 11 (10.0.26100) x64". */
-   system: string;
    /** The exported archive's file name, so the form can tell the user what to attach. */
    archive?: string;
 }
@@ -25,7 +23,6 @@ export function bugReportUrl(context: BugReportContext): string {
    const url = new URL(`${repositoryUrl}/issues/new`);
    url.searchParams.set("template", "bug-report.yml");
    url.searchParams.set("version", context.version);
-   url.searchParams.set("system", context.system);
    if (context.archive) url.searchParams.set("logs", `Attach ${context.archive} here (drag it into this box).`);
    return url.toString();
 }

@@ -127,7 +127,7 @@ describe("homeRedactor", () => {
 describe("bug report form", () => {
    it("has a field for every value the app prefills", () => {
       const form = readFileSync(".github/ISSUE_TEMPLATE/bug-report.yml", "utf8");
-      const url = new URL(bugReportUrl({ version: "1.0.0", system: "Linux", archive: "logs.zip" }));
+      const url = new URL(bugReportUrl({ version: "1.0.0", archive: "logs.zip" }));
       expect(form).toContain(`name: Bug report`);
       expect(url.searchParams.get("template")).toBe("bug-report.yml");
       for (const key of [...url.searchParams.keys()].filter((key) => key !== "template")) expect(form).toMatch(new RegExp(`^\\s+id: ${key}$`, "m"));

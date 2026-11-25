@@ -1875,7 +1875,7 @@ function registerIPC() {
       await mkdir(directory, { recursive: true });
       await writeLogArchive(path);
       shell.showItemInFolder(path);
-      await openExternal(bugReportUrl({ version: app.getVersion(), system: systemDescription(), archive: path.split(/[\\/]/).at(-1)! }));
+      await openExternal(bugReportUrl({ version: app.getVersion(), archive: path.split(/[\\/]/).at(-1)! }));
       return path;
    });
    handle("copy-file", async (path) => {
