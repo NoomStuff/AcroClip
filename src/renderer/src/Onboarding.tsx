@@ -163,13 +163,15 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
          ? (!draft.desktopFallback || sources.some((item) => item.kind === "screen" && item.id === draft.sourceId)) &&
            !sourceChoices(sources, capabilities).find((item) => item.value === "auto")?.disabled
          : !!source;
+   // Auto-capture defaults on, but only counts once there's something to capture, so it never blocks finishing.
+   const canRecord = sourceReady && !!capabilities?.supported;
+   const autoRecord = draft.autoRecord && canRecord;
    const lengthValid = Number.isInteger(draft.clipSeconds) && draft.clipSeconds >= 5 && draft.clipSeconds <= 1800;
    const memoryBytes = useInstalledMemory();
    const lengthWarning = lengthValid ? clipLengthWarning(draft, memoryBytes) : null;
    const finish = async (skip = false) => {
-      const record = !skip && draft.autoRecord;
-      if (busy || navigationPending.current || micPending || !lengthValid || !draft.collection || (record && (!sourceReady || !capabilities?.supported)))
-         return;
+      const record = !skip && autoRecord;
+      if (busy || navigationPending.current || micPending || !lengthValid || !draft.collection) return;
       setBusy(true);
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       await root.current?.animate([{ opacity: 1 }, { opacity: 0, transform: "translateY(-8px)" }], {
@@ -177,7 +179,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
          fill: "forwards",
          easing: "ease-in",
       }).finished;
-      const saved = await run(() => api.savePreferences({ ...draft, setupComplete: true }));
+      const saved = await run(() => api.savePreferences({ ...draft, autoRecord, setupComplete: true }));
       if (saved && record) await run(() => api.startRecording(), { feedback: "external" });
       if (!saved) root.current?.getAnimations().forEach((animation) => animation.cancel());
       setBusy(false);
@@ -367,10 +369,16 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                         <div className="setup-startup">
                            <Toggle label="Start with your computer" checked={draft.startWithOS} onChange={(value) => change("startWithOS", value)} />
                            <Toggle
+                              label="Start in the tray"
+                              checked={draft.startWithOS && draft.startInTray}
+                              onChange={(value) => change("startInTray", value)}
+                              disabled={!draft.startWithOS}
+                           />
+                           <Toggle
                               label="Start capturing when AcroClip opens"
-                              checked={draft.autoRecord}
+                              checked={autoRecord}
                               onChange={(value) => change("autoRecord", value)}
-                              disabled={!draft.autoRecord && (!sourceReady || !capabilities?.supported)}
+                              disabled={!canRecord}
                            />
                         </div>
                      </>
@@ -410,9 +418,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                   <Button
                      className="primary"
                      busy={busy}
-                     disabled={
-                        transitioning || micPending || !lengthValid || !draft.collection || (draft.autoRecord && (!sourceReady || !capabilities?.supported))
-                     }
+                     disabled={transitioning || micPending || !lengthValid || !draft.collection}
                      onClick={() => void finish()}
                   >
                      Finish

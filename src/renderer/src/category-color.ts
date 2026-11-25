@@ -14,10 +14,10 @@ export function categoryColors(color: string): { ink: string; tint: string } {
       const background = display.map((value, index) => value * 0.094 + [21, 21, 24][index]! * 0.906);
       if ((luminance(display) + 0.05) / (luminance(background) + 0.05) >= 4.5) {
          const ink = `#${display.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
-         return { ink, tint: `${ink}18` };
+         return { ink, tint: `${ink}24` };
       }
    }
-   return { ink: "#ffffff", tint: "#ffffff18" };
+   return { ink: "#ffffff", tint: "#ffffff24" };
 }
 export function categoryStyle(color: string): CSSProperties {
    const { ink, tint } = categoryColors(color);

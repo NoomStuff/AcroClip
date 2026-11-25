@@ -7,7 +7,7 @@ body:
         value: |
            Thanks for taking the time. A few things make a report much easier to fix:
 
-           - **Use Report a bug in the app** (Settings → App & updates → Troubleshooting). It saves your logs and fills in your version and system here. Drag the zip into the Logs box.
+           - **Use Report a bug in the app** (Settings → App → Troubleshooting). It saves your logs and fills in your version and system here. Drag the zip into the Logs box.
            - **One bug per issue.** Two problems in one report usually means one gets lost.
            - **Search first.** If someone already reported it, add your details there instead.
 
@@ -75,7 +75,7 @@ body:
      id: version
      attributes:
         label: AcroClip version
-        description: Shown in Settings → App & updates.
+        description: Shown in Settings → App.
         placeholder: "0.20.0"
      validations:
         required: true

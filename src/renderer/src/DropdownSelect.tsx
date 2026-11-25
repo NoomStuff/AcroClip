@@ -10,6 +10,8 @@ export interface DropdownOption {
    value: string;
    label: string;
    disabled?: boolean;
+   /** Shown before the label, in the menu and on the trigger while chosen. */
+   icon?: ReactNode;
 }
 export function DropdownSelect({
    label,
@@ -171,6 +173,7 @@ export function DropdownSelect({
                }
             }}
          >
+            {!triggerContent && selected?.icon && <span className="select-icon">{selected.icon}</span>}
             <span>{triggerContent ?? selected?.label ?? ""}</span>
             {!iconOnly && <ChevronDown size={14} className="select-chevron" aria-hidden="true" />}
          </button>
@@ -224,6 +227,7 @@ export function DropdownSelect({
                                  : undefined
                            }
                         >
+                           {option.icon && <span className="select-icon">{option.icon}</span>}
                            <span>{option.label}</span>
                            <span className="select-check" aria-hidden="true">
                               {chosen && <Check size={14} />}

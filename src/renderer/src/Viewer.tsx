@@ -91,6 +91,7 @@ export function Viewer({
    startRequest,
    showClip,
    left,
+   openLibrary,
 }: {
    state: Pick<AppState, "applicationIcons" | "jobs" | "preferences" | "categories">;
    clip: Clip | undefined;
@@ -108,6 +109,8 @@ export function Viewer({
    showClip: (id: string, start?: { time: number; play: boolean }) => void;
    // Told which clip was showing, and how far into it, whenever the player stops showing it.
    left: (watched: JustWatched) => void;
+   /** Called once the open clip itself is deleted, since there's nothing left here to play. */
+   openLibrary: () => void;
 }) {
    const layout = useRef<HTMLDivElement>(null);
    const sidebar = usePaneSize(layout, { key: "viewer.sidebar", initial: 300, min: 230, max: 420, reserve: 440, axis: "x" });
@@ -868,6 +871,11 @@ export function Viewer({
       await run(async () => {
          await api.deleteClip(clip.id, shareableId, scope);
          const latest = await api.state();
+         // Cancelling the confirmation keeps the clip, so only a clip that's really gone leaves the player.
+         if (!latest.clips.some((item) => item.id === clip.id)) {
+            openLibrary();
+            return;
+         }
          if (!latest.clips.find((item) => item.id === clip.id)?.shareables.some((item) => item.id === shareable?.id)) setVersion("original");
       });
    };

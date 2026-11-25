@@ -33,7 +33,7 @@
    --raised: #27252b;
    --hover: #322e39;
    --accent: #b197fc;
-   --accent-soft: #b197fc16;
+   --accent-soft: #b197fc26;
    --accent-border: #b197fc66;
    --accent-hover: #c2adff;
    --muted: #bdbdbd;
@@ -338,4 +338,10 @@ progress::-webkit-progress-value {
 input::placeholder {
    color: var(--subtle);
    opacity: 1;
+}
+
+/* Selected text takes the accent, the same purple settings search marks matches with. */
+::selection {
+   background-color: color-mix(in srgb, var(--accent) 38%, transparent);
+   color: var(--text);
 }

@@ -1,17 +1,27 @@
 import { MotionList } from "./MotionList";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Gamepad2, Plus, Search, Trash2 } from "lucide-react";
+import { Gamepad2, Plus, Trash2 } from "lucide-react";
 import type { RefObject } from "react";
-import type { CaptureSource, CustomGame, GameCandidate, GameCatalogSnapshot, Preferences } from "../../shared/types";
+import type { CustomGame, GameCandidate, GameCatalogSnapshot, Preferences } from "../../shared/types";
+import { normalizeApplicationLabel } from "../../shared/application-label";
 import { api, describeError } from "./desktop";
-import { Button, IconButton, Select } from "./ui";
+import { Button, IconButton, SearchInput } from "./ui";
+import { DropdownSelect } from "./DropdownSelect";
+import { applicationChoiceName, applicationChoices } from "./application-choices";
 import { DialogPanel } from "./Dialog";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { gameSuggestions, storeGame } from "../../shared/game-suggestions";
-// The catalogue is large and rarely changes, so the Games page keeps it between visits instead of loading it every time.
+// The catalogue is large and rarely changes, so it loads with the Settings page and stays between visits.
 let cachedCatalog: GameCatalogSnapshot | null = null;
 const sameCatalog = (a: GameCatalogSnapshot, b: GameCatalogSnapshot) =>
    a.source === b.source && a.entries.length === b.entries.length && a.entries.every((entry, index) => entry.id === b.entries[index]?.id);
+/** An unchanged catalogue keeps the cached object, so the list doesn't rebuild for nothing. */
+const loadCatalog = () =>
+   api.gameCatalog().then((value) => {
+      if (!cachedCatalog || !sameCatalog(cachedCatalog, value)) cachedCatalog = value;
+      return cachedCatalog;
+   });
+void loadCatalog().catch(() => undefined);
 // Rows for the catalog while it loads: a game's name, then its executables, at varied lengths.
 const gameSkeletonWidths: Array<[name: number, executable: number]> = [
    [34, 22],
@@ -26,28 +36,34 @@ const withAddedGame = (games: CustomGame[], game: CustomGame): CustomGame[] => [
    ...games.filter((item) => executableKey(item.executable) !== executableKey(game.executable)),
    game,
 ];
-/** A game's own name: the catalog's, then its store folder's, then the window title. */
-const suggestedName = (game: GameCandidate | undefined) => (game?.gameName || (game && storeGame(game.executable)?.name) || game?.name || "").slice(0, 200);
+/** A game's own name: the catalog's, then its store folder's, then the app's short name. */
+const suggestedName = (game: GameCandidate | undefined) =>
+   (game?.gameName || (game && storeGame(game.executable)?.name) || game?.applicationName || (game ? normalizeApplicationLabel(game.name) : "")).slice(0, 200);
 function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add: (game: CustomGame) => void | Promise<void>; close: () => void }) {
-   const [candidates, setCandidates] = useState<GameCandidate[]>([]),
-      [sources, setSources] = useState<CaptureSource[]>([]);
+   const [candidates, setCandidates] = useState<GameCandidate[]>([]);
    const [selected, setSelected] = useState(""),
       [name, setName] = useState(""),
       [loading, setLoading] = useState(true),
       [saving, setSaving] = useState(false),
       [error, setError] = useState("");
+   const edited = useRef(false);
+   const chosen = useRef("");
    const load = useCallback(async () => {
-      setLoading(true);
       setError("");
       try {
-         const [found, sources] = await Promise.all([api.games(), api.sources().catch(() => [])]);
+         const found = applicationChoices(await api.games());
          // Unrecognized apps from a store's game library are the likeliest picks, so they come first.
          const suggested = new Set(gameSuggestions(found, additions).map((item) => item.id));
          const games = [...found].sort((a, b) => Number(suggested.has(b.id)) - Number(suggested.has(a.id)));
          setCandidates(games);
-         setSelected(games[0]?.id ?? "");
-         setName(suggestedName(games[0]));
-         setSources(sources);
+         // A refresh keeps the pick and a typed name while that app is still open.
+         const kept = games.find((item) => item.id === chosen.current) ?? games[0];
+         if (!edited.current || kept?.id !== chosen.current) {
+            edited.current = false;
+            setName(suggestedName(kept));
+         }
+         chosen.current = kept?.id ?? "";
+         setSelected(chosen.current);
       } catch (reason) {
          setError(describeError(reason));
       } finally {
@@ -56,6 +72,10 @@ function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add
    }, [additions]);
    useEffect(() => {
       void load();
+      // Opening the game usually means leaving AcroClip, so coming back looks again.
+      const refresh = () => void load();
+      window.addEventListener("focus", refresh);
+      return () => window.removeEventListener("focus", refresh);
    }, [load]);
    const game = candidates.find((item) => item.id === selected);
    const full = additions.length >= 500 && !additions.some((item) => executableKey(item.executable) === executableKey(game?.executable ?? ""));
@@ -81,39 +101,44 @@ function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add
                void submit();
             }}
          >
-            <p>Choose a running application to recognize as a game.</p>
-            <Select
+            <p>Choose an open app to recognize as a game.</p>
+            <DropdownSelect
                label="Running application"
                value={selected}
                disabled={loading || saving}
+               options={
+                  candidates.length
+                     ? candidates.map((item) => ({
+                          value: item.id,
+                          label: applicationChoiceName(item),
+                          icon: <ApplicationIcon size={16} src={item.appIcon} />,
+                       }))
+                     : [{ value: "", label: loading ? "Finding apps…" : "Open the game, then come back here", disabled: true }]
+               }
                onChange={(id) => {
+                  edited.current = false;
+                  chosen.current = id;
                   setSelected(id);
                   setName(suggestedName(candidates.find((item) => item.id === id)));
                }}
-            >
-               {!selected && (
-                  <option value="" disabled>
-                     {loading ? "Finding applications…" : "No applications available"}
-                  </option>
-               )}
-               {candidates.map((item) => (
-                  <option key={item.id} value={item.id}>
-                     {item.name}
-                  </option>
-               ))}
-            </Select>
-            {!loading && !candidates.length && <p>Open the application, then try again.</p>}
-            {game && (
-               <div className="game-add-identity">
-                  <ApplicationIcon size={24} src={sources.find((source) => source.id.split(":")[1] === game.id.split(":")[1])?.appIcon} />
-                  <span data-tooltip={game.executable} data-tooltip-overflow="">
-                     {game.executable}
-                  </span>
-               </div>
+            />
+            {game?.executable && (
+               <p className="game-add-executable" data-tooltip={game.executable} data-tooltip-overflow="">
+                  {game.executable}
+               </p>
             )}
             <label className="game-name">
                Game name
-               <input aria-label="Game name" maxLength={200} value={name} disabled={!game || saving} onChange={(event) => setName(event.target.value)} />
+               <input
+                  aria-label="Game name"
+                  maxLength={200}
+                  value={name}
+                  disabled={!game || saving}
+                  onChange={(event) => {
+                     edited.current = true;
+                     setName(event.target.value);
+                  }}
+               />
             </label>
             {(error || full) && (
                <p className="game-error" role="alert">
@@ -121,14 +146,11 @@ function AddGameDialog({ additions, add, close }: { additions: CustomGame[]; add
                </p>
             )}
             <div className="dialog-actions">
-               <Button type="button" className="quiet" disabled={loading || saving} onClick={() => void load()}>
-                  Try again
-               </Button>
                <Button type="button" onClick={close}>
                   Cancel
                </Button>
                <Button type="submit" className="primary" busy={saving} disabled={!game || !name.trim() || full}>
-                  Add selected game
+                  Add to games
                </Button>
             </div>
          </form>
@@ -166,12 +188,8 @@ export function GameManagement({
    const suggestions = useMemo(() => gameSuggestions(running, preferences.customGames), [running, preferences.customGames]);
    useEffect(() => {
       let disposed = false;
-      void api
-         .gameCatalog()
+      void loadCatalog()
          .then((value) => {
-            // A refreshed catalogue replaces the cached one, but an unchanged one keeps the list as it is.
-            if (cachedCatalog && sameCatalog(cachedCatalog, value)) return;
-            cachedCatalog = value;
             if (!disposed) setCatalog(value);
          })
          .catch((reason: unknown) => {
@@ -182,7 +200,8 @@ export function GameManagement({
       };
    }, []);
    const entries = useMemo(() => {
-      const known = catalog?.entries ?? [],
+      // Until the full catalogue downloads, only a short stand-in exists. Listing it would look like the whole catalogue.
+      const known = catalog?.source === "saved" ? catalog.entries : [],
          index = new Map<string, Array<{ id: string; suffix: string }>>();
       for (const game of known)
          for (const exe of game.executables) {
@@ -224,8 +243,8 @@ export function GameManagement({
       return () => observer.disconnect();
    }, [limit, filtered.length]);
    const renderGame = (game: (typeof entries)[number]) => (
-      <div className="game-entry" role="listitem">
-         <Gamepad2 size={20} />
+      <div className="game-entry settings-surface" role="listitem">
+         <Gamepad2 size={21} />
          <div>
             <span className="game-entry-name" data-tooltip={game.name} data-tooltip-overflow="">
                {game.name}
@@ -247,20 +266,16 @@ export function GameManagement({
    return (
       <div className="game-settings">
          <div className="game-toolbar">
-            <label className="game-search">
-               <Search size={16} />
-               <input
-                  ref={searchRef}
-                  aria-label="Search games"
-                  spellCheck={false}
-                  placeholder="Search games or applications"
-                  value={query}
-                  onChange={(event) => {
-                     setQuery(event.target.value);
-                     setLimit(80);
-                  }}
-               />
-            </label>
+            <SearchInput
+               label="Search games"
+               placeholder="Search games or applications"
+               value={query}
+               inputRef={searchRef}
+               onChange={(value) => {
+                  setQuery(value);
+                  setLimit(80);
+               }}
+            />
             <Button onClick={() => setAdding(true)} disabled={preferences.customGames.length >= 500}>
                <Plus size={16} />
                Add game
@@ -271,8 +286,8 @@ export function GameManagement({
                <h3 className="game-category">Running, not recognized</h3>
                <div className="game-list" role="list" aria-label="Running games AcroClip doesn't recognize">
                   {suggestions.map((game) => (
-                     <div className="game-entry" role="listitem" key={game.executable}>
-                        <Gamepad2 size={20} />
+                     <div className="game-entry settings-surface" role="listitem" key={game.executable}>
+                        <Gamepad2 size={21} />
                         <div>
                            <span className="game-entry-name" data-tooltip={game.suggestedName} data-tooltip-overflow="">
                               {game.suggestedName}
@@ -301,12 +316,11 @@ export function GameManagement({
                </div>
             </section>
          )}
-         <div className="game-list-summary">
-            <span>
-               {catalog ? `${filtered.filter((game) => !game.added).length.toLocaleString()} games` : error ? "Catalog unavailable" : "Loading games…"}
-            </span>
-            {catalog && <span>{catalog.source === "saved" ? "Saved catalog" : "Built-in catalog"}</span>}
-         </div>
+         {catalog && (
+            <div className="game-list-summary">
+               <span>{filtered.filter((game) => !game.added).length.toLocaleString()} games</span>
+            </div>
+         )}
          {error && (
             <p className="game-error" role="alert">
                {error}
@@ -320,7 +334,7 @@ export function GameManagement({
             {!catalog && !error && (
                <div className="skeleton-reveal" aria-hidden="true">
                   {gameSkeletonWidths.map(([name, executable], row) => (
-                     <div key={row} className="game-entry game-skeleton">
+                     <div key={row} className="game-entry settings-surface game-skeleton">
                         <span className="game-skeleton-icon skeleton" />
                         <div>
                            <span className="game-skeleton-name skeleton" style={{ width: `${name}%` }} />
@@ -338,8 +352,9 @@ export function GameManagement({
                additions={preferences.customGames}
                add={(game) => {
                   change(withAddedGame(preferences.customGames, game));
-                  setQuery(game.name);
-                  setLimit(80);
+                  // Added games lead the page, so the new one shows without narrowing the catalogue to it.
+                  setQuery("");
+                  searchRef.current?.closest(".settings-scroll")?.scrollTo({ top: 0, behavior: "smooth" });
                }}
                close={() => setAdding(false)}
             />

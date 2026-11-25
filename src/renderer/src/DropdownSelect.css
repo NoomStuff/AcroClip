@@ -104,3 +104,17 @@
    height: 14px;
    flex: 0 0 14px;
 }
+/* An icon leads its label, and the label takes the room between it and the check or chevron. */
+.select-icon {
+   display: inline-flex;
+   flex: none;
+}
+.select-trigger:has(> .select-icon),
+.select-menu button:has(> .select-icon) {
+   gap: 10px;
+}
+:is(.select-trigger, .select-menu button) > .select-icon + span {
+   flex: 1;
+   min-width: 0;
+   overflow-wrap: anywhere;
+}

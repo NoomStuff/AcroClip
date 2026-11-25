@@ -1,34 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
-import { createSliderMotion } from "./slider-motion";
 import { createSelectionMotion } from "./selection-motion";
 import { selectionBounce } from "./value-kick";
 
-export function TabMarker() {
-   const marker = useRef<HTMLSpanElement>(null);
-   useLayoutEffect(() => {
-      const node = marker.current;
-      if (!node) return;
-      const media = matchMedia("(prefers-reduced-motion: reduce)");
-      const motion = createSliderMotion(
-         0,
-         (position) => {
-            node.style.transform = `scaleY(${position / 100})`;
-         },
-         { request: (callback) => requestAnimationFrame(callback), cancel: (frame) => cancelAnimationFrame(frame) }
-      );
-      node.style.transform = "scaleY(0)";
-      motion.to(100, media.matches);
-      const reduce = () => {
-         if (media.matches) motion.finish();
-      };
-      media.addEventListener("change", reduce);
-      return () => {
-         motion.dispose();
-         media.removeEventListener("change", reduce);
-      };
-   }, []);
-   return <span ref={marker} className="rail-marker" aria-hidden="true" />;
-}
 export function SelectionIndicator({ value, selector = "button.selected" }: { value: string; selector?: string }) {
    const marker = useRef<HTMLSpanElement>(null);
    const refresh = useRef<((resize: boolean) => void) | null>(null);
@@ -40,6 +13,7 @@ export function SelectionIndicator({ value, selector = "button.selected" }: { va
          shown = false;
       let lastTarget = { x: 0, y: 0 },
          lastSize = { width: 0, height: 0 };
+      let resizing: ReturnType<typeof setTimeout> | undefined;
       const media = window.matchMedia("(prefers-reduced-motion: reduce)");
       const motion = createSelectionMotion(
          ({ x, y }) => {
@@ -66,13 +40,20 @@ export function SelectionIndicator({ value, selector = "button.selected" }: { va
             x: visible.left + visible.width / 2 - rect.width / 2 - bounds.left - parent.clientLeft + parent.scrollLeft,
             y: visible.top + visible.height / 2 - rect.height / 2 - bounds.top - parent.clientTop + parent.scrollTop,
          };
-         element.style.width = `${rect.width}px`;
-         element.style.height = `${rect.height}px`;
          const changed = selected !== selectedBefore;
          const layoutChanged =
             !changed && (target.x !== lastTarget.x || target.y !== lastTarget.y || rect.width !== lastSize.width || rect.height !== lastSize.height);
          // Layout changes never trail the selected control. Only selection changes bounce.
          const immediate = resize || layoutChanged || !shown || media.matches;
+         // A new selection of another size grows or shrinks on the way there, instead of taking its size first and
+         // sliding after. Everything else resizes at once.
+         if (changed && !immediate && (rect.width !== lastSize.width || rect.height !== lastSize.height)) {
+            element.dataset["resizing"] = "";
+            clearTimeout(resizing);
+            resizing = setTimeout(() => delete element.dataset["resizing"], 360);
+         } else if (immediate) delete element.dataset["resizing"];
+         element.style.width = `${rect.width}px`;
+         element.style.height = `${rect.height}px`;
          if (immediate || changed)
             motion.to(target, { x: Math.max(0, parent.scrollWidth - rect.width), y: Math.max(0, parent.scrollHeight - rect.height) }, immediate);
          if (changed && !immediate && selectedBefore) selectionBounce(element, 0.035);
@@ -130,6 +111,7 @@ export function SelectionIndicator({ value, selector = "button.selected" }: { va
       media.addEventListener("change", layout);
       document.fonts.addEventListener("loadingdone", layout);
       return () => {
+         clearTimeout(resizing);
          motion.dispose();
          refresh.current = null;
          resize.disconnect();

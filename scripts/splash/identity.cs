@@ -13,5 +13,5 @@ internal static class Identity
     internal static readonly Color Border = Color.FromArgb(38, 34, 46);
     internal static readonly Color Accent = Color.FromArgb(177, 151, 252);
     // Arguments that run a command instead of opening the app, so they skip the splash.
-    internal static readonly string[] QuietArguments = new string[] { "--clip" };
+    internal static readonly string[] QuietArguments = new string[] { "--clip", "--startup" };
 }

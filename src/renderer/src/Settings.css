@@ -8,10 +8,12 @@
    padding: 5px calc(11px - var(--scrollbar-size)) 5px 11px;
 }
 
-.settings-sidebar h1 {
-   font-size: 22px;
-   padding: 0;
-   margin: 0;
+.settings-sidebar-heading .settings-search {
+   width: 100%;
+   background: var(--base);
+}
+.settings-sidebar-heading .settings-search:focus-within {
+   background: var(--raised);
 }
 
 .settings-sidebar .sidebar-item {
@@ -23,9 +25,15 @@
    padding: 20px 24px 4px;
    color: var(--subtle);
    display: flex;
-   flex-direction: column;
+   align-items: center;
+   justify-content: space-between;
    gap: 6px;
+   min-height: 17px;
    font-size: 11px;
+}
+.settings-sidebar-bottom > [role="status"] {
+   display: inline-flex;
+   color: var(--accent);
 }
 
 /* Like the library, the page runs to the workspace edges, so content scrolls out of view at the
@@ -147,13 +155,6 @@
    display: none;
 }
 
-.settings-body:disabled {
-   opacity: 0.55;
-}
-.settings-sidebar-heading .header-actions > span {
-   display: inline-flex;
-   color: var(--accent);
-}
 /* Floats over the page instead of taking a row, so it never pushes the settings around. */
 .settings-save-feedback {
    position: absolute;
@@ -218,32 +219,44 @@
    flex: 0 0 150px;
    margin-left: auto;
 }
-.settings-body > h2,
-.settings-group > h2 {
-   margin: 32px 0 6px;
+.settings-group-heading {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   gap: 12px;
+   min-height: 24px;
+   margin: 0 0 10px;
+}
+.settings-group-heading h2 {
+   margin: 0;
    color: var(--text);
-   font-size: 15px;
+   font-size: 13px;
    line-height: 1.4;
    font-weight: 650;
 }
-.settings-body > h2:first-child,
-.settings-group:first-child > h2 {
-   margin-top: 0;
+.settings-more {
+   display: inline-flex;
+   align-items: center;
+   gap: 2px;
+   margin: -3px -4px -3px auto;
+   padding: 3px 4px 3px 8px;
+   border-radius: var(--radius-control);
+   corner-shape: squircle;
+   color: var(--subtle);
+   font-size: 12px;
+   transition:
+      color 150ms var(--ease),
+      background 150ms var(--ease);
 }
-.settings-group + .settings-group {
-   margin-top: 32px;
+.settings-more:hover {
+   color: var(--text);
+   background: var(--row-hover);
 }
 .settings-body .field,
 .settings-body .toggle-row {
    border-bottom: 0;
    min-height: 60px;
    padding: 10px 0;
-}
-.settings-body .section-description {
-   margin: 4px 0 4px;
-}
-.settings-body .quality-options {
-   margin: 12px 0;
 }
 .settings-body .filename-heading > label {
    font-size: 13px;
@@ -268,7 +281,7 @@
 }
 
 .settings-sidebar-heading {
-   margin: 0 19px 20px 24px;
+   margin: 0 11px 9px;
 }
 @container (max-width: 520px) {
    .field:has(.compression-slider) {
@@ -287,20 +300,9 @@
 .settings-body {
    max-width: 1020px;
 }
-.settings-group {
-   margin-bottom: 24px;
-}
 /* The body's padding ends the page. A trailing margin on top of it only adds empty scroll. */
 .settings-body > :last-child {
    margin-bottom: 0;
-}
-.settings-group > h2 {
-   margin: 0 0 10px;
-   font-size: 13px;
-   font-weight: 650;
-}
-.settings-group + .settings-group {
-   margin-top: 24px;
 }
 .settings-body .settings-row {
    display: flex;
@@ -308,24 +310,68 @@
    gap: 18px;
    min-height: 78px;
    padding: 17px 20px;
-   margin: 0 0 5px;
+}
+/* Every card in a settings list is a surface, whatever it holds. Surfaces next to each other read as one
+   block: the outer corners take the panel radius and the joins stay tighter, so the block is rounder than
+   anything inside it. Position decides the shape, so moving a setting never needs a new radius. */
+.settings-body {
+   --settings-gap: 5px;
+   --settings-row-join: 8px;
+}
+.settings-body .settings-surface {
+   margin: 0 0 var(--settings-gap);
    border: 0;
    border-radius: var(--settings-row-join);
    corner-shape: squircle;
    background: var(--surface);
 }
-/* A run of rows reads as one block: its outer corners take the panel radius, the joins between rows stay
-   tighter, so the category is rounder than anything inside it. */
-.settings-body {
-   --settings-row-join: 8px;
-}
-.settings-body .settings-row:not(.settings-row + .settings-row) {
+.settings-body .settings-surface:not(.settings-surface ~ .settings-surface) {
    border-top-left-radius: var(--radius-panel);
    border-top-right-radius: var(--radius-panel);
 }
-.settings-body .settings-row:not(:has(+ .settings-row)) {
+.settings-body .settings-surface:not(:has(~ .settings-surface)) {
+   margin-bottom: 0;
    border-bottom-left-radius: var(--radius-panel);
    border-bottom-right-radius: var(--radius-panel);
+}
+/* Each setting sits in its own item, so a run also continues across items: an item that ends on a surface
+   joins the next one that starts with one. */
+.settings-item + .settings-item {
+   margin-top: var(--settings-gap);
+}
+.settings-item:has(> .settings-surface:last-child) + .settings-item > .settings-surface:first-child {
+   border-top-left-radius: var(--settings-row-join);
+   border-top-right-radius: var(--settings-row-join);
+}
+.settings-item:has(+ .settings-item > .settings-surface:first-child) > .settings-surface:last-child {
+   border-bottom-left-radius: var(--settings-row-join);
+   border-bottom-right-radius: var(--settings-row-join);
+}
+/* Lists that animate put every surface in its own motion item, so the item's place in the list decides the shape. */
+.settings-body .motion-list-item > .motion-list-content > .settings-surface {
+   margin: 0;
+   border-radius: var(--settings-row-join);
+}
+.settings-body .motion-list-item:not([data-exiting]):not(.motion-list-item:not([data-exiting]) ~ *) > .motion-list-content > .settings-surface {
+   border-top-left-radius: var(--radius-panel);
+   border-top-right-radius: var(--radius-panel);
+}
+.settings-body .motion-list-item:not([data-exiting]):not(:has(~ .motion-list-item:not([data-exiting]))) > .motion-list-content > .settings-surface {
+   border-bottom-left-radius: var(--radius-panel);
+   border-bottom-right-radius: var(--radius-panel);
+}
+.settings-body .game-list .motion-list-item + .motion-list-item {
+   padding-top: var(--settings-gap);
+}
+.settings-body > .motion-list > .motion-list-item + .motion-list-item {
+   padding-top: 24px;
+}
+/* Search keeps a match's neighbours for context, faded so the matches stand out. */
+.settings-item {
+   transition: opacity 200ms var(--ease);
+}
+.settings-item[data-unmatched] {
+   opacity: 0.4;
 }
 .settings-row-icon {
    color: var(--muted);
@@ -359,11 +405,8 @@
    padding-top: 0;
 }
 .settings-filename-row {
+   min-width: 0;
    padding: 18px 20px;
-   background: var(--surface);
-   border-radius: 13px;
-   corner-shape: squircle;
-   margin-bottom: 5px;
 }
 .settings-filename-row .filename-editor {
    margin-top: 0;
@@ -373,8 +416,12 @@
    padding: 0;
    background: transparent;
 }
+.settings-body .quality-options {
+   gap: var(--settings-gap);
+   margin: 0;
+}
 .settings-body .custom-quality {
-   margin: 5px 0 0;
+   margin: var(--settings-gap) 0 0;
 }
 .settings-body .preset-source-note {
    margin: 8px 4px 12px;
@@ -383,11 +430,8 @@
    margin: 0 0 12px;
 }
 .settings-body .game-list .game-entry {
-   background: var(--surface);
-   border-radius: 13px;
-   corner-shape: squircle;
-   margin-bottom: 5px;
-   padding: 14px 20px;
+   gap: 18px;
+   padding: 15px 20px;
 }
 @container (max-width: 640px) {
    .settings-body .settings-row {
@@ -423,21 +467,16 @@
    }
 }
 
-.settings-group > .folder-picker {
+.settings-group .folder-picker {
+   gap: 18px;
    min-height: 78px;
    padding: 17px 20px;
-   border-radius: var(--radius-panel);
-   corner-shape: squircle;
 }
 .settings-filename-row .filename-heading {
    gap: 8px 18px;
 }
-.settings-body .quality-options {
-   margin-top: 0;
-   margin-bottom: 12px;
-}
 @container (max-width: 640px) {
-   .settings-group > .folder-picker {
+   .settings-group .folder-picker {
       padding: 15px;
    }
 }
@@ -534,14 +573,22 @@
    }
 }
 
-fieldset.settings-group {
-   border: 0;
-   padding: 0;
-   min-width: 0;
-   margin-inline: 0;
+/* Locks disable what's inside without drawing a box, so the rows around them still join up. */
+.settings-lock {
+   display: contents;
 }
-fieldset.settings-group:disabled {
+.settings-lock:disabled > * {
    opacity: 0.55;
+}
+.clip-combo {
+   display: flex;
+   align-items: center;
+   justify-content: flex-end;
+   flex-wrap: wrap;
+   gap: 8px;
+}
+.clip-combo .shortcut-input {
+   min-width: 150px;
 }
 
 /* A row with one main control answers the pointer as a whole, the way a toggle row does. */
@@ -682,4 +729,41 @@ fieldset.settings-group:disabled {
 /* Maintenance can't be undone, so its rows read as warnings before anything is clicked. */
 .settings-danger .settings-row-icon {
    color: var(--danger);
+}
+
+/* The preset card holds a picker: its choices are dark slots like other controls, not cards like the settings they fill in. */
+.settings-body .quality-preset-card {
+   padding: 17px 20px 20px;
+}
+.quality-preset-heading {
+   display: flex;
+   align-items: center;
+   gap: 18px;
+   margin-bottom: 16px;
+}
+.settings-body .quality-preset-card .quality-options {
+   gap: 8px;
+}
+.settings-body .quality-preset-card .quality-option {
+   background: var(--base);
+}
+.settings-body .quality-preset-card .quality-option:hover:not(:disabled) {
+   background: var(--slot-hover);
+}
+.settings-body .quality-preset-card .quality-option.selected,
+.settings-body .quality-preset-card .quality-option.selected:hover:not(:disabled) {
+   background: #b197fc24;
+}
+@container (max-width: 640px) {
+   .settings-body .quality-preset-card {
+      padding: 15px;
+   }
+   .quality-preset-heading {
+      gap: 12px;
+   }
+}
+
+::highlight(settings-search) {
+   background-color: color-mix(in srgb, var(--accent) 38%, transparent);
+   color: var(--text);
 }

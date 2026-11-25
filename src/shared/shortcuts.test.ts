@@ -12,11 +12,12 @@ import {
    formatBinding,
 } from "./shortcuts";
 describe("shortcut defaults and conflicts", () => {
-   it("defaults to Alt+C for saving with no recording shortcut", () => {
+   it("defaults to Alt+C for saving and Ctrl+Alt+Shift+C for starting and stopping capture", () => {
       expect(bindingFor(defaultPreferences, "saveClip")).toBe("Alt+C");
       expect(bindingFor(defaultPreferences, "newCategory")).toBe("CommandOrControl+N");
       expect(bindingFor(defaultPreferences, "newFolder")).toBe("CommandOrControl+Shift+N");
-      for (const action of ["toggleRecording", "startRecording", "stopRecording"] as const) expect(bindingFor(defaultPreferences, action)).toBe("");
+      expect(bindingFor(defaultPreferences, "toggleRecording")).toBe("CommandOrControl+Alt+Shift+C");
+      for (const action of ["startRecording", "stopRecording"] as const) expect(bindingFor(defaultPreferences, action)).toBe("");
       expect(shortcutConflict(defaultPreferences, false)).toBeNull();
       expect(shortcutConflict(defaultPreferences, true)).toBeNull();
    });
@@ -24,7 +25,7 @@ describe("shortcut defaults and conflicts", () => {
       const old = { ...defaultPreferences, collection: "/clips", shortcut: "Control+Shift+F9" };
       const saved = preferencesSchema.parse(old);
       expect(bindingFor(saved, "saveClip")).toBe(old.shortcut);
-      expect(bindingFor(saved, "toggleRecording")).toBe("");
+      expect(bindingFor(saved, "toggleRecording")).toBe("CommandOrControl+Alt+Shift+C");
       expect(shortcutConflict(saved, false)).toBeNull();
    });
    it("retains explicitly saved recording shortcuts", () => {

@@ -55,32 +55,38 @@ export function PresetNumberInput({
                {presetLabel(preset)}
             </button>
          ))}
-         {custom ? (
-            <label className="selected preset-number-field">
-               <input
-                  ref={input}
-                  type="number"
-                  min={min}
-                  max={max}
-                  step={step}
-                  aria-label={inputLabel}
-                  aria-describedby={description}
-                  value={Number.isNaN(value) ? "" : value}
-                  onChange={(event) => onValueChange(event.currentTarget.valueAsNumber)}
-               />
-               <span aria-hidden="true">{unit}</span>
-            </label>
-         ) : (
-            <button
-               aria-pressed={false}
-               onClick={() => {
-                  setChosen(true);
-                  setFocusField(true);
-               }}
-            >
+         {/* The slot keeps the width of its Custom label either way, so switching never shifts the presets under the pointer. */}
+         <span className="preset-number-custom">
+            <span className="preset-number-sizer" aria-hidden="true">
                Custom
-            </button>
-         )}
+            </span>
+            {custom ? (
+               <label className="selected preset-number-field">
+                  <input
+                     ref={input}
+                     type="number"
+                     min={min}
+                     max={max}
+                     step={step}
+                     aria-label={inputLabel}
+                     aria-describedby={description}
+                     value={Number.isNaN(value) ? "" : value}
+                     onChange={(event) => onValueChange(event.currentTarget.valueAsNumber)}
+                  />
+                  <span aria-hidden="true">{unit}</span>
+               </label>
+            ) : (
+               <button
+                  aria-pressed={false}
+                  onClick={() => {
+                     setChosen(true);
+                     setFocusField(true);
+                  }}
+               >
+                  Custom
+               </button>
+            )}
+         </span>
       </div>
    );
 }

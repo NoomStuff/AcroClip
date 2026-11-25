@@ -46,6 +46,8 @@ export interface GameCandidate {
    gameName?: string;
    /** The short name the library uses for this app, like "Discord" rather than its window title. */
    applicationName?: string;
+   /** The app's icon as a data URL, when one of its windows has one. */
+   appIcon?: string;
 }
 export interface GameCatalogSnapshot {
    source: "saved" | "built-in";
@@ -129,6 +131,8 @@ export interface Preferences {
    autoShare: boolean;
    updateCheck: boolean;
    startWithOS: boolean;
+   /** A launch at login stays in the tray instead of opening the window. */
+   startInTray: boolean;
    autoRecord: boolean;
    discordPresence: DiscordPresenceLevel;
    notificationStartBanner: boolean;

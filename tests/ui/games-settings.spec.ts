@@ -68,7 +68,7 @@ test("Auto game management searches the saved catalogue and persists application
       await expect(page.getByRole("combobox", { name: "Running application", exact: true })).toBeEnabled();
       await expect(page.getByRole("textbox", { name: "Game name", exact: true })).toHaveValue("Running application fixture");
       await page.getByRole("textbox", { name: "Game name", exact: true }).fill("My local game");
-      await page.getByRole("button", { name: "Add selected game", exact: true }).click();
+      await page.getByRole("button", { name: "Add to games", exact: true }).click();
       await expect
          .poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.customGames)
          .toEqual([{ name: "My local game", executable: "C:/Controlled/local-game.exe" }]);

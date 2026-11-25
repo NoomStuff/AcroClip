@@ -194,3 +194,28 @@ export function selectLibraryClips(
       )
       .sort(compareClips(sort));
 }
+
+/**
+ * The sidebar filters a search would still find something under, as filter keys like `category:id`. A folder counts
+ * when a matching clip sits anywhere inside it, or its own name matches.
+ */
+export function searchHits(clips: readonly Clip[], search: string, applications: ReadonlyMap<string, string>, folders: readonly string[]): Set<string> {
+   const hits = new Set<string>();
+   for (const clip of clips) {
+      if (!matchesSearch(clip, search)) continue;
+      hits.add("all");
+      for (const category of clip.categories) hits.add(`category:${category}`);
+      const application = applications.get(clip.id);
+      if (application) hits.add(`source:${application}`);
+      for (let folder = parentFolder(clip.relativePath); folder; folder = parentFolder(folder)) hits.add(`folder:${folder}`);
+   }
+   for (const folder of folders)
+      if (
+         folder
+            .slice(folder.lastIndexOf("/") + 1)
+            .toLowerCase()
+            .includes(search)
+      )
+         hits.add(`folder:${folder}`);
+   return hits;
+}

@@ -5,18 +5,29 @@ import { Keyboard, Power } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Toggle as Switch } from "./ui";
 
+/** Disables the controls inside without adding a box, so rows around it still join up. */
+export function Lock({ locked, children }: { locked: boolean; children: ReactNode }) {
+   return (
+      <fieldset className="settings-lock" disabled={locked}>
+         {children}
+      </fieldset>
+   );
+}
+
 export function Field({
    label,
    detail,
    children,
    icon,
    className = "",
+   disabled = false,
 }: {
    label: string;
    detail?: ReactNode;
    children: ReactNode;
    icon?: LucideIcon;
    className?: string;
+   disabled?: boolean;
 }) {
    const Icon = icon ?? Keyboard;
    const labelId = useId();
@@ -38,7 +49,7 @@ export function Field({
    return (
       <FieldDescription.Provider value={detail ? detailId : undefined}>
          <div
-            className={`settings-row field ${className}`}
+            className={`settings-row settings-surface field ${className}`}
             role="group"
             aria-labelledby={labelId}
             onPointerDown={(event) => {
@@ -58,7 +69,9 @@ export function Field({
                   </p>
                )}
             </div>
-            <div className="field-control">{children}</div>
+            <div className="field-control">
+               <Lock locked={disabled}>{children}</Lock>
+            </div>
          </div>
       </FieldDescription.Provider>
    );
@@ -70,17 +83,19 @@ export function Toggle({
    checked,
    onChange,
    icon: Icon = Power,
+   disabled = false,
 }: {
    label: string;
    detail?: string;
    checked: boolean;
    onChange: (value: boolean) => void;
    icon?: LucideIcon;
+   disabled?: boolean;
 }) {
    return (
-      <div className="settings-row settings-toggle">
+      <div className="settings-row settings-surface settings-toggle">
          <Icon className="settings-row-icon" size={21} aria-hidden="true" />
-         <Switch label={label} {...(detail ? { detail } : {})} checked={checked} onChange={onChange} />
+         <Switch label={label} {...(detail ? { detail } : {})} checked={checked} disabled={disabled} onChange={onChange} />
       </div>
    );
 }

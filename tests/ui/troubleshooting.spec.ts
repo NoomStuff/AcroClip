@@ -68,7 +68,7 @@ test("troubleshooting exports logs and opens a prefilled bug report", async () =
          .poll(async () => (await readFile(join(profile, "logs", "app.log"), "utf8").catch(() => "")).includes("renderer error: troubleshooting probe"))
          .toBe(true);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
-      await page.getByRole("button", { name: "App & updates", exact: true }).click();
+      await page.locator(".settings-sidebar").getByRole("button", { name: "App", exact: true }).click();
       await page.getByRole("button", { name: "Export", exact: true }).click();
       await expect.poll(() => existsSync(exported)).toBe(true);
       const files = unzip(await readFile(exported));

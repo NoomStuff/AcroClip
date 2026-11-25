@@ -8,6 +8,9 @@ import { DialogPanel } from "./Dialog";
 import { MotionList } from "./MotionList";
 import { AudioMixerRow } from "./AudioMixerRow";
 import { AudioFilters, filterSummary } from "./AudioFilters";
+import { ApplicationIcon } from "./ApplicationIcon";
+import { DropdownSelect } from "./DropdownSelect";
+import { applicationChoiceName, applicationChoices, applicationKey } from "./application-choices";
 export function AdditionalAudio({
    preferences,
    captureKind = preferences.sourceKind,
@@ -44,10 +47,15 @@ export function AdditionalAudio({
          if (kind === "source") {
             if (!cancelled) setSelected("source");
          } else if (kind === "application") {
-            const items = await api.games();
+            // Audio comes from the app's process, so each app is one choice whichever window was picked before.
+            const items = applicationChoices(await api.games());
             if (!cancelled) {
                setCandidates(items);
-               setSelected(existing?.kind === kind ? existing.sourceId : (items[0]?.id ?? ""));
+               const previous =
+                  existing?.kind === kind
+                     ? items.find((item) => applicationKey(item) === applicationKey({ id: existing.sourceId, executable: existing.executable }))
+                     : undefined;
+               setSelected(previous?.id ?? items[0]?.id ?? "");
             }
          } else {
             const items = await api.audioDevices(kind);
@@ -67,7 +75,7 @@ export function AdditionalAudio({
       return () => {
          cancelled = true;
       };
-   }, [open, kind, visible, active, editing, existing?.deviceId, existing?.kind, existing?.sourceId]);
+   }, [open, kind, visible, active, editing, existing?.deviceId, existing?.executable, existing?.kind, existing?.sourceId]);
    const update = (id: string, patch: Partial<AdditionalAudioSource> | ((source: AdditionalAudioSource) => Partial<AdditionalAudioSource>)) =>
       save((current) => ({
          audioSources: current.audioSources.map((source) =>
@@ -202,35 +210,29 @@ export function AdditionalAudio({
                      <option value="input">Input device</option>
                      <option value="output">Output device</option>
                   </Select>
-                  <Select label="Audio source" value={selected} disabled={loading} onChange={setSelected}>
-                     {kind === "source" ? (
-                        <option value="source">Recorded source</option>
-                     ) : (
-                        <>
-                           {!selected && (
-                              <option value="" disabled>
-                                 {loading ? "Loading sources…" : "No sources available"}
-                              </option>
-                           )}
-                           {existing?.kind === kind && kind !== "application" && !devices.some((item) => item.id === existing.deviceId) && (
-                              <option value={existing.deviceId} disabled>
-                                 Selected device unavailable
-                              </option>
-                           )}
-                           {kind === "application"
-                              ? candidates.map((item) => (
-                                   <option key={item.id} value={item.id}>
-                                      {applicationOption(item, candidates)}
-                                   </option>
-                                ))
-                              : devices.map((item) => (
-                                   <option key={item.id} value={item.id}>
-                                      {item.name}
-                                   </option>
-                                ))}
-                        </>
-                     )}
-                  </Select>
+                  <DropdownSelect
+                     label="Audio source"
+                     value={selected}
+                     disabled={loading}
+                     onChange={setSelected}
+                     options={
+                        kind === "source"
+                           ? [{ value: "source", label: "Recorded source" }]
+                           : [
+                                ...(!selected ? [{ value: "", label: loading ? "Loading sources…" : "No sources available", disabled: true }] : []),
+                                ...(existing?.kind === kind && kind !== "application" && !devices.some((item) => item.id === existing.deviceId)
+                                   ? [{ value: existing.deviceId, label: "Selected device unavailable", disabled: true }]
+                                   : []),
+                                ...(kind === "application"
+                                   ? candidates.map((item) => ({
+                                        value: item.id,
+                                        label: applicationChoiceName(item),
+                                        icon: <ApplicationIcon size={16} src={item.appIcon} />,
+                                     }))
+                                   : devices.map((item) => ({ value: item.id, label: item.name }))),
+                             ]
+                     }
+                  />
                   <div className="audio-source-actions">
                      <Button onClick={() => setOpen(false)}>Cancel</Button>
                      <Button
@@ -247,15 +249,4 @@ export function AdditionalAudio({
          )}
       </>
    );
-}
-
-/** The app's short name, which follows it across windows. Its window title changes as you use it. */
-function applicationChoiceName(app: GameCandidate): string {
-   return app.applicationName ?? app.gameName ?? normalizeApplicationLabel(app.name);
-}
-/** Two windows of one app only differ by title, so the title tells them apart. */
-function applicationOption(app: GameCandidate, all: readonly GameCandidate[]): string {
-   const name = applicationChoiceName(app);
-   const shared = all.filter((other) => applicationChoiceName(other) === name).length > 1;
-   return shared && app.name !== name ? `${name}: ${app.name}` : name;
 }

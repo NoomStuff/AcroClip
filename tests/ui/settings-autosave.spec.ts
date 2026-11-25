@@ -48,17 +48,17 @@ test("settings autosave retains drafts, merges external changes and retries fail
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.clipSeconds).toBe(74);
       expect((await page.evaluate(() => window.acroClip.state())).preferences.notificationStopSound).toBe(false);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
-      await page.getByRole("button", { name: "Collection", exact: true }).click();
-      await page.getByRole("button", { name: "Capture", exact: true }).last().click();
+      await page.locator(".settings-sidebar").getByRole("button", { name: "Recording", exact: true }).click();
+      await page.locator(".settings-sidebar").getByRole("button", { name: "Clips", exact: true }).click();
       await page.dispatchEvent("body", "mouseup", { button: 3 });
-      await expect(page.locator(".settings-heading h1")).toHaveText("Collection");
+      await expect(page.locator(".settings-heading h1")).toHaveText("Recording");
       await page.dispatchEvent("body", "mouseup", { button: 4 });
-      await expect(page.locator(".settings-heading h1")).toHaveText("Capture");
+      await expect(page.locator(".settings-heading h1")).toHaveText("Clips");
       await length.press("ArrowUp");
       await expect(length).toHaveValue("1:19");
       await length.press("ArrowDown");
       await expect(length).toHaveValue("1:14");
-      await page.getByRole("button", { name: "Collection", exact: true }).click();
+      await page.locator(".settings-sidebar").getByRole("button", { name: "Clips", exact: true }).click();
       const pattern = page.getByRole("textbox", { name: "Name pattern", exact: true });
       await expect(pattern).toBeVisible();
       await selectOption(page, "Filename preset", "date-source");
@@ -79,7 +79,7 @@ test("settings autosave retains drafts, merges external changes and retries fail
          ipcMain.removeHandler("choose-folder");
          ipcMain.handle("choose-folder", () => folder);
       }, broken);
-      await page.getByRole("button", { name: "Choose collection folder", exact: true }).click();
+      await page.getByRole("button", { name: "Change folder", exact: true }).click();
       // A failed save says so over the page and retries by itself, so fixing the cause is enough.
       await expect(page.locator(".settings-save-feedback[data-shown]")).toContainText("Retrying", { timeout: 15000 });
       expect((await page.evaluate(() => window.acroClip.state())).preferences.collection).toBe(collection);
@@ -88,9 +88,9 @@ test("settings autosave retains drafts, merges external changes and retries fail
       await mkdir(broken);
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.collection, { timeout: 20000 }).toBe(broken);
       await expect(page.getByRole("status", { name: "Settings saved", exact: true })).toBeVisible();
-      await page.locator(".settings-sidebar").getByRole("button", { name: "Collection", exact: true }).click();
-      await page.getByRole("group", { name: "Default maximum size choices", exact: true }).getByRole("button", { name: "Custom", exact: true }).click();
-      const shareSize = page.getByRole("spinbutton", { name: "Default shareable size in MB", exact: true });
+      await page.locator(".settings-sidebar").getByRole("button", { name: "Clips", exact: true }).click();
+      await page.getByRole("group", { name: "Shareable size choices", exact: true }).getByRole("button", { name: "Custom", exact: true }).click();
+      const shareSize = page.getByRole("spinbutton", { name: "Shareable size in MB", exact: true });
       await shareSize.fill("");
       await app.evaluate(({ ipcMain }) => {
          ipcMain.removeHandler("reveal");
@@ -102,11 +102,11 @@ test("settings autosave retains drafts, merges external changes and retries fail
          if (narrow) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
          await page.getByRole("button", { name: "Library", exact: true }).click();
          await page.getByRole("button", { name: "Collection actions", exact: true }).click();
-         await page.getByRole("menuitem", { name: "Choose collection folder", exact: true }).click();
-         await expect(page.locator(".settings-heading h1")).toHaveText("Collection");
-         await expect(page.getByRole("button", { name: "Choose collection folder", exact: true })).toBeFocused();
+         await page.getByRole("menuitem", { name: "Change folder", exact: true }).click();
+         await expect(page.locator(".settings-heading h1")).toHaveText("Clips");
+         await expect(page.getByRole("button", { name: "Change folder", exact: true })).toBeFocused();
          await expect(page.getByRole("group", { name: "Collection folder", exact: true })).toHaveAttribute("data-navigation-highlight", "true");
-         await expect(page.getByRole("button", { name: "Choose collection folder", exact: true })).toBeInViewport();
+         await expect(page.getByRole("button", { name: "Change folder", exact: true })).toBeInViewport();
          const [openBounds, chooseBounds] = await page.getByRole("group", { name: "Collection folder", exact: true }).evaluate((group) =>
             Array.from(group.querySelectorAll("button"), (button) => {
                const { x, y, width, height } = button.getBoundingClientRect();
@@ -128,7 +128,7 @@ test("settings autosave retains drafts, merges external changes and retries fail
          expect(patternBounds!.y).toBeGreaterThanOrEqual(presetBounds!.y + presetBounds!.height);
          expect(patternBounds!.width).toBeGreaterThan(presetBounds!.width);
 
-         await page.locator(".settings-sidebar").getByRole("button", { name: "Collection", exact: true }).click();
+         await page.locator(".settings-sidebar").getByRole("button", { name: "Clips", exact: true }).click();
          await expect(shareSize).toHaveValue("");
       }
       await shareSize.fill("20");

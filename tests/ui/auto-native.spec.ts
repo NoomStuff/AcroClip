@@ -1,5 +1,4 @@
 import { windowsDevExecutable } from "../../scripts/windows-dev-identity";
-import { selectOption } from "./select-option";
 import { test, expect, _electron as electron } from "@playwright/test";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -118,14 +117,17 @@ $form.Dispose()
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.games())).some((game) => game.name === title)).toBe(true);
       const candidate = (await page.evaluate(() => window.acroClip.games())).find((game) => game.name === title)!;
       const applicationName = await applicationLabel(candidate.executable);
-      await selectOption(page, "Running application", candidate.id);
-      await page.getByRole("button", { name: "Add selected game", exact: true }).click();
+      // The picker lists each app once, so the fixture is picked by its app, whichever window stands for it.
+      await page.getByRole("combobox", { name: "Running application", exact: true }).click();
+      await page.getByRole("listbox", { name: "Running application", exact: true }).getByRole("option", { name: applicationName, exact: true }).click();
+      await page.getByRole("button", { name: "Add to games", exact: true }).click();
       await page.locator(".rail").getByRole("button", { name: "Capture", exact: true }).click();
       console.log("Local fixture game added");
       await writeFile(action, "focus");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.sourceId, { timeout: 20_000 }).toBe(candidate.id);
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds, { timeout: 15_000 }).toBeGreaterThan(3);
-      await expect(page.locator(".detected-game")).toContainText(title);
+      // An added game is named after its app by default, not the window title.
+      await expect(page.locator(".detected-game")).toContainText(applicationName);
       await expect(page.locator(".detected-game img")).toHaveCount(1);
       await page.screenshot({ path: "test-results/auto-detected-game.png" });
       await desktop.evaluate(({ BrowserWindow }) => {
@@ -198,7 +200,7 @@ $form.Dispose()
       await page.evaluate(() => window.acroClip.stopRecording());
       expect((await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds).toBe(0);
       const saved = JSON.parse(await readFile(join(profile, "preferences.json"), "utf8"));
-      expect(saved.customGames).toEqual([{ name: title, executable: candidate.executable }]);
+      expect(saved.customGames).toEqual([{ name: applicationName, executable: candidate.executable }]);
       expect(saved.desktopFallback).toBe(false);
    } finally {
       console.log("Auto fixture process", { pid: fixture.pid, exitCode: fixture.exitCode, signal: fixture.signalCode, diagnostics: fixtureDiagnostics });
