@@ -75,6 +75,19 @@ describe("library grouping", () => {
          ["Apex", ["a", "a2"]],
       ]);
    });
+   it("ranks applications by their newest clip in any sort and at any size", () => {
+      const apex = Array.from({ length: 200_000 }, (_, index) => clip(`a${index}`, { source: "Apex", createdAt: at(2) - index }));
+      const groups = groupClips(
+         [clip("z", { source: "Zelda", createdAt: at(1) }), ...apex, clip("new", { source: "Apex", createdAt: at(0) })],
+         "application",
+         newest,
+         options
+      );
+      expect(groups.map((group) => [group.label, group.clips.length])).toEqual([
+         ["Apex", 200_001],
+         ["Zelda", 1],
+      ]);
+   });
    it("groups folders in tree order with the collection's own clips first", () => {
       const clips = [
          clip("deep", { relativePath: "Games/Finals/deep.mp4" }),

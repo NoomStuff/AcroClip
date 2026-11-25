@@ -103,6 +103,8 @@ export interface FolderSummary {
    count: number;
    matchingCount: number;
 }
+/** The bytes a clip takes on disk: its newest shareable once the original is gone. */
+export const storedSize = (clip: Clip): number => (clip.originalMissing ? (clip.shareables.at(-1)?.size ?? clip.size) : clip.size);
 const matchesSearch = (clip: Clip, search: string) => !search || `${clip.name} ${clip.source}`.toLowerCase().includes(search);
 export function parentFolder(path: string): string {
    const end = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
@@ -127,7 +129,7 @@ export function summarizeFolders(clips: readonly Clip[], search: string): Map<st
          summary.count++;
          if (matches) {
             summary.matchingCount++;
-            summary.matchingSize += clip.originalMissing ? (clip.shareables.at(-1)?.size ?? clip.size) : clip.size;
+            summary.matchingSize += storedSize(clip);
          }
          if (!folder) break;
          folder = parentFolder(folder);

@@ -79,6 +79,7 @@ test("sorting and grouping share one compact control and remember the choice", a
          "Watched",
          "Has shareable",
       ]);
+      for (const item of await menu.getByRole("menuitemradio").all()) await expect(item.locator("svg").first()).toBeVisible();
       await menu.getByRole("menuitemradio", { name: "Duration", exact: true }).click();
       // Choices keep the menu open, so sort and group can be set together.
       await expect(menu).toBeVisible();
