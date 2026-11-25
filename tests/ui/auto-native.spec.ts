@@ -125,7 +125,8 @@ $form.Dispose()
       await writeFile(action, "focus");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.sourceId, { timeout: 20_000 }).toBe(candidate.id);
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).recorder.availableSeconds, { timeout: 15_000 }).toBeGreaterThan(3);
-      await expect(page.locator(".detected-game")).toContainText(title);
+      // An added game is named after its app by default, not the window title.
+      await expect(page.locator(".detected-game")).toContainText(applicationName);
       await expect(page.locator(".detected-game img")).toHaveCount(1);
       await page.screenshot({ path: "test-results/auto-detected-game.png" });
       await desktop.evaluate(({ BrowserWindow }) => {
