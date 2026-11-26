@@ -1,8 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, Clapperboard, Monitor } from "lucide-react";
-import type { AppState, CaptureSource, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
+import {
+   AppWindow,
+   ArrowLeft,
+   ArrowRight,
+   Check,
+   Clapperboard,
+   Clock,
+   FileVideo,
+   Gamepad2,
+   Mic,
+   Monitor,
+   PanelBottomClose,
+   Power,
+   Scissors,
+} from "lucide-react";
+import type { AppState, CaptureSource, OverlapClips, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
 import { api, describeError } from "./desktop";
-import { Button, Segmented, Select, Toggle, NumberInput } from "./ui";
+import { Button, Select, NumberInput } from "./ui";
+import { Field, Toggle as SettingToggle } from "./SettingsControls";
 import type { Run } from "./desktop";
 import { ShortcutInput } from "./ShortcutInput";
 import { applyRecordingPreset } from "../../shared/recording-presets";
@@ -10,19 +25,26 @@ import { portalScreenId, sourceChoices } from "../../shared/capture-policy";
 import { FolderPicker } from "./FolderPicker";
 import { WarningIcon } from "./WarningIcon";
 import { clipLengthWarning, useInstalledMemory } from "./replay-estimate";
+import { overlapDetail } from "./overlap-copy";
+import { settingCopy, startWithOSDetail } from "./settings-catalog";
+import { withToggleShortcut } from "../../shared/shortcuts";
 
 const steps = [
-   { label: "Capture", icon: Monitor },
-   { label: "Clipping", icon: Clapperboard },
-   { label: "Ready", icon: Check },
+   { label: "Record", icon: Monitor },
+   { label: "Save", icon: Clapperboard },
+   { label: "Start", icon: Power },
 ] as const;
+const kindCards = [
+   { kind: "screen", title: "Whole screen", detail: "Everything on one display.", icon: Monitor },
+   { kind: "app", title: "One app", detail: "A single window, even when it's behind others.", icon: AppWindow },
+   { kind: "auto", title: "Games", detail: "Follows the game you're playing. Idle when no game is open.", icon: Gamepad2 },
+] as const satisfies readonly { kind: SourceKind; title: string; detail: string; icon: typeof Monitor }[];
 
 export function Onboarding({ state, run }: { state: AppState; run: Run }) {
    const [step, setStep] = useState(0);
    const [direction, setDirection] = useState(1);
    const [transitioning, setTransitioning] = useState(false);
    const navigationPending = useRef(false);
-   const [failedThumbnails, setFailedThumbnails] = useState<ReadonlySet<string>>(() => new Set());
    const [draft, setDraft] = useState(() => ({ ...state.preferences, microphone: true, microphoneMuted: false }));
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
    const [sourceRequest, setSourceRequest] = useState(0);
@@ -179,13 +201,17 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
          fill: "forwards",
          easing: "ease-in",
       }).finished;
-      const saved = await run(() => api.savePreferences({ ...draft, autoRecord, setupComplete: true }));
+      const saved = await run(() =>
+         api.savePreferences({ ...draft, shortcuts: withToggleShortcut(draft, state.platform === "darwin"), autoRecord, setupComplete: true })
+      );
       if (saved && record) await run(() => api.startRecording(), { feedback: "external" });
       if (!saved) root.current?.getAnimations().forEach((animation) => animation.cancel());
       setBusy(false);
    };
    const portal = sources.some((item) => item.id === portalScreenId);
    const choices = sources.filter((item) => item.kind === draft.sourceKind);
+   const offered = (kind: SourceKind) => !sourceChoices(sources, capabilities).find((item) => item.value === kind)?.disabled;
+   if (draft.sourceKind !== "screen" && sourcePhase === "ready" && !offered(draft.sourceKind)) switchSource("screen");
    const navigate = async (next: number) => {
       if (navigationPending.current || busy) return;
       navigationPending.current = true;
@@ -225,163 +251,176 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                   </li>
                ))}
             </ol>
-            <div className="setup-page" key={step} inert={transitioning || busy} data-ready={step === steps.length - 1 || undefined}>
+            <div className="setup-page" key={step} inert={transitioning || busy}>
                <h1 id="setup-heading" ref={heading} tabIndex={-1}>
-                  {step === 0 ? "What do you want to capture?" : step === 1 ? "Save a moment" : "You're good to go"}
+                  {step === 0 ? "What should AcroClip record?" : step === 1 ? "Pick your clip shortcut" : "How should it start?"}
                </h1>
                <fieldset className="setup-fields" disabled={busy}>
                   {step === 0 ? (
-                     <>
-                        <div className="setup-capture">
-                           <Segmented
-                              label="Setup capture source"
-                              value={draft.sourceKind}
-                              values={sourceChoices(sources, capabilities)}
-                              onChange={switchSource}
-                           />
-                           <div className="setup-source" key={draft.sourceKind}>
-                              {draft.sourceKind === "auto" ? (
-                                 <p className="setup-auto">
-                                    {draft.desktopFallback
-                                       ? "Follows your game. Uses your screen when no game is open."
-                                       : "Follows your game. Waits when no game is open."}
-                                 </p>
-                              ) : (
-                                 <>
-                                    {sourcePhase === "ready" && choices.length > 0 && (
-                                       <div className="setup-source-grid" role="group" aria-label="Capture sources">
-                                          {choices.map((item) => (
-                                             <button
-                                                key={item.id}
-                                                className="setup-source-tile"
-                                                aria-pressed={item.id === draft.sourceId}
-                                                onClick={() => change("sourceId", item.id)}
-                                             >
-                                                <span className="setup-source-preview">
-                                                   {item.thumbnail && !failedThumbnails.has(item.id) ? (
-                                                      <img
-                                                         src={item.thumbnail}
-                                                         alt=""
-                                                         onError={() => setFailedThumbnails((current) => new Set([...current, item.id]))}
-                                                      />
-                                                   ) : (
-                                                      <Monitor size={28} strokeWidth={1.3} />
-                                                   )}
-                                                </span>
-                                                <span className="setup-source-name">
-                                                   <span>{item.name}</span>
-                                                   <Check size={14} />
-                                                </span>
-                                             </button>
-                                          ))}
+                     <div className="settings-body setup-body">
+                        <section className="settings-group">
+                           <div className="setup-choices" role="radiogroup" aria-label="What to record">
+                              {kindCards
+                                 .filter((card) => offered(card.kind))
+                                 .map(({ kind, title, detail, icon: KindIcon }) => {
+                                    const selected = draft.sourceKind === kind;
+                                    const picking = selected && kind !== "auto" && sourcePhase === "ready" && choices.length > 1;
+                                    return (
+                                       <div
+                                          key={kind}
+                                          role="radio"
+                                          tabIndex={selected ? 0 : -1}
+                                          aria-checked={selected}
+                                          className="settings-row settings-surface setup-choice"
+                                          onClick={() => switchSource(kind)}
+                                          onKeyDown={(event) => {
+                                             if (event.target !== event.currentTarget || (event.key !== " " && event.key !== "Enter")) return;
+                                             event.preventDefault();
+                                             switchSource(kind);
+                                          }}
+                                       >
+                                          <KindIcon className="settings-row-icon" size={21} aria-hidden="true" />
+                                          <div className="settings-row-copy">
+                                             <span className="field-label">{title}</span>
+                                             <p className="field-detail">{detail}</p>
+                                          </div>
+                                          {picking ? (
+                                             <div className="field-control" onClick={(event) => event.stopPropagation()}>
+                                                <Select
+                                                   label={kind === "app" ? "App to capture" : "Screen to capture"}
+                                                   value={draft.sourceId}
+                                                   onChange={(value) => change("sourceId", value)}
+                                                >
+                                                   {choices.map((item) => (
+                                                      <option key={item.id} value={item.id}>
+                                                         {item.name}
+                                                      </option>
+                                                   ))}
+                                                </Select>
+                                             </div>
+                                          ) : (
+                                             <span className="setup-radio" aria-hidden="true">
+                                                <Check size={13} strokeWidth={3} />
+                                             </span>
+                                          )}
                                        </div>
-                                    )}
-                                    {sourcePhase === "loading" && <p role="status">Finding capture sources…</p>}
-                                    {sourcePhase === "ready" && !choices.length && (
-                                       <div className="setup-source-empty">
-                                          <p>
-                                             {draft.sourceKind === "app" ? "Open an app to select it here." : "No screens found. Check capture permissions."}
-                                          </p>
-                                          <Button className="quiet" onClick={() => setSourceRequest((value) => value + 1)}>
-                                             Refresh sources
-                                          </Button>
-                                       </div>
-                                    )}
-                                    {sourcePhase === "error" && (
-                                       <div className="setup-source-empty">
-                                          <p role="alert">{error}</p>
-                                          <Button className="quiet" onClick={() => setSourceRequest((value) => value + 1)}>
-                                             Retry sources
-                                          </Button>
-                                       </div>
-                                    )}
-                                 </>
-                              )}
-                              {portal && draft.sourceKind === "screen" && <p className="setup-note">The system picker opens when capturing starts.</p>}
+                                    );
+                                 })}
                            </div>
-                        </div>
-                        <div className="setup-audio">
-                           <span>Microphone</span>
-                           <Select
-                              label="Microphone input"
-                              value={draft.microphone && !draft.microphoneMuted ? draft.microphoneDevice : "none"}
-                              disabled={micPending}
-                              onChange={(value) => void microphone(value)}
+                           {sourcePhase === "loading" && (
+                              <p className="setup-note" role="status">
+                                 Finding capture sources…
+                              </p>
+                           )}
+                           {sourcePhase === "ready" && draft.sourceKind !== "auto" && !choices.length && (
+                              <div className="setup-source-empty">
+                                 <p>{draft.sourceKind === "app" ? "Open an app to select it here." : "No screens found. Check capture permissions."}</p>
+                                 <Button className="quiet" onClick={() => setSourceRequest((value) => value + 1)}>
+                                    Refresh sources
+                                 </Button>
+                              </div>
+                           )}
+                           {sourcePhase === "error" && (
+                              <div className="setup-source-empty">
+                                 <p role="alert">{error}</p>
+                                 <Button className="quiet" onClick={() => setSourceRequest((value) => value + 1)}>
+                                    Retry sources
+                                 </Button>
+                              </div>
+                           )}
+                           {portal && draft.sourceKind === "screen" && <p className="setup-note">The system picker opens when capturing starts.</p>}
+                        </section>
+                        <section className="settings-group">
+                           <Field
+                              icon={Mic}
+                              label="Microphone"
+                              detail={micPending ? "Waiting for microphone permission…" : micMessage || "Your voice, recorded alongside the game."}
                            >
-                              <option value="none">None</option>
-                              <option value="default">Default</option>
-                              {audioDevices
-                                 .filter((device) => device.id !== "default")
-                                 .map((device) => (
-                                    <option key={device.id} value={device.id}>
-                                       {device.name}
-                                    </option>
-                                 ))}
-                              {draft.microphoneDevice !== "default" && !audioDevices.some((device) => device.id === draft.microphoneDevice) && (
-                                 <option value={draft.microphoneDevice}>Unavailable microphone</option>
-                              )}
-                           </Select>
-                        </div>
-                        {(micPending || micMessage) && (
-                           <p className="setup-note" role="status">
-                              {micPending ? "Waiting for microphone permission…" : micMessage}
-                           </p>
-                        )}
-                     </>
+                              <Select
+                                 label="Microphone input"
+                                 value={draft.microphone && !draft.microphoneMuted ? draft.microphoneDevice : "none"}
+                                 disabled={micPending}
+                                 onChange={(value) => void microphone(value)}
+                              >
+                                 <option value="none">Off</option>
+                                 <option value="default">Default device</option>
+                                 {audioDevices
+                                    .filter((device) => device.id !== "default")
+                                    .map((device) => (
+                                       <option key={device.id} value={device.id}>
+                                          {device.name}
+                                       </option>
+                                    ))}
+                                 {draft.microphoneDevice !== "default" && !audioDevices.some((device) => device.id === draft.microphoneDevice) && (
+                                    <option value={draft.microphoneDevice}>Unavailable microphone</option>
+                                 )}
+                              </Select>
+                           </Field>
+                        </section>
+                     </div>
                   ) : step === 1 ? (
-                     <>
-                        <p className="setup-description">Your shortcut saves recent footage while capturing.</p>
+                     <div className="settings-body setup-body">
                         <div className="setup-shortcut">
                            <ShortcutInput global value={draft.shortcut} onChange={(value) => change("shortcut", value)} />
                         </div>
-                        <div className="setup-row">
-                           <label htmlFor="setup-length">Save the last</label>
-                           <div className="clip-length-control">
-                              <WarningIcon message={lengthWarning?.message ?? ""} error={!!lengthWarning?.error} id="setup-length-message" />
-                              <NumberInput
-                                 id="setup-length"
-
-                                 aria-label="Setup clip length in seconds"
-                                 min={5}
-                                 max={1800}
-                                 step={5}
-                                 value={draft.clipSeconds}
-                                 onValueChange={(value) => change("clipSeconds", value)}
-                                 unit="seconds"
-                              />
-                           </div>
-                        </div>
-                        {!lengthValid && (
-                           <p className="setup-validation" role="alert">
-                              Choose 5 to 1800 whole seconds.
-                           </p>
-                        )}
-                        <p className="setup-folder-label">Save clips to</p>
-                        <FolderPicker path={draft.collection} onChoose={choose} />
-                     </>
+                        <section className="settings-group">
+                           <Field icon={Clock} label="Clip length" detail={lengthValid ? "How far back each clip reaches." : "Choose 5 to 1800 whole seconds."}>
+                              <div className="clip-length-control">
+                                 <WarningIcon message={lengthWarning?.message ?? ""} error={!!lengthWarning?.error} id="setup-length-message" />
+                                 <NumberInput
+                                    id="setup-length"
+                                    aria-label="Clip length in seconds"
+                                    min={5}
+                                    max={1800}
+                                    step={5}
+                                    value={draft.clipSeconds}
+                                    onValueChange={(value) => change("clipSeconds", value)}
+                                    unit="seconds"
+                                 />
+                              </div>
+                           </Field>
+                           <Field icon={Scissors} label={settingCopy.overlap.label} detail={overlapDetail(draft.overlapClips, draft.clipSeconds)}>
+                              <Select
+                                 label={settingCopy.overlap.label}
+                                 value={draft.overlapClips}
+                                 onChange={(value) => change("overlapClips", value as OverlapClips)}
+                              >
+                                 <option value="keep">Save normally</option>
+                                 <option value="trim">Save what's new</option>
+                                 <option value="merge">Extend previous clip</option>
+                              </Select>
+                           </Field>
+                           <FolderPicker path={draft.collection} onChoose={choose} className="settings-surface" />
+                        </section>
+                     </div>
                   ) : (
-                     <>
-                        <div className="setup-ready-space" aria-hidden="true">
-                           <span className="setup-ready-check">
-                              <Check size={48} strokeWidth={1.8} />
-                           </span>
-                        </div>
-                        <div className="setup-startup">
-                           <Toggle label="Start with your computer" checked={draft.startWithOS} onChange={(value) => change("startWithOS", value)} />
-                           <Toggle
-                              label="Start in the tray"
+                     <div className="settings-body setup-body">
+                        <section className="settings-group">
+                           <SettingToggle
+                              icon={Power}
+                              label={settingCopy.startWithOS.label}
+                              detail={startWithOSDetail(state.platform)}
+                              checked={draft.startWithOS}
+                              onChange={(value) => change("startWithOS", value)}
+                           />
+                           <SettingToggle
+                              icon={PanelBottomClose}
+                              label={settingCopy.startInTray.label}
+                              detail={settingCopy.startInTray.detail}
                               checked={draft.startWithOS && draft.startInTray}
-                              onChange={(value) => change("startInTray", value)}
                               disabled={!draft.startWithOS}
+                              onChange={(value) => change("startInTray", value)}
                            />
-                           <Toggle
-                              label="Start capturing when AcroClip opens"
+                           <SettingToggle
+                              icon={FileVideo}
+                              label={settingCopy.autoRecord.label}
+                              detail={canRecord ? settingCopy.autoRecord.detail : "Capture isn't available yet. You can start it from the Capture page."}
                               checked={autoRecord}
-                              onChange={(value) => change("autoRecord", value)}
                               disabled={!canRecord}
+                              onChange={(value) => change("autoRecord", value)}
                            />
-                        </div>
-                     </>
+                        </section>
+                     </div>
                   )}
                </fieldset>
             </div>
@@ -421,7 +460,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                      disabled={transitioning || micPending || !lengthValid || !draft.collection}
                      onClick={() => void finish()}
                   >
-                     Finish
+                     {autoRecord ? "Start recording" : "Finish"}
                   </Button>
                )}
             </footer>

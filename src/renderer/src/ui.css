@@ -133,7 +133,7 @@
    padding: 4px;
    border-radius: 9999px;
    corner-shape: squircle;
-   background: var(--base);
+   background: var(--slot);
    gap: 3px;
 }
 
@@ -271,7 +271,7 @@
    flex-shrink: 0;
    border-radius: 10px;
    corner-shape: squircle;
-   background: var(--base);
+   background: var(--slot);
    /* Keeps an empty box visible on a hovered row, which is close to the slot's own color. */
    box-shadow: inset 0 0 0 1px #ffffff14;
    color: #17161a;
@@ -352,7 +352,7 @@ label:active > .checkbox {
    width: 40px;
    height: 24px;
    border-radius: 12px;
-   background: var(--base);
+   background: var(--slot);
    flex-shrink: 0;
    transition: background 180ms var(--ease);
 }
@@ -747,12 +747,16 @@ label:active > .checkbox {
    margin: 6px 5px;
 }
 
-/* Modal dialogs: a dimmed, slightly blurred page and a card that pops in with the shared spring. */
+.settings-surface {
+   --slot: var(--base);
+}
+
+/* Modal dialogs: a dimmed, blurred page and a card that pops in with the shared spring. */
 .modal-backdrop {
    position: fixed;
    inset: 0;
-   background: #000000a6;
-   backdrop-filter: blur(2px);
+   background: var(--panel-backdrop);
+   backdrop-filter: blur(var(--panel-blur));
    z-index: 90;
    display: flex;
    align-items: center;
@@ -767,11 +771,13 @@ label:active > .checkbox {
 }
 
 .dialog {
-   width: min(420px, 100%);
-   background: var(--surface);
-   border-radius: var(--radius-panel);
+   --slot: var(--surface);
+   width: min(460px, 100%);
+   background: var(--panel-background);
+   border: 1px solid var(--panel-border);
+   border-radius: var(--panel-radius);
    corner-shape: squircle;
-   padding: 22px 24px 24px;
+   padding: 26px 28px 24px;
    position: relative;
    max-height: calc(100dvh - 48px);
    overflow-y: auto;
@@ -812,27 +818,39 @@ label:active > .checkbox {
    width: 100%;
 }
 
+/* Tickbox lists read like a Settings group: joined rows on the panel. */
 .dialog-choices {
    display: grid;
-   gap: 2px;
-   margin: 0 -10px;
+   gap: 5px;
+   margin: 0;
    padding: 0;
    border: 0;
 }
 
 .dialog-choice {
+   --slot: var(--base);
    display: grid;
    grid-template-columns: auto 1fr;
    align-items: start;
-   gap: 12px;
-   padding: 9px 10px;
-   border-radius: var(--radius-control);
+   gap: 14px;
+   padding: 15px 18px;
+   border-radius: 8px;
    corner-shape: squircle;
+   background: var(--surface);
    cursor: pointer;
+   transition: background 150ms var(--ease);
+}
+.dialog-choice:first-of-type {
+   border-top-left-radius: var(--radius-panel);
+   border-top-right-radius: var(--radius-panel);
+}
+.dialog-choice:last-of-type {
+   border-bottom-left-radius: var(--radius-panel);
+   border-bottom-right-radius: var(--radius-panel);
 }
 
 .dialog-choice:hover {
-   background: #ffffff08;
+   background: var(--row-hover);
 }
 
 .dialog-choice {
@@ -852,7 +870,9 @@ label:active > .checkbox {
    display: flex;
    gap: 8px;
    justify-content: flex-end;
-   margin-top: 22px;
+   margin-top: 20px;
+   padding-top: 20px;
+   border-top: 1px solid var(--line);
 }
 
 .dialog-actions > .button {
@@ -862,8 +882,8 @@ label:active > .checkbox {
 /* Sits on the title's line rather than floating in the corner. */
 .dialog-close {
    position: absolute;
-   top: 22px;
-   right: 18px;
+   top: 26px;
+   right: 22px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1133,7 +1153,7 @@ label:active > .checkbox {
    padding: 3px;
    border-radius: 16px;
    corner-shape: squircle;
-   background: var(--base);
+   background: var(--slot);
 }
 .stepper-step {
    display: grid;
@@ -1355,8 +1375,14 @@ label:active > .checkbox {
 .shortcut-sheet-grid {
    display: grid;
    grid-template-columns: repeat(2, minmax(0, 1fr));
-   gap: 22px 34px;
+   align-items: start;
+   gap: 34px;
    margin-top: 20px;
+}
+.shortcut-sheet-column {
+   display: grid;
+   gap: 22px;
+   min-width: 0;
 }
 .shortcut-sheet-section h3 {
    display: flex;

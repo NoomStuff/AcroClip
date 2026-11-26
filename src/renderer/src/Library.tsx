@@ -644,7 +644,6 @@ export function Library({
          if (id === "search") searchInput.current?.focus();
          else if (id === "newCategory") setEditingCategory({ clipId: undefined });
          else if (id === "newFolder") void createFolder(folderPath ?? "");
-         else if (id === "newFolderRoot") void createFolder("");
          else if (id === "openClip" && shownClips[0]) openFromView(shownClips[0]);
          else if (id === "copyClipFile") {
             // Selected text keeps its usual copy.

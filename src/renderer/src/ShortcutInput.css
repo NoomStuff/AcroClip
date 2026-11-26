@@ -5,7 +5,7 @@
    border: 0;
    min-height: var(--control-height);
    padding: 8px 12px;
-   background: var(--base);
+   background: var(--slot);
    color: var(--text);
    font-size: 13px;
    min-width: 230px;

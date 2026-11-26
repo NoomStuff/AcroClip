@@ -30,6 +30,14 @@
    --text: #eeeeee;
    --base: #0d0c0f;
    --surface: #18171b;
+   /* The fill of a control slot: one step off whatever it sits on. Panels lighten it, rows inside them darken it again. */
+   --slot: var(--base);
+   /* Setup and every modal share one card. */
+   --panel-background: var(--base);
+   --panel-border: #ffffff16;
+   --panel-radius: 29px;
+   --panel-backdrop: #08070b66;
+   --panel-blur: 12px;
    --raised: #27252b;
    --hover: #322e39;
    --accent: #b197fc;
@@ -142,7 +150,7 @@ input,
 select {
    color: inherit;
    border: 0;
-   background: var(--base);
+   background: var(--slot);
    border-radius: 16px;
    corner-shape: squircle;
    padding: 9px 12px;
