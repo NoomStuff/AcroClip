@@ -139,6 +139,8 @@ let applyingPendingPreferences = false;
 let applyPendingPreferences = () => {};
 // Level meters only exist on the Capture page, which says when it shows them.
 let metersShown = false;
+/** Chromium reports a fully covered window as hidden even though Electron still calls it visible. */
+let pageHidden = false;
 let meterLevels: { capture: number; microphone: number; additional: Record<string, number> } = { capture: 0, microphone: 0, additional: {} };
 let meterFlush: ReturnType<typeof setTimeout> | null = null;
 const mediaFiles = new Map<string, string>();
@@ -151,7 +153,7 @@ const iconFile = (file: string) => (isPackagedApp() ? join(process.resourcesPath
 const iconPath = () => iconFile(process.platform === "win32" ? "icon.ico" : "icon.png");
 const capturing = () => recorder.status.state === "recording" || recorder.status.state === "waiting";
 const captureActive = () => capturing() || recorder.status.state === "starting" || !!startingCapture;
-const windowShown = () => !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized();
+const windowShown = () => !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized() && !pageHidden;
 const mainContents = () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : undefined);
 const applicationArtwork = (sources: CaptureSource[]): ApplicationArtwork[] =>
    sources.flatMap((source) =>
@@ -775,7 +777,9 @@ async function mergeSaves(olderId: string, newerId: string) {
 }
 /** Only the launch itself may stay in the tray. A window made later was asked for. */
 let firstWindow = true;
+let visibilityChanged = (): void => undefined;
 function createWindow() {
+   pageHidden = false;
    stateChanges.reset();
    const workArea = process.platform === "linux" ? screen.getPrimaryDisplay().workAreaSize : { width: 1380, height: 900 };
    mainWindow = new BrowserWindow({
@@ -826,9 +830,10 @@ function createWindow() {
       if (!isMainFrame || isSameDocument) return;
       stateChanges.reset();
       metersShown = false;
+      pageHidden = false;
       recorder.setMeters(false);
    });
-   const visibilityChanged = () => {
+   visibilityChanged = () => {
       const visible = windowShown();
       recorder.setMeters(metersShown && visible);
       trackWindow(visible);
@@ -840,8 +845,9 @@ function createWindow() {
          void recorder.monitorAudio(null).catch(() => undefined);
          void recorder.listenAudio(null).catch(() => undefined);
       }
-      send({ type: "visibility", visible });
+      // The background flag lands before the window counts as visible, so an unfocused return stays paused.
       if (visible) emitState();
+      send({ type: "visibility", visible });
    };
    mainWindow.on("focus", updateActivity);
    mainWindow.on("blur", updateActivity);
@@ -2022,6 +2028,11 @@ function registerIPC() {
             mainWindow.close();
             break;
       }
+   });
+   ipcMain.on("page-visibility", (event, hidden) => {
+      if (event.sender !== mainContents() || typeof hidden !== "boolean" || hidden === pageHidden) return;
+      pageHidden = hidden;
+      visibilityChanged();
    });
    ipcMain.on("meters", (event, shown) => {
       if (event.sender !== mainContents()) return;

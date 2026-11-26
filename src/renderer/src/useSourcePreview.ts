@@ -107,16 +107,15 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
          stop();
       };
       const visibility = () => {
-         if (document.hidden) {
-            cancel();
-            clearOutgoing();
-         }
+         if (document.hidden) pause();
+      };
+      const pause = () => {
+         cancel();
+         clearOutgoing();
+         if (statusSource.current === cacheKey) setStatus("idle");
       };
       const unsubscribe = api.onEvent((event) => {
-         if (event.type === "visibility" && !event.visible) {
-            cancel();
-            clearOutgoing();
-         }
+         if (event.type === "visibility" && !event.visible) pause();
       });
       document.addEventListener("visibilitychange", visibility);
       const pagehide = () => {
@@ -134,7 +133,7 @@ export function useSourcePreview(sourceId: string | undefined, visible: boolean,
       }
       setRevealed(false);
       setError("");
-      setStatus(sourceId && visible ? "connecting" : "idle");
+      setStatus(sourceId && visible && !document.hidden ? "connecting" : "idle");
 
       // Each request owns its permission arm. A stale acquisition cannot revoke or pause its successor.
       // A stream that arrives after navigation is stopped before reaching the player.

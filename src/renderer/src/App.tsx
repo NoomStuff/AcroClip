@@ -76,9 +76,16 @@ export function App() {
    );
    const openGames = useCallback(() => openSettings("games"), [openSettings]);
    const openCollectionSettings = useCallback(() => openSettings("clips"), [openSettings]);
-   const [windowVisible, setWindowVisible] = useState(!document.hidden);
+   // Main knows about minimizing and the tray, the page knows when it is covered. Either one hides it.
+   const [windowShown, setWindowVisible] = useState(true);
+   const [pageVisible, setPageVisible] = useState(!document.hidden);
+   const windowVisible = windowShown && pageVisible;
    useEffect(() => {
-      const update = () => setWindowVisible(!document.hidden);
+      const update = () => {
+         setPageVisible(!document.hidden);
+         api.pageVisibility(document.hidden);
+      };
+      update();
       document.addEventListener("visibilitychange", update);
       return () => document.removeEventListener("visibilitychange", update);
    }, []);

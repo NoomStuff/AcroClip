@@ -387,6 +387,8 @@ export interface DesktopAPI {
    dragFile(path: string): void;
    /** Audio levels are only sent while a level meter is on screen. */
    showMeters(shown: boolean): void;
+   /** A covered window counts as hidden, so the preview, meters and polling pause like when it is minimized. */
+   pageVisibility(hidden: boolean): void;
    reorderCategory(id: string, beforeId: string | null): Promise<void>;
    /** `compatible` asks for a converted copy after the renderer failed to decode the original. */
    playback(path: string, track?: number | number[], requestId?: undefined, options?: { compatible?: boolean }): Promise<string>;
