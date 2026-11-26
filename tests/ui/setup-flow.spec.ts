@@ -19,22 +19,17 @@ test("onboarding UI persists choices without starting recording or OS startup", 
    });
    try {
       const page = await desktop.firstWindow();
-      // Setup choices do not require recording the host's desktop.
-      if (!(await page.evaluate(() => window.acroClip.sources())).some((source) => source.kind === "screen")) {
-         await desktop.evaluate(({ ipcMain }) => {
-            ipcMain.removeHandler("sources");
-            ipcMain.handle("sources", () => [{ id: "screen:setup-fixture", name: "Setup test screen", kind: "screen", thumbnail: "" }]);
-         });
-         await page.reload();
-      }
-      await expect(page.getByRole("heading", { name: "What should AcroClip record?", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "How should clips look and sound?", exact: true })).toBeVisible();
       await expect(page.getByRole("combobox", { name: "Microphone input", exact: true })).toHaveAttribute("data-value", "default");
       await selectOption(page, "Microphone input", "none");
-      const games = page.getByRole("radio", { name: /^Games/ });
-      await games.click();
-      await expect(games).toHaveAttribute("aria-checked", "true");
-      await page.getByRole("radio", { name: /^Whole screen/ }).click();
-      await expect(games).toHaveAttribute("aria-checked", "false");
+      const standard = page.getByRole("radio", { name: /^Standard/ });
+      const high = page.getByRole("radio", { name: /^High/ });
+      await standard.click();
+      await expect(standard).toHaveAttribute("aria-checked", "true");
+      await standard.press("ArrowDown");
+      await expect(high).toHaveAttribute("aria-checked", "true");
+      await expect(high).toBeFocused();
+      await expect(standard).toHaveAttribute("aria-checked", "false");
       await page.getByRole("button", { name: "Continue", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Pick your clip shortcut", exact: true })).toBeVisible();
       await page.getByRole("spinbutton", { name: "Clip length in seconds" }).fill("30");
@@ -59,8 +54,8 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect(tray).toBeChecked();
       await startup.uncheck();
       await expect(tray).toBeDisabled();
-      const capture = page.getByRole("checkbox", { name: "Start capturing when AcroClip opens", exact: true });
-      if (await capture.isChecked()) await capture.uncheck();
+      // Capture on open stays as it is: finishing setup must not start it either way.
+      const autoRecord = await page.getByRole("checkbox", { name: "Start capturing when AcroClip opens", exact: true }).isChecked();
       expect(existsSync(collection), "Setup must not create the collection folder before it finishes").toBe(false);
       await page.getByRole("button", { name: "Finish", exact: true }).click();
       await expect(page.locator(".onboarding"), "Setup should close after saving")
@@ -82,10 +77,12 @@ test("onboarding UI persists choices without starting recording or OS startup", 
          microphone: true,
          microphoneDevice: "default",
          microphoneMuted: true,
-         autoRecord: false,
+         autoRecord,
          startWithOS: false,
+         quality: "high",
+         resolutionLimit: 0,
+         sourceKind: "screen",
       });
-      expect(state.preferences.sourceId).not.toBe("");
       expect(state.recorder.state).toBe("stopped");
       await page.getByRole("slider", { name: "Desktop level", exact: true }).fill("0.5");
       await expect.poll(async () => (await page.evaluate(() => window.acroClip.state())).preferences.captureVolume).toBe(0.5);

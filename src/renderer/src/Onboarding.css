@@ -94,16 +94,13 @@
    opacity: 1;
    transform: scale(1);
 }
-.setup-source-empty {
+.setup-choice .field-label {
    display: flex;
    align-items: center;
-   gap: 12px;
-   margin-top: 10px;
+   gap: 6px;
 }
-.setup-source-empty p {
-   flex: 1;
-   font-size: 12px;
-   color: var(--muted);
+.setup-choice[aria-checked="true"] .quality-hardware-hint {
+   color: var(--accent);
 }
 
 .setup-shortcut {

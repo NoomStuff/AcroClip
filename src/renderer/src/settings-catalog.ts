@@ -58,7 +58,7 @@ export const settingCopy = {
    },
    autoRecord: {
       label: "Start capturing when AcroClip opens",
-      detail: "Your clip shortcut works straight away. App and game sources wait until they're running.",
+      detail: "Your clip shortcut works as soon as it opens. App and game sources wait until they're running.",
       keywords: "auto automatic record launch",
    },
    games: {

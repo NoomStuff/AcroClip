@@ -38,8 +38,7 @@ export const resetPartCopy: Record<ResetPart, ResetPartCopy> = {
 };
 
 /**
- * What setup chooses: the capture source, quality, clip length and audio. Resetting these opens
- * setup again. Every other setting, apart from the collection folder, is a plain setting, so a
+ * The capture setup: source, quality, clip length and audio. Resetting these opens setup again. Every other setting, apart from the collection folder, is a plain setting, so a
  * new preference lands there unless it is added here.
  */
 export const recordingSetupKeys = [
@@ -83,7 +82,7 @@ export const preferenceResetCopy: Record<keyof PreferenceResetParts, ResetPartCo
    },
    setup: {
       label: "Capture setup",
-      detail: "Capture source, quality, clip length and audio go back to their defaults, and setup opens so you can choose them again.",
+      detail: "Capture source, quality, clip length and audio go back to their defaults, and setup opens again.",
    },
 };
 

@@ -1,27 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import {
-   AppWindow,
    ArrowLeft,
    ArrowRight,
    Check,
    Clapperboard,
    Clock,
    FileVideo,
-   Gamepad2,
    Mic,
    Monitor,
    PanelBottomClose,
    Power,
    Scissors,
+   SignalHigh,
+   SignalLow,
+   SignalMedium,
 } from "lucide-react";
-import type { AppState, CaptureSource, OverlapClips, Preferences, RecordingCapabilities, SourceKind } from "../../shared/types";
+import type { AppState, OverlapClips, Preferences, RecordingCapabilities } from "../../shared/types";
 import { api, describeError } from "./desktop";
 import { Button, Select, NumberInput } from "./ui";
 import { Field, Toggle as SettingToggle } from "./SettingsControls";
 import type { Run } from "./desktop";
 import { ShortcutInput } from "./ShortcutInput";
 import { applyRecordingPreset } from "../../shared/recording-presets";
-import { portalScreenId, sourceChoices } from "../../shared/capture-policy";
+import { HardwareHint } from "./RecordingPresets";
 import { FolderPicker } from "./FolderPicker";
 import { WarningIcon } from "./WarningIcon";
 import { clipLengthWarning, useInstalledMemory } from "./replay-estimate";
@@ -34,11 +35,12 @@ const steps = [
    { label: "Save", icon: Clapperboard },
    { label: "Start", icon: Power },
 ] as const;
-const kindCards = [
-   { kind: "screen", title: "Whole screen", detail: "Everything on one display.", icon: Monitor },
-   { kind: "app", title: "One app", detail: "A single window, even when it's behind others.", icon: AppWindow },
-   { kind: "auto", title: "Games", detail: "Follows the game you're playing. Idle when no game is open.", icon: Gamepad2 },
-] as const satisfies readonly { kind: SourceKind; title: string; detail: string; icon: typeof Monitor }[];
+// Custom is left to Settings, where the values behind it can be edited.
+const qualityChoices = [
+   { quality: "low", title: "Low", detail: "720p at 30 fps. Smallest files, easiest on your computer.", icon: SignalLow },
+   { quality: "standard", title: "Standard", detail: "1080p at 60 fps. Balances detail and file size.", icon: SignalMedium },
+   { quality: "high", title: "High", detail: "Full resolution at 60 fps with extra detail. Largest files.", icon: SignalHigh },
+] as const satisfies readonly { quality: Preferences["quality"]; title: string; detail: string; icon: typeof Monitor }[];
 
 export function Onboarding({ state, run }: { state: AppState; run: Run }) {
    const [step, setStep] = useState(0);
@@ -46,11 +48,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
    const [transitioning, setTransitioning] = useState(false);
    const navigationPending = useRef(false);
    const [draft, setDraft] = useState(() => ({ ...state.preferences, microphone: true, microphoneMuted: false }));
-   const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
-   const [sourceRequest, setSourceRequest] = useState(0);
-   const [sources, setSources] = useState<CaptureSource[]>([]);
    const [busy, setBusy] = useState(false);
-   const [error, setError] = useState("");
    const [micPending, setMicPending] = useState(false);
    const [micMessage, setMicMessage] = useState("");
    const [audioDevices, setAudioDevices] = useState<{ id: string; name: string }[]>([]);
@@ -58,6 +56,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
    const [capabilityError, setCapabilityError] = useState("");
    const root = useRef<HTMLDivElement>(null);
    const heading = useRef<HTMLHeadingElement>(null);
+   const qualityPicked = useRef(false);
    useEffect(() => {
       heading.current?.focus({ preventScroll: true });
    }, [step]);
@@ -89,7 +88,8 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
          .then((result) => {
             if (disposed) return;
             setCapabilities(result);
-            if (result.supported) setDraft((current) => (current.quality === "custom" ? current : applyRecordingPreset(current, result.recommended)));
+            if (result.supported && !qualityPicked.current)
+               setDraft((current) => (current.quality === "custom" ? current : applyRecordingPreset(current, result.recommended)));
          })
          .catch((failure: unknown) => {
             if (!disposed) setCapabilityError(describeError(failure));
@@ -98,41 +98,6 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
          disposed = true;
       };
    }, []);
-   useEffect(() => {
-      let disposed = false;
-      setSourcePhase("loading");
-      void api
-         .sources()
-         .then((choices) => {
-            if (disposed) return;
-            setSources(choices);
-            setSourcePhase("ready");
-            setDraft((current) => (current.sourceId ? current : { ...current, sourceId: choices.find((item) => item.kind === current.sourceKind)?.id ?? "" }));
-            // Source choices are usable before their optional thumbnail images.
-            void api
-               .sources({ thumbnails: true })
-               .then((images) => {
-                  if (!disposed) setSources(images);
-               })
-               .catch(() => undefined);
-         })
-         .catch((failure: unknown) => {
-            if (!disposed) {
-               setSourcePhase("error");
-               setError(describeError(failure));
-            }
-         });
-      return () => {
-         disposed = true;
-      };
-   }, [sourceRequest]);
-   useEffect(
-      () =>
-         api.onEvent((event) => {
-            if (event.type === "capture-sources") setSources(event.sources);
-         }),
-      []
-   );
    useEffect(() => {
       let disposed = false;
       void api
@@ -148,13 +113,10 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
       };
    }, []);
    const change = <K extends keyof Preferences>(key: K, value: Preferences[K]) => setDraft((current) => ({ ...current, [key]: value }));
-   const switchSource = (kind: SourceKind) =>
-      setDraft((current) => ({
-         ...current,
-         sourceKind: kind,
-         desktopFallback: kind === "auto" ? false : current.desktopFallback,
-         sourceId: kind === "auto" ? current.sourceId : (sources.find((item) => item.kind === kind)?.id ?? ""),
-      }));
+   const pickQuality = (quality: Preferences["quality"]) => {
+      qualityPicked.current = true;
+      setDraft((current) => applyRecordingPreset(current, quality));
+   };
    const microphone = async (device: string) => {
       if (device === "none") {
          setDraft((current) => ({ ...current, microphone: false, microphoneDevice: "default", microphoneMuted: true }));
@@ -179,20 +141,14 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
          const folder = await api.chooseFolder();
          if (folder) change("collection", folder);
       });
-   const source = sources.find((item) => item.kind === draft.sourceKind && item.id === draft.sourceId);
-   const sourceReady =
-      draft.sourceKind === "auto"
-         ? (!draft.desktopFallback || sources.some((item) => item.kind === "screen" && item.id === draft.sourceId)) &&
-           !sourceChoices(sources, capabilities).find((item) => item.value === "auto")?.disabled
-         : !!source;
-   // Auto-capture defaults on, but only counts once there's something to capture, so it never blocks finishing.
-   const canRecord = sourceReady && !!capabilities?.supported;
+   // The recorder takes a few seconds to answer. Auto-capture stays on until it says it can't run.
+   const canRecord = !capabilityError && capabilities?.supported !== false;
    const autoRecord = draft.autoRecord && canRecord;
    const lengthValid = Number.isInteger(draft.clipSeconds) && draft.clipSeconds >= 5 && draft.clipSeconds <= 1800;
    const memoryBytes = useInstalledMemory();
    const lengthWarning = lengthValid ? clipLengthWarning(draft, memoryBytes) : null;
-   const finish = async (skip = false) => {
-      const record = !skip && autoRecord;
+   // Finishing never starts capture. The source is picked on the Capture page, which setup closes onto.
+   const finish = async () => {
       if (busy || navigationPending.current || micPending || !lengthValid || !draft.collection) return;
       setBusy(true);
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -204,14 +160,9 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
       const saved = await run(() =>
          api.savePreferences({ ...draft, shortcuts: withToggleShortcut(draft, state.platform === "darwin"), autoRecord, setupComplete: true })
       );
-      if (saved && record) await run(() => api.startRecording(), { feedback: "external" });
       if (!saved) root.current?.getAnimations().forEach((animation) => animation.cancel());
       setBusy(false);
    };
-   const portal = sources.some((item) => item.id === portalScreenId);
-   const choices = sources.filter((item) => item.kind === draft.sourceKind);
-   const offered = (kind: SourceKind) => !sourceChoices(sources, capabilities).find((item) => item.value === kind)?.disabled;
-   if (draft.sourceKind !== "screen" && sourcePhase === "ready" && !offered(draft.sourceKind)) switchSource("screen");
    const navigate = async (next: number) => {
       if (navigationPending.current || busy) return;
       navigationPending.current = true;
@@ -253,82 +204,50 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
             </ol>
             <div className="setup-page" key={step} inert={transitioning || busy}>
                <h1 id="setup-heading" ref={heading} tabIndex={-1}>
-                  {step === 0 ? "What should AcroClip record?" : step === 1 ? "Pick your clip shortcut" : "How should it start?"}
+                  {step === 0 ? "How should clips look and sound?" : step === 1 ? "Pick your clip shortcut" : "How should it start?"}
                </h1>
                <fieldset className="setup-fields" disabled={busy}>
                   {step === 0 ? (
                      <div className="settings-body setup-body">
                         <section className="settings-group">
-                           <div className="setup-choices" role="radiogroup" aria-label="What to record">
-                              {kindCards
-                                 .filter((card) => offered(card.kind))
-                                 .map(({ kind, title, detail, icon: KindIcon }) => {
-                                    const selected = draft.sourceKind === kind;
-                                    const picking = selected && kind !== "auto" && sourcePhase === "ready" && choices.length > 1;
-                                    return (
-                                       <div
-                                          key={kind}
-                                          role="radio"
-                                          tabIndex={selected ? 0 : -1}
-                                          aria-checked={selected}
-                                          className="settings-row settings-surface setup-choice"
-                                          onClick={() => switchSource(kind)}
-                                          onKeyDown={(event) => {
-                                             if (event.target !== event.currentTarget || (event.key !== " " && event.key !== "Enter")) return;
-                                             event.preventDefault();
-                                             switchSource(kind);
-                                          }}
-                                       >
-                                          <KindIcon className="settings-row-icon" size={21} aria-hidden="true" />
-                                          <div className="settings-row-copy">
-                                             <span className="field-label">{title}</span>
-                                             <p className="field-detail">{detail}</p>
-                                          </div>
-                                          {picking ? (
-                                             <div className="field-control" onClick={(event) => event.stopPropagation()}>
-                                                <Select
-                                                   label={kind === "app" ? "App to capture" : "Screen to capture"}
-                                                   value={draft.sourceId}
-                                                   onChange={(value) => change("sourceId", value)}
-                                                >
-                                                   {choices.map((item) => (
-                                                      <option key={item.id} value={item.id}>
-                                                         {item.name}
-                                                      </option>
-                                                   ))}
-                                                </Select>
-                                             </div>
-                                          ) : (
-                                             <span className="setup-radio" aria-hidden="true">
-                                                <Check size={13} strokeWidth={3} />
-                                             </span>
-                                          )}
+                           <div className="setup-choices" role="radiogroup" aria-label="Quality">
+                              {qualityChoices.map(({ quality, title, detail, icon: QualityIcon }, index) => {
+                                 const selected = draft.quality === quality;
+                                 return (
+                                    <div
+                                       key={quality}
+                                       role="radio"
+                                       tabIndex={selected || (draft.quality === "custom" && index === 0) ? 0 : -1}
+                                       aria-checked={selected}
+                                       className="settings-row settings-surface setup-choice"
+                                       onClick={() => pickQuality(quality)}
+                                       onKeyDown={(event) => {
+                                          const forward = event.key === "ArrowDown" || event.key === "ArrowRight";
+                                          const back = event.key === "ArrowUp" || event.key === "ArrowLeft";
+                                          if (!forward && !back && event.key !== " " && event.key !== "Enter") return;
+                                          event.preventDefault();
+                                          const move = forward ? 1 : back ? -1 : 0;
+                                          const target = (index + move + qualityChoices.length) % qualityChoices.length;
+                                          pickQuality(qualityChoices[target]!.quality);
+                                          const row = event.currentTarget.parentElement?.children[target];
+                                          if (row instanceof HTMLElement) row.focus();
+                                       }}
+                                    >
+                                       <QualityIcon className="settings-row-icon" size={21} aria-hidden="true" />
+                                       <div className="settings-row-copy">
+                                          <span className="field-label">
+                                             {title}
+                                             {capabilities?.supported && capabilities.recommended === quality && <HardwareHint />}
+                                          </span>
+                                          <p className="field-detail">{detail}</p>
                                        </div>
-                                    );
-                                 })}
+                                       <span className="setup-radio" aria-hidden="true">
+                                          <Check size={13} strokeWidth={3} />
+                                       </span>
+                                    </div>
+                                 );
+                              })}
                            </div>
-                           {sourcePhase === "loading" && (
-                              <p className="setup-note" role="status">
-                                 Finding capture sources…
-                              </p>
-                           )}
-                           {sourcePhase === "ready" && draft.sourceKind !== "auto" && !choices.length && (
-                              <div className="setup-source-empty">
-                                 <p>{draft.sourceKind === "app" ? "Open an app to select it here." : "No screens found. Check capture permissions."}</p>
-                                 <Button className="quiet" onClick={() => setSourceRequest((value) => value + 1)}>
-                                    Refresh sources
-                                 </Button>
-                              </div>
-                           )}
-                           {sourcePhase === "error" && (
-                              <div className="setup-source-empty">
-                                 <p role="alert">{error}</p>
-                                 <Button className="quiet" onClick={() => setSourceRequest((value) => value + 1)}>
-                                    Retry sources
-                                 </Button>
-                              </div>
-                           )}
-                           {portal && draft.sourceKind === "screen" && <p className="setup-note">The system picker opens when capturing starts.</p>}
                         </section>
                         <section className="settings-group">
                            <Field
@@ -431,11 +350,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
             )}
             <footer className="onboarding-actions">
                {step === 0 ? (
-                  <Button
-                     className="quiet"
-                     disabled={busy || transitioning || micPending || !lengthValid || !draft.collection}
-                     onClick={() => void finish(true)}
-                  >
+                  <Button className="quiet" disabled={busy || transitioning || micPending || !lengthValid || !draft.collection} onClick={() => void finish()}>
                      Skip setup
                   </Button>
                ) : (
@@ -447,7 +362,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                {step < steps.length - 1 ? (
                   <Button
                      className="primary"
-                     disabled={transitioning || micPending || (step === 0 ? sourcePhase === "loading" : !lengthValid || !draft.collection)}
+                     disabled={transitioning || micPending || (step > 0 && (!lengthValid || !draft.collection))}
                      onClick={() => void navigate(step + 1)}
                   >
                      Continue
@@ -460,7 +375,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                      disabled={transitioning || micPending || !lengthValid || !draft.collection}
                      onClick={() => void finish()}
                   >
-                     {autoRecord ? "Start recording" : "Finish"}
+                     Finish
                   </Button>
                )}
             </footer>

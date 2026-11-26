@@ -82,6 +82,11 @@ export function App() {
       document.addEventListener("visibilitychange", update);
       return () => document.removeEventListener("visibilitychange", update);
    }, []);
+   // Setup closes onto Capture, where the source is picked, even when a reset opened it from Settings.
+   const settingUp = !!state && !state.preferences.setupComplete;
+   useEffect(() => {
+      if (settingUp) setPage("recording");
+   }, [settingUp, setPage]);
    const loaded = !!state;
    useEffect(() => {
       if (!loaded) return;

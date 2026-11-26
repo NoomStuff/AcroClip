@@ -165,41 +165,6 @@ test("cached loading states, enumeration retry, and interrupted library movement
       await send({ ...actual, clips: [], folders: [], categories: [], collectionStatus: { root: join(profile, "Other"), phase: "loading" } });
       await expect(page.getByLabel("Opening collection")).toBeVisible();
       await expect(page.getByRole("button", { name: `Open ${following.name}`, exact: true })).toHaveCount(0);
-      await app.evaluate(({ ipcMain }, snapshot) => {
-         ipcMain.removeHandler("state");
-         ipcMain.handle("state", () => ({ ...snapshot, preferences: { ...snapshot.preferences, setupComplete: false } }));
-         ipcMain.removeHandler("sources");
-         ipcMain.handle(
-            "sources",
-            () =>
-               new Promise((resolve) => {
-                  (globalThis as typeof globalThis & { resolveSources?: (value: unknown[]) => void }).resolveSources = resolve;
-               })
-         );
-      }, actual);
-      await page.reload();
-      await expect(page.getByRole("status").filter({ hasText: /^Finding capture sources$/ })).toBeVisible();
-      await expect(page.getByText("No screens found. Check capture permissions.", { exact: true })).toHaveCount(0);
-      await page.waitForTimeout(400);
-      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(980, 680));
-      await app.evaluate(() => (globalThis as typeof globalThis & { resolveSources?: (value: unknown[]) => void }).resolveSources?.([]));
-      await expect(page.getByText("No screens found. Check capture permissions.", { exact: true })).toBeVisible();
-      await app.evaluate(({ ipcMain }) => {
-         ipcMain.removeHandler("sources");
-         ipcMain.handle("sources", () => {
-            throw new Error("Fixture source error");
-         });
-      });
-      await page.reload();
-      await expect(page.getByRole("button", { name: "Retry sources", exact: true })).toBeVisible();
-      await expect(page.getByText("No screens found. Check capture permissions.", { exact: true })).toHaveCount(0);
-      await app.evaluate(({ ipcMain }, sources) => {
-         ipcMain.removeHandler("sources");
-         ipcMain.handle("sources", () => sources);
-      }, available);
-      await page.getByRole("button", { name: "Retry sources", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Retry sources", exact: true })).toHaveCount(0);
-      await expect(page.getByRole("radio", { name: /^Whole screen/ })).toHaveAttribute("aria-checked", "true");
    } finally {
       await app.close();
    }

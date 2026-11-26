@@ -11,6 +11,13 @@ import { Field, Select, Toggle } from "./ui";
 import { PresetNumberInput } from "./PresetNumberInput";
 import { Field as SettingsField, Toggle as SettingsToggle } from "./SettingsControls";
 import { Slider } from "./Slider";
+export function HardwareHint() {
+   return (
+      <span className="quality-hardware-hint" role="img" aria-label="Suggested for your hardware" data-tooltip="Suggested for your hardware">
+         <Cpu size={14} aria-hidden="true" />
+      </span>
+   );
+}
 function QualityPicker({
    value,
    onChange,
@@ -40,11 +47,7 @@ function QualityPicker({
                <span className="quality-dot">{value === item.value && <Check size={12} />}</span>
                <strong>
                   {item.title}
-                  {item.value === recommended && (
-                     <span className="quality-hardware-hint" role="img" aria-label="Suggested for your hardware" data-tooltip="Suggested for your hardware">
-                        <Cpu size={14} aria-hidden="true" />
-                     </span>
-                  )}
+                  {item.value === recommended && <HardwareHint />}
                </strong>
                {item.detail && <span>{item.detail}</span>}
             </button>
