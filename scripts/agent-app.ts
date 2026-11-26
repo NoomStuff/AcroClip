@@ -56,7 +56,10 @@ const help = `bun run agent-app <command>
   state                  window.acroClip.state() as JSON.
   logs [lines]           Tail of the app's stdout, its app.log and what it tried to open.
   restart [--no-build]   Rebuild out/ and relaunch with the same profile and collection.
-  stop                   Quit the app and tear the private desktop down.`;
+  stop                   Quit the app and tear the private desktop down.
+
+On Windows the app can't see windows on the person's desktop, so application audio sources don't
+resolve. Their meters stay silent and Desktop audio keeps their sound instead of excluding it.`;
 
 const freePort = (): Promise<number> =>
    new Promise((done, fail) => {

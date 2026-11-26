@@ -821,7 +821,9 @@ function createWindow() {
       // The launcher's native splash gives way to the app's own startup screen.
       releaseSplash();
    });
-   mainWindow.webContents.on("did-start-loading", () => {
+   // In-app navigation uses pushState, and did-start-loading fires for those too.
+   mainWindow.webContents.on("did-start-navigation", ({ isMainFrame, isSameDocument }) => {
+      if (!isMainFrame || isSameDocument) return;
       stateChanges.reset();
       metersShown = false;
       recorder.setMeters(false);

@@ -92,7 +92,20 @@ test("incremental updates preserve large libraries, meter routing, visibility an
       state.categories = [{ id: "saved", name: "Saved", color: "#abcdef" }];
       await publish({ type: "state-patch", patch: { clips: state.clips, categories: state.categories } });
       await expect(page.locator(".clip-card")).toHaveCount(0);
+      await app.evaluate(() => {
+         const record = globalThis as typeof globalThis & { meterCommands?: boolean[] };
+         record.meterCommands = [];
+         const socket = process.mainModule!.require("node:net").Socket.prototype as { write: (chunk: unknown, ...rest: unknown[]) => boolean };
+         const write = socket.write;
+         socket.write = function (this: unknown, chunk: unknown, ...rest: unknown[]) {
+            const command = /"action":"meters","shown":(true|false)/.exec(String(chunk));
+            if (command) record.meterCommands!.push(command[1] === "true");
+            return write.call(this, chunk, ...rest);
+         };
+      });
+      const recorderMeters = () => app.evaluate(() => (globalThis as typeof globalThis & { meterCommands?: boolean[] }).meterCommands?.at(-1) ?? null);
       await page.getByRole("button", { name: "Library", exact: true }).click();
+      await expect.poll(recorderMeters).toBe(false);
       // The library holds every clip, and mounts only the rows near the viewport.
       await expect(page.locator(".library-count")).toContainText("1000 clips");
       await expect(page.locator(".clip-card").first()).toBeVisible();
@@ -117,6 +130,10 @@ test("incremental updates preserve large libraries, meter routing, visibility an
       await expect(page.locator(".card-job")).toHaveCount(0);
       await expect(page.getByRole("textbox", { name: "Search clips", exact: true })).toHaveValue("Moment 999");
       await page.getByRole("button", { name: "Capture", exact: true }).click();
+      // Returning to Capture is a pushState navigation. The recorder must keep sending levels.
+      await expect.poll(recorderMeters).toBe(true);
+      await page.waitForTimeout(500);
+      expect(await recorderMeters()).toBe(true);
       await expect(sourceMeter).toHaveAttribute("data-muted", "true");
       await publish({ type: "state-patch", patch: { preferences: state.preferences } });
       await expect(sourceMeter).not.toHaveAttribute("data-muted", "true");
