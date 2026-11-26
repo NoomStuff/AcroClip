@@ -23,7 +23,7 @@
    padding: 0 6px;
    border-radius: 10px;
    corner-shape: squircle;
-   background: var(--base);
+   background: var(--slot);
    cursor: text;
    transition:
       background 150ms var(--ease),
@@ -113,7 +113,7 @@
    right: 8px;
    top: 6px;
    height: 28px;
-   background: var(--base);
+   background: var(--slot);
    border-radius: 10px;
    corner-shape: squircle;
    pointer-events: none;

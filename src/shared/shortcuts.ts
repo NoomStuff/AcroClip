@@ -11,8 +11,8 @@ export const shortcutRegistry = [
    { id: "shortcutHelp", label: "Show shortcuts", scope: "local", page: "all", binding: "CommandOrControl+/" },
    { id: "search", label: "Search clips", scope: "local", page: "library", binding: "CommandOrControl+F" },
    { id: "searchSettings", label: "Search settings", scope: "local", page: "settings", binding: "CommandOrControl+F" },
-   { id: "newCategory", label: "New tag", scope: "local", page: "all", group: "library", binding: "CommandOrControl+N" },
-   { id: "newFolder", label: "New folder", scope: "local", page: "all", group: "library", binding: "CommandOrControl+Shift+N" },
+   { id: "newCategory", label: "New tag", scope: "local", page: "library", binding: "CommandOrControl+N" },
+   { id: "newFolder", label: "New folder", scope: "local", page: "library", binding: "CommandOrControl+Shift+N" },
    { id: "openClip", label: "Open first matching clip", scope: "local", page: "library", binding: "CommandOrControl+Enter" },
    { id: "copyClipFile", label: "Copy file", scope: "local", page: "library", binding: "CommandOrControl+C" },
    { id: "playPause", label: "Play / pause", scope: "local", page: "viewer", binding: "Space" },
@@ -28,9 +28,6 @@ export const shortcutRegistry = [
    { id: "showFile", label: "Show clip file", scope: "local", page: "viewer", binding: "CommandOrControl+Shift+O" },
    { id: "copyFile", label: "Copy file", scope: "local", page: "viewer", binding: "CommandOrControl+C" },
 ] as const;
-export function shortcutGroup(item: (typeof shortcutRegistry)[number]) {
-   return "group" in item ? item.group : item.page;
-}
 export type ShortcutAction = (typeof shortcutRegistry)[number]["id"];
 export type ShortcutBindings = Partial<Record<ShortcutAction, string>>;
 export function bindingFor(preferences: Pick<Preferences, "shortcut" | "shortcuts">, id: ShortcutAction): string {
@@ -210,4 +207,17 @@ export function formatBinding(value: string, mac: boolean): string {
       .replace(/Control/g, "Ctrl")
       .replace(/Command/g, "Cmd")
       .replaceAll("+", " + ");
+}
+/**
+ * Start / stop capture on the clip key with Ctrl, Alt and Shift held, so both shortcuts share one key.
+ * A binding the person already set, or one that would clash, stays as it is.
+ */
+export function withToggleShortcut(preferences: Pick<Preferences, "shortcut" | "shortcuts">, mac: boolean): ShortcutBindings {
+   const key = preferences.shortcut.split("+").at(-1);
+   if (!key || preferences.shortcuts.toggleRecording !== undefined) return preferences.shortcuts;
+   const binding = `CommandOrControl+Alt+Shift+${key}`;
+   const shortcuts = { ...preferences.shortcuts, toggleRecording: binding };
+   if (binding === bindingFor({ shortcut: "", shortcuts: {} }, "toggleRecording")) return preferences.shortcuts;
+   if (shortcutClashes({ shortcut: preferences.shortcut, shortcuts }, "toggleRecording", mac).length) return preferences.shortcuts;
+   return shortcuts;
 }

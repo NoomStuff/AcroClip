@@ -1603,9 +1603,10 @@ function registerIPC() {
                next.desktopFallback !== preferences.desktopFallback ||
                JSON.stringify(next.customGames) !== JSON.stringify(preferences.customGames);
             const reportRollback = (error: unknown) => notice(errorMessage(error), true, "info", "action");
+            const openCollection = next.setupComplete && (next.collection !== preferences.collection || !collections.root);
             try {
                if (needsMicrophonePermission(next) && !needsMicrophonePermission(preferences)) await ensureMicrophoneAccess(next);
-               if (next.collection !== preferences.collection) {
+               if (openCollection) {
                   // Events belong to the collection they happened in.
                   endCaptureSession("collection");
                   trackWindow(false);
@@ -1621,7 +1622,7 @@ function registerIPC() {
                await writePreferences(preferencePath, next);
             } catch (e) {
                rollbackShortcuts();
-               if (next.collection !== preferences.collection && collections.root !== resolve(preferences.collection))
+               if (openCollection && preferences.setupComplete && collections.root !== resolve(preferences.collection))
                   await collections.open(preferences.collection).catch(reportRollback);
                if (capturing() && sourceChanged) await switchCaptureSource(preferences, captureSources.cached).catch(reportRollback);
                if (next.startWithOS !== preferences.startWithOS) await applyStartup(preferences.startWithOS).catch(reportRollback);
@@ -2086,7 +2087,8 @@ else {
          if (process.platform === "darwin") app.dock?.setIcon(iconPath());
          preferencePath = join(app.getPath("userData"), "preferences.json");
          preferences = await readPreferences(preferencePath, process.env["ACROCLIP_COLLECTION"] ?? join(app.getPath("videos"), "AcroClip"));
-         collectionReady = collections.open(preferences.collection);
+         // Opening creates the folder, so a first run leaves the disk alone until setup confirms where clips go.
+         collectionReady = preferences.setupComplete ? collections.open(preferences.collection) : Promise.resolve();
          feedback.start();
          const previewAllowed = () => !!previewSourceId && windowShown() && !closingRequested && !isWaylandSession() && !sharedDesktop;
          session.defaultSession.setDisplayMediaRequestHandler(

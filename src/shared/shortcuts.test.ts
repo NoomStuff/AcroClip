@@ -10,6 +10,7 @@ import {
    physicalBinding,
    globalShortcutProblem,
    formatBinding,
+   withToggleShortcut,
 } from "./shortcuts";
 describe("shortcut defaults and conflicts", () => {
    it("defaults to Alt+C for saving and Ctrl+Alt+Shift+C for starting and stopping capture", () => {
@@ -75,5 +76,21 @@ describe("shortcut defaults and conflicts", () => {
       for (const binding of ["4", "C", "Shift+4", "Space", "Left", "Enter"]) expect(globalShortcutProblem(binding)).toContain("block that key");
       for (const binding of ["Alt+C", "Control+4", "Command+Shift+F", "F13", "F8", "Shift+F9", "num4", "MediaPlayPause", "PrintScreen", ""])
          expect(globalShortcutProblem(binding)).toBeNull();
+   });
+});
+
+describe("withToggleShortcut", () => {
+   it("moves start / stop capture onto the clip key", () => {
+      expect(withToggleShortcut({ shortcut: "Alt+F9", shortcuts: {} }, false)).toEqual({ toggleRecording: "CommandOrControl+Alt+Shift+F9" });
+   });
+   it("leaves the default alone when the clip key is already C", () => {
+      expect(withToggleShortcut({ shortcut: "Alt+C", shortcuts: {} }, false)).toEqual({});
+   });
+   it("keeps a binding the person set", () => {
+      const shortcuts = { toggleRecording: "F10" };
+      expect(withToggleShortcut({ shortcut: "Alt+F9", shortcuts }, false)).toBe(shortcuts);
+   });
+   it("skips a binding that clashes with the clip shortcut", () => {
+      expect(withToggleShortcut({ shortcut: "Control+Alt+Shift+X", shortcuts: {} }, false)).toEqual({});
    });
 });

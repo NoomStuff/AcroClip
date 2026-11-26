@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { Bell, Film, Gamepad2, Keyboard, Settings2, Star, Video } from "lucide-react";
 import type { ShortcutAction } from "../../shared/shortcuts";
-import { shortcutGroup, shortcutRegistry } from "../../shared/shortcuts";
+import { shortcutRegistry } from "../../shared/shortcuts";
 
 export const settingSections = [
    { id: "essentials", label: "Essentials", icon: Star },
@@ -24,6 +24,10 @@ interface SettingCopy {
    detail?: string;
    /** What people type that the copy doesn't say. */
    keywords?: string;
+}
+/** On Linux, closing the window quits AcroClip instead of leaving it in the tray. */
+export function startWithOSDetail(platform: string): string {
+   return platform === "linux" ? "Opens when you sign in. Closing the window quits AcroClip and stops capturing." : settingCopy.startWithOS.detail;
 }
 /** The copy Settings shows and search reads, kept in one place so the two can't drift. */
 export const settingCopy = {
@@ -54,7 +58,7 @@ export const settingCopy = {
    },
    autoRecord: {
       label: "Start capturing when AcroClip opens",
-      detail: "Use your saved source, or wait for its application to open.",
+      detail: "Your clip shortcut works straight away. App and game sources wait until they're running.",
       keywords: "auto automatic record launch",
    },
    games: {
@@ -103,12 +107,12 @@ export const settingCopy = {
    },
    startWithOS: {
       label: "Start with your computer",
-      detail: "Closing the window keeps AcroClip running in the tray.",
+      detail: "Opens when you sign in, so your shortcuts work without opening AcroClip first.",
       keywords: "startup boot login launch windows autostart",
    },
    startInTray: {
       label: "Start in the tray",
-      detail: "When AcroClip starts with your computer, the window stays closed until you open it from the tray.",
+      detail: "Starts with the window closed. Open it from the tray icon.",
       keywords: "hidden minimized background quiet startup login",
    },
    updates: {
@@ -148,9 +152,9 @@ const shortcutGroupTests: { id: string; title: string; detail?: string; test: (i
       id: "shortcuts-navigation",
       title: "Navigation",
       detail: "While AcroClip is open.",
-      test: (item) => item.scope === "local" && shortcutGroup(item) === "all",
+      test: (item) => item.scope === "local" && item.page === "all",
    },
-   { id: "shortcuts-library", title: "Library", test: (item) => shortcutGroup(item) === "library" },
+   { id: "shortcuts-library", title: "Library", test: (item) => item.page === "library" },
    { id: "shortcuts-player", title: "Player", detail: "While a clip is open.", test: (item) => item.page === "viewer" },
    { id: "shortcuts-settings", title: "Settings", test: (item) => item.page === "settings" },
 ];

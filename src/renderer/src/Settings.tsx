@@ -50,7 +50,7 @@ import { customQualityError, QualityPresets, RecordingPresets } from "./Recordin
 import { clipLengthWarning, useInstalledMemory } from "./replay-estimate";
 import { SelectionIndicator } from "./SelectionIndicator";
 import type { SettingGroup, SettingId, SettingSection } from "./settings-catalog";
-import { searchableText, searchSettings, searchWords, sectionLabel, settingCopy, settingGroups, settingSections } from "./settings-catalog";
+import { searchableText, searchSettings, searchWords, sectionLabel, settingCopy, settingGroups, settingSections, startWithOSDetail } from "./settings-catalog";
 import { Field, Lock, Toggle } from "./SettingsControls";
 import { ShortcutInput } from "./ShortcutInput";
 import { SidebarTab } from "./SidebarTab";
@@ -607,11 +607,7 @@ export function Settings({
                <Toggle
                   icon={Power}
                   label={settingCopy.startWithOS.label}
-                  detail={
-                     state.platform === "linux"
-                        ? "Closing the window exits AcroClip and stops capturing."
-                        : "Closing the window keeps AcroClip running in the tray."
-                  }
+                  detail={startWithOSDetail(state.platform)}
                   checked={draft.startWithOS}
                   onChange={(value) => change("startWithOS", value)}
                />

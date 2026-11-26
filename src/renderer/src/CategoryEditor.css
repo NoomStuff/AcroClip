@@ -7,7 +7,7 @@
    margin: 20px 0 16px;
    border-radius: 16px;
    corner-shape: squircle;
-   background: var(--base);
+   background: var(--slot);
    transition: background 150ms var(--ease);
 }
 .category-name-input:hover {

@@ -100,13 +100,6 @@ export function App() {
    }, [page]);
    // The player reports in its effects, which run before this component's, so the page is already the new one.
    const leftViewer = useCallback((watched: JustWatched) => setJustWatched(currentPage.current === "library" ? watched : null), []);
-   const pendingLibraryAction = useRef<string | null>(null);
-   useEffect(() => {
-      if (page !== "library" || !pendingLibraryAction.current) return;
-      const action = pendingLibraryAction.current;
-      pendingLibraryAction.current = null;
-      window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: action }));
-   }, [page]);
    useNavigationHistory(page, selected, (location) => {
       setPage(location.page);
       setSelected(location.clipId);
@@ -220,10 +213,7 @@ export function App() {
          markShortcut(event);
          if (action.id === "shortcutHelp") setShortcutSheet(true);
          else if (["recording", "library", "viewer", "settings"].includes(action.id)) setPage(action.id as Page);
-         else if ((action.id === "newCategory" || action.id === "newFolder") && page !== "library") {
-            pendingLibraryAction.current = action.id === "newFolder" ? "newFolderRoot" : action.id;
-            setPage("library");
-         } else window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: action.id }));
+         else window.dispatchEvent(new CustomEvent("acroclip-shortcut", { detail: action.id }));
       };
       window.addEventListener("keydown", key);
       return () => window.removeEventListener("keydown", key);

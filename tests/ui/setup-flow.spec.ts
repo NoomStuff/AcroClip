@@ -1,5 +1,6 @@
 import { selectOption } from "./select-option";
 import { test, expect, _electron as electron } from "@playwright/test";
+import { existsSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -26,29 +27,31 @@ test("onboarding UI persists choices without starting recording or OS startup", 
          });
          await page.reload();
       }
-      await expect(page.getByRole("heading", { name: "What do you want to capture?", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "What should AcroClip record?", exact: true })).toBeVisible();
       await expect(page.getByRole("combobox", { name: "Microphone input", exact: true })).toHaveAttribute("data-value", "default");
       await selectOption(page, "Microphone input", "none");
-      await page.locator(".onboarding").getByRole("button", { name: "Auto", exact: true }).click();
-      await expect(page.locator(".onboarding")).toContainText("Follows your game. Waits when no game is open.");
-      await page.locator(".onboarding").getByRole("button", { name: "Screen", exact: true }).click();
+      const games = page.getByRole("radio", { name: /^Games/ });
+      await games.click();
+      await expect(games).toHaveAttribute("aria-checked", "true");
+      await page.getByRole("radio", { name: /^Whole screen/ }).click();
+      await expect(games).toHaveAttribute("aria-checked", "false");
       await page.getByRole("button", { name: "Continue", exact: true }).click();
-      await expect(page.getByRole("heading", { name: "Save a moment", exact: true })).toBeVisible();
-      await page.getByRole("spinbutton", { name: "Setup clip length in seconds" }).fill("30");
+      await expect(page.getByRole("heading", { name: "Pick your clip shortcut", exact: true })).toBeVisible();
+      await page.getByRole("spinbutton", { name: "Clip length in seconds" }).fill("30");
       await page.getByRole("button", { name: "Back", exact: true }).click();
       await expect(page.getByRole("combobox", { name: "Microphone input", exact: true })).toHaveAttribute("data-value", "none");
       await page.getByRole("button", { name: "Continue", exact: true }).click();
-      await expect(page.getByRole("spinbutton", { name: "Setup clip length in seconds" })).toHaveValue("30");
-      await page.getByRole("spinbutton", { name: "Setup clip length in seconds" }).fill("");
+      await expect(page.getByRole("spinbutton", { name: "Clip length in seconds" })).toHaveValue("30");
+      await page.getByRole("spinbutton", { name: "Clip length in seconds" }).fill("");
       await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
-      await expect(page.getByRole("alert").filter({ hasText: "Choose 5 to 1800 whole seconds." })).toBeVisible();
-      await page.getByRole("spinbutton", { name: "Setup clip length in seconds" }).fill("45");
+      await expect(page.locator(".onboarding")).toContainText("Choose 5 to 1800 whole seconds.");
+      await page.getByRole("spinbutton", { name: "Clip length in seconds" }).fill("45");
       await page.getByRole("button", { name: "Clip shortcut", exact: true }).click();
       await expect(page.getByRole("button", { name: "Clip shortcut", exact: true })).toHaveText(/Press a shortcut/);
       await page.getByRole("button", { name: "Clip shortcut", exact: true }).press("Control+Alt+Shift+F9");
       await page.waitForTimeout(300);
       await page.getByRole("button", { name: "Continue", exact: true }).click();
-      await expect(page.getByRole("heading", { name: "You're good to go", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "How should it start?", exact: true })).toBeVisible();
       // Startup options default on. This run turns them off, so finishing must not start capture or touch OS startup.
       const startup = page.getByRole("checkbox", { name: "Start with your computer", exact: true });
       const tray = page.getByRole("checkbox", { name: "Start in the tray", exact: true });
@@ -58,6 +61,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
       await expect(tray).toBeDisabled();
       const capture = page.getByRole("checkbox", { name: "Start capturing when AcroClip opens", exact: true });
       if (await capture.isChecked()) await capture.uncheck();
+      expect(existsSync(collection), "Setup must not create the collection folder before it finishes").toBe(false);
       await page.getByRole("button", { name: "Finish", exact: true }).click();
       await expect(page.locator(".onboarding"), "Setup should close after saving")
          .toHaveCount(0)
@@ -65,6 +69,7 @@ test("onboarding UI persists choices without starting recording or OS startup", 
             console.log("Setup feedback", await page.locator(".toast").allTextContents());
             throw error;
          });
+      expect(existsSync(collection)).toBe(true);
       const state = await page.evaluate(() => window.acroClip.state());
       expect(state.preferences).toMatchObject({
          collection,
