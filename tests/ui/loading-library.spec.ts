@@ -198,7 +198,8 @@ test("cached loading states, enumeration retry, and interrupted library movement
          ipcMain.handle("sources", () => sources);
       }, available);
       await page.getByRole("button", { name: "Retry sources", exact: true }).click();
-      await expect(page.locator(".setup-source-tile").first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry sources", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("radio", { name: /^Whole screen/ })).toHaveAttribute("aria-checked", "true");
    } finally {
       await app.close();
    }

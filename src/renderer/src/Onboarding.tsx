@@ -316,7 +316,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                               <div className="setup-source-empty">
                                  <p>{draft.sourceKind === "app" ? "Open an app to select it here." : "No screens found. Check capture permissions."}</p>
                                  <Button className="quiet" onClick={() => setSourceRequest((value) => value + 1)}>
-                                    Refresh
+                                    Refresh sources
                                  </Button>
                               </div>
                            )}
@@ -324,7 +324,7 @@ export function Onboarding({ state, run }: { state: AppState; run: Run }) {
                               <div className="setup-source-empty">
                                  <p role="alert">{error}</p>
                                  <Button className="quiet" onClick={() => setSourceRequest((value) => value + 1)}>
-                                    Retry
+                                    Retry sources
                                  </Button>
                               </div>
                            )}
