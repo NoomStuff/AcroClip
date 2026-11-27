@@ -978,16 +978,16 @@
       height 200ms var(--ease);
 }
 .dock-band {
-   background: var(--accent-soft);
+   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .dock-divider.vertical > .dock-band {
    left: 50%;
-   width: 3px;
+   width: 2px;
    translate: -50% 0;
 }
 .dock-divider.horizontal > .dock-band {
    top: 50%;
-   height: 3px;
+   height: 2px;
    translate: 0 -50%;
 }
 .dock-mark,
@@ -1014,6 +1014,12 @@
 .dock-divider:is(:hover, [data-active]) > *,
 :root[data-keyboard] .dock-divider:focus-visible > :is(.dock-band, .dock-handle) {
    opacity: 1;
+}
+.recording-layout[data-resizing] .dock-divider:not([data-active]) > *,
+.recording-layout[data-resizing] .dock-divider[data-active] > .dock-mark,
+.recording-layout[data-resizing] .dock-crossing:not([data-active]) > span,
+.recording-layout:has(.dock-crossing[data-active]) .dock-divider > .dock-handle {
+   opacity: 0;
 }
 .dock-crossing {
    position: absolute;
@@ -1320,7 +1326,6 @@
    border-radius: 12px;
    corner-shape: squircle;
    background: transparent;
-   box-shadow: inset 0 0 0 1px var(--line);
    color: var(--subtle);
 }
 .mixer-scroll > .audio-add:hover:not(:disabled) {

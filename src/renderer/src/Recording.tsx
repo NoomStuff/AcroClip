@@ -299,7 +299,13 @@ export function Recording({
    };
    return (
       <div className="recording-page">
-         <div className="recording-layout" ref={layout} data-dragging={dock.drag ? dock.drag.panel : undefined} data-settling={dock.settling || undefined}>
+         <div
+            className="recording-layout"
+            ref={layout}
+            data-dragging={dock.drag ? dock.drag.panel : undefined}
+            data-settling={dock.settling || undefined}
+            data-resizing={dock.resizing.length > 0 || undefined}
+         >
             <div className="recording-main">
                <div
                   className="preview-surface"
