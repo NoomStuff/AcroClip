@@ -7,6 +7,7 @@ import { api, describeError, reportFeedback } from "./desktop";
 import { Button, ContextHeader, Empty, Field, Segmented, Select } from "./ui";
 import type { Run } from "./desktop";
 import { PaneDivider, usePaneSize } from "./layout";
+import { RecordingPanelEditor, useRecordingPanels } from "./recording-panels";
 import { useSourcePreview } from "./useSourcePreview";
 import { bindingFor, formatBinding } from "../../shared/shortcuts";
 import { SelectionIndicator } from "./SelectionIndicator";
@@ -62,6 +63,7 @@ export function Recording({
    const sourceIndex = ["screen", "app", "auto"].indexOf(state.preferences.sourceKind);
    useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible);
    const controls = usePaneSize(layout, { key: "recording.controls", initial: 340, min: 260, max: 460, reserve: 420, axis: "x", fromEnd: true });
+   const panels = useRecordingPanels();
    const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 170, reserve: 240, axis: "y", fromEnd: true });
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
    const [sourceRequest, setSourceRequest] = useState(0);
@@ -302,7 +304,12 @@ export function Recording({
             style={{ gridTemplateColumns: `minmax(0, 1fr) 12px ${controls.size}px`, gridTemplateRows: `minmax(0, 1fr) 12px ${lower.size}px` }}
          >
             <div className="recording-main">
-               <div className="preview-surface" data-preview={source ? preview.status : undefined} data-paused={previewPaused || undefined}>
+               <div
+                  className="preview-surface"
+                  style={panels.style("preview")}
+                  data-preview={source ? preview.status : undefined}
+                  data-paused={previewPaused || undefined}
+               >
                   <canvas ref={preview.outgoing} className="preview-outgoing" aria-hidden="true" />
                   {source && previewUnavailable ? (
                      <Empty
@@ -400,7 +407,7 @@ export function Recording({
                   )}
                </div>
                <div className="recording-bottom">
-                  <div className="mixer">
+                  <div className="mixer" style={panels.style("mixer")}>
                      <div className="mixer-scroll">
                         <AudioListening
                            active={active || state.recorder.state === "starting"}
@@ -420,7 +427,7 @@ export function Recording({
                         </AudioListening>
                      </div>
                   </div>
-                  <div className="capture-actions">
+                  <div className="capture-actions" style={panels.style("actions")}>
                      <button
                         className={`record-action ${active ? "is-recording" : ""}`}
                         aria-label={active ? "Stop capturing" : state.recorder.state === "starting" ? "Starting capture" : "Start capturing"}
@@ -454,7 +461,7 @@ export function Recording({
                   </div>
                </div>
             </div>
-            <aside className="source-panel">
+            <aside className="source-panel" style={panels.style("sources")}>
                <Segmented label="Source type" value={state.preferences.sourceKind} values={sourceChoices(sources, capabilities)} onChange={switchKind} />
                <div className="capture-source-content" ref={sourceContent}>
                   {portal && (
@@ -568,6 +575,7 @@ export function Recording({
             </aside>
             <PaneDivider label="Capture controls width" pane={controls} className="recording-width-divider" />
             <PaneDivider label="Capture lower panels height" pane={lower} className="recording-height-divider" />
+            <RecordingPanelEditor panels={panels} />
          </div>
       </div>
    );

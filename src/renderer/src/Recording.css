@@ -946,3 +946,102 @@
 .motion-list-item[data-dragging] .mixer-channel .mixer-drag-handle {
    background: transparent;
 }
+
+.layout-toggle-slot {
+   grid-column: 2;
+   grid-row: 2;
+   position: relative;
+   z-index: 7;
+}
+.layout-toggle {
+   position: absolute;
+   left: 50%;
+   top: 50%;
+   translate: -50% -50%;
+   width: 24px;
+   height: 24px;
+   display: grid;
+   place-items: center;
+   border-radius: 9999px;
+   background: var(--raised);
+   color: var(--muted);
+   box-shadow: 0 0 0 4px var(--base);
+   opacity: 0.55;
+   transition:
+      opacity 160ms var(--ease),
+      color 160ms var(--ease),
+      background-color 160ms var(--ease);
+}
+.layout-toggle:hover,
+.layout-toggle[data-active] {
+   opacity: 1;
+   color: var(--text);
+}
+.layout-toggle[data-active] {
+   background: var(--accent);
+   color: #17121f;
+}
+
+.layout-overlay {
+   position: relative;
+   z-index: 6;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
+   gap: 12px;
+   border-radius: 22px;
+   corner-shape: squircle;
+   background: color-mix(in srgb, var(--surface) 72%, transparent);
+   backdrop-filter: blur(6px);
+   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 35%, transparent);
+   cursor: grab;
+   touch-action: none;
+   user-select: none;
+   animation: layout-overlay-in 180ms var(--ease) both;
+   transition:
+      box-shadow 140ms var(--ease),
+      background-color 140ms var(--ease);
+}
+.layout-overlay[data-dragging] {
+   z-index: 8;
+   cursor: grabbing;
+   scale: 0.96;
+   box-shadow:
+      inset 0 0 0 2px var(--accent),
+      0 18px 40px #0008;
+}
+.layout-overlay[data-target] {
+   background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+   box-shadow: inset 0 0 0 2px var(--accent);
+}
+.layout-overlay-label {
+   display: inline-flex;
+   align-items: center;
+   gap: 6px;
+   font-size: 14px;
+   font-weight: 650;
+   color: var(--text);
+}
+.layout-reset {
+   display: inline-flex;
+   align-items: center;
+   gap: 6px;
+   padding: 6px 12px;
+   border-radius: 9999px;
+   background: var(--raised);
+   color: var(--muted);
+   font-size: 12px;
+}
+.layout-reset:hover {
+   color: var(--text);
+}
+@keyframes layout-overlay-in {
+   from {
+      opacity: 0;
+   }
+}
+::view-transition-group(*) {
+   animation-duration: 280ms;
+   animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
