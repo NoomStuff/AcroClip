@@ -940,33 +940,36 @@
 
 .dock-grip {
    position: absolute;
-   top: 4px;
+   top: 1px;
    left: 50%;
    translate: -50% 0;
    z-index: 6;
-   width: 32px;
-   height: 18px;
+   width: 30px;
+   height: 14px;
    display: grid;
    place-items: center;
    border-radius: 9999px;
    background: var(--raised);
-   box-shadow: 0 1px 4px #0006;
    color: var(--subtle);
    opacity: 0;
+   pointer-events: none;
    cursor: grab;
    touch-action: none;
    -webkit-app-region: no-drag;
    transition:
       opacity 160ms var(--ease),
-      color 160ms var(--ease),
-      background-color 160ms var(--ease);
+      color 160ms var(--ease);
 }
-:is(.preview-surface, .mixer, .capture-actions, .source-panel):hover > .dock-grip {
+[data-dock-near] > .dock-grip {
    opacity: 1;
+   pointer-events: auto;
 }
 .dock-grip:hover {
-   background: #353239;
    color: var(--text);
+}
+.dock-divider[data-active]::after {
+   background: var(--accent);
+   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .dock-divider::after {
    background: transparent;
@@ -1027,81 +1030,160 @@
 
 .mixer[data-vertical] .mixer-scroll {
    flex-direction: row;
+   align-items: stretch;
    overflow-x: auto;
    overflow-y: hidden;
 }
-.mixer-strips {
-   display: flex;
-   gap: 10px;
+.mixer[data-vertical] .motion-list {
    height: 100%;
+   flex-shrink: 0;
 }
-.mixer[data-vertical] .mixer-channel {
-   flex: 0 0 92px;
+.mixer[data-vertical] .mixer-scroll > .audio-add {
+   margin-left: 10px;
+}
+.mixer-strip {
+   width: 100px;
    height: 100%;
    display: grid;
    grid-template-columns: 1fr 1fr;
-   grid-template-rows: auto minmax(0, 1fr) auto auto;
+   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
    grid-template-areas:
-      "head head"
+      "name name"
+      "tools tools"
       "meter fader"
       "value value"
       "mute listen";
-   gap: 6px;
-   padding: 0 10px 0 0;
+   gap: 6px 4px;
+   padding: 0 10px;
    border-bottom: 0;
    border-right: 1px solid var(--line);
 }
-.mixer[data-vertical] :is(.mixer-channel-gain, .mixer-fader, .audio-meter-controls) {
-   display: contents;
+.motion-list-item:first-child .mixer-strip {
+   padding-left: 0;
+   width: 90px;
 }
-.mixer[data-vertical] .mixer-channel-header {
-   grid-area: head;
-   flex-wrap: wrap;
-   justify-content: center;
-   gap: 0 4px;
-   min-height: 0;
-}
-.mixer[data-vertical] .mixer-channel-name {
-   flex-basis: 100%;
+.mixer-strip > .mixer-channel-name {
+   grid-area: name;
    text-align: center;
 }
-.mixer[data-vertical] :is(.mixer-drag-handle, .mixer-channel-status, .mixer-channel-filters) {
-   display: none;
+.mixer-strip-tools {
+   grid-area: tools;
+   height: 24px;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   gap: 1px;
 }
-.mixer[data-vertical] .mixer-channel-gain > .icon-button {
-   grid-area: mute;
-   justify-self: center;
+.mixer-strip-tools > .icon-button,
+.mixer-strip-tools > .menu-wrap > .icon-button {
+   width: 22px;
+   min-width: 22px;
+   height: 24px;
+   min-height: 24px;
+   padding: 0;
 }
-.mixer[data-vertical] .audio-meter-controls > .icon-button {
-   grid-area: listen;
-   justify-self: center;
+.mixer-strip .mixer-drag-handle {
+   position: static;
+   transform: none;
+   width: 18px;
+   height: 24px;
 }
-.mixer[data-vertical] .mixer-gain-value {
-   grid-area: value;
-   width: auto;
+.mixer-strip .mixer-drag-handle > svg {
+   rotate: 90deg;
 }
-.mixer[data-vertical] .mixer-fader-control {
+.mixer-strip .mixer-channel-status {
+   display: inline-flex;
+   color: var(--subtle);
+}
+.mixer-strip .mixer-fader {
+   display: contents;
+}
+.mixer-strip > .audio-db-meter {
+   grid-area: meter;
+   justify-self: end;
+   min-height: 0;
+   display: flex;
+   flex-direction: row-reverse;
+   gap: 4px;
+   padding: 5px 0;
+}
+.mixer-strip .audio-db-track {
+   width: 10px;
+   height: 100%;
+}
+.mixer-strip .audio-db-fill {
+   background: linear-gradient(to top, #48b26c 0%, #48b26c 70%, #d5bc51 70%, #d5bc51 90%, #d75b57 90%);
+   clip-path: inset(calc(100% - var(--meter-level, 0%)) 0 0 0);
+}
+.mixer-strip .audio-db-meter[data-muted] .audio-db-fill {
+   background: #777;
+}
+.mixer-strip .audio-db-peak {
+   top: auto;
+   bottom: clamp(0px, var(--meter-peak, 0%), calc(100% - 2px));
+   left: 0;
+   width: 100%;
+   height: 2px;
+}
+.mixer-strip .audio-db-clip {
+   right: auto;
+   left: 0;
+   width: 100%;
+   height: 4px;
+}
+.mixer-strip .audio-db-scale {
+   position: relative;
+   display: block;
+   width: 20px;
+   margin: 0;
+   font-size: 10px;
+   line-height: 1;
+}
+.mixer-strip .audio-db-scale > span {
+   position: absolute;
+   right: 0;
+   translate: 0 50%;
+}
+.mixer-strip .audio-db-scale > span:nth-child(2) {
+   bottom: 20%;
+}
+.mixer-strip .audio-db-scale > span:nth-child(3) {
+   bottom: 40%;
+}
+.mixer-strip .audio-db-scale > span:nth-child(4) {
+   bottom: 60%;
+}
+.mixer-strip .audio-db-scale > span:nth-child(5) {
+   bottom: 80%;
+}
+.mixer-strip .audio-db-scale > span:first-child {
+   bottom: 0;
+}
+.mixer-strip .audio-db-scale > span:last-child {
+   bottom: 100%;
+}
+.mixer-strip .mixer-fader-control {
    grid-area: fader;
-   justify-self: center;
+   justify-self: start;
    width: 28px;
    height: auto;
    margin: 0;
 }
-.mixer[data-vertical] .mixer-fader-range {
+.mixer-strip .mixer-fader-range {
    writing-mode: vertical-lr;
    direction: rtl;
    height: 100%;
 }
-.mixer[data-vertical] .mixer-fader-range::-webkit-slider-runnable-track {
+.mixer-strip .mixer-fader-range::-webkit-slider-runnable-track {
    width: 4px;
    height: auto;
 }
-.mixer[data-vertical] .mixer-fader-range::-webkit-slider-thumb {
+.mixer-strip .mixer-fader-range::-webkit-slider-thumb {
    width: 20px;
    height: 11px;
    margin: 0 0 0 -8px;
 }
-.mixer[data-vertical] .mixer-fader-track {
+.mixer-strip .mixer-fader-track {
    left: 50%;
    right: auto;
    top: 5px;
@@ -1110,13 +1192,13 @@
    height: auto;
    translate: -50% 0;
 }
-.mixer[data-vertical] .mixer-fader-fill {
+.mixer-strip .mixer-fader-fill {
    position: absolute;
    bottom: 0;
    width: 100%;
    height: var(--slider-position, 0%);
 }
-.mixer[data-vertical] .mixer-fader-thumb {
+.mixer-strip .mixer-fader-thumb {
    left: 50%;
    top: auto;
    bottom: var(--slider-position, 0%);
@@ -1124,37 +1206,28 @@
    width: 20px;
    height: 10px;
 }
-.mixer[data-vertical] .audio-meter-controls .audio-db-meter {
-   grid-area: meter;
+.mixer-strip .mixer-gain-value {
+   grid-area: value;
+   width: auto;
+}
+.mixer-strip > .mixer-mute,
+.mixer-strip > .audio-listen {
    justify-self: center;
-   width: 10px;
-   height: 100%;
-   padding: 5px 0;
+   display: grid;
+   place-items: center;
+   width: 30px;
+   min-width: 30px;
+   height: 28px;
+   min-height: 28px;
+   padding: 0;
 }
-.mixer[data-vertical] .audio-meter-controls .audio-db-track {
-   width: 100%;
-   height: 100%;
+.mixer-strip > .mixer-mute {
+   grid-area: mute;
 }
-.mixer[data-vertical] .audio-db-fill {
-   background: linear-gradient(to top, #48b26c 0%, #48b26c 70%, #d5bc51 70%, #d5bc51 90%, #d75b57 90%);
-   clip-path: inset(calc(100% - var(--meter-level, 0%)) 0 0 0);
+.mixer-strip > .audio-listen {
+   grid-area: listen;
 }
-.mixer[data-vertical] .audio-db-meter[data-muted] .audio-db-fill {
-   background: #777;
-}
-.mixer[data-vertical] .audio-db-peak {
-   top: auto;
-   bottom: clamp(0px, var(--meter-peak, 0%), calc(100% - 2px));
-   left: 0;
-   width: 100%;
-   height: 2px;
-}
-.mixer[data-vertical] .audio-db-clip {
-   right: auto;
-   left: 0;
-   width: 100%;
-   height: 4px;
-}
-.mixer[data-vertical] .audio-db-scale {
-   display: none;
+.mixer-strip > .mixer-mute:hover:not(:disabled) {
+   color: var(--accent);
+   background: var(--accent-soft);
 }

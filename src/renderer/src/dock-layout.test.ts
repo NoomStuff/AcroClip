@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { defaultDock, dockPanel, dropTarget, groupDividers, isDockLayout, layoutDock, panelMinimum, planDrop, resizeDock, resolveSizes } from "./dock-layout";
+import {
+   defaultDock,
+   dockPanel,
+   dividerSegments,
+   dropTarget,
+   isDockLayout,
+   layoutDock,
+   panelMinimum,
+   planDrop,
+   resizeDock,
+   resolveSizes,
+   separateSegment,
+} from "./dock-layout";
 import type { DockNode } from "./dock-layout";
 
 const bounds = { x: 0, y: 0, width: 1200, height: 800 };
@@ -91,12 +103,30 @@ describe("dock layout", () => {
       expect(edge).toMatchObject({ target: "mixer", side: "bottom" });
    });
 
-   it("joins dividers that line up into one", () => {
-      const groups = groupDividers(layoutDock(defaultDock, bounds).dividers);
-      const across = groups.find((group) => group.axis === "column")!;
-      expect(groups).toHaveLength(2);
-      expect(across.members).toHaveLength(2);
-      expect(across.rect.width).toBe(bounds.width);
+   it("splits a crossing into four arms", () => {
+      const segments = dividerSegments(layoutDock(defaultDock, bounds).dividers);
+      expect(segments).toHaveLength(4);
+      expect(segments.filter((segment) => segment.partial)).toHaveLength(2);
+   });
+
+   it("moves one arm of a crossing by joining the line across it", () => {
+      const segments = dividerSegments(layoutDock(defaultDock, bounds).dividers);
+      const upper = segments.find((segment) => segment.partial && segment.piece === 0)!;
+      const { root, divider } = separateSegment(defaultDock, bounds, upper);
+      const moved = layoutDock(resizeDock(root, divider, -100), bounds);
+      const before = layoutDock(defaultDock, bounds).panels;
+      expect(moved.panels.preview.width).toBe(before.preview.width - 100);
+      expect(moved.panels.mixer.width).toBe(before.mixer.width);
+      expect(moved.panels.sources.width).toBe(before.sources.width + 100);
+      expect(moved.panels.mixer.y).toBe(moved.panels.actions.y);
+      const across = moved.dividers.filter((item) => item.axis === "column");
+      expect(across).toHaveLength(1);
+      expect(across[0]!.rect.width).toBe(bounds.width);
+   });
+
+   it("keeps panel minimums that are passed in", () => {
+      const minimums = { ...panelMinimum, mixer: { width: 200, height: 400 } };
+      expect(layoutDock(defaultDock, bounds, minimums).panels.mixer.height).toBe(400);
    });
 
    it("rejects stored layouts that lose or repeat a panel", () => {

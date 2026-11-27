@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { WandSparkles, Pencil, Plus, SlidersVertical, Trash2 } from "lucide-react";
+import { WandSparkles, Pencil, Plus, SlidersHorizontal, SlidersVertical, Trash2 } from "lucide-react";
 import type { AdditionalAudioSource, GameCandidate, Preferences } from "../../shared/types";
 import { normalizeApplicationLabel } from "../../shared/application-label";
 import { api, describeError, reportFeedback } from "./desktop";
-import { Button, MenuCheckboxItem, MenuItem, Select } from "./ui";
+import { Button, MenuItem, Select } from "./ui";
 import { setVerticalMixer, useVerticalMixer } from "./useVerticalMixer";
 import { DialogPanel } from "./Dialog";
 import { MotionList } from "./MotionList";
@@ -132,7 +132,6 @@ export function AdditionalAudio({
    };
    const renderRow = (source: AdditionalAudioSource) => (
       <AudioMixerRow
-         key={source.id}
          visible={visible}
          sourceId={source.id}
          name={source.kind === "source" ? captureName : source.kind === "application" ? normalizeApplicationLabel(source.name) : source.name}
@@ -157,10 +156,10 @@ export function AdditionalAudio({
                   <Pencil size={15} />
                   Edit source
                </MenuItem>
-               <MenuCheckboxItem checked={vertical} onClick={() => setVerticalMixer(!vertical)}>
-                  <SlidersVertical size={15} />
-                  Vertical mixer
-               </MenuCheckboxItem>
+               <MenuItem separated onClick={() => setVerticalMixer(!vertical)}>
+                  {vertical ? <SlidersHorizontal size={15} /> : <SlidersVertical size={15} />}
+                  {vertical ? "Horizontal mixer" : "Vertical mixer"}
+               </MenuItem>
                <MenuItem
                   danger
                   disabled={active}
@@ -175,28 +174,26 @@ export function AdditionalAudio({
    );
    return (
       <>
-         {vertical ? (
-            <div className="mixer-strips">{preferences.audioSources.map(renderRow)}</div>
-         ) : (
-            <MotionList
-               items={preferences.audioSources}
-               onReorder={
-                  active
-                     ? undefined
-                     : (id, beforeId) =>
-                          save((current) => {
-                             const source = current.audioSources.find((item) => item.id === id);
-                             if (!source) return {};
-                             const audioSources = current.audioSources.filter((item) => item.id !== id);
-                             const index = beforeId === null ? audioSources.length : audioSources.findIndex((item) => item.id === beforeId);
-                             audioSources.splice(index < 0 ? audioSources.length : index, 0, source);
-                             return { audioSources };
-                          })
-               }
-            >
-               {renderRow}
-            </MotionList>
-         )}
+         <MotionList
+            axis={vertical ? "x" : "y"}
+            identity={vertical ? "strips" : "rows"}
+            items={preferences.audioSources}
+            onReorder={
+               active
+                  ? undefined
+                  : (id, beforeId) =>
+                       save((current) => {
+                          const source = current.audioSources.find((item) => item.id === id);
+                          if (!source) return {};
+                          const audioSources = current.audioSources.filter((item) => item.id !== id);
+                          const index = beforeId === null ? audioSources.length : audioSources.findIndex((item) => item.id === beforeId);
+                          audioSources.splice(index < 0 ? audioSources.length : index, 0, source);
+                          return { audioSources };
+                       })
+            }
+         >
+            {renderRow}
+         </MotionList>
          {preferences.audioSources.length < 5 && (
             <Button className="audio-add" disabled={active} data-tooltip={active ? "Stop capturing to add audio sources" : undefined} onClick={() => show()}>
                <Plus size={14} />

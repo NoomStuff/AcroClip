@@ -7,6 +7,7 @@ import { api, describeError, reportFeedback } from "./desktop";
 import { Button, ContextHeader, Empty, Field, Segmented, Select } from "./ui";
 import type { Run } from "./desktop";
 import { DockGrip, DockOverlay, useDock } from "./DockLayout";
+import { panelMinimum } from "./dock-layout";
 import { useSourcePreview } from "./useSourcePreview";
 import { bindingFor, formatBinding } from "../../shared/shortcuts";
 import { SelectionIndicator } from "./SelectionIndicator";
@@ -63,7 +64,8 @@ export function Recording({
    const sourceIndex = ["screen", "app", "auto"].indexOf(state.preferences.sourceKind);
    useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible);
    const verticalMixer = useVerticalMixer();
-   const dock = useDock(layout, verticalMixer ? { mixer: { width: 200, height: 250 } } : {});
+   const minimums = useMemo(() => (verticalMixer ? { ...panelMinimum, mixer: { width: 200, height: 250 } } : panelMinimum), [verticalMixer]);
+   const dock = useDock(layout, minimums);
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
    const [sourceRequest, setSourceRequest] = useState(0);
    const [sources, setSources] = useState<CaptureSource[]>([]);

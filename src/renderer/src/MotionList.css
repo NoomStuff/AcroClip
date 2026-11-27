@@ -30,3 +30,14 @@
    right: 0;
    pointer-events: none;
 }
+.motion-list[data-axis="x"] {
+   display: flex;
+}
+.motion-list[data-axis="x"] > .motion-list-item,
+.motion-list[data-axis="x"] .motion-list-content {
+   height: 100%;
+}
+.motion-list[data-axis="x"] > .motion-list-item[data-exiting] {
+   right: auto;
+   top: 0;
+}

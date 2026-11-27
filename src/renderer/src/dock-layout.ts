@@ -18,21 +18,17 @@ export interface DockDivider {
    /** The split's sizes as laid out, which a drag starts from. */
    sizes: number[];
 }
+export type PanelMinimums = Record<DockPanel, { width: number; height: number }>;
 
 export const dockPanels: readonly DockPanel[] = ["preview", "sources", "mixer", "actions"];
 export const dockGap = 12;
 /** The smallest each component stays usable at, wherever it is docked. */
-const defaultMinimum: Record<DockPanel, { width: number; height: number }> = {
+export const panelMinimum: PanelMinimums = {
    preview: { width: 220, height: 140 },
    sources: { width: 200, height: 150 },
    mixer: { width: 300, height: 150 },
    actions: { width: 150, height: 120 },
 };
-export const panelMinimum = { ...defaultMinimum };
-/** Lets a panel whose content changes shape, like an upright mixer, set its own minimum. */
-export function setPanelMinimums(overrides: Partial<typeof defaultMinimum>): void {
-   Object.assign(panelMinimum, defaultMinimum, overrides);
-}
 export const defaultDock: DockNode = {
    split: "row",
    sizes: [700, 340],
@@ -70,9 +66,9 @@ export function isDockLayout(value: unknown): value is DockNode {
    return panels.length === dockPanels.length && dockPanels.every((panel) => panels.includes(panel));
 }
 
-export function minimumSize(node: DockNode, axis: DockAxis): number {
-   if ("panel" in node) return along(axis, panelMinimum[node.panel]);
-   const sizes = node.children.map((child) => minimumSize(child, axis));
+export function minimumSize(node: DockNode, axis: DockAxis, minimums = panelMinimum): number {
+   if ("panel" in node) return along(axis, minimums[node.panel]);
+   const sizes = node.children.map((child) => minimumSize(child, axis, minimums));
    return node.split === axis ? sizes.reduce((total, size) => total + size, 0) + dockGap * (sizes.length - 1) : Math.max(...sizes);
 }
 
@@ -80,9 +76,9 @@ export function minimumSize(node: DockNode, axis: DockAxis): number {
  * Fits a split's stored sizes into `length`. The child holding the preview takes up the difference,
  * so docked controls keep their size while the window changes. No child goes below its minimum.
  */
-export function resolveSizes(node: Extract<DockNode, { split: DockAxis }>, length: number): number[] {
+export function resolveSizes(node: Extract<DockNode, { split: DockAxis }>, length: number, limits = panelMinimum): number[] {
    const available = length - dockGap * (node.children.length - 1);
-   const minimums = node.children.map((child) => minimumSize(child, node.split));
+   const minimums = node.children.map((child) => minimumSize(child, node.split, limits));
    const sizes = node.sizes.map((size, index) => Math.max(minimums[index]!, size));
    const previewIndex = node.children.findIndex((child) => contains(child, "preview"));
    const flex = previewIndex >= 0 ? previewIndex : sizes.indexOf(Math.max(...sizes));
@@ -100,7 +96,7 @@ export function resolveSizes(node: Extract<DockNode, { split: DockAxis }>, lengt
    return sizes;
 }
 
-export function layoutDock(root: DockNode, bounds: Rect): { panels: Record<DockPanel, Rect>; dividers: DockDivider[] } {
+export function layoutDock(root: DockNode, bounds: Rect, minimums = panelMinimum): { panels: Record<DockPanel, Rect>; dividers: DockDivider[] } {
    const panels = {} as Record<DockPanel, Rect>;
    const dividers: DockDivider[] = [];
    const place = (node: DockNode, rect: Rect, path: number[]) => {
@@ -108,7 +104,7 @@ export function layoutDock(root: DockNode, bounds: Rect): { panels: Record<DockP
          panels[node.panel] = rect;
          return;
       }
-      const sizes = resolveSizes(node, along(node.split, rect));
+      const sizes = resolveSizes(node, along(node.split, rect), minimums);
       let offset = node.split === "row" ? rect.x : rect.y;
       sizes.forEach((size, index) => {
          const child: Rect = node.split === "row" ? { ...rect, x: offset, width: size } : { ...rect, y: offset, height: size };
@@ -140,10 +136,10 @@ function replaceAt(root: DockNode, path: readonly number[], next: DockNode): Doc
 }
 
 /** Moves the divider after child `index` of the split at `path` by `delta` pixels, within both neighbours' minimums. */
-export function resizeDock(root: DockNode, divider: Pick<DockDivider, "path" | "index" | "sizes">, delta: number): DockNode {
+export function resizeDock(root: DockNode, divider: Pick<DockDivider, "path" | "index" | "sizes">, delta: number, minimums = panelMinimum): DockNode {
    const node = nodeAt(root, divider.path);
    if ("panel" in node) return root;
-   const [low, high] = dividerLimits(root, divider);
+   const [low, high] = dividerLimits(root, divider, minimums);
    const move = Math.max(low, Math.min(high, delta));
    const sizes = [...divider.sizes];
    sizes[divider.index] = sizes[divider.index]! + move;
@@ -152,45 +148,103 @@ export function resizeDock(root: DockNode, divider: Pick<DockDivider, "path" | "
 }
 
 /** How far a divider can move back and forward before either neighbour reaches its minimum. */
-export function dividerLimits(root: DockNode, divider: Pick<DockDivider, "path" | "index" | "sizes">): [number, number] {
+export function dividerLimits(root: DockNode, divider: Pick<DockDivider, "path" | "index" | "sizes">, minimums = panelMinimum): [number, number] {
    const node = nodeAt(root, divider.path);
    if ("panel" in node) return [0, 0];
    const { index, sizes } = divider;
-   return [minimumSize(node.children[index]!, node.split) - sizes[index]!, sizes[index + 1]! - minimumSize(node.children[index + 1]!, node.split)];
+   return [
+      minimumSize(node.children[index]!, node.split, minimums) - sizes[index]!,
+      sizes[index + 1]! - minimumSize(node.children[index + 1]!, node.split, minimums),
+   ];
 }
 
-export interface DockDividerGroup {
-   axis: DockAxis;
-   position: number;
-   rect: Rect;
-   members: DockDivider[];
-}
 export const dividerPosition = (divider: Pick<DockDivider, "axis" | "rect">) => (divider.axis === "row" ? divider.rect.x : divider.rect.y);
+const crossSpan = (item: Pick<DockDivider, "axis" | "rect">): [number, number] =>
+   item.axis === "row" ? [item.rect.y, item.rect.y + item.rect.height] : [item.rect.x, item.rect.x + item.rect.width];
+const directDividers = (dividers: readonly DockDivider[], path: readonly number[]) => dividers.filter((other) => other.path.join(".") === path.join("."));
 
-/** Dividers that line up and touch move as one, so a 2x2 grid has one line across instead of two halves. */
-export function groupDividers(dividers: readonly DockDivider[]): DockDividerGroup[] {
-   const span = (divider: DockDivider): [number, number] =>
-      divider.axis === "row" ? [divider.rect.y, divider.rect.y + divider.rect.height] : [divider.rect.x, divider.rect.x + divider.rect.width];
-   const joins = (a: DockDivider, b: DockDivider) =>
-      a.axis === b.axis &&
-      Math.abs(dividerPosition(a) - dividerPosition(b)) < 1 &&
-      span(a)[0] <= span(b)[1] + dockGap + 1 &&
-      span(b)[0] <= span(a)[1] + dockGap + 1;
-   let groups: DockDivider[][] = [];
-   for (const divider of dividers) {
-      const touching = groups.filter((group) => group.some((other) => joins(other, divider)));
-      groups = [...groups.filter((group) => !touching.includes(group)), [divider, ...touching.flat()]];
-   }
-   return groups.map(dividerGroup);
+/** Where the splits on both sides of `divider` meet it at the same spot, making a crossing. */
+function crossings(dividers: readonly DockDivider[], divider: DockDivider): number[] {
+   const before = directDividers(dividers, [...divider.path, divider.index]).map(dividerPosition);
+   const after = directDividers(dividers, [...divider.path, divider.index + 1]).map(dividerPosition);
+   return before.filter((spot) => after.some((other) => Math.abs(other - spot) < 1)).sort((a, b) => a - b);
 }
-export function dividerGroup(members: DockDivider[]): DockDividerGroup {
-   const left = Math.min(...members.map((item) => item.rect.x));
-   const top = Math.min(...members.map((item) => item.rect.y));
-   const right = Math.max(...members.map((item) => item.rect.x + item.rect.width));
-   const bottom = Math.max(...members.map((item) => item.rect.y + item.rect.height));
-   return { axis: members[0]!.axis, position: dividerPosition(members[0]!), rect: { x: left, y: top, width: right - left, height: bottom - top }, members };
+
+/** A draggable piece of a divider. Crossings cut a divider into arms that each move on their own. */
+export interface DockSegment {
+   divider: DockDivider;
+   rect: Rect;
+   /** True when the piece is an arm between crossings rather than the whole divider. */
+   partial: boolean;
+   /** Which arm of its divider this is, counted from the top or left. */
+   piece: number;
 }
-export const dividerKey = (divider: Pick<DockDivider, "path" | "index">) => `${divider.path.join(".")}:${divider.index}`;
+export function dividerSegments(dividers: readonly DockDivider[]): DockSegment[] {
+   return dividers.flatMap((divider): DockSegment[] => {
+      const cuts = crossings(dividers, divider);
+      if (!cuts.length) return [{ divider, rect: divider.rect, partial: false, piece: 0 }];
+      const [start, end] = crossSpan(divider);
+      const bounds = [start, ...cuts.flatMap((cut) => [cut, cut + dockGap]), end];
+      return [...cuts, end].map((_, index) => {
+         const from = bounds[index * 2]!;
+         const to = bounds[index * 2 + 1]!;
+         const rect = divider.axis === "row" ? { ...divider.rect, y: from, height: to - from } : { ...divider.rect, x: from, width: to - from };
+         return { divider, rect, partial: true, piece: index };
+      });
+   });
+}
+
+/**
+ * Gives the arm `segment` a divider of its own. The splits on both sides of its divider are cut at
+ * every crossing and paired up, so the crossing lines join into one and the arms come apart.
+ */
+export function separateSegment(root: DockNode, bounds: Rect, segment: DockSegment, minimums = panelMinimum): { root: DockNode; divider: DockDivider } {
+   const { divider } = segment;
+   const node = nodeAt(root, divider.path);
+   if (!segment.partial || "panel" in node) return { root, divider };
+   const { dividers } = layoutDock(root, bounds, minimums);
+   const cuts = crossings(dividers, divider);
+   const across: DockAxis = divider.axis === "row" ? "column" : "row";
+   const pieces = (index: number): Array<{ node: DockNode; size: number }> => {
+      const child = node.children[index]!;
+      const own = directDividers(dividers, [...divider.path, index]);
+      if ("panel" in child || !own.length) return [{ node: child, size: 0 }];
+      const sizes = own[0]!.sizes;
+      const starts = [0, ...own.filter((item) => cuts.some((cut) => Math.abs(dividerPosition(item) - cut) < 1)).map((item) => item.index + 1)];
+      return starts.map((from, at) => {
+         const to = starts[at + 1] ?? child.children.length;
+         const size = sizes.slice(from, to).reduce((sum, value) => sum + value, 0) + dockGap * (to - from - 1);
+         return {
+            node: to - from === 1 ? child.children[from]! : { split: across, children: child.children.slice(from, to), sizes: sizes.slice(from, to) },
+            size,
+         };
+      });
+   };
+   const first = pieces(divider.index);
+   const second = pieces(divider.index + 1);
+   if (first.length !== second.length) return { root, divider };
+   const paired: DockNode = {
+      split: across,
+      sizes: first.map((piece) => piece.size),
+      children: first.map((piece, at) => ({
+         split: divider.axis,
+         children: [piece.node, second[at]!.node],
+         sizes: [divider.sizes[divider.index]!, divider.sizes[divider.index + 1]!],
+      })),
+   };
+   const children = [...node.children];
+   const sizes = [...divider.sizes];
+   children.splice(divider.index, 2, paired);
+   sizes.splice(divider.index, 2, divider.sizes[divider.index]! + dockGap + divider.sizes[divider.index + 1]!);
+   const next = flatten(replaceAt(root, divider.path, children.length === 1 ? paired : { ...node, children, sizes }));
+   const [from, to] = crossSpan({ axis: divider.axis, rect: segment.rect });
+   const middle = (from + to) / 2;
+   const match = layoutDock(next, bounds, minimums).dividers.find((item) => {
+      const [start, end] = crossSpan(item);
+      return item.axis === divider.axis && Math.abs(dividerPosition(item) - dividerPosition(divider)) < 1 && start <= middle && middle <= end;
+   });
+   return match ? { root: next, divider: match } : { root, divider };
+}
 
 function removePanel(node: DockNode, panel: DockPanel): DockNode | null {
    if ("panel" in node) return node.panel === panel ? null : node;
@@ -210,15 +264,15 @@ function swapPanels(node: DockNode, a: DockPanel, b: DockPanel): DockNode {
  * Docks `moving` against a side of `target`, or of the whole layout when `target` is "root".
  * `targetRect` is where the target sits now, which sets how much room the moved panel gets.
  */
-export function dockPanel(root: DockNode, moving: DockPanel, target: DockPanel | "root", side: DockSide, targetRect: Rect): DockNode {
+export function dockPanel(root: DockNode, moving: DockPanel, target: DockPanel | "root", side: DockSide, targetRect: Rect, minimums = panelMinimum): DockNode {
    if (target === moving) return root;
    if (side === "center") return target === "root" ? root : swapPanels(root, moving, target);
-   if (isCorner(side)) return dockCorner(root, moving, side, targetRect);
+   if (isCorner(side)) return dockCorner(root, moving, side, targetRect, minimums);
    const axis: DockAxis = side === "left" || side === "right" ? "row" : "column";
    const before = side === "left" || side === "top";
    const remaining = removePanel(root, moving)!;
    const length = along(axis, targetRect);
-   const share = target === "root" ? Math.max(along(axis, panelMinimum[moving]), Math.round(length / 3)) : (length - dockGap) / 2;
+   const share = target === "root" ? Math.max(along(axis, minimums[moving]), Math.round(length / 3)) : (length - dockGap) / 2;
    const insert = (node: DockNode, rest: number): DockNode => ({
       split: axis,
       children: before ? [{ panel: moving }, node] : [node, { panel: moving }],
@@ -265,17 +319,17 @@ function parentAxis(node: DockNode, panel: DockPanel): DockAxis | null {
  * Puts `moving` in a corner of the whole layout by docking it beside the panel that holds that corner.
  * It splits along that panel's own split, unless the panel spans the layout, where that would fill a full edge.
  */
-function dockCorner(root: DockNode, moving: DockPanel, corner: DockCorner, bounds: Rect): DockNode {
+function dockCorner(root: DockNode, moving: DockPanel, corner: DockCorner, bounds: Rect, minimums: PanelMinimums): DockNode {
    const [vertical, horizontal] = corner.split("-") as ["top" | "bottom", "left" | "right"];
    const remaining = removePanel(root, moving)!;
-   const { panels } = layoutDock(remaining, bounds);
+   const { panels } = layoutDock(remaining, bounds, minimums);
    const x = horizontal === "left" ? bounds.x : bounds.x + bounds.width;
    const y = vertical === "top" ? bounds.y : bounds.y + bounds.height;
    const distance = (rect: Rect) => Math.hypot(Math.max(rect.x - x, 0, x - rect.x - rect.width), Math.max(rect.y - y, 0, y - rect.y - rect.height));
    const holder = dockPanels.filter((panel) => panel !== moving).reduce((best, panel) => (distance(panels[panel]) < distance(panels[best]) ? panel : best));
    const rect = panels[holder];
    const axis = rect.width >= bounds.width - 1 ? "row" : rect.height >= bounds.height - 1 ? "column" : (parentAxis(remaining, holder) ?? "column");
-   return dockPanel(remaining, moving, holder, axis === "row" ? horizontal : vertical, rect);
+   return dockPanel(remaining, moving, holder, axis === "row" ? horizontal : vertical, rect, minimums);
 }
 
 export interface DockDrop {
@@ -287,18 +341,18 @@ export interface DockDrop {
 }
 
 /** Where a drag at (x, y) would put `moving`, worked out by laying out the result. */
-export function planDrop(root: DockNode, bounds: Rect, moving: DockPanel, x: number, y: number): DockDrop | null {
-   const { panels } = layoutDock(root, bounds);
+export function planDrop(root: DockNode, bounds: Rect, moving: DockPanel, x: number, y: number, minimums = panelMinimum): DockDrop | null {
+   const { panels } = layoutDock(root, bounds, minimums);
    const hit = dropTarget(panels, bounds, moving, x, y);
    if (!hit) return null;
-   const result = (drop: DropHit) => flatten(dockPanel(root, moving, drop.target, drop.side, drop.targetRect));
+   const result = (drop: DropHit) => flatten(dockPanel(root, moving, drop.target, drop.side, drop.targetRect, minimums));
    const next = result(hit);
    const key = shape(next);
    if (key === shape(flatten(root))) return null;
    // Zones that end in the same arrangement share one name and one result: the first in this list.
    const named = hit.side === "center" ? hit : (namedDrops(panels, bounds, moving).find((drop) => shape(result(drop)) === key) ?? hit);
    const chosen = named === hit ? next : result(named);
-   return { target: named.target, side: named.side, next: chosen, preview: layoutDock(chosen, bounds).panels[moving] };
+   return { target: named.target, side: named.side, next: chosen, preview: layoutDock(chosen, bounds, minimums).panels[moving] };
 }
 
 type DropHit = { target: DockPanel | "root"; side: DockSide; targetRect: Rect };
@@ -336,14 +390,8 @@ function flatten(node: DockNode): DockNode {
    return { split: node.split, children, sizes };
 }
 
-/** Which part of the layout a drag at (x, y) points at, and the area the panel would take there. */
-export function dropTarget(
-   rects: Record<DockPanel, Rect>,
-   bounds: Rect,
-   moving: DockPanel,
-   x: number,
-   y: number
-): { target: DockPanel | "root"; side: DockSide; targetRect: Rect } | null {
+/** Which part of the layout a drag at (x, y) points at. */
+export function dropTarget(rects: Record<DockPanel, Rect>, bounds: Rect, moving: DockPanel, x: number, y: number): DropHit | null {
    const edge = 22;
    const corner = 96;
    const outer: Array<[DockEdge, number]> = [
