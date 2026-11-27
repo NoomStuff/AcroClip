@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
 import { GripHorizontal } from "lucide-react";
 import {
    defaultDock,
    dividerLimits,
+   dockFromSizes,
+   dockPanel,
+   flatten,
+   neighbourPanel,
    dividerPosition,
    dividerSegments,
    dockCrossings,
@@ -16,7 +20,20 @@ import {
    resizeDock,
    separateSegment,
 } from "./dock-layout";
-import type { DockAxis, DockCrossing, DockDivider, DockDrop, DockLine, DockNode, DockPanel, DockSegment, DockSide, PanelMinimums, Rect } from "./dock-layout";
+import type {
+   DockAxis,
+   DockCrossing,
+   DockEdge,
+   DockDivider,
+   DockDrop,
+   DockLine,
+   DockNode,
+   DockPanel,
+   DockSegment,
+   DockSide,
+   PanelMinimums,
+   Rect,
+} from "./dock-layout";
 
 const storageKey = "acroclip.layout.recording.dock";
 const dragThreshold = 4;
@@ -24,10 +41,18 @@ const snapDistance = 8;
 /** How close to a panel's top edge the pointer has to be before its grip shows. */
 const gripReach = 40;
 
+/** Sizes the side column and the audio row had before panels could dock anywhere. */
+const paneKeys = ["acroclip.layout.recording.controls", "acroclip.layout.recording.lower"];
+
 function readLayout(): DockNode {
    try {
       const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? "null");
-      return isDockLayout(value) ? value : defaultDock;
+      if (isDockLayout(value)) return value;
+      const [side, lower] = paneKeys.map((key) => Number(localStorage.getItem(key)));
+      const layout = dockFromSizes(side! > 0 ? side! : 340, lower! > 0 ? lower! : 250);
+      storeLayout(layout);
+      for (const key of paneKeys) localStorage.removeItem(key);
+      return layout;
    } catch {
       return defaultDock;
    }
@@ -39,6 +64,7 @@ function storeLayout(layout: DockNode): void {
       /* The layout still works without storage. */
    }
 }
+export const dividerKey = (divider: Pick<DockDivider, "path" | "index">) => `${divider.path.join(".")}:${divider.index}`;
 const sameDivider = (a: Pick<DockDivider, "path" | "index">, b: Pick<DockDivider, "path" | "index">) =>
    a.index === b.index && a.path.join(".") === b.path.join(".");
 
@@ -61,6 +87,9 @@ export function useDock(container: RefObject<HTMLElement | null>, minimums: Pane
    const [drag, setDrag] = useState<Drag | null>(null);
    const [resizing, setResizing] = useState<DockDivider[]>([]);
    const [settling, setSettling] = useState(false);
+   const [announcement, setAnnouncement] = useState("");
+   /** The divider a key press moved, so focus can follow it when its line is rebuilt. */
+   const focusAfter = useRef<string | null>(null);
    const stopResize = useRef<() => void>(() => undefined);
    useEffect(() => {
       const node = container.current;
@@ -130,10 +159,26 @@ export function useDock(container: RefObject<HTMLElement | null>, minimums: Pane
       },
       cancel: () => setDrag(null),
       pointerIn,
+      announcement,
+      focusAfter,
+      /** Moves a panel from the keyboard: swaps it with its neighbour, or docks it along the whole edge. */
+      shift(panel: DockPanel, edge: DockEdge, whole: boolean) {
+         if (!placed || !bounds) return;
+         const neighbour = whole ? null : neighbourPanel(placed.panels, panel, edge);
+         if (!whole && !neighbour) return;
+         const next = flatten(
+            neighbour
+               ? dockPanel(layout, panel, neighbour, "center", placed.panels[neighbour], minimums)
+               : dockPanel(layout, panel, "root", edge, bounds, minimums)
+         );
+         commit(next, true);
+         setAnnouncement(`${panelLabel[panel]}: ${dropLabel(neighbour ?? "root", neighbour ? "center" : edge).toLowerCase()}`);
+      },
       /** Moves a line, arm or crossing by a fixed step, as the arrow keys do. */
       nudge(target: ResizeTarget, x: number, y: number) {
          if (!bounds) return;
          const { root, moves } = plan(target, bounds);
+         focusAfter.current = dividerKey(moves[0]!.dividers[0]!);
          commit(
             applyMoves(root, moves, (axis) => (axis === "row" ? x : y)),
             false
@@ -216,11 +261,18 @@ export function DockGrip({ dock, panel, label }: { dock: Dock; panel: DockPanel;
       <div
          ref={grip}
          role="button"
-         tabIndex={-1}
+         tabIndex={0}
          className="dock-grip"
          aria-label={`Move ${label}`}
+         aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown"
          data-tooltip={dock.drag ? undefined : `Drag to move ${label.toLowerCase()}. Double-click resets the layout.`}
          onDoubleClick={dock.reset}
+         onKeyDown={(event) => {
+            const edge = arrowEdges[event.key];
+            if (!edge || event.altKey || event.ctrlKey || event.metaKey) return;
+            event.preventDefault();
+            dock.shift(panel, edge, event.shiftKey);
+         }}
          onPointerDown={(event) => {
             if (event.button !== 0) return;
             event.preventDefault();
@@ -248,6 +300,7 @@ export function DockGrip({ dock, panel, label }: { dock: Dock; panel: DockPanel;
    );
 }
 
+const arrowEdges: Record<string, DockEdge> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "top", ArrowDown: "bottom" };
 const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 /** How far along a line the pointer may sit from an arm's middle and still pick out just that arm. */
 const armReach = 24;
@@ -291,6 +344,7 @@ function DockLineHandle({ dock, line }: { dock: Dock; line: DockLine }) {
          aria-orientation={upright ? "vertical" : "horizontal"}
          aria-label="Resize panels"
          className={`pane-divider dock-divider ${upright ? "vertical" : "horizontal"}`}
+         data-dividers={lineDividers(line).map(dividerKey).join(" ")}
          data-active={moving.length > 0 || undefined}
          style={{ position: "absolute", left: line.rect.x, top: line.rect.y, width: line.rect.width, height: line.rect.height }}
          onPointerMove={(event) => setPicked(pick(event.clientX, event.clientY))}
@@ -369,8 +423,21 @@ function dropLabel(target: DockPanel | "root", side: DockSide): string {
 /** Dividers between every pair of docked panels, and where a dragged panel would land. */
 export function DockOverlay({ dock }: { dock: Dock }) {
    const drop = dock.drag?.drop;
+   const status = useRef<HTMLSpanElement>(null);
+   const { lines, focusAfter } = dock;
+   useLayoutEffect(() => {
+      const key = focusAfter.current;
+      if (!key) return;
+      focusAfter.current = null;
+      if (document.activeElement && document.activeElement !== document.body) return;
+      const layer = status.current?.parentElement;
+      layer?.querySelector<HTMLElement>(`.dock-divider[data-dividers~="${key}"]`)?.focus({ preventScroll: true });
+   }, [lines, focusAfter]);
    return (
       <>
+         <span className="dock-status" role="status" ref={status}>
+            {dock.announcement}
+         </span>
          {dock.lines.map((line) => (
             <DockLineHandle key={`${line.axis}:${line.arms.map(armKey).join("|")}`} dock={dock} line={line} />
          ))}

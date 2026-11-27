@@ -953,7 +953,20 @@
       opacity 160ms var(--ease),
       color 160ms var(--ease);
 }
-[data-dock-near] > .dock-grip {
+:root[data-keyboard] .dock-grip:focus-visible {
+   outline: 2px solid var(--focus);
+   outline-offset: 1px;
+}
+.dock-status {
+   position: absolute;
+   width: 1px;
+   height: 1px;
+   overflow: hidden;
+   clip-path: inset(50%);
+   white-space: nowrap;
+}
+[data-dock-near] > .dock-grip,
+:root[data-keyboard] .dock-grip:focus-visible {
    opacity: 1;
    pointer-events: auto;
 }

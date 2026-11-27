@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
    defaultDock,
+   dockFromSizes,
    dockCrossings,
    dockLines,
    lineDividers,
+   neighbourPanel,
    dockPanel,
    dividerSegments,
    dropTarget,
@@ -143,6 +145,30 @@ describe("dock layout", () => {
       const { panels } = layoutDock(moved, bounds);
       expect(panels.mixer.y).toBe(placed.panels.mixer.y - 60);
       expect(panels.actions.y).toBe(placed.panels.actions.y - 60);
+   });
+
+   it("squeezes every panel instead of overflowing when the minimums don't fit", () => {
+      const tiny = { x: 0, y: 0, width: 400, height: 260 };
+      const { panels } = layoutDock(defaultDock, tiny);
+      for (const rect of Object.values(panels)) {
+         expect(rect.x + rect.width).toBeLessThanOrEqual(tiny.width + 0.001);
+         expect(rect.y + rect.height).toBeLessThanOrEqual(tiny.height + 0.001);
+         expect(rect.width).toBeGreaterThan(0);
+      }
+   });
+
+   it("finds the panel next to another for keyboard moves", () => {
+      const { panels } = layoutDock(defaultDock, bounds);
+      expect(neighbourPanel(panels, "preview", "right")).toBe("sources");
+      expect(neighbourPanel(panels, "preview", "bottom")).toBe("mixer");
+      expect(neighbourPanel(panels, "actions", "left")).toBe("mixer");
+      expect(neighbourPanel(panels, "preview", "left")).toBeNull();
+   });
+
+   it("starts from the side column and audio sizes the page had before docking", () => {
+      const { panels } = layoutDock(dockFromSizes(300, 200), bounds);
+      expect(panels.sources.width).toBe(300);
+      expect(panels.mixer.height).toBe(200);
    });
 
    it("keeps panel minimums that are passed in", () => {

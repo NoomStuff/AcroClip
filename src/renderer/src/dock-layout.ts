@@ -29,14 +29,18 @@ export const panelMinimum: PanelMinimums = {
    mixer: { width: 300, height: 150 },
    actions: { width: 150, height: 120 },
 };
-export const defaultDock: DockNode = {
-   split: "row",
-   sizes: [700, 340],
-   children: [
-      { split: "column", sizes: [500, 250], children: [{ panel: "preview" }, { panel: "mixer" }] },
-      { split: "column", sizes: [500, 250], children: [{ panel: "sources" }, { panel: "actions" }] },
-   ],
-};
+/** Preview and audio on the left, sources and capture buttons in a side column, as the page was before docking. */
+export function dockFromSizes(side: number, lower: number): DockNode {
+   return {
+      split: "row",
+      sizes: [700, side],
+      children: [
+         { split: "column", sizes: [500, lower], children: [{ panel: "preview" }, { panel: "mixer" }] },
+         { split: "column", sizes: [500, lower], children: [{ panel: "sources" }, { panel: "actions" }] },
+      ],
+   };
+}
+export const defaultDock = dockFromSizes(340, 250);
 
 const along = (axis: DockAxis, rect: Pick<Rect, "width" | "height">) => (axis === "row" ? rect.width : rect.height);
 const contains = (node: DockNode, panel: DockPanel): boolean =>
@@ -74,11 +78,14 @@ export function minimumSize(node: DockNode, axis: DockAxis, minimums = panelMini
 
 /**
  * Fits a split's stored sizes into `length`. The child holding the preview takes up the difference,
- * so docked controls keep their size while the window changes. No child goes below its minimum.
+ * so docked controls keep their size while the window changes. No child goes below its minimum,
+ * unless the minimums alone don't fit: then every child shrinks by the same share, so nothing overflows.
  */
 export function resolveSizes(node: Extract<DockNode, { split: DockAxis }>, length: number, limits = panelMinimum): number[] {
    const available = length - dockGap * (node.children.length - 1);
    const minimums = node.children.map((child) => minimumSize(child, node.split, limits));
+   const needed = minimums.reduce((total, size) => total + size, 0);
+   if (needed > available) return minimums.map((size) => (size / needed) * Math.max(0, available));
    const sizes = node.sizes.map((size, index) => Math.max(minimums[index]!, size));
    const previewIndex = node.children.findIndex((child) => contains(child, "preview"));
    const flex = previewIndex >= 0 ? previewIndex : sizes.indexOf(Math.max(...sizes));
@@ -152,10 +159,33 @@ export function dividerLimits(root: DockNode, divider: Pick<DockDivider, "path" 
    const node = nodeAt(root, divider.path);
    if ("panel" in node) return [0, 0];
    const { index, sizes } = divider;
-   return [
-      minimumSize(node.children[index]!, node.split, minimums) - sizes[index]!,
-      sizes[index + 1]! - minimumSize(node.children[index + 1]!, node.split, minimums),
-   ];
+   const low = minimumSize(node.children[index]!, node.split, minimums) - sizes[index]!;
+   const high = sizes[index + 1]! - minimumSize(node.children[index + 1]!, node.split, minimums);
+   // A squeezed split has no room either way.
+   return low > high ? [0, 0] : [Math.min(0, low), Math.max(0, high)];
+}
+
+/** The panel next to `panel` in the direction of `edge`, for moving panels from the keyboard. */
+export function neighbourPanel(rects: Record<DockPanel, Rect>, panel: DockPanel, edge: DockEdge): DockPanel | null {
+   const from = rects[panel];
+   const ahead = (rect: Rect) =>
+      edge === "left"
+         ? from.x - (rect.x + rect.width)
+         : edge === "right"
+           ? rect.x - (from.x + from.width)
+           : edge === "top"
+             ? from.y - (rect.y + rect.height)
+             : rect.y - (from.y + from.height);
+   const overlap = (rect: Rect) =>
+      edge === "left" || edge === "right"
+         ? Math.min(from.y + from.height, rect.y + rect.height) - Math.max(from.y, rect.y)
+         : Math.min(from.x + from.width, rect.x + rect.width) - Math.max(from.x, rect.x);
+   const candidates = dockPanels.filter((other) => other !== panel && ahead(rects[other]) >= -1 && overlap(rects[other]) > 0);
+   if (!candidates.length) return null;
+   return candidates.reduce((best, other) => {
+      const gap = ahead(rects[other]) - ahead(rects[best]);
+      return gap < -1 || (Math.abs(gap) <= 1 && overlap(rects[other]) > overlap(rects[best])) ? other : best;
+   });
 }
 
 export const dividerPosition = (divider: Pick<DockDivider, "axis" | "rect">) => (divider.axis === "row" ? divider.rect.x : divider.rect.y);
@@ -427,7 +457,7 @@ function namedDrops(rects: Record<DockPanel, Rect>, bounds: Rect, moving: DockPa
 const shape = (node: DockNode): string => ("panel" in node ? node.panel : `${node.split}(${node.children.map(shape).join(",")})`);
 
 /** Lifts a split's children into a parent split along the same axis, scaling their sizes to the slot they shared. */
-function flatten(node: DockNode): DockNode {
+export function flatten(node: DockNode): DockNode {
    if ("panel" in node) return node;
    const children: DockNode[] = [];
    const sizes: number[] = [];
