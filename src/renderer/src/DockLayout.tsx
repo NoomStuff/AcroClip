@@ -4,6 +4,7 @@ import { GripHorizontal } from "lucide-react";
 import {
    defaultDock,
    dividerLimits,
+   dividerSides,
    dockFromSizes,
    dockPanel,
    flatten,
@@ -160,6 +161,18 @@ export function useDock(container: RefObject<HTMLElement | null>, minimums: Pane
       cancel: () => setDrag(null),
       pointerIn,
       announcement,
+      /** How far a set of dividers can move together, and the panel names on each side of them. */
+      describe(dividers: readonly DockDivider[]) {
+         const limits = dividers.map((divider) => dividerLimits(layout, divider, minimums));
+         const sides = dividers.map((divider) => dividerSides(layout, divider));
+         const names = (index: 0 | 1) => [...new Set(sides.flatMap((side) => side[index]))].map((panel) => panelLabel[panel].toLowerCase()).join(", ");
+         return {
+            low: Math.max(...limits.map(([value]) => value)),
+            high: Math.min(...limits.map(([, value]) => value)),
+            before: names(0),
+            after: names(1),
+         };
+      },
       focusAfter,
       /** Moves a panel from the keyboard: swaps it with its neighbour, or docks it along the whole edge. */
       shift(panel: DockPanel, edge: DockEdge, whole: boolean) {
@@ -212,10 +225,17 @@ export function useDock(container: RefObject<HTMLElement | null>, minimums: Pane
             });
             setLayout(next);
          };
+         const key = (event: KeyboardEvent) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            event.stopPropagation();
+            cancel();
+         };
          const end = (save: boolean) => {
             window.removeEventListener("pointermove", move);
             window.removeEventListener("pointerup", up);
             window.removeEventListener("pointercancel", cancel);
+            window.removeEventListener("keydown", key, true);
             stopResize.current = () => undefined;
             setResizing([]);
             if (save) commit(next, false);
@@ -226,6 +246,7 @@ export function useDock(container: RefObject<HTMLElement | null>, minimums: Pane
          window.addEventListener("pointermove", move);
          window.addEventListener("pointerup", up);
          window.addEventListener("pointercancel", cancel);
+         window.addEventListener("keydown", key, true);
          stopResize.current = cancel;
       },
       reset: () => commit(defaultDock, true),
@@ -239,7 +260,21 @@ type Dock = ReturnType<typeof useDock>;
  */
 export function DockGrip({ dock, panel, label }: { dock: Dock; panel: DockPanel; label: string }) {
    const grip = useRef<HTMLDivElement>(null);
-   const start = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+   const start = useRef<{ x: number; y: number; moved: boolean; cancelled: boolean } | null>(null);
+   const cancel = useRef(dock.cancel);
+   cancel.current = dock.cancel;
+   useEffect(() => {
+      const key = (event: KeyboardEvent) => {
+         const origin = start.current;
+         if (event.key !== "Escape" || !origin?.moved || origin.cancelled) return;
+         event.preventDefault();
+         event.stopPropagation();
+         origin.cancelled = true;
+         cancel.current();
+      };
+      window.addEventListener("keydown", key, true);
+      return () => window.removeEventListener("keydown", key, true);
+   }, []);
    useEffect(() => {
       const host = grip.current?.parentElement;
       if (!host) return;
@@ -277,17 +312,17 @@ export function DockGrip({ dock, panel, label }: { dock: Dock; panel: DockPanel;
             if (event.button !== 0) return;
             event.preventDefault();
             event.currentTarget.setPointerCapture(event.pointerId);
-            start.current = { x: event.clientX, y: event.clientY, moved: false };
+            start.current = { x: event.clientX, y: event.clientY, moved: false, cancelled: false };
          }}
          onPointerMove={(event) => {
             const origin = start.current;
-            if (!origin) return;
+            if (!origin || origin.cancelled) return;
             if (!origin.moved && Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < dragThreshold) return;
             origin.moved = true;
             dock.moveTo(panel, event.clientX, event.clientY);
          }}
          onPointerUp={() => {
-            if (start.current?.moved) dock.drop();
+            if (start.current?.moved && !start.current.cancelled) dock.drop();
             start.current = null;
          }}
          onPointerCancel={() => {
@@ -332,6 +367,9 @@ function DockLineHandle({ dock, line }: { dock: Dock; line: DockLine }) {
       return best;
    };
    const moving = line.arms.filter((arm) => dock.resizing.some((divider) => sameDivider(divider, arm.divider)));
+   const dividers = lineDividers(line);
+   const info = dock.describe(dividers);
+   const size = dividers[0]!.sizes[dividers[0]!.index]!;
    const shown = moving.length ? moving : picked === null ? line.arms : [line.arms[picked]!];
    const from = Math.min(...shown.map((arm) => spanOf(line.axis, arm.rect)[0])) - start;
    const to = Math.max(...shown.map((arm) => spanOf(line.axis, arm.rect)[1])) - start;
@@ -342,9 +380,13 @@ function DockLineHandle({ dock, line }: { dock: Dock; line: DockLine }) {
          role="separator"
          tabIndex={0}
          aria-orientation={upright ? "vertical" : "horizontal"}
-         aria-label="Resize panels"
+         aria-label={upright ? `Left: ${info.before}. Right: ${info.after}` : `Above: ${info.before}. Below: ${info.after}`}
+         aria-valuenow={Math.round(size)}
+         aria-valuemin={Math.round(size + info.low)}
+         aria-valuemax={Math.round(size + info.high)}
+         aria-valuetext={`${Math.round(size)} pixels`}
          className={`pane-divider dock-divider ${upright ? "vertical" : "horizontal"}`}
-         data-dividers={lineDividers(line).map(dividerKey).join(" ")}
+         data-dividers={dividers.map(dividerKey).join(" ")}
          data-active={moving.length > 0 || undefined}
          style={{ position: "absolute", left: line.rect.x, top: line.rect.y, width: line.rect.width, height: line.rect.height }}
          onPointerMove={(event) => setPicked(pick(event.clientX, event.clientY))}
@@ -373,6 +415,8 @@ function DockLineHandle({ dock, line }: { dock: Dock; line: DockLine }) {
 /** Where two lines meet. Dragging it moves both. */
 function DockCrossingHandle({ dock, crossing }: { dock: Dock; crossing: DockCrossing }) {
    const { rect } = crossing;
+   const upright = dock.describe(lineDividers(crossing.upright));
+   const crossingNames = [...new Set([upright.before, upright.after].join(", ").split(", "))].join(", ");
    const moving = [crossing.upright, crossing.flat].every((line) =>
       line.arms.some((arm) => dock.resizing.some((divider) => sameDivider(divider, arm.divider)))
    );
@@ -380,7 +424,7 @@ function DockCrossingHandle({ dock, crossing }: { dock: Dock; crossing: DockCros
       <div
          role="separator"
          tabIndex={0}
-         aria-label="Resize panels in both directions"
+         aria-label={`Resize ${crossingNames} in both directions`}
          className="dock-crossing"
          data-active={moving || undefined}
          style={{ left: rect.x + rect.width / 2, top: rect.y + rect.height / 2 }}

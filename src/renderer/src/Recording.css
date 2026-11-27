@@ -44,6 +44,7 @@
    display: flex;
    align-items: center;
    justify-content: center;
+   container-type: size;
 }
 
 .source-preview {
@@ -347,6 +348,43 @@
       height: clamp(36px, calc(50cqh - 100px), 64px);
    }
 }
+/* Narrow and short: the buttons become rows with the icon beside the label. */
+@container (max-width: 279px) and (max-height: 239px) {
+   .capture-actions > button {
+      grid-column: 1 / -1;
+      flex-direction: row;
+      padding: 0 12px;
+      gap: 10px;
+   }
+   .capture-actions > button > svg {
+      width: 26px;
+      height: 26px;
+   }
+   .capture-actions > button > span {
+      min-width: 0;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+   }
+   .capture-actions > button > kbd {
+      display: none;
+   }
+}
+/* Wide enough for two buttons but too short for the shortcut line. */
+@container (min-width: 280px) and (max-height: 159px) {
+   .capture-actions > button {
+      padding: 8px;
+      gap: 6px;
+   }
+   .capture-actions > button > svg {
+      width: 36px;
+      height: 36px;
+   }
+   .capture-actions > button > kbd {
+      display: none;
+   }
+}
 @container (max-aspect-ratio: 1 / 1) and (min-height: 240px) and (max-height: 320px) {
    .capture-actions > button {
       padding: 8px 8px 28px;
@@ -511,6 +549,18 @@
 .preview-surface .empty {
    min-height: 0;
    padding: 20px;
+}
+/* A short preview keeps the title and the way out, and drops the icon and explanation. */
+@container (max-height: 230px) {
+   .preview-surface :is(.empty, .preview-message, .preview-paused) {
+      padding: 10px 16px;
+      gap: 8px;
+   }
+   .preview-surface .empty > :is(.empty-icon, p),
+   .preview-surface :is(.preview-message, .preview-paused) > svg:not(.preview-loading-spinner),
+   .preview-surface .preview-message:not(.preview-discovery) > p {
+      display: none;
+   }
 }
 @media (max-height: 740px) {
    .mixer-scroll {

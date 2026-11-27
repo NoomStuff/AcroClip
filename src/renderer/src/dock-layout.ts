@@ -165,6 +165,13 @@ export function dividerLimits(root: DockNode, divider: Pick<DockDivider, "path" 
    return low > high ? [0, 0] : [Math.min(0, low), Math.max(0, high)];
 }
 
+/** The panels before and after a divider, for naming it. */
+export function dividerSides(root: DockNode, divider: Pick<DockDivider, "path" | "index">): [DockPanel[], DockPanel[]] {
+   const node = nodeAt(root, divider.path);
+   if ("panel" in node) return [[], []];
+   return [panelsOf(node.children[divider.index]!), panelsOf(node.children[divider.index + 1]!)];
+}
+
 /** The panel next to `panel` in the direction of `edge`, for moving panels from the keyboard. */
 export function neighbourPanel(rects: Record<DockPanel, Rect>, panel: DockPanel, edge: DockEdge): DockPanel | null {
    const from = rects[panel];
