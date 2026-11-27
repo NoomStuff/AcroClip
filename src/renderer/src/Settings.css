@@ -388,6 +388,9 @@
 .settings-row .field-control {
    max-width: 50%;
 }
+.settings-row .field-control:has(> .preset-number) {
+   max-width: none;
+}
 .settings-row .custom-select {
    min-width: 180px;
 }
