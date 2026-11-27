@@ -17,6 +17,7 @@ export function AdditionalAudio({
    captureAvailable = true,
    active,
    visible,
+   issues = {},
    save,
 }: {
    preferences: Preferences;
@@ -24,6 +25,8 @@ export function AdditionalAudio({
    captureAvailable?: boolean;
    active: boolean;
    visible: boolean;
+   /** Track problems by audio source id. Source audio uses "capture". */
+   issues?: Record<string, string> | undefined;
    save: (patch: Partial<Preferences> | ((current: Preferences) => Partial<Preferences>)) => Promise<void>;
 }) {
    const [open, setOpen] = useState(false),
@@ -155,6 +158,7 @@ export function AdditionalAudio({
                   volume={source.volume}
                   captureLevel={source.kind === "source"}
                   active={active}
+                  issue={issues[source.kind === "source" ? "capture" : source.id]}
                   onEnable={(enabled) => update(source.id, { enabled, muted: false })}
                   onMute={() =>
                      update(source.id, (current) => ({ muted: !current.muted && current.volume > 0, volume: current.volume > 0 ? current.volume : 1 }))

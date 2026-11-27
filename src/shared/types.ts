@@ -220,6 +220,8 @@ export interface RecorderState {
    sourceName?: string;
    sourceKind?: "screen" | "app" | "waiting";
    audioWarning?: string;
+   /** Problems with single mixer tracks, by audio source id. Source audio uses "capture". */
+   audioIssues?: Record<string, string>;
    historyWarning?: string;
    bufferedSourceName?: string;
    bufferedSourceId?: string;

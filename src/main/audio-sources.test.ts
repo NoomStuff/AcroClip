@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdditionalAudioSource, GameCandidate } from "../shared/types";
-import { missingAudioWarning, resolveAudioSources } from "./audio-sources";
+import { missingAudioIssues, resolveAudioSources } from "./audio-sources";
 import { requiresCaptureRestart } from "./preferences";
 import { defaultPreferences } from "../shared/defaults";
 import { preferencesSchema } from "../shared/validation";
@@ -27,15 +27,25 @@ describe("additional audio bindings", () => {
    it("leaves a missing application silent instead of capturing another process or desktop", () => {
       expect(resolveAudioSources([source], [{ ...candidate, executable: "Other.exe" }])).toEqual({
          sources: [{ ...source, enabled: false }],
-         missing: ["Game"],
+         missing: [source],
       });
       expect(resolveAudioSources([{ ...source, enabled: false }], [])).toEqual({ sources: [{ ...source, enabled: false }], missing: [] });
-      expect(missingAudioWarning(["Discord"])).toBe("Discord isn't open, so its track is silent. Restart capture after opening it.");
-      expect(missingAudioWarning(["Discord"], true)).toBe("Discord isn't open, so its track is silent until it opens.");
-      expect(missingAudioWarning(["Discord", "Spotify"], true)).toBe("Discord and Spotify aren't open, so their tracks are silent until they open.");
-      expect(missingAudioWarning(["Discord", "Spotify", "Game"])).toBe(
-         "Discord, Spotify and Game aren't open, so their tracks are silent. Restart capture after opening them."
-      );
+      expect(missingAudioIssues([{ id: "discord", name: "Discord" }])).toEqual({
+         discord: "Discord isn't open, so the track stays silent. Restart capture after opening it.",
+      });
+      expect(
+         missingAudioIssues(
+            [
+               { id: "discord", name: "Discord" },
+               { id: "spotify", name: "Spotify" },
+            ],
+            true
+         )
+      ).toEqual({
+         discord: "Discord isn't open. The track stays silent until it opens.",
+         spotify: "Spotify isn't open. The track stays silent until it opens.",
+      });
+      expect(missingAudioIssues([])).toEqual({});
    });
    it("permits live gain and mute but requires stopping to change track layout or master inclusion", () => {
       const original = { ...defaultPreferences, collection: "test", audioSources: [source] };

@@ -6,7 +6,7 @@ interface PaneOptions {
    key: string;
    initial: number;
    min: number;
-   max: number;
+   max?: number;
    reserve: number;
    axis: Axis;
    fromEnd?: boolean;
@@ -21,7 +21,7 @@ function readSize(key: string, initial: number): number {
    }
 }
 export function usePaneSize(container: RefObject<HTMLElement | null>, options: PaneOptions) {
-   const { key, initial, min, max, reserve, axis, fromEnd = false } = options;
+   const { key, initial, min, max = Infinity, reserve, axis, fromEnd = false } = options;
    const [desired, setDesired] = useState(() => readSize(key, initial));
    const [available, setAvailable] = useState(0);
    useEffect(() => {
@@ -35,7 +35,7 @@ export function usePaneSize(container: RefObject<HTMLElement | null>, options: P
       observer.observe(node);
       return () => observer.disconnect();
    }, [container, axis]);
-   const limit = available ? Math.max(min, Math.min(max, available - reserve)) : max;
+   const limit = available ? Math.max(min, Math.min(max, available - reserve)) : Math.max(min, Math.min(max, initial));
    const clamp = (value: number) => Math.max(min, Math.min(limit, value));
    const size = clamp(desired);
    const update = (value: number, persist = false) => {

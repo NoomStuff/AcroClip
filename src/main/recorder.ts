@@ -25,7 +25,7 @@ import { GameCatalog, selectGame } from "./games";
 import type { ClipTag } from "../shared/clip-tag";
 import { nativeAudioPreferences } from "../shared/audio-model";
 import type { AudioFilter } from "../shared/audio-filters";
-import { missingAudioWarning, resolveAudioSources } from "./audio-sources";
+import { missingAudioIssues, resolveAudioSources } from "./audio-sources";
 import { resolveReplayMemoryMB } from "../shared/replay-memory";
 import { POLL_TICK_MS, pollDue, type PollState } from "./poll-plan";
 
@@ -95,6 +95,7 @@ interface NativeMessage {
    audioListen?: boolean;
    monitorMessage?: string;
    listeningMessage?: string;
+   audioIssues?: Record<string, string>;
    audioWarning?: string;
    historyWarning?: string;
    bufferedSource?: string;
@@ -125,8 +126,8 @@ export class Recorder {
    private readyReject: ((reason: Error) => void) | null = null;
    private source = "Screen";
    private pollWarning = "";
-   /** Application audio sources that weren't open when capture started. Their tracks stay silent. */
-   private missingAudio = "";
+   /** Application audio sources that weren't open when capture started, by source id. Their tracks stay silent. */
+   private missingAudio: Record<string, string> = {};
    /** Application sources that weren't open when capture started. Windows attaches each once its app opens. */
    private pendingAudio: AdditionalAudioSource[] = [];
    /** The window each pending source was last refused for, by source id. A new window of the app is tried again. */
@@ -505,10 +506,7 @@ export class Recorder {
             }
          }
          // The next status report carries the shorter list.
-         this.missingAudio = missingAudioWarning(
-            this.pendingAudio.map((source) => source.name),
-            true
-         );
+         this.missingAudio = missingAudioIssues(this.pendingAudio, true);
       } catch {
          /* Discovery failing just waits for the next tick. */
       } finally {
@@ -517,6 +515,10 @@ export class Recorder {
    }
    private configurationKey(configuration: Record<string, unknown>): string {
       return `${configuration["resolvedKind"]}:${configuration["sourceId"]}:${configuration["pid"] ?? ""}`;
+   }
+   private updateAudioIssues(issues: Record<string, string>): void {
+      const next = { ...this.missingAudio, ...issues };
+      if (JSON.stringify(next) !== JSON.stringify(this.current.audioIssues ?? {})) this.update({ audioIssues: next });
    }
    private update(value: Partial<RecorderState>): void {
       this.current = { ...this.current, ...value };
@@ -790,6 +792,7 @@ export class Recorder {
             message: "",
             supported: true,
             audioWarning: "",
+            audioIssues: {},
             historyWarning: "",
             bufferedSourceName: "",
             bufferedSourceId: "",
@@ -801,11 +804,15 @@ export class Recorder {
             availableSeconds: 0,
             message: "",
             audioWarning: "",
+            audioIssues: {},
             historyWarning: "",
             bufferedSourceName: "",
             bufferedSourceId: "",
          });
-      if (value.event === "audio-monitor") this.options.onAudioMonitorError?.(value.monitorMessage ?? "", value.listeningMessage ?? "");
+      if (value.event === "audio-monitor") {
+         this.options.onAudioMonitorError?.(value.monitorMessage ?? "", value.listeningMessage ?? "");
+         if (value.audioIssues) this.updateAudioIssues(value.audioIssues);
+      }
       if (value.event === "status") {
          if (typeof value.monitorMessage === "string") this.options.onAudioMonitorError?.(value.monitorMessage, value.listeningMessage ?? "");
          this.fullscreen = value.fullscreen === true;
@@ -831,7 +838,8 @@ export class Recorder {
             ...(value.sourceId !== undefined ? { sourceId: value.sourceId } : {}),
             ...(value.source !== undefined ? { sourceName: value.source } : {}),
             ...(value.sourceKind !== undefined ? { sourceKind: value.sourceKind } : {}),
-            ...(value.audioWarning !== undefined ? { audioWarning: value.audioWarning || this.missingAudio } : {}),
+            ...(value.audioWarning !== undefined ? { audioWarning: value.audioWarning } : {}),
+            ...(value.audioIssues !== undefined ? { audioIssues: { ...this.missingAudio, ...value.audioIssues } } : {}),
             ...(value.historyWarning !== undefined ? { historyWarning: value.historyWarning } : {}),
             ...(value.bufferedSource !== undefined ? { bufferedSourceName: value.bufferedSource } : {}),
             ...(value.bufferedSourceId !== undefined ? { bufferedSourceId: value.bufferedSourceId } : {}),
@@ -1037,7 +1045,7 @@ export class Recorder {
    }
    async start(preferences: Preferences, sources: CaptureSource[] = []): Promise<void> {
       this.autoFailure = "";
-      this.missingAudio = "";
+      this.missingAudio = {};
       this.pendingAudio = [];
       this.refusedAudio.clear();
       this.monitorGeneration++;
@@ -1052,7 +1060,7 @@ export class Recorder {
             preferences.audioSources.some((source) => source.enabled && source.kind === "application") ? await this.capturableApplications() : []
          );
          configuration["audioSources"] = audio.sources;
-         this.missingAudio = missingAudioWarning(audio.missing, process.platform === "win32");
+         this.missingAudio = missingAudioIssues(audio.missing, process.platform === "win32");
          const silent = new Set(audio.sources.filter((source) => !source.enabled).map((source) => source.id));
          this.pendingAudio = nativeAudioPreferences(preferences).audioSources.filter(
             (source) => source.enabled && source.kind === "application" && silent.has(source.id)

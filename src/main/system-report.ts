@@ -101,6 +101,7 @@ export function buildSystemReport(input: SystemReportInput) {
          availableSeconds: input.recorder.state.availableSeconds,
          pendingSaves: input.recorder.state.pendingSaves,
          audioWarning: input.recorder.state.audioWarning,
+         audioIssues: input.recorder.state.audioIssues,
          historyWarning: input.recorder.state.historyWarning,
          capabilities: input.recorder.capabilities,
       },

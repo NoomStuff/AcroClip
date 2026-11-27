@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 export function audioWarningDelay(message: string): number {
    if (!message) return 0;
-   return /(?:^|:\s*)Audio capture is (?:starting|reconnecting)\.?$/i.test(message) || /^Waiting for audio source /i.test(message) ? 5000 : 1200;
+   return /(?:^|:\s*)Audio capture is (?:starting|reconnecting)\.?$/i.test(message) || /^Waiting for /i.test(message) ? 5000 : 1200;
 }
 
 export function useAudioWarning(message: string): string {

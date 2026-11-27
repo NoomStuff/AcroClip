@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
-import { WandSparkles, GripVertical, MoreHorizontal, Volume, Volume1, Volume2, VolumeX } from "lucide-react";
+import { WandSparkles, GripVertical, MoreHorizontal, TriangleAlert, Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import { IconButton, Menu } from "./ui";
 import { MixerFader } from "./MixerFader";
 import { ListenButton, useIsListening } from "./AudioListening";
 import { AudioMeter } from "./AudioMeter";
+import { useAudioWarning } from "./useAudioWarning";
 export function AudioMixerRow({
    name,
    sourceId,
@@ -14,6 +15,7 @@ export function AudioMixerRow({
    captureLevel,
    active,
    visible,
+   issue = "",
    onEnable,
    onMute,
    onVolume,
@@ -29,6 +31,8 @@ export function AudioMixerRow({
    captureLevel: boolean;
    active: boolean;
    visible: boolean;
+   /** Why the track records silence right now, such as its app being closed. */
+   issue?: string | undefined;
    onEnable: (enabled: boolean) => void;
    onMute: () => void;
    onVolume: (volume: number, restore: number) => void | Promise<void>;
@@ -36,10 +40,11 @@ export function AudioMixerRow({
    options: ReactNode;
 }) {
    const listening = useIsListening(sourceId);
+   const shownIssue = useAudioWarning(enabled && !muted ? issue : "");
    const VolumeIcon = muted || !enabled || volume === 0 ? VolumeX : volume < 0.33 ? Volume : volume < 0.67 ? Volume1 : Volume2;
    const muteLabel = ["Source audio", "Desktop", "Application", "Desktop audio", "App audio", "Microphone"].includes(name) ? name.toLowerCase() : name;
    return (
-      <div className="mixer-channel" data-disabled={!enabled || undefined}>
+      <div className="mixer-channel" data-disabled={!enabled || undefined} data-issue={shownIssue ? "" : undefined}>
          <div className="mixer-channel-header">
             {/* Track order sets the recording's tracks, so it waits for capture to stop. The handle stays in view to say so. */}
             <button
@@ -54,6 +59,11 @@ export function AudioMixerRow({
             </button>
             <span className="mixer-channel-name">{name}</span>
             {!enabled && <span className="mixer-channel-status">Not recorded</span>}
+            {shownIssue && (
+               <span className="mixer-channel-issue" role="img" tabIndex={0} aria-label={shownIssue} data-tooltip={shownIssue}>
+                  <TriangleAlert size={15} />
+               </span>
+            )}
             {filters && (
                <IconButton className="mixer-channel-filters" label={`${name} filters: ${filters.summary}`} onClick={filters.onOpen}>
                   <WandSparkles size={15} />

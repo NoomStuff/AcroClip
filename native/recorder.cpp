@@ -1371,7 +1371,7 @@ private:
   std::string additionalSourceError(AdditionalAudio &extra) {
 #ifndef __APPLE__
     auto physical = deviceAudioError(extra.source, extra.openedAt);
-    if (!physical.empty()) return extra.name + ": " + physical;
+    if (!physical.empty()) return physical;
 #endif
 #ifdef _WIN32
     if (extra.kind == "application" && !extra.executable.empty()) {
@@ -1380,36 +1380,46 @@ private:
         extra.hooked = true;
         return {};
       }
-      return extra.hooked ? extra.name + " closed, so its track is silent until it opens again" : "Waiting for audio source " + extra.name;
+      return extra.hooked ? extra.name + " closed. The track stays silent until it opens again" : "Waiting for " + extra.name + " to open";
     }
 #elif defined(__linux__)
     if (extra.application) {
       auto error = applicationAudioError(extra.application);
-      if (!error.empty()) return extra.name + ": " + error;
-      if (!x11Available(extra.window, extra.pid, false)) return "Audio source " + extra.name + " is unavailable";
+      if (!error.empty()) return error;
+      if (!x11Available(extra.window, extra.pid, false)) return extra.name + " is unavailable";
     }
 #elif defined(__APPLE__)
     auto error = acroclip::macos::audioError(extra.source, extra.window, extra.pid);
-    if (!error.empty() && !inputWarming(error, extra.openedAt)) return extra.name + ": " + error;
+    if (!error.empty() && !inputWarming(error, extra.openedAt)) return error;
 #endif
     return {};
   }
-  std::string additionalAudioError() {
+  // Problems that belong to one mixer track go to `issues` by track id ("capture" for source audio).
+  // The mixer shows them on the track, so they stay out of the general audio warning.
+  std::string additionalAudioError(std::map<std::string, std::string> *issues = nullptr) {
     std::lock_guard<std::mutex> audioLock(audioSourcesMutex);
     std::string warning;
-    auto route = [&](obs_source_t *source, const std::string &error, uint32_t mask, const std::string &name) {
+    std::map<std::string, std::string> found;
+    auto route = [&](obs_source_t *source, const std::string &error, uint32_t mask) {
       if (source) obs_source_set_audio_mixers(source, error.empty() ? mask : 0);
-      if (warning.empty() && !error.empty()) warning = name.empty() ? error : name + ": " + error;
     };
-    route(mic, deviceAudioError(mic, microphoneOpenedAt), 5, "Microphone");
-    if (desktop && screenCapture && captureAudioEnabled)
-      route(desktop, deviceAudioError(desktop), 3, "Capture audio");
+    const auto microphoneError = deviceAudioError(mic, microphoneOpenedAt);
+    route(mic, microphoneError, 5);
+    if (!microphoneError.empty()) warning = "Microphone: " + microphoneError;
+    if (desktop && screenCapture && captureAudioEnabled) {
+      const auto error = deviceAudioError(desktop);
+      route(desktop, error, 3);
+      if (!error.empty()) found["capture"] = error;
+    }
     for (auto &extra : additionalAudio) {
       if (!extra.source) continue;
       // Retain a silent encoded track while its source is unavailable. Recovery
       // restores routing, without pausing video or changing the user's mute.
-      route(extra.source, obs_source_muted(extra.source) ? std::string{} : additionalSourceError(extra), extra.mixerMask, "");
+      const auto error = obs_source_muted(extra.source) ? std::string{} : additionalSourceError(extra);
+      route(extra.source, error, extra.mixerMask);
+      if (!error.empty()) found[extra.id] = error;
     }
+    if (issues) *issues = std::move(found);
     return warning;
   }
   std::string captureAudioError() {
@@ -3003,12 +3013,14 @@ public:
 #ifdef _WIN32
     if (active) followApplicationAudio();
 #endif
-    std::string audioWarning = additionalAudioError();
+    std::map<std::string, std::string> audioIssues;
+    std::string audioWarning = additionalAudioError(&audioIssues);
     if (audioWarning.empty()) audioWarning = audioSetupWarning;
 #ifdef __linux__
     const auto sourceAudioError = captureAudioError();
-    if (audioWarning.empty()) audioWarning = sourceAudioError;
+    if (!sourceAudioError.empty()) audioIssues.emplace("capture", sourceAudioError);
 #endif
+    const nlohmann::json trackIssues = active || monitoring ? nlohmann::json(audioIssues) : nlohmann::json::object();
     if (audioWarning != audioWarningCandidate) {
       audioWarningCandidate = audioWarning;
       audioWarningSince = os_gettime_ns();
@@ -3041,7 +3053,7 @@ public:
     }
 #endif
     if (monitoring)
-      emit({{"event", "audio-monitor"}, {"monitorMessage", listeningFailure.empty() ? audioWarning : listeningFailure}, {"listeningMessage", listeningFailure}});
+      emit({{"event", "audio-monitor"}, {"monitorMessage", listeningFailure.empty() ? audioWarning : listeningFailure}, {"listeningMessage", listeningFailure}, {"audioIssues", trackIssues}});
     if (captureError.empty() && deliveryInterrupted)
       captureError = "Waiting for recording to resume";
 #ifdef _WIN32
@@ -3071,6 +3083,7 @@ public:
           {"bufferedSourceKind", bufferedScreen ? "screen" : "app"},
           {"monitorMessage", monitoring && listeningFailure.empty() ? audioWarning : listeningFailure},
           {"listeningMessage", listeningFailure},
+          {"audioIssues", trackIssues},
           {"sourceId", selectedSourceId},
           {"sourceKind", captureEnabled
                              ? (screenCapture ? "screen" : "app")

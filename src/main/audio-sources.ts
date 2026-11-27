@@ -7,14 +7,14 @@ import type { AdditionalAudioSource, GameCandidate } from "../shared/types";
 export function resolveAudioSources(
    sources: AdditionalAudioSource[],
    candidates: GameCandidate[]
-): { sources: Array<AdditionalAudioSource & { pid?: number }>; missing: string[] } {
-   const missing: string[] = [];
+): { sources: Array<AdditionalAudioSource & { pid?: number }>; missing: AdditionalAudioSource[] } {
+   const missing: AdditionalAudioSource[] = [];
    const resolved = sources.map((source) => {
       if (!source.enabled || source.kind !== "application") return { ...source };
       const matches = candidates.filter((candidate) => candidate.executable === source.executable && candidate.pid > 0);
       const target = matches.find((candidate) => candidate.id === source.sourceId) ?? matches.find((candidate) => candidate.foreground) ?? matches[0];
       if (!target) {
-         missing.push(source.name);
+         missing.push(source);
          return { ...source, enabled: false };
       }
       return { ...source, sourceId: target.id, pid: target.pid };
@@ -23,13 +23,16 @@ export function resolveAudioSources(
 }
 
 /**
- * The status line for application sources that weren't open when capture started. Where capture
- * attaches them once they open, the line says so instead of asking for a restart.
+ * Track issues, by source id, for application sources that weren't open when capture started. Where
+ * capture attaches them once they open, the issue says so instead of asking for a restart.
  */
-export function missingAudioWarning(missing: readonly string[], attaches = false): string {
-   if (!missing.length) return "";
-   const one = missing.length === 1;
-   const names = one ? missing[0]! : `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)!}`;
-   const silent = `${names} ${one ? "isn't" : "aren't"} open, so ${one ? "its track is" : "their tracks are"} silent`;
-   return attaches ? `${silent} until ${one ? "it opens" : "they open"}.` : `${silent}. Restart capture after opening ${one ? "it" : "them"}.`;
+export function missingAudioIssues(missing: readonly Pick<AdditionalAudioSource, "id" | "name">[], attaches = false): Record<string, string> {
+   return Object.fromEntries(
+      missing.map((source) => [
+         source.id,
+         attaches
+            ? `${source.name} isn't open. The track stays silent until it opens.`
+            : `${source.name} isn't open, so the track stays silent. Restart capture after opening it.`,
+      ])
+   );
 }

@@ -62,7 +62,7 @@ export function Recording({
    const sourceIndex = ["screen", "app", "auto"].indexOf(state.preferences.sourceKind);
    useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible);
    const controls = usePaneSize(layout, { key: "recording.controls", initial: 340, min: 260, max: 460, reserve: 420, axis: "x", fromEnd: true });
-   const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 170, max: 380, reserve: 200, axis: "y", fromEnd: true });
+   const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 170, reserve: 240, axis: "y", fromEnd: true });
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
    const [sourceRequest, setSourceRequest] = useState(0);
    const [sources, setSources] = useState<CaptureSource[]>([]);
@@ -414,6 +414,7 @@ export function Recording({
                               preferences={state.preferences}
                               active={active || state.recorder.state === "starting"}
                               visible={live}
+                              issues={state.recorder.audioIssues}
                               save={preferences}
                            />
                         </AudioListening>
