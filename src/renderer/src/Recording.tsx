@@ -6,8 +6,7 @@ import type { AppState, CaptureSource, GameCandidate, Preferences, RecordingCapa
 import { api, describeError, reportFeedback } from "./desktop";
 import { Button, ContextHeader, Empty, Field, Segmented, Select } from "./ui";
 import type { Run } from "./desktop";
-import { PaneDivider, usePaneSize } from "./layout";
-import { RecordingPanelEditor, useRecordingPanels } from "./recording-panels";
+import { DockGrip, DockOverlay, useDock } from "./DockLayout";
 import { useSourcePreview } from "./useSourcePreview";
 import { bindingFor, formatBinding } from "../../shared/shortcuts";
 import { SelectionIndicator } from "./SelectionIndicator";
@@ -62,9 +61,7 @@ export function Recording({
    const sourceContent = useRef<HTMLDivElement>(null);
    const sourceIndex = ["screen", "app", "auto"].indexOf(state.preferences.sourceKind);
    useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible);
-   const controls = usePaneSize(layout, { key: "recording.controls", initial: 340, min: 260, max: 460, reserve: 420, axis: "x", fromEnd: true });
-   const panels = useRecordingPanels();
-   const lower = usePaneSize(layout, { key: "recording.lower", initial: 250, min: 170, reserve: 240, axis: "y", fromEnd: true });
+   const dock = useDock(layout);
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
    const [sourceRequest, setSourceRequest] = useState(0);
    const [sources, setSources] = useState<CaptureSource[]>([]);
@@ -298,18 +295,15 @@ export function Recording({
    };
    return (
       <div className="recording-page">
-         <div
-            className="recording-layout"
-            ref={layout}
-            style={{ gridTemplateColumns: `minmax(0, 1fr) 12px ${controls.size}px`, gridTemplateRows: `minmax(0, 1fr) 12px ${lower.size}px` }}
-         >
+         <div className="recording-layout" ref={layout} data-dragging={dock.drag ? dock.drag.panel : undefined} data-settling={dock.settling || undefined}>
             <div className="recording-main">
                <div
                   className="preview-surface"
-                  style={panels.style("preview")}
+                  style={dock.style("preview")}
                   data-preview={source ? preview.status : undefined}
                   data-paused={previewPaused || undefined}
                >
+                  <DockGrip dock={dock} panel="preview" label="Preview" />
                   <canvas ref={preview.outgoing} className="preview-outgoing" aria-hidden="true" />
                   {source && previewUnavailable ? (
                      <Empty
@@ -407,7 +401,8 @@ export function Recording({
                   )}
                </div>
                <div className="recording-bottom">
-                  <div className="mixer" style={panels.style("mixer")}>
+                  <div className="mixer" style={dock.style("mixer")}>
+                     <DockGrip dock={dock} panel="mixer" label="Audio" />
                      <div className="mixer-scroll">
                         <AudioListening
                            active={active || state.recorder.state === "starting"}
@@ -427,7 +422,8 @@ export function Recording({
                         </AudioListening>
                      </div>
                   </div>
-                  <div className="capture-actions" style={panels.style("actions")}>
+                  <div className="capture-actions" style={dock.style("actions")}>
+                     <DockGrip dock={dock} panel="actions" label="Capture buttons" />
                      <button
                         className={`record-action ${active ? "is-recording" : ""}`}
                         aria-label={active ? "Stop capturing" : state.recorder.state === "starting" ? "Starting capture" : "Start capturing"}
@@ -461,7 +457,8 @@ export function Recording({
                   </div>
                </div>
             </div>
-            <aside className="source-panel" style={panels.style("sources")}>
+            <aside className="source-panel" style={dock.style("sources")}>
+               <DockGrip dock={dock} panel="sources" label="Sources" />
                <Segmented label="Source type" value={state.preferences.sourceKind} values={sourceChoices(sources, capabilities)} onChange={switchKind} />
                <div className="capture-source-content" ref={sourceContent}>
                   {portal && (
@@ -573,9 +570,7 @@ export function Recording({
                   )}
                </div>
             </aside>
-            <PaneDivider label="Capture controls width" pane={controls} className="recording-width-divider" />
-            <PaneDivider label="Capture lower panels height" pane={lower} className="recording-height-divider" />
-            <RecordingPanelEditor panels={panels} />
+            <DockOverlay dock={dock} />
          </div>
       </div>
    );
