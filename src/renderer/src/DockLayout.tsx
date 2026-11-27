@@ -1,8 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
 import { GripHorizontal } from "lucide-react";
-import { defaultDock, dividerPosition, dividerSegments, isDockLayout, layoutDock, panelMinimum, planDrop, resizeDock, separateSegment } from "./dock-layout";
-import type { DockDivider, DockDrop, DockNode, DockPanel, DockSegment, DockSide, PanelMinimums, Rect } from "./dock-layout";
+import {
+   defaultDock,
+   dividerLimits,
+   dividerPosition,
+   dividerSegments,
+   dockCrossings,
+   dockLines,
+   isDockLayout,
+   layoutDock,
+   lineDividers,
+   panelMinimum,
+   planDrop,
+   resizeDock,
+   separateSegment,
+} from "./dock-layout";
+import type { DockAxis, DockCrossing, DockDivider, DockDrop, DockLine, DockNode, DockPanel, DockSegment, DockSide, PanelMinimums, Rect } from "./dock-layout";
 
 const storageKey = "acroclip.layout.recording.dock";
 const dragThreshold = 4;
@@ -28,6 +42,12 @@ function storeLayout(layout: DockNode): void {
 const sameDivider = (a: Pick<DockDivider, "path" | "index">, b: Pick<DockDivider, "path" | "index">) =>
    a.index === b.index && a.path.join(".") === b.path.join(".");
 
+type ResizeTarget = { line: DockLine } | { arm: DockSegment } | { crossing: DockCrossing };
+interface Move {
+   axis: DockAxis;
+   dividers: DockDivider[];
+}
+
 interface Drag {
    panel: DockPanel;
    x: number;
@@ -39,7 +59,7 @@ export function useDock(container: RefObject<HTMLElement | null>, minimums: Pane
    const [layout, setLayout] = useState(readLayout);
    const [bounds, setBounds] = useState<Rect | null>(null);
    const [drag, setDrag] = useState<Drag | null>(null);
-   const [resizing, setResizing] = useState<DockDivider | null>(null);
+   const [resizing, setResizing] = useState<DockDivider[]>([]);
    const [settling, setSettling] = useState(false);
    const stopResize = useRef<() => void>(() => undefined);
    useEffect(() => {
@@ -58,7 +78,8 @@ export function useDock(container: RefObject<HTMLElement | null>, minimums: Pane
    }, [settling]);
    useEffect(() => () => stopResize.current(), []);
    const placed = useMemo(() => (bounds ? layoutDock(layout, bounds, minimums) : null), [layout, bounds, minimums]);
-   const segments = useMemo(() => (placed ? dividerSegments(placed.dividers) : []), [placed]);
+   const lines = useMemo(() => (placed ? dockLines(dividerSegments(placed.dividers)) : []), [placed]);
+   const crossings = useMemo(() => dockCrossings(lines), [lines]);
    const commit = (next: DockNode, animate: boolean) => {
       setSettling(animate);
       setLayout(next);
@@ -68,9 +89,28 @@ export function useDock(container: RefObject<HTMLElement | null>, minimums: Pane
       const box = container.current?.getBoundingClientRect();
       return { x: clientX - (box?.left ?? 0), y: clientY - (box?.top ?? 0) };
    };
+   /** An arm is pulled out of its crossings first; whole lines and crossings move the dividers as they are. */
+   const plan = (target: ResizeTarget, area: Rect): { root: DockNode; moves: Move[] } => {
+      if ("arm" in target) {
+         const { root, divider } = separateSegment(layout, area, target.arm, minimums);
+         return { root, moves: [{ axis: divider.axis, dividers: [divider] }] };
+      }
+      const lines = "line" in target ? [target.line] : [target.crossing.upright, target.crossing.flat];
+      return { root: layout, moves: lines.map((line) => ({ axis: line.axis, dividers: lineDividers(line) })) };
+   };
+   /** Every divider in a move takes the same delta, cut down to what all of them can take. */
+   const applyMoves = (root: DockNode, moves: Move[], delta: (axis: DockAxis, index: number) => number) =>
+      moves.reduce((node, { axis, dividers }, index) => {
+         const limits = dividers.map((divider) => dividerLimits(root, divider, minimums));
+         const low = Math.max(...limits.map(([value]) => value));
+         const high = Math.min(...limits.map(([, value]) => value));
+         const step = Math.max(low, Math.min(high, delta(axis, index)));
+         return dividers.reduce((current, divider) => resizeDock(current, divider, step, minimums), node);
+      }, root);
    return {
       placed,
-      segments,
+      lines,
+      crossings,
       drag,
       resizing,
       settling,
@@ -89,34 +129,42 @@ export function useDock(container: RefObject<HTMLElement | null>, minimums: Pane
          setDrag(null);
       },
       cancel: () => setDrag(null),
-      /** Moves a divider by a fixed step, as the arrow keys do. */
-      nudge(segment: DockSegment, step: number) {
+      pointerIn,
+      /** Moves a line, arm or crossing by a fixed step, as the arrow keys do. */
+      nudge(target: ResizeTarget, x: number, y: number) {
          if (!bounds) return;
-         const separate = separateSegment(layout, bounds, segment, minimums);
-         commit(resizeDock(separate.root, separate.divider, step, minimums), false);
+         const { root, moves } = plan(target, bounds);
+         commit(
+            applyMoves(root, moves, (axis) => (axis === "row" ? x : y)),
+            false
+         );
       },
       /**
-       * Drags one arm of a divider. Listeners sit on the window, because splitting a crossing apart
-       * replaces the element that was pressed.
+       * Drags a whole line, one arm of it, or a crossing. Listeners sit on the window, because pulling
+       * an arm out of a crossing replaces the element that was pressed.
        */
-      startResize(segment: DockSegment, clientX: number, clientY: number) {
+      startResize(target: ResizeTarget, clientX: number, clientY: number) {
          if (!bounds) return;
          stopResize.current();
-         const { root, divider } = separateSegment(layout, bounds, segment, minimums);
-         const along = (x: number, y: number) => (divider.axis === "row" ? x : y);
-         const origin = along(clientX, clientY);
-         const from = dividerPosition(divider);
-         const snaps = layoutDock(root, bounds, minimums)
-            .dividers.filter((other) => other.axis === divider.axis && !sameDivider(other, divider))
-            .map(dividerPosition)
-            .filter((spot) => Math.abs(spot - from) >= 1);
+         const { root, moves } = plan(target, bounds);
+         const dividers = layoutDock(root, bounds, minimums).dividers;
+         const snaps = moves.map(({ axis, dividers: moving }) => ({
+            from: dividerPosition(moving[0]!),
+            spots: dividers
+               .filter((other) => other.axis === axis && !moving.some((item) => sameDivider(item, other)))
+               .map(dividerPosition)
+               .filter((spot) => Math.abs(spot - dividerPosition(moving[0]!)) >= 1),
+         }));
          let next = root;
          setLayout(root);
-         setResizing(divider);
+         setResizing(moves.flatMap((item) => item.dividers));
          const move = (event: PointerEvent) => {
-            const raw = along(event.clientX, event.clientY) - origin;
-            const snap = event.shiftKey ? undefined : snaps.find((spot) => Math.abs(from + raw - spot) < snapDistance);
-            next = resizeDock(root, divider, snap === undefined ? raw : snap - from, minimums);
+            next = applyMoves(root, moves, (axis, index) => {
+               const raw = axis === "row" ? event.clientX - clientX : event.clientY - clientY;
+               const { from, spots } = snaps[index]!;
+               const snap = event.shiftKey ? undefined : spots.find((spot) => Math.abs(from + raw - spot) < snapDistance);
+               return snap === undefined ? raw : snap - from;
+            });
             setLayout(next);
          };
          const end = (save: boolean) => {
@@ -124,7 +172,7 @@ export function useDock(container: RefObject<HTMLElement | null>, minimums: Pane
             window.removeEventListener("pointerup", up);
             window.removeEventListener("pointercancel", cancel);
             stopResize.current = () => undefined;
-            setResizing(null);
+            setResizing([]);
             if (save) commit(next, false);
             else setLayout(layout);
          };
@@ -200,38 +248,103 @@ export function DockGrip({ dock, panel, label }: { dock: Dock; panel: DockPanel;
    );
 }
 
-const arrowSteps: Record<string, [number, "row" | "column"]> = {
-   ArrowLeft: [-1, "row"],
-   ArrowRight: [1, "row"],
-   ArrowUp: [-1, "column"],
-   ArrowDown: [1, "column"],
-};
+const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+/** How far along a line the pointer may sit from an arm's middle and still pick out just that arm. */
+const armReach = 24;
+const armKey = (arm: DockSegment) => `${arm.divider.path.join(".")}:${arm.divider.index}:${arm.piece}`;
+const spanOf = (axis: DockAxis, rect: Rect): [number, number] => (axis === "row" ? [rect.y, rect.y + rect.height] : [rect.x, rect.x + rect.width]);
 
-/** One arm of a divider. Arms that meet at a crossing move apart; lines that would break the layout join. */
-function DockSeparator({ dock, segment }: { dock: Dock; segment: DockSegment }) {
-   const vertical = segment.divider.axis === "row";
-   const { rect } = segment;
+/**
+ * A straight line of dividers. It moves as one, so a grid shows one handle per line. Pointing at the
+ * middle of one arm slides the handle over to it, and that arm then moves on its own.
+ */
+function DockLineHandle({ dock, line }: { dock: Dock; line: DockLine }) {
+   const [picked, setPicked] = useState<number | null>(null);
+   const upright = line.axis === "row";
+   const [start, end] = spanOf(line.axis, line.rect);
+   const middles = line.arms.map((arm) => {
+      const [from, to] = spanOf(line.axis, arm.rect);
+      return (from + to) / 2;
+   });
+   const pick = (clientX: number, clientY: number): number | null => {
+      if (line.arms.length < 2) return null;
+      const pointer = dock.pointerIn(clientX, clientY);
+      const at = upright ? pointer.y : pointer.x;
+      const centre = Math.abs(at - (start + end) / 2);
+      let best: number | null = null;
+      middles.forEach((middle, index) => {
+         const distance = Math.abs(at - middle);
+         if (distance < armReach && distance < centre && (best === null || distance < Math.abs(at - middles[best]!))) best = index;
+      });
+      return best;
+   };
+   const moving = line.arms.filter((arm) => dock.resizing.some((divider) => sameDivider(divider, arm.divider)));
+   const shown = moving.length ? moving : picked === null ? line.arms : [line.arms[picked]!];
+   const from = Math.min(...shown.map((arm) => spanOf(line.axis, arm.rect)[0])) - start;
+   const to = Math.max(...shown.map((arm) => spanOf(line.axis, arm.rect)[1])) - start;
+   const along = (offset: number, length: number): CSSProperties => (upright ? { top: offset, height: length } : { left: offset, width: length });
+   const at = (offset: number): CSSProperties => (upright ? { top: offset } : { left: offset });
    return (
       <div
          role="separator"
          tabIndex={0}
-         aria-orientation={vertical ? "vertical" : "horizontal"}
+         aria-orientation={upright ? "vertical" : "horizontal"}
          aria-label="Resize panels"
-         className={`pane-divider dock-divider ${vertical ? "vertical" : "horizontal"}`}
-         data-active={(dock.resizing && sameDivider(dock.resizing, segment.divider)) || undefined}
-         style={{ position: "absolute", left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
+         className={`pane-divider dock-divider ${upright ? "vertical" : "horizontal"}`}
+         data-active={moving.length > 0 || undefined}
+         style={{ position: "absolute", left: line.rect.x, top: line.rect.y, width: line.rect.width, height: line.rect.height }}
+         onPointerMove={(event) => setPicked(pick(event.clientX, event.clientY))}
+         onPointerLeave={() => setPicked(null)}
          onKeyDown={(event) => {
-            const [direction, axis] = arrowSteps[event.key] ?? [0, segment.divider.axis];
-            if (!direction || axis !== segment.divider.axis) return;
+            const [x, y] = arrows[event.key] ?? [0, 0];
+            if (!(upright ? x : y)) return;
             event.preventDefault();
-            dock.nudge(segment, direction * (event.shiftKey ? 40 : 10));
+            const step = event.shiftKey ? 40 : 10;
+            dock.nudge({ line }, x * step, y * step);
          }}
          onPointerDown={(event) => {
             if (event.button !== 0) return;
             event.preventDefault();
-            dock.startResize(segment, event.clientX, event.clientY);
+            const arm = pick(event.clientX, event.clientY);
+            dock.startResize(arm === null ? { line } : { arm: line.arms[arm]! }, event.clientX, event.clientY);
          }}
-      />
+      >
+         <span className="dock-band" style={along(from, to - from)} />
+         {line.arms.length > 1 && middles.map((middle, index) => <span key={index} className="dock-mark" style={at(middle - start)} />)}
+         <span className="dock-handle" style={at((from + to) / 2)} />
+      </div>
+   );
+}
+
+/** Where two lines meet. Dragging it moves both. */
+function DockCrossingHandle({ dock, crossing }: { dock: Dock; crossing: DockCrossing }) {
+   const { rect } = crossing;
+   const moving = [crossing.upright, crossing.flat].every((line) =>
+      line.arms.some((arm) => dock.resizing.some((divider) => sameDivider(divider, arm.divider)))
+   );
+   return (
+      <div
+         role="separator"
+         tabIndex={0}
+         aria-label="Resize panels in both directions"
+         className="dock-crossing"
+         data-active={moving || undefined}
+         style={{ left: rect.x + rect.width / 2, top: rect.y + rect.height / 2 }}
+         onKeyDown={(event) => {
+            const [x, y] = arrows[event.key] ?? [0, 0];
+            if (!x && !y) return;
+            event.preventDefault();
+            const step = event.shiftKey ? 40 : 10;
+            dock.nudge({ crossing }, x * step, y * step);
+         }}
+         onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            dock.startResize({ crossing }, event.clientX, event.clientY);
+         }}
+      >
+         <span />
+      </div>
    );
 }
 
@@ -258,8 +371,11 @@ export function DockOverlay({ dock }: { dock: Dock }) {
    const drop = dock.drag?.drop;
    return (
       <>
-         {dock.segments.map((segment) => (
-            <DockSeparator key={`${segment.divider.path.join(".")}:${segment.divider.index}:${segment.piece}`} dock={dock} segment={segment} />
+         {dock.lines.map((line) => (
+            <DockLineHandle key={`${line.axis}:${line.arms.map(armKey).join("|")}`} dock={dock} line={line} />
+         ))}
+         {dock.crossings.map((crossing) => (
+            <DockCrossingHandle key={`${armKey(crossing.upright.arms[0]!)}+${armKey(crossing.flat.arms[0]!)}`} dock={dock} crossing={crossing} />
          ))}
          {dock.drag && (
             <>

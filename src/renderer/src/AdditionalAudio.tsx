@@ -195,9 +195,14 @@ export function AdditionalAudio({
             {renderRow}
          </MotionList>
          {preferences.audioSources.length < 5 && (
-            <Button className="audio-add" disabled={active} data-tooltip={active ? "Stop capturing to add audio sources" : undefined} onClick={() => show()}>
-               <Plus size={14} />
-               Add audio source
+            <Button
+               className="audio-add"
+               aria-label="Add audio source"
+               disabled={active}
+               data-tooltip={active ? "Stop capturing to add audio sources" : "Add audio source"}
+               onClick={() => show()}
+            >
+               <Plus size={16} />
             </Button>
          )}
          {filtered && (

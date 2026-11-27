@@ -10,15 +10,6 @@
    gap: 8px;
 }
 
-.audio-add {
-   width: fit-content;
-   margin-top: 12px;
-   font-size: 11px;
-   display: flex;
-   margin-left: auto;
-   margin-right: auto;
-}
-
 .dialog-panel {
    max-height: calc(100vh - 64px);
    overflow: auto;

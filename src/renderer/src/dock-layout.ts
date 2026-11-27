@@ -198,6 +198,65 @@ export function dividerSegments(dividers: readonly DockDivider[]): DockSegment[]
  * Gives the arm `segment` a divider of its own. The splits on both sides of its divider are cut at
  * every crossing and paired up, so the crossing lines join into one and the arms come apart.
  */
+/** Arms that run on in one straight line, across crossings, which move together unless one is picked out. */
+export interface DockLine {
+   axis: DockAxis;
+   position: number;
+   rect: Rect;
+   arms: DockSegment[];
+}
+export function dockLines(segments: readonly DockSegment[]): DockLine[] {
+   const span = (arm: DockSegment) => crossSpan({ axis: arm.divider.axis, rect: arm.rect });
+   const lines: DockSegment[][] = [];
+   for (const arm of [...segments].sort((a, b) => span(a)[0] - span(b)[0])) {
+      const line = lines.find((item) => {
+         const last = item[item.length - 1]!;
+         return (
+            last.divider.axis === arm.divider.axis &&
+            Math.abs(dividerPosition(last.divider) - dividerPosition(arm.divider)) < 1 &&
+            span(last)[1] >= span(arm)[0] - dockGap - 1
+         );
+      });
+      if (line) line.push(arm);
+      else lines.push([arm]);
+   }
+   return lines.map((arms) => {
+      const left = Math.min(...arms.map((arm) => arm.rect.x));
+      const top = Math.min(...arms.map((arm) => arm.rect.y));
+      const right = Math.max(...arms.map((arm) => arm.rect.x + arm.rect.width));
+      const bottom = Math.max(...arms.map((arm) => arm.rect.y + arm.rect.height));
+      const { axis } = arms[0]!.divider;
+      return { axis, position: dividerPosition(arms[0]!.divider), rect: { x: left, y: top, width: right - left, height: bottom - top }, arms };
+   });
+}
+/** The dividers a whole line moves. Every arm of a divider sits on the same line, so moving them keeps the layout valid. */
+export function lineDividers(line: DockLine): DockDivider[] {
+   return line.arms.map((arm) => arm.divider).filter((divider, index, all) => all.findIndex((other) => other === divider) === index);
+}
+
+/** Where an upright line and a flat line meet, which can be dragged to move both. */
+export interface DockCrossing {
+   rect: Rect;
+   upright: DockLine;
+   flat: DockLine;
+}
+export function dockCrossings(lines: readonly DockLine[]): DockCrossing[] {
+   return lines
+      .filter((line) => line.axis === "row")
+      .flatMap((upright) =>
+         lines
+            .filter((line) => line.axis === "column")
+            .filter((flat) => {
+               const [left, right] = crossSpan(flat);
+               const [top, bottom] = crossSpan(upright);
+               return (
+                  left <= upright.position + dockGap + 1 && right >= upright.position - 1 && top <= flat.position + dockGap + 1 && bottom >= flat.position - 1
+               );
+            })
+            .map((flat) => ({ upright, flat, rect: { x: upright.position, y: flat.position, width: dockGap, height: dockGap } }))
+      );
+}
+
 export function separateSegment(root: DockNode, bounds: Rect, segment: DockSegment, minimums = panelMinimum): { root: DockNode; divider: DockDivider } {
    const { divider } = segment;
    const node = nodeAt(root, divider.path);

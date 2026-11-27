@@ -89,24 +89,26 @@ export function AudioMixerRow({
    if (vertical)
       return (
          <div className="mixer-channel mixer-strip" data-disabled={!enabled || undefined} data-issue={shownIssue ? "" : undefined}>
-            <span className="mixer-channel-name" data-tooltip={enabled ? name : `${name}: not recorded`}>
-               {name}
-            </span>
-            <div className="mixer-strip-tools">
-               {handle}
+            <div className="mixer-strip-head">
                {!enabled && (
                   <span className="mixer-channel-status" role="img" tabIndex={0} aria-label="Not recorded" data-tooltip="Not recorded">
                      <CircleOff size={14} />
                   </span>
                )}
                {issueIcon}
-               {filterButton}
-               {menu}
+               <span className="mixer-channel-name" data-tooltip={name}>
+                  {name}
+               </span>
             </div>
             {meter}
             {fader}
-            {muteButton}
             {listen}
+            {muteButton}
+            <div className="mixer-strip-foot">
+               <span className="mixer-strip-slot">{filterButton}</span>
+               {handle}
+               <span className="mixer-strip-slot">{menu}</span>
+            </div>
          </div>
       );
    return (

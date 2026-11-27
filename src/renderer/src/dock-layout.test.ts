@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
    defaultDock,
+   dockCrossings,
+   dockLines,
+   lineDividers,
    dockPanel,
    dividerSegments,
    dropTarget,
@@ -122,6 +125,24 @@ describe("dock layout", () => {
       const across = moved.dividers.filter((item) => item.axis === "column");
       expect(across).toHaveLength(1);
       expect(across[0]!.rect.width).toBe(bounds.width);
+   });
+
+   it("joins arms into one line per direction, with one crossing where they meet", () => {
+      const lines = dockLines(dividerSegments(layoutDock(defaultDock, bounds).dividers));
+      expect(lines).toHaveLength(2);
+      const flat = lines.find((line) => line.axis === "column")!;
+      expect(flat.rect.width).toBe(bounds.width);
+      expect(lineDividers(flat)).toHaveLength(2);
+      expect(dockCrossings(lines)).toHaveLength(1);
+   });
+
+   it("moves a whole line by moving every divider on it", () => {
+      const placed = layoutDock(defaultDock, bounds);
+      const flat = dockLines(dividerSegments(placed.dividers)).find((line) => line.axis === "column")!;
+      const moved = lineDividers(flat).reduce((node, divider) => resizeDock(node, divider, -60), defaultDock);
+      const { panels } = layoutDock(moved, bounds);
+      expect(panels.mixer.y).toBe(placed.panels.mixer.y - 60);
+      expect(panels.actions.y).toBe(placed.panels.actions.y - 60);
    });
 
    it("keeps panel minimums that are passed in", () => {
