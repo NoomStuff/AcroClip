@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultDock, dockPanel, dropTarget, isDockLayout, layoutDock, panelMinimum, resizeDock, resolveSizes } from "./dock-layout";
+import { defaultDock, dockPanel, dropTarget, isDockLayout, layoutDock, panelMinimum, planDrop, resizeDock, resolveSizes } from "./dock-layout";
 import type { DockNode } from "./dock-layout";
 
 const bounds = { x: 0, y: 0, width: 1200, height: 800 };
@@ -54,6 +54,29 @@ describe("dock layout", () => {
       expect(middle).toMatchObject({ target: "preview", side: "center" });
       expect(dropTarget(panels, bounds, "actions", panels.preview.x + 40, 300)).toMatchObject({ target: "preview", side: "left" });
       expect(dropTarget(panels, bounds, "actions", 5, 300)).toMatchObject({ target: "root", side: "left" });
+   });
+
+   it("puts a panel in a corner of the layout", () => {
+      const drop = planDrop(defaultDock, bounds, "mixer", bounds.width - 40, bounds.height - 10);
+      expect(drop).toMatchObject({ target: "root", side: "bottom-right" });
+      const { panels } = layoutDock(drop!.next, bounds);
+      expect(panels.mixer.x + panels.mixer.width).toBe(bounds.width);
+      expect(panels.mixer.y + panels.mixer.height).toBe(bounds.height);
+      expect(panels.mixer.width).toBeLessThan(bounds.width);
+      expect(panels.mixer.height).toBeLessThan(bounds.height);
+      expect(drop!.preview).toEqual(panels.mixer);
+   });
+
+   it("keeps a corner drop off a full edge when the corner panel spans the layout", () => {
+      let layout: DockNode = {
+         split: "column",
+         sizes: [500, 150, 150, 150],
+         children: [{ panel: "preview" }, { panel: "sources" }, { panel: "mixer" }, { panel: "actions" }],
+      };
+      layout = planDrop(layout, bounds, "sources", 10, bounds.height - 10)!.next;
+      const { panels } = layoutDock(layout, bounds);
+      expect(panels.sources).toMatchObject({ x: 0, y: bounds.height - panels.sources.height });
+      expect(panels.sources.width).toBeLessThan(bounds.width);
    });
 
    it("rejects stored layouts that lose or repeat a panel", () => {

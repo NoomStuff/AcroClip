@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
-import { defaultDock, dockPanel, dropTarget, isDockLayout, layoutDock, resizeDock } from "./dock-layout";
-import type { DockDivider, DockNode, DockPanel, DockSide, Rect } from "./dock-layout";
+import { GripHorizontal } from "lucide-react";
+import { defaultDock, isDockLayout, layoutDock, planDrop, resizeDock } from "./dock-layout";
+import type { DockDivider, DockDrop, DockNode, DockPanel, DockSide, Rect } from "./dock-layout";
 
 const storageKey = "acroclip.layout.recording.dock";
 const dragThreshold = 4;
@@ -26,7 +27,7 @@ interface Drag {
    panel: DockPanel;
    x: number;
    y: number;
-   drop: { target: DockPanel | "root"; side: DockSide; preview: Rect; targetRect: Rect } | null;
+   drop: DockDrop | null;
 }
 
 export function useDock(container: RefObject<HTMLElement | null>) {
@@ -73,10 +74,10 @@ export function useDock(container: RefObject<HTMLElement | null>) {
       moveTo(panel: DockPanel, clientX: number, clientY: number) {
          if (!placed || !bounds) return;
          const { x, y } = pointerIn(clientX, clientY);
-         setDrag({ panel, x, y, drop: dropTarget(placed.panels, bounds, panel, x, y) });
+         setDrag({ panel, x, y, drop: planDrop(layout, bounds, panel, x, y) });
       },
       drop() {
-         if (drag?.drop) commit(dockPanel(layout, drag.panel, drag.drop.target, drag.drop.side, drag.drop.targetRect), true);
+         if (drag?.drop) commit(drag.drop.next, true);
          setDrag(null);
       },
       cancel: () => setDrag(null),
@@ -124,7 +125,7 @@ export function DockGrip({ dock, panel, label }: { dock: Dock; panel: DockPanel;
             dock.cancel();
          }}
       >
-         <span />
+         <GripHorizontal size={14} strokeWidth={2.4} />
       </div>
    );
 }
@@ -183,9 +184,19 @@ function DockSeparator({ dock, divider }: { dock: Dock; divider: DockDivider }) 
 const panelLabel: Record<DockPanel, string> = { preview: "Preview", sources: "Sources", mixer: "Audio", actions: "Capture buttons" };
 
 function dropLabel(target: DockPanel | "root", side: DockSide): string {
-   if (target === "root") return side === "left" || side === "right" ? `Full height on the ${side}` : `Full width at the ${side}`;
+   if (target === "root") {
+      if (side.includes("-")) return `${side[0]!.toUpperCase()}${side.slice(1)} corner`;
+      return side === "left" || side === "right" ? `Full height on the ${side}` : `Full width at the ${side}`;
+   }
    const name = panelLabel[target].toLowerCase();
-   return { center: `Swap with ${name}`, left: `Left of ${name}`, right: `Right of ${name}`, top: `Above ${name}`, bottom: `Below ${name}` }[side];
+   const labels: Partial<Record<DockSide, string>> = {
+      center: `Swap with ${name}`,
+      left: `Left of ${name}`,
+      right: `Right of ${name}`,
+      top: `Above ${name}`,
+      bottom: `Below ${name}`,
+   };
+   return labels[side] ?? "";
 }
 
 /** Dividers between every pair of docked panels, and where a dragged panel would land. */

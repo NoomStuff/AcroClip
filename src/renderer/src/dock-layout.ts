@@ -1,7 +1,9 @@
 export type DockPanel = "preview" | "sources" | "mixer" | "actions";
 export type DockAxis = "row" | "column";
 export type DockNode = { panel: DockPanel } | { split: DockAxis; children: DockNode[]; sizes: number[] };
-export type DockSide = "left" | "right" | "top" | "bottom" | "center";
+export type DockEdge = "left" | "right" | "top" | "bottom";
+export type DockCorner = `${"top" | "bottom"}-${"left" | "right"}`;
+export type DockSide = DockEdge | DockCorner | "center";
 export interface Rect {
    x: number;
    y: number;
@@ -167,6 +169,7 @@ function swapPanels(node: DockNode, a: DockPanel, b: DockPanel): DockNode {
 export function dockPanel(root: DockNode, moving: DockPanel, target: DockPanel | "root", side: DockSide, targetRect: Rect): DockNode {
    if (target === moving) return root;
    if (side === "center") return target === "root" ? root : swapPanels(root, moving, target);
+   if (isCorner(side)) return dockCorner(root, moving, side, targetRect);
    const axis: DockAxis = side === "left" || side === "right" ? "row" : "column";
    const before = side === "left" || side === "top";
    const remaining = removePanel(root, moving)!;
@@ -203,6 +206,51 @@ export function dockPanel(root: DockNode, moving: DockPanel, target: DockPanel |
    return visit(remaining);
 }
 
+const isCorner = (side: DockSide): side is DockCorner => side.includes("-");
+function parentAxis(node: DockNode, panel: DockPanel): DockAxis | null {
+   if ("panel" in node) return null;
+   if (node.children.some((child) => "panel" in child && child.panel === panel)) return node.split;
+   for (const child of node.children) {
+      const axis = parentAxis(child, panel);
+      if (axis) return axis;
+   }
+   return null;
+}
+
+/**
+ * Puts `moving` in a corner of the whole layout by docking it beside the panel that holds that corner.
+ * It splits along that panel's own split, unless the panel spans the layout, where that would fill a full edge.
+ */
+function dockCorner(root: DockNode, moving: DockPanel, corner: DockCorner, bounds: Rect): DockNode {
+   const [vertical, horizontal] = corner.split("-") as ["top" | "bottom", "left" | "right"];
+   const remaining = removePanel(root, moving)!;
+   const { panels } = layoutDock(remaining, bounds);
+   const x = horizontal === "left" ? bounds.x : bounds.x + bounds.width;
+   const y = vertical === "top" ? bounds.y : bounds.y + bounds.height;
+   const distance = (rect: Rect) => Math.hypot(Math.max(rect.x - x, 0, x - rect.x - rect.width), Math.max(rect.y - y, 0, y - rect.y - rect.height));
+   const holder = dockPanels.filter((panel) => panel !== moving).reduce((best, panel) => (distance(panels[panel]) < distance(panels[best]) ? panel : best));
+   const rect = panels[holder];
+   const axis = rect.width >= bounds.width - 1 ? "row" : rect.height >= bounds.height - 1 ? "column" : (parentAxis(remaining, holder) ?? "column");
+   return dockPanel(remaining, moving, holder, axis === "row" ? horizontal : vertical, rect);
+}
+
+export interface DockDrop {
+   target: DockPanel | "root";
+   side: DockSide;
+   /** The layout after the drop, and where the moved panel ends up in it. */
+   next: DockNode;
+   preview: Rect;
+}
+
+/** Where a drag at (x, y) would put `moving`, worked out by laying out the result. */
+export function planDrop(root: DockNode, bounds: Rect, moving: DockPanel, x: number, y: number): DockDrop | null {
+   const { panels } = layoutDock(root, bounds);
+   const hit = dropTarget(panels, bounds, moving, x, y);
+   if (!hit) return null;
+   const next = dockPanel(root, moving, hit.target, hit.side, hit.targetRect);
+   return { target: hit.target, side: hit.side, next, preview: layoutDock(next, bounds).panels[moving] };
+}
+
 /** Which part of the layout a drag at (x, y) points at, and the area the panel would take there. */
 export function dropTarget(
    rects: Record<DockPanel, Rect>,
@@ -210,9 +258,10 @@ export function dropTarget(
    moving: DockPanel,
    x: number,
    y: number
-): { target: DockPanel | "root"; side: DockSide; preview: Rect; targetRect: Rect } | null {
+): { target: DockPanel | "root"; side: DockSide; targetRect: Rect } | null {
    const edge = 22;
-   const outer: Array<[Exclude<DockSide, "center">, number]> = [
+   const corner = 96;
+   const outer: Array<[DockEdge, number]> = [
       ["left", x - bounds.x],
       ["right", bounds.x + bounds.width - x],
       ["top", y - bounds.y],
@@ -220,30 +269,24 @@ export function dropTarget(
    ];
    const [outerSide, outerDistance] = outer.reduce((best, item) => (item[1] < best[1] ? item : best));
    if (outerDistance >= 0 && outerDistance < edge) {
-      const axis: DockAxis = outerSide === "left" || outerSide === "right" ? "row" : "column";
-      const share = Math.max(along(axis, panelMinimum[moving]), Math.round(along(axis, bounds) / 3));
-      return { target: "root", side: outerSide, preview: sideRect(bounds, outerSide, share), targetRect: bounds };
+      const [horizontal, horizontalDistance] = outer[0]![1] < outer[1]![1] ? outer[0]! : outer[1]!;
+      const [vertical, verticalDistance] = outer[2]![1] < outer[3]![1] ? outer[2]! : outer[3]!;
+      if (horizontalDistance < corner && verticalDistance < corner)
+         return { target: "root", side: `${vertical}-${horizontal}` as DockCorner, targetRect: bounds };
+      return { target: "root", side: outerSide, targetRect: bounds };
    }
    for (const panel of dockPanels) {
       const rect = rects[panel];
       if (!rect || x < rect.x || x > rect.x + rect.width || y < rect.y || y > rect.y + rect.height) continue;
       if (panel === moving) return null;
-      const relative: Array<[Exclude<DockSide, "center">, number]> = [
+      const relative: Array<[DockEdge, number]> = [
          ["left", (x - rect.x) / rect.width],
          ["right", (rect.x + rect.width - x) / rect.width],
          ["top", (y - rect.y) / rect.height],
          ["bottom", (rect.y + rect.height - y) / rect.height],
       ];
       const [side, distance] = relative.reduce((best, item) => (item[1] < best[1] ? item : best));
-      if (distance > 0.3) return { target: panel, side: "center", preview: rect, targetRect: rect };
-      const axis: DockAxis = side === "left" || side === "right" ? "row" : "column";
-      return { target: panel, side, preview: sideRect(rect, side, (along(axis, rect) - dockGap) / 2), targetRect: rect };
+      return { target: panel, side: distance > 0.3 ? "center" : side, targetRect: rect };
    }
    return null;
-}
-function sideRect(rect: Rect, side: Exclude<DockSide, "center">, size: number): Rect {
-   if (side === "left") return { ...rect, width: size };
-   if (side === "right") return { ...rect, x: rect.x + rect.width - size, width: size };
-   if (side === "top") return { ...rect, height: size };
-   return { ...rect, y: rect.y + rect.height - size, height: size };
 }

@@ -940,35 +940,34 @@
 
 .dock-grip {
    position: absolute;
-   top: 0;
+   top: 2px;
    left: 50%;
    translate: -50% 0;
    z-index: 6;
-   width: 56px;
-   height: 14px;
+   width: 30px;
+   height: 16px;
    display: grid;
    place-items: center;
+   border-radius: 9999px;
+   color: var(--subtle);
+   opacity: 0;
    cursor: grab;
    touch-action: none;
    -webkit-app-region: no-drag;
-}
-.dock-grip > span {
-   width: 28px;
-   height: 4px;
-   border-radius: 4px;
-   background: #ffffff26;
-   opacity: 0;
    transition:
       opacity 160ms var(--ease),
-      width 160ms var(--ease),
+      color 160ms var(--ease),
       background-color 160ms var(--ease);
 }
-:is(.preview-surface, .mixer, .capture-actions, .source-panel):hover > .dock-grip > span {
+:is(.preview-surface, .mixer, .capture-actions, .source-panel):hover > .dock-grip {
    opacity: 1;
 }
-.dock-grip:hover > span {
-   width: 40px;
-   background: var(--accent);
+.dock-grip:hover {
+   background: #ffffff1a;
+   color: var(--text);
+}
+.dock-divider::after {
+   background: transparent;
 }
 .recording-layout[data-dragging] .dock-grip {
    cursor: grabbing;
