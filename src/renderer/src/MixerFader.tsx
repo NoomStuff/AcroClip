@@ -51,13 +51,8 @@ export function MixerFader({
    };
    const change = (value: number) => {
       let next = boundedGain(value);
-      if (
-         dragging.current &&
-         !exact.current &&
-         input.current &&
-         (Math.abs(next - 1) / faderMax) * Math.max(1, input.current.getBoundingClientRect().width - 16) <= 5
-      )
-         next = 1;
+      const box = input.current?.getBoundingClientRect();
+      if (dragging.current && !exact.current && box && (Math.abs(next - 1) / faderMax) * Math.max(1, Math.max(box.width, box.height) - 16) <= 5) next = 1;
       revision.current += 1;
       latest.current = next;
       setDisplay(next);

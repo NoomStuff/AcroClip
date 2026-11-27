@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultDock, dockPanel, dropTarget, isDockLayout, layoutDock, panelMinimum, planDrop, resizeDock, resolveSizes } from "./dock-layout";
+import { defaultDock, dockPanel, dropTarget, groupDividers, isDockLayout, layoutDock, panelMinimum, planDrop, resizeDock, resolveSizes } from "./dock-layout";
 import type { DockNode } from "./dock-layout";
 
 const bounds = { x: 0, y: 0, width: 1200, height: 800 };
@@ -44,7 +44,7 @@ describe("dock layout", () => {
    it("moves a divider without pushing either neighbour below its minimum", () => {
       const root = defaultDock as Extract<DockNode, { split: "row" }>;
       const resolved = resolveSizes(root, bounds.width);
-      const moved = resizeDock(root, { path: [], index: 0 }, resolved, 5000);
+      const moved = resizeDock(root, { path: [], index: 0, sizes: resolved }, 5000);
       expect(layoutDock(moved, bounds).panels.sources.width).toBe(panelMinimum.sources.width);
    });
 
@@ -58,7 +58,6 @@ describe("dock layout", () => {
 
    it("puts a panel in a corner of the layout", () => {
       const drop = planDrop(defaultDock, bounds, "mixer", bounds.width - 40, bounds.height - 10);
-      expect(drop).toMatchObject({ target: "root", side: "bottom-right" });
       const { panels } = layoutDock(drop!.next, bounds);
       expect(panels.mixer.x + panels.mixer.width).toBe(bounds.width);
       expect(panels.mixer.y + panels.mixer.height).toBe(bounds.height);
@@ -77,6 +76,27 @@ describe("dock layout", () => {
       const { panels } = layoutDock(layout, bounds);
       expect(panels.sources).toMatchObject({ x: 0, y: bounds.height - panels.sources.height });
       expect(panels.sources.width).toBeLessThan(bounds.width);
+   });
+
+   it("ignores drops that leave the arrangement as it is", () => {
+      const { panels } = layoutDock(defaultDock, bounds);
+      expect(planDrop(defaultDock, bounds, "mixer", panels.preview.x + 200, panels.preview.y + panels.preview.height - 10)).toBeNull();
+   });
+
+   it("gives drops with the same result one name", () => {
+      const { panels } = layoutDock(defaultDock, bounds);
+      const corner = planDrop(defaultDock, bounds, "actions", 10, bounds.height - 10);
+      const edge = planDrop(defaultDock, bounds, "actions", panels.mixer.x + 200, panels.mixer.y + panels.mixer.height - 40);
+      expect(corner).toMatchObject({ target: "mixer", side: "bottom" });
+      expect(edge).toMatchObject({ target: "mixer", side: "bottom" });
+   });
+
+   it("joins dividers that line up into one", () => {
+      const groups = groupDividers(layoutDock(defaultDock, bounds).dividers);
+      const across = groups.find((group) => group.axis === "column")!;
+      expect(groups).toHaveLength(2);
+      expect(across.members).toHaveLength(2);
+      expect(across.rect.width).toBe(bounds.width);
    });
 
    it("rejects stored layouts that lose or repeat a panel", () => {

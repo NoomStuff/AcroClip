@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
 import { GripHorizontal } from "lucide-react";
-import { defaultDock, isDockLayout, layoutDock, planDrop, resizeDock } from "./dock-layout";
-import type { DockDivider, DockDrop, DockNode, DockPanel, DockSide, Rect } from "./dock-layout";
+import {
+   defaultDock,
+   dividerGroup,
+   dividerKey,
+   dividerLimits,
+   dividerPosition,
+   groupDividers,
+   isDockLayout,
+   layoutDock,
+   planDrop,
+   resizeDock,
+   setPanelMinimums,
+} from "./dock-layout";
+import type { DockDivider, DockDividerGroup, DockDrop, DockNode, DockPanel, DockSide, Rect } from "./dock-layout";
 
 const storageKey = "acroclip.layout.recording.dock";
 const dragThreshold = 4;
@@ -30,7 +42,8 @@ interface Drag {
    drop: DockDrop | null;
 }
 
-export function useDock(container: RefObject<HTMLElement | null>) {
+export function useDock(container: RefObject<HTMLElement | null>, minimums: Partial<Record<DockPanel, { width: number; height: number }>> = {}) {
+   const minimumKey = JSON.stringify(minimums);
    const [layout, setLayout] = useState(readLayout);
    const [bounds, setBounds] = useState<Rect | null>(null);
    const [drag, setDrag] = useState<Drag | null>(null);
@@ -49,7 +62,20 @@ export function useDock(container: RefObject<HTMLElement | null>) {
       const timer = window.setTimeout(() => setSettling(false), 300);
       return () => window.clearTimeout(timer);
    }, [settling]);
-   const placed = useMemo(() => (bounds ? layoutDock(layout, bounds) : null), [layout, bounds]);
+   const placed = useMemo(() => {
+      setPanelMinimums(JSON.parse(minimumKey) as typeof minimums);
+      return bounds ? layoutDock(layout, bounds) : null;
+   }, [layout, bounds, minimumKey]);
+   // Lines keep the members they had when a drag started, so a line that splits or joins mid-drag keeps its pointer.
+   const [frozen, setFrozen] = useState<Array<{ id: string; keys: string[] }> | null>(null);
+   const groups = useMemo((): Array<DockDividerGroup & { id: string }> => {
+      if (!placed) return [];
+      if (!frozen) return groupDividers(placed.dividers).map((group) => ({ ...group, id: group.members.map(dividerKey).join("|") }));
+      return frozen.flatMap(({ id, keys }) => {
+         const members = placed.dividers.filter((divider) => keys.includes(dividerKey(divider)));
+         return members.length ? [{ ...dividerGroup(members), id }] : [];
+      });
+   }, [placed, frozen]);
    const commit = (next: DockNode, animate: boolean) => {
       setSettling(animate);
       setLayout(next);
@@ -81,8 +107,20 @@ export function useDock(container: RefObject<HTMLElement | null>) {
          setDrag(null);
       },
       cancel: () => setDrag(null),
-      resize: (divider: DockDivider, delta: number, persist: boolean) => {
-         const next = resizeDock(layout, divider, divider.sizes, delta);
+      pointerIn,
+      groups,
+      /** Starts a divider drag that moves `members` as their own line, or ends it with null. */
+      hold(members: readonly DockDivider[] | null, id = "") {
+         if (!members) return setFrozen(null);
+         const moving = members.map(dividerKey);
+         const rest = groups.map((group) => group.members.map(dividerKey).filter((key) => !moving.includes(key))).filter((keys) => keys.length);
+         setFrozen([{ id, keys: moving }, ...rest.map((keys) => ({ id: keys.join("|"), keys }))]);
+      },
+      /** Moves linked dividers together by one delta that every one of them can take. */
+      resize: (members: readonly DockDivider[], delta: number, persist: boolean) => {
+         const limits = members.map((member) => dividerLimits(layout, member));
+         const move = Math.max(Math.max(...limits.map(([low]) => low)), Math.min(Math.min(...limits.map(([, high]) => high)), delta));
+         const next = members.reduce((node, member) => resizeDock(node, member, move), layout);
          if (persist) commit(next, false);
          else setLayout(next);
       },
@@ -130,10 +168,14 @@ export function DockGrip({ dock, panel, label }: { dock: Dock; panel: DockPanel;
    );
 }
 
-function DockSeparator({ dock, divider }: { dock: Dock; divider: DockDivider }) {
-   const start = useRef<{ position: number; divider: DockDivider; delta: number } | null>(null);
-   const vertical = divider.axis === "row";
+const snapDistance = 8;
+
+/** One line of lined-up dividers. Dragging it snaps to other lines; Alt drags only the part under the pointer. */
+function DockSeparator({ dock, group }: { dock: Dock; group: DockDividerGroup & { id: string } }) {
+   const start = useRef<{ position: number; from: number; members: DockDivider[]; snaps: number[]; delta: number } | null>(null);
+   const vertical = group.axis === "row";
    const position = (event: { clientX: number; clientY: number }) => (vertical ? event.clientX : event.clientY);
+   const { rect } = group;
    return (
       <div
          role="separator"
@@ -141,7 +183,7 @@ function DockSeparator({ dock, divider }: { dock: Dock; divider: DockDivider }) 
          aria-orientation={vertical ? "vertical" : "horizontal"}
          aria-label="Resize panels"
          className={`pane-divider dock-divider ${vertical ? "vertical" : "horizontal"}`}
-         style={{ position: "absolute", left: divider.rect.x, top: divider.rect.y, width: divider.rect.width, height: divider.rect.height }}
+         style={{ position: "absolute", left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
          onKeyDown={(event) => {
             const step =
                (event.shiftKey ? 40 : 10) *
@@ -158,24 +200,44 @@ function DockSeparator({ dock, divider }: { dock: Dock; divider: DockDivider }) 
                       : 0);
             if (!step) return;
             event.preventDefault();
-            dock.resize(divider, step, true);
+            dock.resize(group.members, step, true);
          }}
          onPointerDown={(event) => {
             if (event.button !== 0) return;
             event.preventDefault();
             event.currentTarget.setPointerCapture(event.pointerId);
-            start.current = { position: position(event), divider, delta: 0 };
+            const pointer = dock.pointerIn(event.clientX, event.clientY);
+            const across = vertical ? pointer.y : pointer.x;
+            const under = group.members.find((member) =>
+               vertical
+                  ? across >= member.rect.y && across <= member.rect.y + member.rect.height
+                  : across >= member.rect.x && across <= member.rect.x + member.rect.width
+            );
+            const members = event.altKey && under ? [under] : group.members;
+            const snaps = (dock.placed?.dividers ?? [])
+               .filter((other) => other.axis === group.axis && !members.includes(other))
+               .map(dividerPosition)
+               .filter((spot) => Math.abs(spot - group.position) >= 1);
+            start.current = { position: position(event), from: group.position, members, snaps, delta: 0 };
+            dock.hold(members, group.id);
          }}
          onPointerMove={(event) => {
             const origin = start.current;
             if (!origin) return;
-            origin.delta = position(event) - origin.position;
-            dock.resize(origin.divider, origin.delta, false);
+            const raw = position(event) - origin.position;
+            const snap = origin.snaps.find((spot) => Math.abs(origin.from + raw - spot) < snapDistance);
+            origin.delta = snap === undefined || event.shiftKey ? raw : snap - origin.from;
+            dock.resize(origin.members, origin.delta, false);
          }}
          onPointerUp={() => {
             const origin = start.current;
-            if (origin) dock.resize(origin.divider, origin.delta, true);
+            if (origin) dock.resize(origin.members, origin.delta, true);
             start.current = null;
+            dock.hold(null);
+         }}
+         onPointerCancel={() => {
+            start.current = null;
+            dock.hold(null);
          }}
       />
    );
@@ -204,8 +266,8 @@ export function DockOverlay({ dock }: { dock: Dock }) {
    const drop = dock.drag?.drop;
    return (
       <>
-         {dock.placed?.dividers.map((divider) => (
-            <DockSeparator key={`${divider.path.join(".")}:${divider.index}`} dock={dock} divider={divider} />
+         {dock.groups.map((group) => (
+            <DockSeparator key={group.id} dock={dock} group={group} />
          ))}
          {dock.drag && (
             <>

@@ -15,6 +15,7 @@ import { useDirectionalContent } from "./useDirectionalContent";
 import { ApplicationIcon } from "./ApplicationIcon";
 import { AudioListening } from "./AudioListening";
 import { AdditionalAudio } from "./AdditionalAudio";
+import { useVerticalMixer } from "./useVerticalMixer";
 import { portalScreenId, sourceChoices, previewCaptureSource } from "../../shared/capture-policy";
 import { autoCapturePresentation } from "./auto-capture-presentation";
 
@@ -61,7 +62,8 @@ export function Recording({
    const sourceContent = useRef<HTMLDivElement>(null);
    const sourceIndex = ["screen", "app", "auto"].indexOf(state.preferences.sourceKind);
    useDirectionalContent(sourceContent, state.preferences.sourceKind, sourceIndex, visible);
-   const dock = useDock(layout);
+   const verticalMixer = useVerticalMixer();
+   const dock = useDock(layout, verticalMixer ? { mixer: { width: 200, height: 250 } } : {});
    const [sourcePhase, setSourcePhase] = useState<"loading" | "ready" | "error">("loading");
    const [sourceRequest, setSourceRequest] = useState(0);
    const [sources, setSources] = useState<CaptureSource[]>([]);
@@ -401,7 +403,7 @@ export function Recording({
                   )}
                </div>
                <div className="recording-bottom">
-                  <div className="mixer" style={dock.style("mixer")}>
+                  <div className="mixer" data-vertical={verticalMixer || undefined} style={dock.style("mixer")}>
                      <DockGrip dock={dock} panel="mixer" label="Audio" />
                      <div className="mixer-scroll">
                         <AudioListening

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { WandSparkles, Pencil, Plus, Trash2 } from "lucide-react";
+import { WandSparkles, Pencil, Plus, SlidersVertical, Trash2 } from "lucide-react";
 import type { AdditionalAudioSource, GameCandidate, Preferences } from "../../shared/types";
 import { normalizeApplicationLabel } from "../../shared/application-label";
 import { api, describeError, reportFeedback } from "./desktop";
-import { Button, MenuItem, Select } from "./ui";
+import { Button, MenuCheckboxItem, MenuItem, Select } from "./ui";
+import { setVerticalMixer, useVerticalMixer } from "./useVerticalMixer";
 import { DialogPanel } from "./Dialog";
 import { MotionList } from "./MotionList";
 import { AudioMixerRow } from "./AudioMixerRow";
@@ -38,6 +39,7 @@ export function AdditionalAudio({
       [loading, setLoading] = useState(false),
       [saving, setSaving] = useState(false),
       [filtering, setFiltering] = useState<string | null>(null);
+   const vertical = useVerticalMixer();
    const existing = preferences.audioSources.find((source) => source.id === editing);
    const filtered = preferences.audioSources.find((source) => source.id === filtering);
    const captureName = captureKind === "screen" ? "Desktop" : captureKind === "app" ? "Application" : "Source audio";
@@ -128,66 +130,73 @@ export function AdditionalAudio({
       setLoading(true);
       setOpen(true);
    };
+   const renderRow = (source: AdditionalAudioSource) => (
+      <AudioMixerRow
+         key={source.id}
+         visible={visible}
+         sourceId={source.id}
+         name={source.kind === "source" ? captureName : source.kind === "application" ? normalizeApplicationLabel(source.name) : source.name}
+         enabled={source.enabled}
+         listenAvailable={(source.kind !== "source" || captureAvailable) && !(source.kind === "input" && source.muted)}
+         muted={source.muted}
+         volume={source.volume}
+         captureLevel={source.kind === "source"}
+         active={active}
+         issue={issues[source.kind === "source" ? "capture" : source.id]}
+         onEnable={(enabled) => update(source.id, { enabled, muted: false })}
+         onMute={() => update(source.id, (current) => ({ muted: !current.muted && current.volume > 0, volume: current.volume > 0 ? current.volume : 1 }))}
+         onVolume={(volume, restore) => update(source.id, { volume: volume === 0 ? (restore > 0 ? restore : 1) : volume, muted: volume === 0 })}
+         filters={source.filters.length ? { summary: filterSummary(source.filters), onOpen: () => setFiltering(source.id) } : undefined}
+         options={
+            <>
+               <MenuItem onClick={() => setFiltering(source.id)}>
+                  <WandSparkles size={15} />
+                  Audio filters
+               </MenuItem>
+               <MenuItem disabled={active} onClick={() => show(source)}>
+                  <Pencil size={15} />
+                  Edit source
+               </MenuItem>
+               <MenuCheckboxItem checked={vertical} onClick={() => setVerticalMixer(!vertical)}>
+                  <SlidersVertical size={15} />
+                  Vertical mixer
+               </MenuCheckboxItem>
+               <MenuItem
+                  danger
+                  disabled={active}
+                  onClick={() => save((current) => ({ audioSources: current.audioSources.filter((item) => item.id !== source.id) }))}
+               >
+                  <Trash2 size={15} />
+                  Remove source
+               </MenuItem>
+            </>
+         }
+      />
+   );
    return (
       <>
-         <MotionList
-            items={preferences.audioSources}
-            onReorder={
-               active
-                  ? undefined
-                  : (id, beforeId) =>
-                       save((current) => {
-                          const source = current.audioSources.find((item) => item.id === id);
-                          if (!source) return {};
-                          const audioSources = current.audioSources.filter((item) => item.id !== id);
-                          const index = beforeId === null ? audioSources.length : audioSources.findIndex((item) => item.id === beforeId);
-                          audioSources.splice(index < 0 ? audioSources.length : index, 0, source);
-                          return { audioSources };
-                       })
-            }
-         >
-            {(source) => (
-               <AudioMixerRow
-                  key={source.id}
-                  visible={visible}
-                  sourceId={source.id}
-                  name={source.kind === "source" ? captureName : source.kind === "application" ? normalizeApplicationLabel(source.name) : source.name}
-                  enabled={source.enabled}
-                  listenAvailable={(source.kind !== "source" || captureAvailable) && !(source.kind === "input" && source.muted)}
-                  muted={source.muted}
-                  volume={source.volume}
-                  captureLevel={source.kind === "source"}
-                  active={active}
-                  issue={issues[source.kind === "source" ? "capture" : source.id]}
-                  onEnable={(enabled) => update(source.id, { enabled, muted: false })}
-                  onMute={() =>
-                     update(source.id, (current) => ({ muted: !current.muted && current.volume > 0, volume: current.volume > 0 ? current.volume : 1 }))
-                  }
-                  onVolume={(volume, restore) => update(source.id, { volume: volume === 0 ? (restore > 0 ? restore : 1) : volume, muted: volume === 0 })}
-                  filters={source.filters.length ? { summary: filterSummary(source.filters), onOpen: () => setFiltering(source.id) } : undefined}
-                  options={
-                     <>
-                        <MenuItem onClick={() => setFiltering(source.id)}>
-                           <WandSparkles size={15} />
-                           Audio filters
-                        </MenuItem>
-                        <MenuItem disabled={active} onClick={() => show(source)}>
-                           <Pencil size={15} />
-                           Edit source
-                        </MenuItem>
-                        <MenuItem
-                           danger
-                           disabled={active}
-                           onClick={() => save((current) => ({ audioSources: current.audioSources.filter((item) => item.id !== source.id) }))}
-                        >
-                           <Trash2 size={15} />
-                           Remove source
-                        </MenuItem>
-                     </>
-                  }
-               />
-            )}
-         </MotionList>
+         {vertical ? (
+            <div className="mixer-strips">{preferences.audioSources.map(renderRow)}</div>
+         ) : (
+            <MotionList
+               items={preferences.audioSources}
+               onReorder={
+                  active
+                     ? undefined
+                     : (id, beforeId) =>
+                          save((current) => {
+                             const source = current.audioSources.find((item) => item.id === id);
+                             if (!source) return {};
+                             const audioSources = current.audioSources.filter((item) => item.id !== id);
+                             const index = beforeId === null ? audioSources.length : audioSources.findIndex((item) => item.id === beforeId);
+                             audioSources.splice(index < 0 ? audioSources.length : index, 0, source);
+                             return { audioSources };
+                          })
+               }
+            >
+               {renderRow}
+            </MotionList>
+         )}
          {preferences.audioSources.length < 5 && (
             <Button className="audio-add" disabled={active} data-tooltip={active ? "Stop capturing to add audio sources" : undefined} onClick={() => show()}>
                <Plus size={14} />
