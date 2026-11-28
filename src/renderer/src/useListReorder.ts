@@ -8,7 +8,8 @@ interface Drag {
    capture: HTMLElement;
    x: number;
    y: number;
-   currentY: number;
+   /** The pointer along the list's axis. */
+   current: number;
    grab: number;
    active: boolean;
    order: string[];
@@ -16,8 +17,45 @@ interface Drag {
 }
 
 export type ReorderItems = (id: string, beforeId: string | null) => Promise<unknown> | void;
+export type ListAxis = "x" | "y";
 
-export function useListReorder<T extends { id: string }>(items: readonly T[], identity: string, commit: ReorderItems | undefined) {
+/** The measurements a list reads along its main axis, so one reorder works for rows and for columns. */
+const axes = {
+   x: {
+      client: (event: { clientX: number }) => event.clientX,
+      start: (rect: DOMRect) => rect.left,
+      end: (rect: DOMRect) => rect.right,
+      offset: (node: HTMLElement) => node.offsetLeft,
+      size: (node: HTMLElement) => node.offsetWidth,
+      translate: (value: number) => `translateX(${value}px)`,
+      overflow: (style: CSSStyleDeclaration) => style.overflowX,
+      scroll: (node: HTMLElement, by: number) => (node.scrollLeft += by),
+      shift: (matrix: DOMMatrixReadOnly) => matrix.m41,
+      position: "left" as const,
+      length: "width" as const,
+      back: "ArrowLeft",
+      forward: "ArrowRight",
+   },
+   y: {
+      client: (event: { clientY: number }) => event.clientY,
+      start: (rect: DOMRect) => rect.top,
+      end: (rect: DOMRect) => rect.bottom,
+      offset: (node: HTMLElement) => node.offsetTop,
+      size: (node: HTMLElement) => node.offsetHeight,
+      translate: (value: number) => `translateY(${value}px)`,
+      overflow: (style: CSSStyleDeclaration) => style.overflowY,
+      scroll: (node: HTMLElement, by: number) => (node.scrollTop += by),
+      shift: (matrix: DOMMatrixReadOnly) => matrix.m42,
+      position: "top" as const,
+      length: "height" as const,
+      back: "ArrowUp",
+      forward: "ArrowDown",
+   },
+};
+export const listAxis = (axis: ListAxis) => axes[axis];
+
+export function useListReorder<T extends { id: string }>(items: readonly T[], identity: string, commit: ReorderItems | undefined, axis: ListAxis = "y") {
+   const along = listAxis(axis);
    const [preview, setPreview] = useState<string[] | null>(null);
    const [draggingId, setDraggingId] = useState<string | null>(null);
    const drag = useRef<Drag | null>(null);
@@ -56,7 +94,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       if (current.active) {
          suppressPointerClick.current = true;
          if (!matchMedia("(prefers-reduced-motion: reduce)").matches && save) {
-            current.node.animate([{ transform }, { transform: "translateY(0)" }], { duration: 220, easing: "cubic-bezier(.22,.8,.3,1)" });
+            current.node.animate([{ transform }, { transform: along.translate(0) }], { duration: 220, easing: "cubic-bezier(.22,.8,.3,1)" });
          }
          if (save && current.original !== current.order.join("\0")) {
             const index = current.order.indexOf(current.id);
@@ -85,29 +123,29 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
          return;
       }
       let scroll = list.parentElement;
-      while (scroll && !/auto|scroll/.test(getComputedStyle(scroll).overflowY)) scroll = scroll.parentElement;
+      while (scroll && !/auto|scroll/.test(along.overflow(getComputedStyle(scroll)))) scroll = scroll.parentElement;
       if (scroll) {
          const bounds = scroll.getBoundingClientRect();
-         const speed = current.currentY < bounds.top + 32 ? -6 : current.currentY > bounds.bottom - 32 ? 6 : 0;
-         if (speed) scroll.scrollTop += speed;
+         const speed = current.current < along.start(bounds) + 32 ? -6 : current.current > along.end(bounds) - 32 ? 6 : 0;
+         if (speed) along.scroll(scroll, speed);
       }
       const bounds = list.getBoundingClientRect();
       const viewport = scroll?.getBoundingClientRect();
       // The whole row must stay inside the list. Only its handle needs to fit
       // inside the viewport when the expanded row is taller than the scroller.
-      const listMaximum = Math.max(bounds.top, bounds.bottom - current.node.offsetHeight);
-      const minimum = Math.min(listMaximum, Math.max(bounds.top, viewport?.top ?? bounds.top));
-      const maximum = Math.max(minimum, Math.min(listMaximum, (viewport?.bottom ?? bounds.bottom) - current.capture.offsetHeight));
-      const top = Math.max(minimum, Math.min(maximum, current.currentY - current.grab));
-      current.node.style.transform = `translateY(${top - wrapper.getBoundingClientRect().top}px)`;
+      const listMaximum = Math.max(along.start(bounds), along.end(bounds) - along.size(current.node));
+      const minimum = Math.min(listMaximum, Math.max(along.start(bounds), viewport ? along.start(viewport) : along.start(bounds)));
+      const maximum = Math.max(minimum, Math.min(listMaximum, (viewport ? along.end(viewport) : along.end(bounds)) - along.size(current.capture)));
+      const top = Math.max(minimum, Math.min(maximum, current.current - current.grab));
+      current.node.style.transform = along.translate(top - along.start(wrapper.getBoundingClientRect()));
       const rows = Array.from(list.children).filter(
          (child): child is HTMLElement => child instanceof HTMLElement && child.matches(".motion-list-item:not([data-exiting])")
       );
-      const heights = new Map(rows.map((row) => [row.dataset["motionKey"], row.offsetHeight]));
+      const heights = new Map(rows.map((row) => [row.dataset["motionKey"], along.size(row)]));
       const next = current.order.filter((id) => id !== current.id);
       // Compare with the remaining rows packed without the dragged row's gap.
       // These boundaries do not flip when React moves that gap to a new slot.
-      let boundary = bounds.top;
+      let boundary = along.start(bounds);
       let index = 0;
       for (const id of next) {
          const height = heights.get(id) ?? 0;
@@ -163,7 +201,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       const move = (event: PointerEvent) => {
          const current = drag.current;
          if (!current || event.pointerId !== current.pointer) return;
-         current.currentY = event.clientY;
+         current.current = along.client(event);
          if (!current.active && Math.hypot(event.clientX - current.x, event.clientY - current.y) < 6) return;
          event.preventDefault();
          if (!current.active) {
@@ -176,7 +214,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
       };
       const up = (event: PointerEvent) => {
          if (drag.current?.pointer === event.pointerId) {
-            drag.current.currentY = event.clientY;
+            drag.current.current = along.client(event);
             if (drag.current.active) paint.current();
             stop.current(true);
          }
@@ -206,7 +244,7 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
          drag.current = null;
          cancelAnimationFrame(frame.current);
       };
-   }, [enabled]);
+   }, [enabled, along]);
    return {
       items: order,
       draggingId,
@@ -233,8 +271,8 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
             capture,
             x: event.clientX,
             y: event.clientY,
-            currentY: event.clientY,
-            grab: event.clientY - event.currentTarget.getBoundingClientRect().top,
+            current: along.client(event),
+            grab: along.client(event) - along.start(event.currentTarget.getBoundingClientRect()),
             active: false,
             order: original,
             original: original.join("\0"),
@@ -248,14 +286,14 @@ export function useListReorder<T extends { id: string }>(items: readonly T[], id
          }
       },
       keyDown: (id: string, event: ReactKeyboardEvent<HTMLElement>) => {
-         if (!enabled || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+         if (!enabled || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || ![along.back, along.forward].includes(event.key)) return;
          if (!(event.target instanceof Element) || event.target.closest("[data-list-control]") !== event.currentTarget.querySelector("[data-list-control]"))
             return;
          event.preventDefault();
          event.stopPropagation();
          const ids = keyboardOrder.current ?? displayed.current.map((item) => item.id);
          const index = ids.indexOf(id);
-         const nextIndex = index + (event.key === "ArrowUp" ? -1 : 1);
+         const nextIndex = index + (event.key === along.back ? -1 : 1);
          if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return;
          generation.current++;
          const next = ids.filter((item) => item !== id);

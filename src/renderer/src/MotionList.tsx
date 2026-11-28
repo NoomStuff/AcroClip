@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useListReorder } from "./useListReorder";
-import type { ReorderItems } from "./useListReorder";
+import { listAxis, useListReorder } from "./useListReorder";
+import type { ListAxis, ReorderItems } from "./useListReorder";
 
 interface Row<T> {
    key: string;
@@ -17,6 +17,7 @@ export function MotionList<T extends { id: string }>({
    onReorder,
    visible = true,
    followContentSize = false,
+   axis = "y",
 }: {
    items: readonly T[];
    children: (item: T) => ReactNode;
@@ -24,8 +25,11 @@ export function MotionList<T extends { id: string }>({
    onReorder?: ReorderItems | undefined;
    visible?: boolean;
    followContentSize?: boolean;
+   /** "x" lays the items out side by side and reorders them left to right. */
+   axis?: ListAxis;
 }) {
-   const reorder = useListReorder(sourceItems, identity, onReorder);
+   const reorder = useListReorder(sourceItems, identity, onReorder, axis);
+   const along = listAxis(axis);
    const { items, draggingId } = reorder;
    const root = useRef<HTMLDivElement>(null);
    const positions = useRef(new Map<string, number>());
@@ -69,9 +73,9 @@ export function MotionList<T extends { id: string }>({
          const baseline = new Map<string, number>();
          let height = 0;
          for (const row of list.querySelectorAll<HTMLElement>(":scope > .motion-list-item:not([data-exiting])")) {
-            row.style.removeProperty("top");
-            baseline.set(row.dataset["motionKey"]!, row.offsetTop);
-            height += row.offsetHeight;
+            row.style.removeProperty(along.position);
+            baseline.set(row.dataset["motionKey"]!, along.offset(row));
+            height += along.size(row);
          }
          positions.current = baseline;
          if (!heightMotion.current?.animation) heightMotion.current = { target: height };
@@ -82,7 +86,7 @@ export function MotionList<T extends { id: string }>({
       resize.observe(list);
       refreshVisibility();
       return () => resize.disconnect();
-   }, [resetLayout, visible]);
+   }, [resetLayout, visible, along]);
    useLayoutEffect(() => {
       const list = root.current;
       if (!list) return;
@@ -106,15 +110,15 @@ export function MotionList<T extends { id: string }>({
          const exiting = row.hasAttribute("data-exiting");
          const wasExiting = row.dataset["exitStarted"] === "true";
          const running = animations.current.get(key);
-         if (!exiting) row.style.removeProperty("top");
-         if (!exiting) height += row.offsetHeight;
+         if (!exiting) row.style.removeProperty(along.position);
+         if (!exiting) height += along.size(row);
          if (!exiting && key === draggingId) {
             running?.cancel();
             animations.current.delete(key);
-            next.set(key, row.offsetTop);
+            next.set(key, along.offset(row));
             continue;
          }
-         if (!exiting && !wasExiting && !reset && previous === row.offsetTop && running && !(followContentSize && !reordered)) {
+         if (!exiting && !wasExiting && !reset && previous === along.offset(row) && running && !(followContentSize && !reordered)) {
             next.set(key, previous);
             continue;
          }
@@ -124,14 +128,14 @@ export function MotionList<T extends { id: string }>({
          }
          const painted = running ? getComputedStyle(row) : null;
          const transform = new DOMMatrixReadOnly(painted?.transform);
-         const offset = transform.m42;
+         const offset = along.shift(transform);
          const opacity = Number(painted?.opacity ?? 1);
          running?.cancel();
          animations.current.delete(key);
          if (exiting) {
             next.set(key, previous ?? 0);
             row.dataset["exitStarted"] = "true";
-            row.style.top = `${previous ?? 0}px`;
+            row.style[along.position] = `${previous ?? 0}px`;
             const remove = () => setSnapshot((current) => ({ ...current, rows: current.rows.filter((entry) => entry.key !== key || !entry.exiting) }));
             if (reduce || reset) {
                remove();
@@ -139,8 +143,8 @@ export function MotionList<T extends { id: string }>({
             }
             const animation = row.animate(
                [
-                  { opacity, transform: `translate(${transform.m41}px, ${offset}px)` },
-                  { opacity: 0, transform: `translate(${transform.m41}px, ${offset}px) scale(.96)` },
+                  { opacity, transform: `translate(${transform.m41}px, ${transform.m42}px)` },
+                  { opacity: 0, transform: `translate(${transform.m41}px, ${transform.m42}px) scale(.96)` },
                ],
                { duration: 180, easing: "ease-out", fill: "forwards" }
             );
@@ -152,7 +156,7 @@ export function MotionList<T extends { id: string }>({
             continue;
          }
          delete row.dataset["exitStarted"];
-         const top = row.offsetTop;
+         const top = along.offset(row);
          next.set(key, top);
          // Nested sections follow their children's changing height directly.
          // A second FLIP here would chase that resize with another animation.
@@ -167,8 +171,14 @@ export function MotionList<T extends { id: string }>({
                     { opacity: 1, transform: "scale(1)" },
                  ]
                : [
-                    { opacity, transform: `translate(${wasExiting ? transform.m41 : 0}px, ${delta}px) scale(${wasExiting ? transform.a : 1})` },
-                    { opacity: 1, transform: "translateY(0)" },
+                    {
+                       opacity,
+                       transform:
+                          axis === "x"
+                             ? `translate(${delta}px, ${wasExiting ? transform.m42 : 0}px) scale(${wasExiting ? transform.a : 1})`
+                             : `translate(${wasExiting ? transform.m41 : 0}px, ${delta}px) scale(${wasExiting ? transform.a : 1})`,
+                    },
+                    { opacity: 1, transform: along.translate(0) },
                  ],
             { duration: start === undefined ? 220 : 300, easing: "cubic-bezier(.22,.8,.3,1)" }
          );
@@ -184,12 +194,15 @@ export function MotionList<T extends { id: string }>({
          previousHeight?.animation?.cancel();
          heightMotion.current = { target: height };
       } else if (previousHeight?.target !== height) {
-         const start = previousHeight?.animation ? list.getBoundingClientRect().height : previousHeight?.target;
+         const start = previousHeight?.animation ? list.getBoundingClientRect()[along.length] : previousHeight?.target;
          previousHeight?.animation?.cancel();
          const motion: { target: number; animation?: Animation } = { target: height };
          heightMotion.current = motion;
          if (!reduce && !reset && layoutVisible.current && start !== undefined && start !== height) {
-            const animation = list.animate([{ height: `${start}px` }, { height: `${height}px` }], { duration: 300, easing: "cubic-bezier(.22,.8,.3,1)" });
+            const animation = list.animate([{ [along.length]: `${start}px` }, { [along.length]: `${height}px` }], {
+               duration: 300,
+               easing: "cubic-bezier(.22,.8,.3,1)",
+            });
             motion.animation = animation;
             animation.onfinish = () => {
                delete motion.animation;
@@ -200,7 +213,7 @@ export function MotionList<T extends { id: string }>({
       initialized.current = true;
       layoutVisible.current = true;
       if (moving) list.dispatchEvent(new Event("list-motion", { bubbles: true }));
-   }, [snapshot.rows, identity, draggingId, resetLayout, visible, followContentSize, items]);
+   }, [snapshot.rows, identity, draggingId, resetLayout, visible, followContentSize, items, along, axis]);
    useLayoutEffect(() => {
       const media = matchMedia("(prefers-reduced-motion: reduce)");
       const activeAnimations = animations.current;
@@ -221,7 +234,7 @@ export function MotionList<T extends { id: string }>({
       };
    }, []);
    return (
-      <div className="motion-list" ref={root}>
+      <div className="motion-list" data-axis={axis} ref={root}>
          {snapshot.rows.map((row) => (
             <div
                className="motion-list-item"
@@ -238,7 +251,7 @@ export function MotionList<T extends { id: string }>({
                   onClickCapture={onReorder ? reorder.clickCapture : undefined}
                   onKeyDown={onReorder ? (event) => reorder.keyDown(row.key, event) : undefined}
                   onDragStart={onReorder ? (event) => event.preventDefault() : undefined}
-                  aria-keyshortcuts={onReorder ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+                  aria-keyshortcuts={onReorder ? `Alt+${along.back} Alt+${along.forward}` : undefined}
                >
                   {children(row.item)}
                </div>

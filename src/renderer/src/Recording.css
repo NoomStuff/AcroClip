@@ -21,23 +21,14 @@
 }
 
 .recording-layout {
+   position: relative;
    min-height: 0;
    flex: 1;
-   display: grid;
 }
 
 .recording-main,
 .recording-bottom {
    display: contents;
-}
-
-.recording-width-divider {
-   grid-column: 2;
-   grid-row: 1 / -1;
-}
-.recording-height-divider {
-   grid-column: 1 / -1;
-   grid-row: 2;
 }
 
 .preview-surface {
@@ -53,6 +44,7 @@
    display: flex;
    align-items: center;
    justify-content: center;
+   container-type: size;
 }
 
 .source-preview {
@@ -356,6 +348,43 @@
       height: clamp(36px, calc(50cqh - 100px), 64px);
    }
 }
+/* Narrow and short: the buttons become rows with the icon beside the label. */
+@container (max-width: 279px) and (max-height: 239px) {
+   .capture-actions > button {
+      grid-column: 1 / -1;
+      flex-direction: row;
+      padding: 0 12px;
+      gap: 10px;
+   }
+   .capture-actions > button > svg {
+      width: 26px;
+      height: 26px;
+   }
+   .capture-actions > button > span {
+      min-width: 0;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+   }
+   .capture-actions > button > kbd {
+      display: none;
+   }
+}
+/* Wide enough for two buttons but too short for the shortcut line. */
+@container (min-width: 280px) and (max-height: 159px) {
+   .capture-actions > button {
+      padding: 8px;
+      gap: 6px;
+   }
+   .capture-actions > button > svg {
+      width: 36px;
+      height: 36px;
+   }
+   .capture-actions > button > kbd {
+      display: none;
+   }
+}
 @container (max-aspect-ratio: 1 / 1) and (min-height: 240px) and (max-height: 320px) {
    .capture-actions > button {
       padding: 8px 8px 28px;
@@ -520,6 +549,18 @@
 .preview-surface .empty {
    min-height: 0;
    padding: 20px;
+}
+/* A short preview keeps the title and the way out, and drops the icon and explanation. */
+@container (max-height: 230px) {
+   .preview-surface :is(.empty, .preview-message, .preview-paused) {
+      padding: 10px 16px;
+      gap: 8px;
+   }
+   .preview-surface .empty > :is(.empty-icon, p),
+   .preview-surface :is(.preview-message, .preview-paused) > svg:not(.preview-loading-spinner),
+   .preview-surface .preview-message:not(.preview-discovery) > p {
+      display: none;
+   }
 }
 @media (max-height: 740px) {
    .mixer-scroll {
@@ -759,13 +800,6 @@
    background: var(--accent-soft);
 }
 
-.mixer-scroll > .audio-add {
-   align-self: flex-start;
-   flex-shrink: 0;
-   margin-top: 0;
-   min-height: 30px;
-   padding: 5px 10px;
-}
 .mixer-channel[data-disabled] .mixer-gain-value {
    opacity: 0.45;
 }
@@ -945,4 +979,428 @@
 
 .motion-list-item[data-dragging] .mixer-channel .mixer-drag-handle {
    background: transparent;
+}
+
+.dock-grip {
+   position: absolute;
+   top: 1px;
+   left: 50%;
+   translate: -50% 0;
+   z-index: 6;
+   width: 30px;
+   height: 14px;
+   display: grid;
+   place-items: center;
+   border-radius: 9999px;
+   background: var(--raised);
+   color: var(--subtle);
+   opacity: 0;
+   pointer-events: none;
+   cursor: grab;
+   touch-action: none;
+   -webkit-app-region: no-drag;
+   transition:
+      opacity 160ms var(--ease),
+      color 160ms var(--ease);
+}
+:root[data-keyboard] .dock-grip:focus-visible {
+   outline: 2px solid var(--focus);
+   outline-offset: 1px;
+}
+.dock-status {
+   position: absolute;
+   width: 1px;
+   height: 1px;
+   overflow: hidden;
+   clip-path: inset(50%);
+   white-space: nowrap;
+}
+[data-dock-near] > .dock-grip,
+:root[data-keyboard] .dock-grip:focus-visible {
+   opacity: 1;
+   pointer-events: auto;
+}
+.dock-grip:hover {
+   color: var(--text);
+}
+.dock-divider::after {
+   display: none;
+}
+.dock-band,
+.dock-mark,
+.dock-handle {
+   position: absolute;
+   border-radius: 3px;
+   opacity: 0;
+   pointer-events: none;
+   transition:
+      opacity 150ms var(--ease),
+      left 200ms var(--ease),
+      top 200ms var(--ease),
+      width 200ms var(--ease),
+      height 200ms var(--ease);
+}
+.dock-band {
+   background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.dock-divider.vertical > .dock-band {
+   left: 50%;
+   width: 2px;
+   translate: -50% 0;
+}
+.dock-divider.horizontal > .dock-band {
+   top: 50%;
+   height: 2px;
+   translate: 0 -50%;
+}
+.dock-mark,
+.dock-handle {
+   translate: -50% -50%;
+}
+.dock-divider.vertical > :is(.dock-mark, .dock-handle) {
+   left: 50%;
+   width: 3px;
+   height: 32px;
+}
+.dock-divider.horizontal > :is(.dock-mark, .dock-handle) {
+   top: 50%;
+   height: 3px;
+   width: 32px;
+}
+.dock-mark {
+   background: #ffffff2e;
+}
+.dock-handle {
+   background: var(--accent);
+   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.dock-divider:is(:hover, [data-active]) > *,
+:root[data-keyboard] .dock-divider:focus-visible > :is(.dock-band, .dock-handle) {
+   opacity: 1;
+}
+.recording-layout[data-resizing] .dock-divider:not([data-active]) > *,
+.recording-layout[data-resizing] .dock-divider[data-active] > .dock-mark,
+.recording-layout[data-resizing] .dock-crossing:not([data-active]) > span,
+.recording-layout:has(.dock-crossing[data-active]) .dock-divider > .dock-handle {
+   opacity: 0;
+}
+.dock-crossing {
+   position: absolute;
+   z-index: 6;
+   width: 28px;
+   height: 28px;
+   translate: -50% -50%;
+   display: grid;
+   place-items: center;
+   cursor: move;
+   touch-action: none;
+   outline: none;
+   -webkit-app-region: no-drag;
+}
+.dock-crossing > span {
+   width: 8px;
+   height: 8px;
+   border-radius: 50%;
+   background: var(--accent);
+   box-shadow: 0 0 0 3px var(--accent-soft);
+   opacity: 0;
+   scale: 0.5;
+   transition:
+      opacity 150ms var(--ease),
+      scale 200ms var(--ease);
+}
+.dock-crossing:is(:hover, [data-active]) > span,
+:root[data-keyboard] .dock-crossing:focus-visible > span {
+   opacity: 1;
+   scale: 1;
+}
+.recording-layout[data-dragging] .dock-grip {
+   cursor: grabbing;
+}
+.recording-layout[data-dragging="preview"] > .recording-main > .preview-surface,
+.recording-layout[data-dragging="mixer"] > .recording-main > .recording-bottom > .mixer,
+.recording-layout[data-dragging="actions"] > .recording-main > .recording-bottom > .capture-actions,
+.recording-layout[data-dragging="sources"] > .source-panel {
+   opacity: 0.35;
+}
+.recording-layout[data-settling] :is(.preview-surface, .mixer, .capture-actions, .source-panel) {
+   transition:
+      left 260ms var(--ease),
+      top 260ms var(--ease),
+      width 260ms var(--ease),
+      height 260ms var(--ease);
+}
+.dock-drop {
+   position: absolute;
+   z-index: 8;
+   display: grid;
+   place-items: center;
+   border-radius: 22px;
+   corner-shape: squircle;
+   background: color-mix(in srgb, var(--accent) 16%, transparent);
+   box-shadow: inset 0 0 0 2px var(--accent);
+   pointer-events: none;
+   transition:
+      left 140ms var(--ease),
+      top 140ms var(--ease),
+      width 140ms var(--ease),
+      height 140ms var(--ease);
+}
+.dock-drop > span {
+   padding: 6px 12px;
+   border-radius: 9999px;
+   background: var(--raised);
+   color: var(--text);
+   font-size: 12px;
+   font-weight: 650;
+}
+.dock-chip {
+   position: absolute;
+   z-index: 9;
+   translate: 12px 12px;
+   padding: 5px 10px;
+   border-radius: 9999px;
+   background: var(--accent);
+   color: #17121f;
+   font-size: 12px;
+   font-weight: 650;
+   pointer-events: none;
+   white-space: nowrap;
+}
+
+.mixer[data-vertical] .mixer-scroll {
+   flex-direction: row;
+   align-items: stretch;
+   overflow-x: auto;
+   overflow-y: hidden;
+}
+.mixer[data-vertical] .motion-list {
+   height: 100%;
+   flex-shrink: 0;
+}
+.mixer-strip {
+   width: 100px;
+   height: 100%;
+   display: grid;
+   grid-template-columns: 1fr 1fr;
+   grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+   grid-template-areas:
+      "head head"
+      "meter fader"
+      "value value"
+      "listen mute"
+      "foot foot";
+   gap: 6px 4px;
+   padding: 0 10px;
+   border-bottom: 0;
+   border-right: 1px solid var(--line);
+}
+.motion-list-item:first-child .mixer-strip {
+   padding-left: 0;
+   width: 90px;
+}
+.mixer-strip-head {
+   grid-area: head;
+   min-width: 0;
+   height: 22px;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   gap: 4px;
+}
+.mixer-strip-head > .mixer-channel-name {
+   flex: 0 1 auto;
+   min-width: 0;
+}
+.mixer-strip-foot {
+   grid-area: foot;
+   display: grid;
+   grid-template-columns: 1fr auto 1fr;
+   align-items: center;
+   height: 24px;
+}
+.mixer-strip-slot {
+   display: flex;
+}
+.mixer-strip-slot:last-child {
+   justify-content: flex-end;
+}
+.mixer-strip-slot > .icon-button,
+.mixer-strip-slot > .menu-wrap > .icon-button {
+   width: 24px;
+   min-width: 24px;
+   height: 24px;
+   min-height: 24px;
+   padding: 0;
+}
+.mixer-strip .mixer-drag-handle {
+   position: static;
+   transform: none;
+   width: 28px;
+   height: 24px;
+}
+.mixer-strip .mixer-drag-handle > svg {
+   rotate: 90deg;
+}
+.mixer-strip .mixer-channel-status {
+   display: inline-flex;
+   color: var(--subtle);
+}
+.mixer-strip .mixer-fader {
+   display: contents;
+}
+.mixer-strip > .audio-db-meter {
+   grid-area: meter;
+   justify-self: end;
+   min-height: 0;
+   display: flex;
+   flex-direction: row-reverse;
+   gap: 4px;
+   padding: 5px 0;
+}
+.mixer-strip .audio-db-track {
+   width: 10px;
+   height: 100%;
+}
+.mixer-strip .audio-db-fill {
+   background: linear-gradient(to top, #48b26c 0%, #48b26c 70%, #d5bc51 70%, #d5bc51 90%, #d75b57 90%);
+   clip-path: inset(calc(100% - var(--meter-level, 0%)) 0 0 0);
+}
+.mixer-strip .audio-db-meter[data-muted] .audio-db-fill {
+   background: #777;
+}
+.mixer-strip .audio-db-peak {
+   top: auto;
+   bottom: clamp(0px, var(--meter-peak, 0%), calc(100% - 2px));
+   left: 0;
+   width: 100%;
+   height: 2px;
+}
+.mixer-strip .audio-db-clip {
+   right: auto;
+   left: 0;
+   width: 100%;
+   height: 4px;
+}
+.mixer-strip .audio-db-scale {
+   position: relative;
+   display: block;
+   width: 20px;
+   margin: 0;
+   font-size: 10px;
+   line-height: 1;
+}
+.mixer-strip .audio-db-scale > span {
+   position: absolute;
+   right: 0;
+   translate: 0 50%;
+}
+.mixer-strip .audio-db-scale > span:nth-child(2) {
+   bottom: 20%;
+}
+.mixer-strip .audio-db-scale > span:nth-child(3) {
+   bottom: 40%;
+}
+.mixer-strip .audio-db-scale > span:nth-child(4) {
+   bottom: 60%;
+}
+.mixer-strip .audio-db-scale > span:nth-child(5) {
+   bottom: 80%;
+}
+.mixer-strip .audio-db-scale > span:first-child {
+   bottom: 0;
+}
+.mixer-strip .audio-db-scale > span:last-child {
+   bottom: 100%;
+}
+.mixer-strip .mixer-fader-control {
+   grid-area: fader;
+   justify-self: start;
+   width: 28px;
+   height: auto;
+   margin: 0;
+}
+.mixer-strip .mixer-fader-range {
+   writing-mode: vertical-lr;
+   direction: rtl;
+   height: 100%;
+}
+.mixer-strip .mixer-fader-range::-webkit-slider-runnable-track {
+   width: 4px;
+   height: auto;
+}
+.mixer-strip .mixer-fader-range::-webkit-slider-thumb {
+   width: 20px;
+   height: 11px;
+   margin: 0 0 0 -8px;
+}
+.mixer-strip .mixer-fader-track {
+   left: 50%;
+   right: auto;
+   top: 5px;
+   bottom: 5px;
+   width: 5px;
+   height: auto;
+   translate: -50% 0;
+}
+.mixer-strip .mixer-fader-fill {
+   position: absolute;
+   bottom: 0;
+   width: 100%;
+   height: var(--slider-position, 0%);
+}
+.mixer-strip .mixer-fader-thumb {
+   left: 50%;
+   top: auto;
+   bottom: var(--slider-position, 0%);
+   translate: -50% 50%;
+   width: 20px;
+   height: 10px;
+}
+.mixer-strip .mixer-gain-value {
+   grid-area: value;
+   width: auto;
+}
+.mixer-strip > .mixer-mute,
+.mixer-strip > .audio-listen {
+   justify-self: center;
+   display: grid;
+   place-items: center;
+   width: 30px;
+   min-width: 30px;
+   height: 28px;
+   min-height: 28px;
+   padding: 0;
+}
+.mixer-strip > .mixer-mute {
+   grid-area: mute;
+}
+.mixer-strip > .audio-listen {
+   grid-area: listen;
+}
+.mixer-scroll > .audio-add {
+   align-self: stretch;
+   display: grid;
+   place-items: center;
+   flex-shrink: 0;
+   min-height: 32px;
+   padding: 0;
+   margin: 0;
+   border-radius: 12px;
+   corner-shape: squircle;
+   background: transparent;
+   color: var(--subtle);
+}
+.mixer-scroll > .audio-add:hover:not(:disabled) {
+   background: var(--slot-hover);
+   color: var(--text);
+}
+.mixer[data-vertical] .mixer-scroll > .audio-add {
+   width: 40px;
+   flex-shrink: 0;
+   margin-left: 10px;
+}
+.mixer-strip > .mixer-mute:hover:not(:disabled) {
+   color: var(--accent);
+   background: var(--accent-soft);
 }
