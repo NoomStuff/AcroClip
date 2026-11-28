@@ -78,12 +78,15 @@ def awaitState(waiting, message=None, timeout=15):
         time.sleep(.1)
     raise AssertionError(result)
 
+def audioProblems(result):
+    # Track problems arrive per source in audioIssues; only the microphone still uses audioWarning.
+    return ' '.join([result.get('audioWarning',''),*result.get('audioIssues',{}).values()]).strip()
 def awaitAudio(warning, message=None, timeout=15):
     deadline=time.monotonic()+timeout
     while time.monotonic()<deadline:
         result=status()
         assert result['active'] and not result['waiting'], result
-        text=result.get('audioWarning','')
+        text=audioProblems(result)
         if bool(text)==warning and (not message or message in text):return result
         time.sleep(.1)
     raise AssertionError(result)
@@ -177,7 +180,7 @@ try:
     finally:
         os.kill(pulse.pid,signal.SIGCONT)
     awaitAudio(False);time.sleep(3)
-    proof['actualInputDeliveryStallAndRecovery']={'audioWarning':failed['audioWarning'],'freshVideoDecoded':True}
+    proof['actualInputDeliveryStallAndRecovery']={'audioWarning':audioProblems(failed),'freshVideoDecoded':True}
     # Suspend only this private virtual input. An explicit input suspension
     # must be unavailable even if a server keeps sending silent holes.
     pactl('suspend-source','private-input','1');awaitAudio(True,'input is suspended');time.sleep(3)
@@ -233,7 +236,7 @@ try:
     proof['extraDeviceRecoveryLevels']=recoveredLevels
     assert recoveredLevels['isolatedDB']>-40 and recoveredLevels['masterDB']<-70,recoveredLevels
     proof['extraTrackGainMuteAndMasterPolicy']={'fullDB':full,'halfDB':half,'excludedFromMaster':True}
-    proof['explicitDeviceLossAndReturn']={'audioWarning':failed['audioWarning'],'noDefaultSubstitution':True,'freshVideoDecoded':True,'knownToneRecovered':True}
+    proof['explicitDeviceLossAndReturn']={'audioWarning':audioProblems(failed),'noDefaultSubstitution':True,'freshVideoDecoded':True,'knownToneRecovered':True}
     command(dict(action='stop'))
     # Primary default output uses our own independent context and recovers
     # after the entire isolated server actually exits and restarts.

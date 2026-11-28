@@ -28,6 +28,7 @@ interface Event {
    waiting?: boolean;
    active?: boolean;
    audioWarning?: string;
+   audioIssues?: Record<string, string>;
    additional?: Record<string, number>;
 }
 const events: Event[] = [],
@@ -162,7 +163,7 @@ try {
    await delay(1400);
    await command({ action: "status" });
    assert(
-      events.slice(before).some((event) => event.event === "status" && event.active && !event.waiting && event.audioWarning?.includes("Selected B")),
+      events.slice(before).some((event) => event.event === "status" && event.active && !event.waiting && event.audioIssues?.["tone-b"]),
       "A lost audio source must warn while video keeps recording"
    );
    await delay(3000);

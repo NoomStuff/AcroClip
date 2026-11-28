@@ -227,10 +227,10 @@ try:
         begin = len(events)
         command(dict(action="status"))
         status = wait(lambda event: event["event"] == "status", after=begin)
-        if "Selected app" in status.get("audioWarning", "") and not status["waiting"]:
+        if status.get("audioIssues", {}).get("selected") and not status["waiting"]:
             break
         time.sleep(0.15)
-    assert status and status['active'] and not status["waiting"] and "Selected app" in status.get("audioWarning", ""), status
+    assert status and status['active'] and not status["waiting"] and status.get("audioIssues", {}).get("selected"), status
     time.sleep(3)
     save("video-continues-after-audio-target-loss")
     command(dict(action="stop"))

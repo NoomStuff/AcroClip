@@ -296,9 +296,9 @@ while True:
         previous=len(events);command(dict(action="status"))
         current=next(event for event in events[previous:] if event["event"]=="status")
         assert current['active'] and not current['waiting'],current
-        if current.get('audioWarning'):break
+        if current.get('audioWarning') or current.get('audioIssues'):break
         time.sleep(.1)
-    assert current.get('audioWarning'),current
+    assert current.get('audioWarning') or current.get('audioIssues'),current
     time.sleep(3)
     failed_audio=folder/'audio-server-down-video-continues.mkv'
     command(dict(action='save',path=str(failed_audio),requestId='audio-server-down',requestedAt=int(time.time()*1000)))
