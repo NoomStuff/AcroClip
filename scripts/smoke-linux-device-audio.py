@@ -22,7 +22,18 @@ folder.mkdir(parents=True)
 private = pathlib.Path(tempfile.mkdtemp(prefix="acroclip-native-"))
 env = dict(os.environ, ACROCLIP_ISOLATED_TEST_RUNNER="private-linux", XDG_RUNTIME_DIR=str(private), PULSE_SERVER="unix:" + str(private / "audio.sock"), DBUS_SESSION_BUS_ADDRESS="unix:path=" + str(private / "dbus.sock"), WAYLAND_DISPLAY="", XDG_SESSION_TYPE="x11", ACROCLIP_NATIVE_TEST_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe")
 env["LD_LIBRARY_PATH"] = str(runtime / "lib")
-display = next(number for number in range(90, 180) if not pathlib.Path(f"/tmp/.X11-unix/X{number}").exists())
+def display_free(number):
+    # Xvfb here listens on TCP only, so it leaves a lock file and a port but no socket file.
+    if pathlib.Path(f"/tmp/.X11-unix/X{number}").exists() or pathlib.Path(f"/tmp/.X{number}-lock").exists():
+        return False
+    import socket as probe
+    with probe.socket() as listener:
+        try:
+            listener.bind(("127.0.0.1", 6000 + number))
+        except OSError:
+            return False
+    return True
+display = next(number for number in range(90, 180) if display_free(number))
 env["DISPLAY"] = f"127.0.0.1:{display}"
 processes = []
 logs = []

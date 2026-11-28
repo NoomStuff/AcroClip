@@ -23,7 +23,18 @@ recorder_env = dict(env, LD_LIBRARY_PATH=str(runtime / "lib"))
 # producer on PipeWire before AcroClip has even started capturing it.
 env.pop("LD_LIBRARY_PATH", None)
 env.pop("LD_PRELOAD", None)
-display = next(number for number in range(90, 180) if not pathlib.Path(f"/tmp/.X11-unix/X{number}").exists())
+def display_free(number):
+    # Xvfb here listens on TCP only, so it leaves a lock file and a port but no socket file.
+    if pathlib.Path(f"/tmp/.X11-unix/X{number}").exists() or pathlib.Path(f"/tmp/.X{number}-lock").exists():
+        return False
+    import socket as probe
+    with probe.socket() as listener:
+        try:
+            listener.bind(("127.0.0.1", 6000 + number))
+        except OSError:
+            return False
+    return True
+display = next(number for number in range(90, 180) if display_free(number))
 env["DISPLAY"] = f"127.0.0.1:{display}"
 recorder_env["DISPLAY"] = env["DISPLAY"]
 processes = []
